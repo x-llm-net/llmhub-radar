@@ -54,10 +54,8 @@ RUN \
     --mount=type=bind,target=packages/locales/package.json,source=packages/locales/package.json \
     --mount=type=bind,target=packages/status-fetcher/package.json,source=packages/status-fetcher/package.json \
     --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
-    <<EOF
-corepack enable pnpm
-pnpm install --prod --frozen-lockfile --verbose
-EOF
+    corepack enable pnpm && \
+    pnpm install --prod --frozen-lockfile --verbose
 
 # build
 FROM oven/bun@sha256:0733e50325078969732ebe3b15ce4c4be5082f18c4ac1a0f0ca4839c2e4e42a7 AS build

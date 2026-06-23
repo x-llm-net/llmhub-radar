@@ -46,10 +46,8 @@ RUN \
     --mount=type=bind,target=packages/services/package.json,source=packages/services/package.json \
     --mount=type=bind,target=packages/importers/package.json,source=packages/importers/package.json \
     --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
-    <<EOF
-corepack enable pnpm
-pnpm install --prod --frozen-lockfile --verbose
-EOF
+    corepack enable pnpm && \
+    pnpm install --prod --frozen-lockfile --verbose
 
 # build
 FROM oven/bun@sha256:0733e50325078969732ebe3b15ce4c4be5082f18c4ac1a0f0ca4839c2e4e42a7 AS build
@@ -94,11 +92,9 @@ COPY \
     --link \
     "/app/apps/server/app" "/bin/"
 USER 0:0
-RUN <<EOF
-apt-get update
-apt-get install -y --no-install-recommends curl
-rm -rf /var/lib/apt/lists/*
-EOF
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 USER 1000:1000
 EXPOSE 3000
 HEALTHCHECK \

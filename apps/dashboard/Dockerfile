@@ -33,11 +33,9 @@ WORKDIR /app
 COPY \
     --link \
     "." "/app/"
-RUN <<EOF
-corepack enable
-pnpm install --frozen-lockfile
-pnpm turbo run build --filter=@openstatus/dashboard
-EOF
+RUN corepack enable && \
+    pnpm install --frozen-lockfile && \
+    pnpm turbo run build --filter=@openstatus/dashboard
 
 # runtime
 FROM node@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS runtime
@@ -68,11 +66,9 @@ COPY \
     --link \
     "/app/apps/dashboard/public/" "./public/"
 USER 0:0
-RUN <<EOF
-apt-get update
-apt-get install -y --no-install-recommends curl
-rm -rf /var/lib/apt/lists/*
-EOF
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 USER 1000:1000
 EXPOSE 3000
 HEALTHCHECK \
