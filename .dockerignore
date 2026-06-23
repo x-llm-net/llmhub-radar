@@ -46,9 +46,11 @@ node_modules
 
 # Git
 **/.git
+**/.git.openstatus-shallow
 **/.gitignore
 **/.gitattributes
 .git
+.git.openstatus-shallow
 .gitignore
 
 # Documentation
