@@ -1,0 +1,48 @@
+import { Suspense } from "react";
+
+import { LatencyChartTable } from "../latency-chart-table";
+import { Aside } from "./aside";
+import { ButtonLink } from "./button-link";
+import { Card, CardGrid, LinkCard } from "./card";
+import { Code } from "./code";
+import { CustomImage } from "./custom-image";
+import { CustomLink } from "./custom-link";
+import { Details } from "./details";
+import { Grid } from "./grid";
+import { createHeading } from "./heading";
+import { Pre } from "./pre";
+import { PricingTabs } from "./pricing-tabs";
+import { MDXStatusPageExample } from "./status-page-example";
+import { Subtle } from "./subtle";
+import { Table } from "./table";
+import { ShowcaseYouTube } from "./youtube";
+
+export { slugify } from "./heading";
+
+export const components = {
+  h1: createHeading(1),
+  h2: createHeading(2),
+  h3: createHeading(3),
+  h4: createHeading(4),
+  h5: createHeading(5),
+  h6: createHeading(6),
+  Image: CustomImage,
+  a: CustomLink,
+  ButtonLink: ButtonLink,
+  code: Code,
+  pre: Pre,
+  table: Table,
+  Grid,
+  Aside,
+  Card,
+  CardGrid,
+  LinkCard,
+  ShowcaseYouTube,
+  Details, // Capital D for JSX usage with props
+  details: Details, // lowercase for HTML tag replacement
+  SimpleChart: LatencyChartTable,
+  StatusPageExample: MDXStatusPageExample,
+  PricingTabs,
+  Subtle,
+  Suspense: Suspense,
+};

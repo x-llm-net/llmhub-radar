@@ -1,0 +1,65 @@
+import { createRoute } from "@hono/zod-openapi";
+import { and, eq } from "@openstatus/db";
+import { db } from "@openstatus/db/src/db";
+import { page } from "@openstatus/db/src/schema";
+
+import { OpenStatusApiError, openApiErrorResponses } from "@/libs/errors";
+import { notEmpty } from "@/utils/not-empty";
+
+import type { pagesApi } from "./index";
+import { PageSchema, ParamsSchema, transformPageData } from "./schema";
+
+const getRoute = createRoute({
+  method: "get",
+  tags: ["page"],
+  summary: "Get a status page",
+  path: "/{id}",
+  request: {
+    params: ParamsSchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: PageSchema,
+        },
+      },
+      description: "Get an Status page",
+    },
+    ...openApiErrorResponses,
+  },
+});
+
+export function registerGetPage(api: typeof pagesApi) {
+  return api.openapi(getRoute, async (c) => {
+    const workspaceId = c.get("workspace").id;
+    const { id } = c.req.valid("param");
+
+    const _page = await db.query.page.findFirst({
+      where: and(eq(page.workspaceId, workspaceId), eq(page.id, Number(id))),
+      with: {
+        pageComponents: true,
+      },
+    });
+
+    if (!_page) {
+      throw new OpenStatusApiError({
+        code: "NOT_FOUND",
+        message: `Page ${id} not found`,
+      });
+    }
+
+    const monitorIds = _page.pageComponents
+      .map((pc) => pc.monitorId)
+      .filter(notEmpty);
+
+    const data = transformPageData(
+      PageSchema.parse({
+        ..._page,
+        monitors: monitorIds.length > 0 ? monitorIds : undefined,
+      }),
+    );
+
+    return c.json(data, 200);
+  });
+}

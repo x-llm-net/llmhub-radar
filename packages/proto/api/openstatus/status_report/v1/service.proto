@@ -1,0 +1,186 @@
+syntax = "proto3";
+
+package openstatus.status_report.v1;
+
+import "buf/validate/validate.proto";
+import "gnostic/openapi/v3/annotations.proto";
+import "openstatus/status_report/v1/status_report.proto";
+
+option go_package = "github.com/openstatushq/openstatus/packages/proto/openstatus/status_report/v1;statusreportv1";
+
+// StatusReportService provides CRUD operations for status reports.
+service StatusReportService {
+  // CreateStatusReport creates a new status report with an initial update entry and optionally notifies subscribers.
+  rpc CreateStatusReport(CreateStatusReportRequest) returns (CreateStatusReportResponse) {
+    option (gnostic.openapi.v3.operation) = {
+      description: "Creates a new status report with an initial update entry. The report is associated with a status page and optionally specific page components. An initial StatusReportUpdate is created automatically with the provided status, message, and date. If notify is true, subscribers of the associated page are notified by email."
+    };
+  }
+
+  // GetStatusReport retrieves a specific status report by ID (includes full update timeline).
+  rpc GetStatusReport(GetStatusReportRequest) returns (GetStatusReportResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // ListStatusReports returns all status reports for the workspace (metadata only).
+  rpc ListStatusReports(ListStatusReportsRequest) returns (ListStatusReportsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // UpdateStatusReport updates the metadata of a status report (title, page components).
+  rpc UpdateStatusReport(UpdateStatusReportRequest) returns (UpdateStatusReportResponse);
+
+  // DeleteStatusReport removes a status report and all its updates.
+  rpc DeleteStatusReport(DeleteStatusReportRequest) returns (DeleteStatusReportResponse);
+
+  // AddStatusReportUpdate adds a new update to an existing status report timeline and transitions the report status.
+  rpc AddStatusReportUpdate(AddStatusReportUpdateRequest) returns (AddStatusReportUpdateResponse) {
+    option (gnostic.openapi.v3.operation) = {
+      description: "Adds a new update entry to an existing status report and transitions the report to the specified status. Status reports follow a lifecycle: investigating -> identified -> monitoring -> resolved. If notify is true, subscribers of the associated page are notified by email about the update."
+    };
+  }
+}
+
+// CreateStatusReportRequest is the request to create a new status report.
+message CreateStatusReportRequest {
+  // Title of the status report (required).
+  string title = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (gnostic.openapi.v3.property) = {example: {yaml: "API Degradation Investigation"}}
+  ];
+
+  // Initial status (required).
+  StatusReportStatus status = 2 [(buf.validate.field).enum.defined_only = true];
+
+  // Initial message describing the incident (required).
+  string message = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (gnostic.openapi.v3.property) = {example: {yaml: "We are investigating reports of increased API latency."}}
+  ];
+
+  // Date when the event occurred (RFC 3339 format, required).
+  string date = 4 [
+    (buf.validate.field).string.pattern = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$",
+    (gnostic.openapi.v3.property) = {example: {yaml: "2024-03-15T10:30:00Z"}}
+  ];
+
+  // Page ID to associate with this report (required).
+  string page_id = 5 [(buf.validate.field).string.min_len = 1];
+
+  // Page component IDs to associate with this report (optional).
+  repeated string page_component_ids = 6;
+
+  // Whether to notify subscribers about this status report (optional, defaults to false).
+  optional bool notify = 7;
+
+  // Per-component impacts set by the initial update (optional). When provided,
+  // the named components are added to the report's affected set. Omitting this
+  // field creates a legacy report without impact tracking.
+  repeated ComponentImpact component_impacts = 8;
+}
+
+// CreateStatusReportResponse is the response after creating a status report.
+message CreateStatusReportResponse {
+  // The created status report.
+  StatusReport status_report = 1;
+}
+
+// GetStatusReportRequest is the request to get a status report by ID.
+message GetStatusReportRequest {
+  // ID of the status report to retrieve (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// GetStatusReportResponse is the response containing the status report with its full update timeline.
+message GetStatusReportResponse {
+  // The requested status report.
+  StatusReport status_report = 1;
+}
+
+// ListStatusReportsRequest is the request to list status reports.
+message ListStatusReportsRequest {
+  // Maximum number of reports to return (1-100, defaults to 50).
+  optional int32 limit = 1 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 100
+  }];
+
+  // Number of reports to skip for pagination (defaults to 0).
+  optional int32 offset = 2 [(buf.validate.field).int32.gte = 0];
+
+  // Filter by status (optional). If empty, returns all statuses.
+  repeated StatusReportStatus statuses = 3;
+}
+
+// ListStatusReportsResponse is the response containing status report summaries.
+message ListStatusReportsResponse {
+  // List of status reports (metadata only, use GetStatusReport for full details).
+  repeated StatusReportSummary status_reports = 1;
+
+  // Total number of reports matching the filter.
+  int32 total_size = 2;
+}
+
+// UpdateStatusReportRequest is the request to update a status report's metadata.
+message UpdateStatusReportRequest {
+  // ID of the status report to update (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // New title for the report (optional).
+  optional string title = 2;
+
+  // New list of page component IDs (optional, replaces existing list).
+  repeated string page_component_ids = 3;
+
+  // Set to true to update page component associations.
+  // When true, page_component_ids replaces the existing list (empty clears all).
+  // When false or unset, page_component_ids is ignored and existing associations are preserved.
+  optional bool update_page_component_ids = 4;
+}
+
+// UpdateStatusReportResponse is the response after updating a status report.
+message UpdateStatusReportResponse {
+  // The updated status report.
+  StatusReport status_report = 1;
+}
+
+// DeleteStatusReportRequest is the request to delete a status report.
+message DeleteStatusReportRequest {
+  // ID of the status report to delete (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// DeleteStatusReportResponse is the response after deleting a status report.
+message DeleteStatusReportResponse {
+  // Whether the deletion was successful.
+  bool success = 1;
+}
+
+// AddStatusReportUpdateRequest is the request to add a new update to a status report.
+message AddStatusReportUpdateRequest {
+  // ID of the status report to update (required).
+  string status_report_id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // New status for the report (required).
+  StatusReportStatus status = 2 [(buf.validate.field).enum.defined_only = true];
+
+  // Message describing what changed (required).
+  string message = 3 [(buf.validate.field).string.min_len = 1];
+
+  // Optional date for the update (RFC 3339 format). Defaults to current time if not provided.
+  optional string date = 4 [(buf.validate.field).string.pattern = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$"];
+
+  // Whether to notify subscribers about this update (optional, defaults to false).
+  optional bool notify = 5;
+
+  // Per-component impacts this update sets (optional). Components named here
+  // are added to the report's affected set; omitted components keep their
+  // prior impact.
+  repeated ComponentImpact component_impacts = 6;
+}
+
+// AddStatusReportUpdateResponse is the response after adding an update to a status report.
+message AddStatusReportUpdateResponse {
+  // The updated status report with the new update included.
+  StatusReport status_report = 1;
+}

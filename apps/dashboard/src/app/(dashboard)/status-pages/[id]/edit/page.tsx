@@ -1,0 +1,36 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
+
+import {
+  Section,
+  SectionDescription,
+  SectionGroup,
+  SectionHeader,
+  SectionTitle,
+} from "@/components/content/section";
+import { FormStatusPageUpdate } from "@/components/forms/status-page/update";
+import { useTRPC } from "@/lib/trpc/client";
+
+export default function Page() {
+  const { id } = useParams<{ id: string }>();
+  const trpc = useTRPC();
+  const { data: statusPage } = useQuery(
+    trpc.page.get.queryOptions({ id: Number.parseInt(id) }),
+  );
+
+  if (!statusPage) return null;
+
+  return (
+    <SectionGroup>
+      <Section>
+        <SectionHeader>
+          <SectionTitle>{statusPage.title}</SectionTitle>
+          <SectionDescription>Customize your status page.</SectionDescription>
+        </SectionHeader>
+        <FormStatusPageUpdate />
+      </Section>
+    </SectionGroup>
+  );
+}

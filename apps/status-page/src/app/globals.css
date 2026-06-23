@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@import "@openstatus/ui/globals";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+/* safelist */
+@source inline("has-data-[slot=slider-range]:bg-red-500");
+
+@theme {
+  --breakpoint-xs: 30rem;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-commit-mono, var(--font-geist-mono));
+  --radius-xs: calc(var(--radius) - 8px);
+}
+
+:root {
+  /* Override the base radius for status-page */
+  --radius: 0rem;
+}
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* NOTE: allows us to --radius: 0px and avoid rounding issues - otherwise it is 'infinite * 1px' */
+  .rounded-full {
+    border-radius: calc(var(--radius) * 99999999);
+  }
+  .rounded-b-full {
+    border-bottom-left-radius: calc(var(--radius) * 99999999);
+    border-bottom-right-radius: calc(var(--radius) * 99999999);
+  }
+  .rounded-t-full {
+    border-top-left-radius: calc(var(--radius) * 99999999);
+    border-top-right-radius: calc(var(--radius) * 99999999);
+  }
+}

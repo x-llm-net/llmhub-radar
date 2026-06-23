@@ -1,0 +1,25 @@
+{
+  "name": "@openstatus/notification-pagerduty",
+  "version": "0.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "bun test",
+    "tsc": "tsc"
+  },
+  "dependencies": {
+    "@openstatus/db": "workspace:*",
+    "@openstatus/notification-base": "workspace:*",
+    "@t3-oss/env-core": "catalog:",
+    "@types/validator": "catalog:",
+    "validator": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@openstatus/tsconfig": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "bun-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}

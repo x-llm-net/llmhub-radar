@@ -1,0 +1,39 @@
+{
+  "name": "@openstatus/react",
+  "version": "0.0.3",
+  "keywords": [
+    "monitoring",
+    "openstatus",
+    "react"
+  ],
+  "homepage": "https://github.com/openstatusHQ/openstatus#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openstatusHQ/openstatus.git"
+  },
+  "files": [
+    "./dist/**"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsup --watch && pnpm run dev:tailwind",
+    "dev:tailwind": "npx @tailwindcss/cli -i ./src/styles.css -o ./dist/styles.css --watch",
+    "build:tailwind": "npx @tailwindcss/cli -i ./src/styles.css -o ./dist/styles.css --minify",
+    "build": "tsup && pnpm run build:tailwind"
+  },
+  "devDependencies": {
+    "@openstatus/tsconfig": "workspace:*",
+    "@tailwindcss/cli": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "tailwindcss": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  }
+}

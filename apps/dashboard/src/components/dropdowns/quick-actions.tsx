@@ -1,0 +1,212 @@
+"use client";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@openstatus/ui/components/ui/alert-dialog";
+import { Button } from "@openstatus/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@openstatus/ui/components/ui/dropdown-menu";
+import { Input } from "@openstatus/ui/components/ui/input";
+import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
+import type { DropdownMenuContentProps } from "@radix-ui/react-dropdown-menu";
+import { isTRPCClientError } from "@trpc/client";
+import {
+  Check,
+  Copy,
+  type LucideIcon,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
+import type * as React from "react";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+
+interface QuickActionsProps extends React.ComponentProps<typeof Button> {
+  align?: DropdownMenuContentProps["align"];
+  side?: DropdownMenuContentProps["side"];
+  actions?: {
+    id: string;
+    label: string;
+    icon: LucideIcon;
+    variant: "default" | "destructive";
+    onClick?: () => Promise<void> | void;
+  }[];
+  deleteAction?: {
+    /**
+     * The value that must be typed to confirm deletion. Also used in the dialog title.
+     * If omitted, no type-to-confirm step is shown.
+     */
+    confirmationValue?: string;
+    submitAction?: () => Promise<void>;
+  };
+}
+
+export function QuickActions({
+  align = "end",
+  side,
+  className,
+  actions,
+  deleteAction,
+  children,
+  ...props
+}: QuickActionsProps) {
+  const [value, setValue] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const { copy, isCopied } = useCopyToClipboard();
+
+  const handleDelete = async () => {
+    startTransition(async () => {
+      if (!deleteAction?.submitAction) return;
+      const promise = deleteAction.submitAction();
+      toast.promise(promise, {
+        loading: "Deleting...",
+        success: "Deleted",
+        error: (error) => {
+          if (isTRPCClientError(error)) {
+            return error.message;
+          }
+          return "Failed to delete";
+        },
+      });
+      try {
+        await promise;
+      } catch (error) {
+        console.error("Failed to delete:", error);
+      } finally {
+        setOpen(false);
+      }
+    });
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          {children ?? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={className ?? "data-[state=open]:bg-accent h-7 w-7"}
+              {...props}
+            >
+              <MoreHorizontal />
+            </Button>
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={align} side={side} className="w-36">
+          <DropdownMenuLabel className="sr-only">
+            Quick Actions
+          </DropdownMenuLabel>
+          {actions
+            ?.filter((item) => item.id !== "delete")
+            .map((item) => (
+              <DropdownMenuGroup key={item.id}>
+                <DropdownMenuItem
+                  variant={item.variant}
+                  disabled={!item.onClick}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    item.onClick?.();
+                  }}
+                >
+                  <item.icon className="text-muted-foreground" />
+                  <span className="truncate">{item.label}</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            ))}
+          {deleteAction && (
+            <>
+              {/* NOTE: add a separator only if actions exist */}
+              {actions?.length ? <DropdownMenuSeparator /> : null}
+              <AlertDialogTrigger asChild>
+                <DropdownMenuItem variant="destructive">
+                  <Trash2 className="text-muted-foreground" />
+                  Delete
+                </DropdownMenuItem>
+              </AlertDialogTrigger>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          // NOTE: bug where the body is not clickable after closing the alert dialog
+          event.preventDefault();
+          document.body.style.pointerEvents = "";
+        }}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {deleteAction?.confirmationValue
+              ? `Are you sure about deleting \`${deleteAction.confirmationValue}\`?`
+              : "Are you sure?"}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This action cannot be undone. This will permanently remove the entry
+            from the database.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {deleteAction?.confirmationValue ? (
+          <form id="form-alert-dialog" className="space-y-1.5">
+            <p className="text-muted-foreground text-sm">
+              Type{" "}
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                className="font-normal [&_svg]:size-3"
+                onClick={() =>
+                  copy(deleteAction.confirmationValue || "", {
+                    withToast: false,
+                  })
+                }
+              >
+                {deleteAction.confirmationValue}
+                {isCopied ? <Check /> : <Copy />}
+              </Button>{" "}
+              to confirm
+            </p>
+            <Input value={value} onChange={(e) => setValue(e.target.value)} />
+          </form>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
+            disabled={
+              (deleteAction?.confirmationValue &&
+                value !== deleteAction?.confirmationValue) ||
+              isPending
+            }
+            form="form-alert-dialog"
+            type="submit"
+            onClick={(e) => {
+              e.preventDefault();
+              handleDelete();
+            }}
+          >
+            {isPending ? "Deleting..." : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}

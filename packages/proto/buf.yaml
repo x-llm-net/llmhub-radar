@@ -1,0 +1,19 @@
+version: v2
+
+modules:
+  - path: ./api/
+    name: buf.build/openstatus/api
+  - path: ./internal/
+    name: buf.build/openstatus/private-location
+
+deps:
+  - buf.build/bufbuild/protovalidate
+  - buf.build/gnostic/gnostic
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX
+breaking:
+  use:
+    - FILE

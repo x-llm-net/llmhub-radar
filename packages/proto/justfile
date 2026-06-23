@@ -1,0 +1,20 @@
+set fallback := true
+
+init:
+    go install github.com/bufbuild/buf/cmd/buf@latest
+    go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+    go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+    go install github.com/sudorandom/protoc-gen-connect-openapi@latest
+
+buf:
+    pnpm buf
+
+gen-private-location:
+    buf generate --path internal/private_location --template buf.gen.go.yaml
+
+gen-api:
+    buf generate --path api/openstatus --template buf.gen.ts.yaml
+
+gen-openapi:
+    buf generate --path api/openstatus --template buf.gen.openapi.yaml && bun scripts/clean-openapi.ts

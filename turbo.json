@@ -1,0 +1,67 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "tasks": {
+    "registry:build": {
+      "outputs": ["public/r/**"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "env": [
+        "\\*",
+        "RESEND_API_KEY",
+        "\\!NEXT_PUBLIC_GIT_\\*",
+        "DATABASE_URL",
+        "DATABASE_AUTH_TOKEN",
+        "TINY_BIRD_API_KEY",
+        "NODE_ENV",
+        "BLOB_READ_WRITE_TOKEN",
+        "TEAM_ID_VERCEL",
+        "PROJECT_ID_VERCEL",
+        "STRIPE_SECRET_KEY",
+        "UNKEY_TOKEN",
+        "UNKEY_API_ID",
+        "UPSTASH_REDIS_REST_URL",
+        "UPSTASH_REDIS_REST_TOKEN",
+        "OPENPANEL_CLIENT_SECRET",
+        "NEXT_PUBLIC_OPENPANEL_CLIENT_ID",
+        "AUTH_SECRET",
+        "CRON_SECRET",
+        "SELF_HOST"
+      ],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "lint": {},
+    "dev": {
+      "cache": false
+    },
+    "@openstatus/web#dev": {
+      "cache": false,
+      "dependsOn": ["@openstatus/react#build"]
+    },
+    "@openstatus/status-page#dev": {
+      "cache": false
+    },
+    "@openstatus/dashboard#dev": {
+      "cache": false
+    },
+    "test": {
+      "cache": false
+    },
+    "dx": {
+      "cache": false,
+      "dependsOn": ["seed"]
+    },
+    "seed": {
+      "cache": false,
+      "dependsOn": ["migrate"]
+    },
+    "migrate": {
+      "cache": false,
+      "dependsOn": ["env"]
+    },
+    "env": {
+      "cache": true
+    }
+  }
+}

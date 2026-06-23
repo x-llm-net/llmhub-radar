@@ -1,0 +1,127 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@openstatus/ui/components/ui/button";
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@openstatus/ui/components/ui/form";
+import { Form } from "@openstatus/ui/components/ui/form";
+import { Input } from "@openstatus/ui/components/ui/input";
+import { useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
+
+import {
+  FormCard,
+  FormCardContent,
+  FormCardDescription,
+  FormCardFooter,
+  FormCardHeader,
+  FormCardTitle,
+} from "@/components/forms/form-card";
+
+const DEGRADED = 30_000;
+const TIMEOUT = 45_000;
+
+const schema = z.object({
+  degradedAfter: z.coerce.number<number>().optional(),
+  timeout: z.coerce.number<number>(),
+});
+
+type FormValues = z.input<typeof schema>;
+
+export function FormResponseTime({
+  defaultValues,
+  onSubmit,
+  ...props
+}: Omit<React.ComponentProps<"form">, "onSubmit"> & {
+  defaultValues?: FormValues;
+  onSubmit: (values: FormValues) => Promise<void>;
+}) {
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: defaultValues ?? {
+      degradedAfter: DEGRADED,
+      timeout: TIMEOUT,
+    },
+  });
+  const [isPending, startTransition] = useTransition();
+
+  function submitAction(values: FormValues) {
+    if (isPending) return;
+
+    startTransition(async () => {
+      try {
+        const promise = onSubmit(values);
+        toast.promise(promise, {
+          loading: "Saving...",
+          success: () => "Saved",
+          error: "Failed to save",
+        });
+        await promise;
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(submitAction)} {...props}>
+        <FormCard>
+          <FormCardHeader>
+            <FormCardTitle>Response Time Thresholds</FormCardTitle>
+            <FormCardDescription>
+              Configure your degraded and timeout thresholds.
+            </FormCardDescription>
+          </FormCardHeader>
+          <FormCardContent className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="degradedAfter"
+              render={({ field }) => (
+                <FormItem className="self-start">
+                  <FormLabel>Degraded (in ms.)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="30000" type="number" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    Time after which the endpoint is considered degraded.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="timeout"
+              render={({ field }) => (
+                <FormItem className="self-start">
+                  <FormLabel>Timeout (in ms.)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="45000" type="number" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    Max. time allowed for request to complete.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FormCardContent>
+          <FormCardFooter>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Submitting..." : "Submit"}
+            </Button>
+          </FormCardFooter>
+        </FormCard>
+      </form>
+    </Form>
+  );
+}

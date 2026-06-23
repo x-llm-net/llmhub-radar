@@ -1,0 +1,303 @@
+import { Events } from "@openstatus/analytics";
+import { count, eq, schema } from "@openstatus/db";
+import {
+  selectWorkspaceSchema,
+  user,
+  usersToWorkspaces,
+  workspace,
+  workspacePlans,
+} from "@openstatus/db/src/schema";
+import { allPlans } from "@openstatus/db/src/schema/plan/config";
+import {
+  addons,
+  billingIntervals,
+} from "@openstatus/db/src/schema/plan/schema";
+import { updateAddonInLimits } from "@openstatus/db/src/schema/plan/utils";
+import { TRPCError } from "@trpc/server";
+import type { Stripe } from "stripe";
+import { z } from "zod";
+
+import { createTRPCRouter, protectedProcedure } from "../../trpc";
+import { stripe } from "./shared";
+import { getPriceIdForFeature, getPriceIdForPlan } from "./utils";
+import { webhookRouter } from "./webhook";
+
+const url =
+  process.env.NODE_ENV === "production"
+    ? "https://www.openstatus.dev"
+    : "http://localhost:3000";
+
+export const stripeRouter = createTRPCRouter({
+  webhooks: webhookRouter,
+
+  getUserCustomerPortal: protectedProcedure
+    .input(
+      z.object({ workspaceSlug: z.string(), returnUrl: z.string().optional() }),
+    )
+    .mutation(async (opts) => {
+      const result = await opts.ctx.db
+        .select()
+        .from(workspace)
+        .where(eq(workspace.slug, opts.input.workspaceSlug))
+        .get();
+
+      if (!result) return;
+
+      const currentUser = opts.ctx.db
+        .select()
+        .from(user)
+        .where(eq(user.id, opts.ctx.user.id))
+        .as("currentUser");
+      const userHasAccess = await opts.ctx.db
+        .select()
+        .from(usersToWorkspaces)
+        .where(eq(usersToWorkspaces.workspaceId, result.id))
+        .innerJoin(currentUser, eq(usersToWorkspaces.userId, currentUser.id))
+        .get();
+
+      if (!userHasAccess || !userHasAccess.users_to_workspaces) return;
+      let stripeId = result.stripeId;
+      if (!stripeId) {
+        const customerData: {
+          metadata: { workspaceId: string };
+          email?: string;
+        } = {
+          metadata: {
+            workspaceId: String(result.id),
+          },
+          email: userHasAccess.currentUser.email || "",
+        };
+
+        const stripeUser = await stripe.customers.create(customerData);
+
+        stripeId = stripeUser.id;
+        await opts.ctx.db
+          .update(workspace)
+          .set({ stripeId })
+          .where(eq(workspace.id, result.id))
+          .run();
+      }
+
+      const session = await stripe.billingPortal.sessions.create({
+        customer: stripeId,
+        return_url:
+          opts.input.returnUrl || `${url}/app/${result.slug}/settings`,
+      });
+
+      return session.url;
+    }),
+
+  getCheckoutSession: protectedProcedure
+    .input(
+      z.object({
+        currency: z.string(),
+        workspaceSlug: z.string(),
+        plan: z.enum(workspacePlans),
+        interval: z.enum(billingIntervals).default("monthly"),
+        successUrl: z.string().optional(),
+        cancelUrl: z.string().optional(),
+      }),
+    )
+    .mutation(async (opts) => {
+      // The following code is duplicated we should extract it
+      const result = await opts.ctx.db
+        .select()
+        .from(workspace)
+        .where(eq(workspace.slug, opts.input.workspaceSlug))
+        .get();
+
+      if (!result) return;
+
+      const currentUser = opts.ctx.db
+        .select()
+        .from(user)
+        .where(eq(user.id, opts.ctx.user.id))
+        .as("currentUser");
+      const userHasAccess = await opts.ctx.db
+        .select()
+        .from(usersToWorkspaces)
+        .where(eq(usersToWorkspaces.workspaceId, result.id))
+        .innerJoin(currentUser, eq(usersToWorkspaces.userId, currentUser.id))
+        .get();
+
+      if (!userHasAccess || !userHasAccess.users_to_workspaces) return;
+      let stripeId = result.stripeId;
+      if (!stripeId) {
+        const currentUser = await opts.ctx.db
+          .select()
+          .from(user)
+          .where(eq(user.id, opts.ctx.user.id))
+          .get();
+        const customerData: {
+          metadata: { workspaceId: string };
+          email?: string;
+        } = {
+          metadata: {
+            workspaceId: String(result.id),
+          },
+          email: currentUser?.email || "",
+        };
+        const stripeUser = await stripe.customers.create(customerData);
+
+        stripeId = stripeUser.id;
+        await opts.ctx.db
+          .update(workspace)
+          .set({ stripeId })
+          .where(eq(workspace.id, result.id))
+          .run();
+      }
+
+      const priceId = getPriceIdForPlan(opts.input.plan, opts.input.interval);
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        currency: opts.input.currency,
+        customer: stripeId,
+        customer_update: {
+          name: "auto",
+          address: "auto",
+        },
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        tax_id_collection: {
+          enabled: true,
+        },
+        mode: "subscription",
+        success_url:
+          opts.input.successUrl ||
+          `${url}/app/${result.slug}/settings/billing?success=true`,
+        cancel_url:
+          opts.input.cancelUrl || `${url}/app/${result.slug}/settings/billing`,
+      });
+
+      return session;
+    }),
+
+  addAddon: protectedProcedure
+    .meta({ track: Events.AddFeature, trackProps: ["feature"] })
+    .input(
+      z.object({
+        workspaceSlug: z.string(),
+        feature: z.enum(addons),
+        value: z.union([z.boolean(), z.number()]),
+      }),
+    )
+    .mutation(async (opts) => {
+      // The following code is duplicated we should extract it
+      const result = await opts.ctx.db
+        .select()
+        .from(workspace)
+        .where(eq(workspace.slug, opts.input.workspaceSlug))
+        .get();
+
+      if (!result) return;
+
+      const ws = selectWorkspaceSchema.parse(result);
+
+      const currentUser = opts.ctx.db
+        .select()
+        .from(user)
+        .where(eq(user.id, opts.ctx.user.id))
+        .as("currentUser");
+      const userHasAccess = await opts.ctx.db
+        .select()
+        .from(usersToWorkspaces)
+        .where(eq(usersToWorkspaces.workspaceId, result.id))
+        .innerJoin(currentUser, eq(usersToWorkspaces.userId, currentUser.id))
+        .get();
+
+      if (!userHasAccess || !userHasAccess.users_to_workspaces) return;
+      const stripeId = result.stripeId;
+      if (!stripeId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Workspace has no Stripe ID",
+        });
+      }
+
+      const sub = (await stripe.customers.retrieve(stripeId, {
+        expand: ["subscriptions"],
+      })) as Stripe.Customer;
+
+      if (!sub) {
+        return;
+      }
+
+      if (!sub.subscriptions?.data[0]?.id) {
+        return;
+      }
+
+      const priceId = getPriceIdForFeature(opts.input.feature);
+
+      if (!priceId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid feature",
+        });
+      }
+
+      const quantity =
+        typeof opts.input.value === "number" ? opts.input.value : 1;
+
+      // We need to check the total of status page
+      if (opts.input.feature === "status-pages") {
+        const statusPageCt = await opts.ctx.db
+          .select({ count: count() })
+          .from(schema.page)
+          .where(eq(schema.page.workspaceId, result.id))
+          .get();
+        const pageCount = statusPageCt?.count ?? 0;
+        if (pageCount > quantity + allPlans[ws.plan].limits["status-pages"]) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `You already have ${pageCount} status pages, please delete some status page first.`,
+          });
+        }
+      }
+
+      const items = await stripe.subscriptionItems.list({
+        subscription: sub.subscriptions?.data[0]?.id,
+      });
+
+      const item = items.data.find((item) => item.price.id === priceId);
+
+      if (!opts.input.value && typeof opts.input.value === "boolean" && item) {
+        await stripe.subscriptionItems.del(item.id);
+      } else if (typeof opts.input.value === "number" && item) {
+        await stripe.subscriptionItems.update(item.id, {
+          quantity,
+        });
+      } else {
+        await stripe.subscriptionItems.create({
+          price: priceId,
+          subscription: sub.subscriptions?.data[0]?.id,
+          quantity,
+        });
+      }
+
+      const defaultLimit = allPlans[ws.plan].limits[opts.input.feature];
+      const newValue =
+        typeof opts.input.value === "number" && typeof defaultLimit === "number"
+          ? opts.input.value + defaultLimit
+          : opts.input.value;
+
+      const newLimits = updateAddonInLimits(
+        ws.limits,
+        opts.input.feature,
+        newValue,
+      );
+
+      await opts.ctx.db
+        .update(workspace)
+        .set({ limits: JSON.stringify(newLimits) })
+        .where(eq(workspace.id, result.id))
+        .run();
+
+      // TODO: send email to user notifying about the change if not already from stripe
+
+      return;
+    }),
+});

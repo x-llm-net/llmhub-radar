@@ -1,0 +1,39 @@
+import type { Metadata } from "next";
+
+export const TITLE = "Status Page";
+export const DESCRIPTION =
+  "Status page customization with built-in themes. Explore all themes and contribute your own theme.";
+
+const OG_TITLE = "Theme Explorer";
+const OG_DESCRIPTION =
+  "Explore all themes for your status page and contribute new ones to the community.";
+const FOOTER = "themes.openstatus.dev";
+const IMAGE = "assets/og/theme-explorer.png";
+
+export const defaultMetadata: Metadata = {
+  title: {
+    template: `%s | ${TITLE}`,
+    default: TITLE,
+  },
+  icons: "https://www.openstatus.dev/favicon.ico",
+  description: DESCRIPTION,
+  metadataBase: new URL("https://www.openstatus.dev"),
+};
+
+export const twitterMetadata: Metadata["twitter"] = {
+  title: TITLE,
+  description: DESCRIPTION,
+  card: "summary_large_image",
+  images: [
+    `/api/og?title=${OG_TITLE}&description=${OG_DESCRIPTION}&footer=${FOOTER}&image=${IMAGE}`,
+  ],
+};
+
+export const ogMetadata: Metadata["openGraph"] = {
+  title: TITLE,
+  description: DESCRIPTION,
+  type: "website",
+  images: [
+    `/api/og?title=${OG_TITLE}&description=${OG_DESCRIPTION}&footer=${FOOTER}&image=${IMAGE}`,
+  ],
+};

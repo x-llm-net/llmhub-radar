@@ -1,0 +1,19 @@
+{
+  "name": "@openstatus/utils",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "main": "src/index.ts",
+  "scripts": {},
+  "dependencies": {
+    "@openstatus/assertions": "workspace:*",
+    "@openstatus/regions": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@openstatus/tsconfig": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

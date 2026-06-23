@@ -1,0 +1,99 @@
+import type { Metadata } from "next";
+import Image from "next/image";
+import { notFound } from "next/navigation";
+
+import { CustomMDX } from "@/content/mdx";
+import { getChangelogPosts } from "@/content/utils";
+import { JsonLd } from "@/lib/metadata/json-ld";
+import { BASE_URL, getPageMetadata } from "@/lib/metadata/shared-metadata";
+import {
+  createJsonLDGraph,
+  getJsonLDBlogPosting,
+  getJsonLDBreadcrumbList,
+  getJsonLDFAQPage,
+  getJsonLDHowTo,
+  getJsonLDOrganization,
+  getJsonLDWebPage,
+} from "@/lib/metadata/structured-data";
+
+import { ContentMetadata } from "../../content-metadata";
+import { ContentPagination } from "../../content-pagination";
+
+export const dynamicParams = false;
+
+export async function generateStaticParams() {
+  const posts = getChangelogPosts();
+
+  return posts.map((post) => ({
+    slug: post.slug,
+  }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata | undefined> {
+  const { slug } = await params;
+  const post = getChangelogPosts().find((post) => post.slug === slug);
+  if (!post) {
+    return;
+  }
+
+  const metadata = getPageMetadata(post, "changelog");
+
+  return metadata;
+}
+
+export default async function Changelog({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const posts = getChangelogPosts().sort(
+    (a, b) =>
+      b.metadata.publishedAt.getTime() - a.metadata.publishedAt.getTime(),
+  );
+  const postIndex = posts.findIndex((post) => post.slug === slug);
+  const post = posts[postIndex];
+  const previousPost = posts[postIndex - 1];
+  const nextPost = posts[postIndex + 1];
+
+  if (!post) {
+    notFound();
+  }
+
+  const jsonLDGraph = createJsonLDGraph([
+    getJsonLDOrganization(),
+    getJsonLDWebPage(post),
+    getJsonLDBlogPosting(post, "changelog"),
+    getJsonLDBreadcrumbList([
+      { name: "Home", url: BASE_URL },
+      { name: "Changelog", url: `${BASE_URL}/changelog` },
+      { name: post.metadata.title, url: `${BASE_URL}/changelog/${slug}` },
+    ]),
+    getJsonLDHowTo(post),
+    getJsonLDFAQPage(post),
+  ]);
+
+  return (
+    <section className="prose dark:prose-invert max-w-none">
+      <JsonLd graph={jsonLDGraph} />
+      <h1>{post.metadata.hero ?? post.metadata.title}</h1>
+      <ContentMetadata data={post} />
+      {post.metadata.image ? (
+        <div className="border-border relative aspect-video w-full overflow-hidden border">
+          <Image
+            src={post.metadata.image}
+            alt={post.metadata.title}
+            fill
+            className="object-contain"
+          />
+        </div>
+      ) : null}
+      <CustomMDX source={post.content} />
+      <ContentPagination prev={previousPost} next={nextPost} />
+    </section>
+  );
+}

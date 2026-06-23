@@ -1,0 +1,37 @@
+{
+  "name": "openstatus",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/**/*",
+    "packages/config/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "env": "bun env.ts",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:type": "oxlint --type-aware",
+    "format": "oxfmt && oxlint --fix",
+    "format:check": "oxfmt --check && oxlint",
+    "lint:turbo": "turbo run lint",
+    "dev:web": "turbo run dev --filter='./apps/web' --filter='./packages/db'",
+    "dev:status-page": "turbo run dev --filter='./apps/status-page' --filter='./packages/db'",
+    "dev:dashboard": "turbo run dev --filter='./apps/dashboard' --filter='./packages/db'",
+    "dx": "turbo run dx",
+    "tsc": "tsc",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@turbo/gen": "catalog:",
+    "@types/node": "catalog:",
+    "knip": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "turbo": "2.9.14",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@11.2.1"
+}

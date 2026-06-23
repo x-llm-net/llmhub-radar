@@ -1,0 +1,473 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  type Region,
+  monitorPeriodicity,
+} from "@openstatus/db/src/schema/constants";
+import {
+  formatRegionCode,
+  groupByContinent,
+  regionDict,
+} from "@openstatus/regions";
+import { Button } from "@openstatus/ui/components/ui/button";
+import { Checkbox } from "@openstatus/ui/components/ui/checkbox";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@openstatus/ui/components/ui/form";
+import { Slider } from "@openstatus/ui/components/ui/slider";
+import { cn } from "@openstatus/ui/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { isTRPCClientError } from "@trpc/client";
+import { CircleX, Globe, Info } from "lucide-react";
+import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
+
+import { IconCloudProviderTooltip } from "@/components/common/icon-cloud-provider";
+import { Link } from "@/components/common/link";
+import { Note, NoteButton } from "@/components/common/note";
+import { UpgradeDialog } from "@/components/dialogs/upgrade";
+import {
+  FormCard,
+  FormCardContent,
+  FormCardDescription,
+  FormCardFooter,
+  FormCardFooterInfo,
+  FormCardHeader,
+  FormCardSeparator,
+  FormCardTitle,
+} from "@/components/forms/form-card";
+import { useTRPC } from "@/lib/trpc/client";
+
+const DEFAULT_PERIODICITY = "10m";
+const DEFAULT_REGIONS = ["ams", "fra", "iad", "syd", "jnb", "gru"];
+const PERIODICITY = monitorPeriodicity.filter((p) => p !== "other");
+const DEFAULT_PRIVATE_LOCATIONS = [] satisfies { id: number; name: string }[];
+
+const schema = z.object({
+  regions: z.array(z.string()),
+  periodicity: z.enum(monitorPeriodicity),
+  privateLocations: z.array(z.number()),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+export function FormSchedulingRegions({
+  defaultValues,
+  onSubmit,
+  privateLocations,
+  ...props
+}: Omit<React.ComponentProps<"form">, "onSubmit"> & {
+  defaultValues?: FormValues;
+  onSubmit: (values: FormValues) => Promise<void>;
+  privateLocations: { id: number; name: string }[];
+}) {
+  const trpc = useTRPC();
+  const [openDialog, setOpenDialog] = useState(false);
+  const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: defaultValues ?? {
+      regions: DEFAULT_REGIONS,
+      periodicity: DEFAULT_PERIODICITY,
+      privateLocations: DEFAULT_PRIVATE_LOCATIONS,
+    },
+  });
+  const [isPending, startTransition] = useTransition();
+  const watchPeriodicity = form.watch("periodicity");
+  const watchRegions = form.watch("regions");
+  const watchPrivateLocations = form.watch("privateLocations");
+
+  function submitAction(values: FormValues) {
+    if (isPending) return;
+
+    startTransition(async () => {
+      try {
+        const promise = onSubmit(values);
+        toast.promise(promise, {
+          loading: "Saving...",
+          success: () => "Saved",
+          error: (error) => {
+            if (isTRPCClientError(error)) {
+              return error.message;
+            }
+            console.error(error);
+            return "Failed to save";
+          },
+        });
+        await promise;
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  }
+
+  if (!workspace) return null;
+
+  const allowedRegions = workspace.limits.regions.filter(
+    (r) => !regionDict[r as keyof typeof regionDict].deprecated,
+  );
+  const maxRegions = workspace.limits["max-regions"];
+  const periodicity = workspace.limits.periodicity;
+
+  const isMaxed = watchRegions.length >= maxRegions;
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(submitAction)} {...props}>
+        <FormCard>
+          <FormCardHeader>
+            <FormCardTitle>Scheduling & Regions</FormCardTitle>
+            <FormCardDescription>
+              Configure the scheduling and regions for your monitor.
+            </FormCardDescription>
+          </FormCardHeader>
+          <FormCardContent className="grid gap-4">
+            <FormField
+              control={form.control}
+              name="periodicity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Periodicity</FormLabel>
+                  <FormControl>
+                    <div>
+                      <Slider
+                        value={[monitorPeriodicity.indexOf(field.value)]}
+                        max={PERIODICITY.length - 1}
+                        aria-label="Slider with ticks"
+                        onValueChange={(value) => {
+                          field.onChange(PERIODICITY[value[0]]);
+                        }}
+                        className={cn(
+                          !periodicity.includes(watchPeriodicity) &&
+                            "[&_[data-slot=slider-range]]:bg-destructive",
+                        )}
+                      />
+                      <span
+                        className="text-muted-foreground mt-3 flex w-full items-center justify-between gap-1 px-2.5 text-xs font-medium"
+                        aria-hidden="true"
+                      >
+                        {PERIODICITY.map((period) => (
+                          <span
+                            key={period}
+                            className="flex w-0 flex-col items-center justify-center gap-2"
+                          >
+                            <span
+                              className={cn("bg-muted-foreground/70 h-1 w-px")}
+                            />
+                            {period}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {!periodicity.includes(watchPeriodicity) ? (
+              <Note color="error">
+                <CircleX />
+                The periodicity you are selecting is not allowed for your plan.
+                <NoteButton type="button" onClick={() => setOpenDialog(true)}>
+                  Upgrade your plan
+                </NoteButton>
+              </Note>
+            ) : null}
+          </FormCardContent>
+          <FormCardSeparator />
+          <FormCardContent className="grid gap-4">
+            <Note color="warning">
+              <Info />
+              To minimize false positives, we recommend monitoring your endpoint
+              in at least 3 regions.
+            </Note>
+            <FormField
+              control={form.control}
+              name="regions"
+              render={() => (
+                <FormItem>
+                  <FormControl>
+                    <div className="grid gap-4">
+                      {Object.entries(groupByContinent).map(
+                        ([continent, r]) => {
+                          const selected = r
+                            .filter((r) => allowedRegions.includes(r.code))
+                            .reduce((prev, curr) => {
+                              return (
+                                prev +
+                                (watchRegions.includes(curr.code) ? 1 : 0)
+                              );
+                            }, 0);
+                          const isAllSelected =
+                            selected ===
+                            r.filter((r) => allowedRegions.includes(r.code))
+                              .length;
+
+                          const disabled =
+                            r.length + watchRegions.length - selected >
+                            maxRegions;
+
+                          return (
+                            <div key={continent} className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <FormLabel>
+                                  {continent}{" "}
+                                  <span className="text-muted-foreground/70 align-baseline font-mono text-xs font-normal tabular-nums">
+                                    ({selected}/{r.length})
+                                  </span>
+                                </FormLabel>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  className={cn(
+                                    isAllSelected && "text-muted-foreground",
+                                  )}
+                                  disabled={disabled}
+                                  onClick={() => {
+                                    if (!isAllSelected) {
+                                      // Add all regions from this continent
+                                      const newRegions = [...watchRegions];
+                                      r.filter((r) =>
+                                        allowedRegions.includes(r.code),
+                                      ).forEach((region) => {
+                                        if (!newRegions.includes(region.code)) {
+                                          newRegions.push(region.code);
+                                        }
+                                      });
+                                      form.setValue("regions", newRegions);
+                                    } else {
+                                      // Remove all regions from this continent
+                                      form.setValue(
+                                        "regions",
+                                        watchRegions?.filter(
+                                          (region) =>
+                                            !r
+                                              .map(({ code }) => code)
+                                              .includes(region as Region),
+                                        ),
+                                      );
+                                    }
+                                  }}
+                                >
+                                  Select all
+                                </Button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {r.map((region) => {
+                                  return (
+                                    <FormField
+                                      key={region.code}
+                                      control={form.control}
+                                      name="regions"
+                                      render={({ field }) => {
+                                        const checked = field.value?.includes(
+                                          region.code,
+                                        );
+                                        const disabled = checked
+                                          ? false
+                                          : !allowedRegions.includes(
+                                              region.code,
+                                            ) || isMaxed;
+                                        const deprecated = region.deprecated;
+                                        return (
+                                          <FormItem
+                                            key={region.code}
+                                            className="flex items-center"
+                                          >
+                                            <Checkbox
+                                              id={region.code}
+                                              checked={checked || false}
+                                              disabled={
+                                                disabled ||
+                                                (deprecated && !checked)
+                                              }
+                                              onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                  field.onChange([
+                                                    ...field.value,
+                                                    region.code,
+                                                  ]);
+                                                } else {
+                                                  field.onChange(
+                                                    field.value?.filter(
+                                                      (r) => r !== region.code,
+                                                    ),
+                                                  );
+                                                }
+                                              }}
+                                            />
+                                            <FormLabel
+                                              htmlFor={region.code}
+                                              className="w-full truncate font-mono text-sm font-normal"
+                                            >
+                                              <span className="text-nowrap">
+                                                {formatRegionCode(region.code)}{" "}
+                                                {region.flag}
+                                              </span>
+                                              <span className="text-muted-foreground truncate text-xs leading-[inherit] font-normal">
+                                                {region.location}
+                                              </span>
+                                              <IconCloudProviderTooltip
+                                                provider={region.provider}
+                                                className="size-3"
+                                              />
+                                            </FormLabel>
+                                          </FormItem>
+                                        );
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </FormCardContent>
+          <FormCardSeparator />
+          <FormCardContent className="grid gap-4">
+            {privateLocations.length === 0 ? (
+              <Note>
+                <Globe />
+                Monitor your endpoints from private locations.
+                <NoteButton variant="outline" asChild>
+                  <Link href="/settings/private-locations">Learn more</Link>
+                </NoteButton>
+              </Note>
+            ) : (
+              <FormField
+                control={form.control}
+                name="privateLocations"
+                render={() => (
+                  <FormItem>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>
+                        Private Locations{" "}
+                        <span className="text-muted-foreground/70 align-baseline font-mono text-xs font-normal tabular-nums">
+                          ({watchPrivateLocations.length}/
+                          {privateLocations.length})
+                        </span>
+                      </FormLabel>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        className={cn(
+                          watchPrivateLocations.length ===
+                            privateLocations.length && "text-muted-foreground",
+                        )}
+                        onClick={() => {
+                          const allSelected = privateLocations.every((item) =>
+                            watchPrivateLocations.includes(item.id),
+                          );
+
+                          if (!allSelected) {
+                            form.setValue(
+                              "privateLocations",
+                              privateLocations.map((item) => item.id),
+                            );
+                          } else {
+                            form.setValue("privateLocations", []);
+                          }
+                        }}
+                      >
+                        Select all
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {privateLocations.map((item) => (
+                        <FormField
+                          key={item.id}
+                          control={form.control}
+                          name="privateLocations"
+                          render={({ field }) => {
+                            return (
+                              <FormItem
+                                key={item.id}
+                                className="flex items-center"
+                              >
+                                <FormControl>
+                                  <Checkbox
+                                    checked={
+                                      field.value?.includes(item.id) || false
+                                    }
+                                    onCheckedChange={(checked) => {
+                                      return checked
+                                        ? field.onChange([
+                                            ...field.value,
+                                            item.id,
+                                          ])
+                                        : field.onChange(
+                                            field.value?.filter(
+                                              (value) => value !== item.id,
+                                            ),
+                                          );
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormLabel className="w-full truncate font-mono text-sm font-normal">
+                                  {item.name}
+                                  <Globe className="size-3" />
+                                </FormLabel>
+                              </FormItem>
+                            );
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </FormCardContent>
+          <FormCardFooter>
+            <FormCardFooterInfo>
+              Your plan allows you to run{" "}
+              <span className="text-foreground font-medium">{maxRegions}</span>{" "}
+              out of{" "}
+              <span className="text-foreground font-medium">
+                {allowedRegions.length}
+              </span>{" "}
+              regions. Learn more about{" "}
+              <Link
+                href="https://www.openstatus.dev/docs/reference/http-monitor/#regions"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Regions
+              </Link>{" "}
+              and{" "}
+              <Link
+                href="https://www.openstatus.dev/docs/reference/http-monitor/#frequency"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Periodicity
+              </Link>
+              .
+            </FormCardFooterInfo>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Submitting..." : "Submit"}
+            </Button>
+          </FormCardFooter>
+        </FormCard>
+      </form>
+      <UpgradeDialog open={openDialog} onOpenChange={setOpenDialog} />
+    </Form>
+  );
+}

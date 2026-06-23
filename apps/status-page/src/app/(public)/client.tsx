@@ -1,0 +1,315 @@
+"use client";
+
+import { THEMES, THEME_KEYS } from "@openstatus/theme-store";
+import { StatusBanner } from "@openstatus/ui/components/blocks/status-banner";
+import {
+  Status,
+  StatusContent,
+  StatusDescription,
+  StatusHeader,
+  StatusTitle,
+} from "@openstatus/ui/components/blocks/status-layout";
+import { Button } from "@openstatus/ui/components/ui/button";
+import { Input } from "@openstatus/ui/components/ui/input";
+import { Separator } from "@openstatus/ui/components/ui/separator";
+import { useSidebar } from "@openstatus/ui/components/ui/sidebar";
+import { Skeleton } from "@openstatus/ui/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@openstatus/ui/components/ui/tooltip";
+import { cn } from "@openstatus/ui/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { useTheme } from "next-themes";
+import { useQueryStates } from "nuqs";
+import { useEffect, useState } from "react";
+
+import { Link } from "@/components/common/link";
+import {
+  Section,
+  SectionDescription,
+  SectionGroup,
+  SectionGroupHeader,
+  SectionHeader,
+  SectionTitle,
+} from "@/components/content/section";
+import { recomputeStyles } from "@/components/status-page/floating-button";
+import { StatusComponentStatic } from "@/components/status-page/static/status-component-static";
+import { ThemePalettePicker } from "@/components/themes/theme-palette-picker";
+import { ThemeSelect } from "@/components/themes/theme-select";
+import { monitors } from "@/data/monitors";
+import { useTRPC } from "@/lib/trpc/client";
+
+import { searchParamsParsers } from "./search-params";
+
+const MAIN_COLORS = [
+  { key: "--primary", label: "Primary" },
+  { key: "--success", label: "Operational" },
+  { key: "--destructive", label: "Error" },
+  { key: "--warning", label: "Degraded" },
+  { key: "--info", label: "Maintenance" },
+] as const;
+
+// TODO: add keyboard navigation for selection?
+
+export function Client() {
+  const { resolvedTheme } = useTheme();
+  const [isMounted, setIsMounted] = useState(false);
+  const [{ q, t }, setSearchParams] = useQueryStates(searchParamsParsers);
+  const theme = t ? THEMES[t as keyof typeof THEMES] : undefined;
+  const { toggleSidebar } = useSidebar();
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isMounted && t) {
+      recomputeStyles(t);
+    }
+  }, [t, isMounted]);
+
+  return (
+    <SectionGroup>
+      <SectionGroupHeader>
+        <h1 className="text-2xl font-bold md:text-4xl">
+          Status Page Theme Explorer
+        </h1>
+        <h2 className="text-muted-foreground font-medium md:text-lg">
+          View all the openstatus themes for your status page and learn how to
+          create your own theme.
+        </h2>
+      </SectionGroupHeader>
+      <Section>
+        <SectionHeader>
+          <SectionTitle>Explorer</SectionTitle>
+          <SectionDescription>
+            Search for your favorite status page theme.{" "}
+            <Link href="#contribute-theme">Contribute your own?</Link>
+          </SectionDescription>
+        </SectionHeader>
+        <div className="border-border bg-background outline-background sticky top-0 z-10 overflow-hidden rounded-lg border outline-[3px] sm:relative">
+          <div className="relative">
+            <div className="border-border bg-muted/50 absolute top-0 right-0 rounded-bl-lg border-b border-l px-2 py-0.5 text-[10px]">
+              {theme?.name}
+            </div>
+            <div className="sm:p-8">
+              <ThemePlaygroundStatus className="scale-80 sm:scale-100" />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <ThemeSelect className="max-w-[125px] min-w-[125px]" />
+          <Input
+            placeholder={`Search from ${THEME_KEYS.length} themes`}
+            value={q ?? ""}
+            onChange={(e) => {
+              if (e.target.value.length === 0) {
+                setSearchParams({ q: null });
+              }
+              setSearchParams({ q: e.target.value.trim().toLowerCase() });
+            }}
+          />
+          <ThemePalettePicker />
+        </div>
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {THEME_KEYS.filter((k) => {
+            const theme = THEMES[k];
+            return (
+              theme.author.name
+                .toLowerCase()
+                .includes(q?.toLowerCase() ?? "") ||
+              theme.name.toLowerCase().includes(q?.toLowerCase() ?? "")
+            );
+          }).map((k) => {
+            const theme = THEMES[k];
+            const style = isMounted
+              ? theme[resolvedTheme as "dark" | "light"]
+              : undefined;
+
+            return (
+              <li key={k} className="group/theme-card space-y-1.5">
+                <div
+                  data-active={k === t}
+                  data-slot="theme-card"
+                  data-theme={k}
+                  className="border-border focus:outline-ring/50 focus:ring-ring/50 data-[active=true]:border-ring data-[active=true]:outline-ring/50 relative h-40 cursor-pointer overflow-hidden rounded-md border transition-all outline-none focus:ring-2 data-[active=true]:outline-[3px]"
+                  onClick={() => setSearchParams({ t: k })}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      setSearchParams({ t: k });
+                    }
+                  }}
+                >
+                  {isMounted ? (
+                    <div
+                      className="bg-background text-foreground absolute h-full w-full"
+                      style={style as React.CSSProperties}
+                      inert
+                    >
+                      <ThemePlaygroundStatus className="pointer-events-none scale-80" />
+                    </div>
+                  ) : (
+                    <Skeleton className="absolute h-full w-full" />
+                  )}
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5 truncate">
+                    <div className="text-foreground truncate text-sm leading-none font-medium">
+                      {theme.name}
+                    </div>
+                    <div className="font-mono text-xs">
+                      <Link
+                        href={theme.author.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground"
+                      >
+                        by {theme.author.name}
+                      </Link>
+                    </div>
+                  </div>
+                  <div className="flex gap-0.5">
+                    {MAIN_COLORS.map((color) => {
+                      const backgroundColor = style
+                        ? style[color.key]
+                        : undefined;
+
+                      if (!isMounted) {
+                        return (
+                          <Skeleton
+                            key={color.key}
+                            className="size-3.5 rounded-sm"
+                          />
+                        );
+                      }
+                      return (
+                        <TooltipProvider key={color.key}>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div
+                                className="bg-muted-foreground size-3.5 rounded-sm border"
+                                style={{ backgroundColor }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>{color.label}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
+      <Separator />
+      <Section>
+        <SectionHeader id="contribute-theme">
+          <SectionTitle>Contribute Theme</SectionTitle>
+          <SectionDescription>
+            Contribute your own theme to the community.
+          </SectionDescription>
+        </SectionHeader>
+        <div className="prose dark:prose-invert prose-sm max-w-none">
+          <p>
+            You can contribute your own theme by creating a new file in the{" "}
+            <code>@openstatus/theme-store</code> package. You&apos;ll only need
+            to override css variables. If you are familiar with shadcn, you'll
+            know the trick (it also allows you to override `--radius`). Make
+            sure your object is satisfying the <code>Theme</code> interface. We
+            provide a theme builder to help you with the process.
+          </p>
+          <Button onClick={toggleSidebar}>Toggle Theme Builder</Button>
+          <p>
+            Go to the{" "}
+            <Link href="https://github.com/openstatusHQ/openstatus/tree/main/packages/theme-store">
+              GitHub directory
+            </Link>{" "}
+            to see the existing themes and create a new one by forking and
+            creating a pull request.
+          </p>
+          <p>
+            Once you're done, you can test it by adding the following snippet to
+            your status page:
+          </p>
+          <pre>
+            <code>sessionStorage.setItem("community-theme", "true");</code>
+          </pre>
+          <p>
+            Or use the following button to test it on the `status` page slug:
+          </p>
+          <Button
+            onClick={() => {
+              // NOTE: we use it to display the 'floating-theme' component
+              sessionStorage.setItem("community-theme", "true");
+              window.location.href = "/status";
+            }}
+          >
+            Test it
+          </Button>
+          {/* TODO: OR go to the status-page config and click on the View and Configure button */}
+        </div>
+      </Section>
+      <Separator />
+      <Section>
+        <div className="prose dark:prose-invert prose-sm max-w-none">
+          <p>
+            Why don't we allow custom css styles to be overridden and only
+            support themes?
+          </p>
+          <ul>
+            <li>Keep it simple for the user</li>
+            <li>Don't end up with a xmas tree</li>
+            <li>Keep the theme consistent</li>
+            <li>Avoid conflicts with other styles</li>
+            <li>
+              Keep the theme maintainable (but this will also mean, a change
+              will affect all users)
+            </li>
+          </ul>
+        </div>
+      </Section>
+    </SectionGroup>
+  );
+}
+
+function ThemePlaygroundStatus({
+  className,
+  ...props
+}: React.ComponentProps<"div"> & {}) {
+  const trpc = useTRPC();
+  const { data: uptimeData, isLoading } = useQuery(
+    trpc.statusPage.getNoopUptime.queryOptions(),
+  );
+  return (
+    // NOTE: we use pointer-events-none to prevent the hover card or tooltip from being interactive - the Portal container is document body and we loose the styles
+    <div className={cn("h-full w-full", className)} {...props}>
+      <Status variant="success">
+        <StatusHeader>
+          <StatusTitle>Acme Inc.</StatusTitle>
+          <StatusDescription>
+            Get informed about our services.
+          </StatusDescription>
+        </StatusHeader>
+        <StatusBanner status="success" />
+        <StatusContent>
+          {/* TODO: create mock data */}
+          <StatusComponentStatic
+            status="success"
+            data={uptimeData?.data || []}
+            monitor={monitors[0]}
+            showUptime={true}
+            uptime={uptimeData?.uptime}
+            isLoading={isLoading}
+          />
+        </StatusContent>
+      </Status>
+    </div>
+  );
+}

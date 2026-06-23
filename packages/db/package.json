@@ -1,0 +1,37 @@
+{
+  "name": "@openstatus/db",
+  "version": "0.0.1",
+  "description": "",
+  "author": "OpenStatus",
+  "main": "src/index.ts",
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "push": "drizzle-kit push",
+    "migrate": "bun src/migrate.mts",
+    "studio": "drizzle-kit studio",
+    "env": "bun env.ts",
+    "seed": "bun src/seed.mts",
+    "dev": "turso dev --db-file ../../openstatus-dev.db"
+  },
+  "dependencies": {
+    "@libsql/client": "catalog:",
+    "@openstatus/assertions": "workspace:*",
+    "@openstatus/locales": "workspace:*",
+    "@openstatus/regions": "workspace:*",
+    "@openstatus/theme-store": "workspace:*",
+    "@openstatus/utils": "workspace:*",
+    "@t3-oss/env-core": "catalog:",
+    "bcryptjs": "catalog:",
+    "drizzle-orm": "catalog:",
+    "drizzle-zod": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@openstatus/tsconfig": "workspace:*",
+    "@types/bcryptjs": "catalog:",
+    "@types/node": "catalog:",
+    "drizzle-kit": "catalog:",
+    "next-auth": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,95 @@
+import { relations, sql } from "drizzle-orm";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+import {
+  statusReportUpdateToPageComponents,
+  statusReportsToPageComponents,
+} from "../page_components";
+import { page } from "../pages";
+import { workspace } from "../workspaces";
+
+export const statusReportStatus = [
+  "investigating",
+  "identified",
+  "monitoring",
+  "resolved",
+] as const;
+
+export const statusReport = sqliteTable(
+  "status_report",
+  {
+    id: integer("id").primaryKey(),
+    status: text("status", { enum: statusReportStatus }).notNull(),
+    title: text("title", { length: 256 }).notNull(),
+
+    workspaceId: integer("workspace_id").references(() => workspace.id),
+
+    pageId: integer("page_id").references(() => page.id, {
+      onDelete: "cascade",
+    }),
+
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    index("status_report_workspace_created_idx").on(t.workspaceId, t.createdAt),
+    index("status_report_page_id_idx").on(t.pageId),
+  ],
+);
+
+export const statusReportUpdate = sqliteTable(
+  "status_report_update",
+  {
+    id: integer("id").primaryKey(),
+
+    status: text("status", { enum: statusReportStatus }).notNull(),
+    date: integer("date", { mode: "timestamp" }).notNull(),
+    message: text("message").notNull(),
+
+    statusReportId: integer("status_report_id")
+      .references(() => statusReport.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    index("status_report_update_status_report_id_idx").on(t.statusReportId),
+  ],
+);
+
+export const StatusReportRelations = relations(
+  statusReport,
+  ({ one, many }) => ({
+    statusReportsToPageComponents: many(statusReportsToPageComponents),
+    page: one(page, {
+      fields: [statusReport.pageId],
+      references: [page.id],
+    }),
+    statusReportUpdates: many(statusReportUpdate),
+    workspace: one(workspace, {
+      fields: [statusReport.workspaceId],
+      references: [workspace.id],
+    }),
+  }),
+);
+
+export const statusReportUpdateRelations = relations(
+  statusReportUpdate,
+  ({ one, many }) => ({
+    statusReport: one(statusReport, {
+      fields: [statusReportUpdate.statusReportId],
+      references: [statusReport.id],
+    }),
+    statusReportUpdateToPageComponents: many(
+      statusReportUpdateToPageComponents,
+    ),
+  }),
+);

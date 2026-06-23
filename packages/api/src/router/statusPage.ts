@@ -1,0 +1,1393 @@
+import { Events } from "@openstatus/analytics";
+import { and, eq, inArray, sql } from "@openstatus/db";
+import {
+  maintenance,
+  page,
+  pageComponent,
+  pageConfigurationSchema,
+  selectMaintenancePageSchema,
+  selectPageComponentWithMonitorRelation,
+  selectPageSchema,
+  selectPublicMonitorSchema,
+  selectPublicPageLightSchemaWithRelation,
+  selectPublicPageSchemaWithRelation,
+  selectStatusReportPageSchema,
+  selectWorkspaceSchema,
+  statusReport,
+} from "@openstatus/db/src/schema";
+import {
+  getSubscriberByToken,
+  hasPendingSubscriber,
+  unsubscribeSubscriber,
+  updateSubscriberScope,
+  upsertSelfSignupSubscriber,
+  verifySelfSignupSubscriber,
+} from "@openstatus/services/page-subscriber";
+import { TRPCError } from "@trpc/server";
+import { endOfDay, startOfDay, subDays } from "date-fns";
+import { z } from "zod";
+
+import { createTRPCRouter, publicProcedure } from "../trpc";
+import {
+  type StatusData,
+  activeReportStatus,
+  fillStatusDataFor45Days,
+  fillStatusDataFor45DaysNoop,
+  getEvents,
+  getUptime,
+  getWorstVariant,
+  isMonitorComponent,
+  setDataByType,
+} from "./statusPage.utils";
+import {
+  getMetricsLatencyMultiProcedure,
+  getMetricsLatencyProcedure,
+  getMetricsRegionsProcedure,
+  getStatusProcedure,
+  getUptimeProcedure,
+} from "./tinybird";
+
+// NOTE: publicProcedure is used to get the status page
+// TODO: improve performance of SQL query (make a single query with joins)
+
+// IMPORTANT: we cannot use the tinybird procedure because it has protectedProcedure
+// instead, we should add TB logic in here!!!!
+
+// NOTE: this router is used on status pages only - do not confuse with the page router which is used in the dashboard for the config
+
+/**
+ * Right now, we do not allow workspaces to have a custom lookback period.
+ * If we decide to allow this in the future, we should move this to the database.
+ */
+const WORKSPACES =
+  process.env.WORKSPACES_LOOKBACK_30?.split(",").map(Number) || [];
+
+// Length-independent comparison so a wrong guess can't be timed by length or
+// character. Pure JS (no node:crypto) keeps it usable from the Edge runtime.
+function constantTimeEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (a == null || b == null) return false;
+  // constant-time: iterate over the max length and fold the length delta into
+  // the accumulator so we never early-return or branch on length.
+  const max = Math.max(a.length, b.length);
+  let mismatch = a.length ^ b.length;
+  for (let i = 0; i < max; i++) {
+    // out-of-range indices read as 0; mismatch already non-zero on length diff.
+    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return mismatch === 0;
+}
+
+// Gate fields for getGate, reusing selectPageSchema's stringToArray transforms
+// so authEmailDomains / allowedIpRanges come back as arrays like getLight.
+const gateFieldsSchema = selectPageSchema.pick({
+  slug: true,
+  customDomain: true,
+  accessType: true,
+  authEmailDomains: true,
+  allowedIpRanges: true,
+  homepageUrl: true,
+  contactUrl: true,
+});
+
+export const statusPageRouter = createTRPCRouter({
+  get: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        // NOTE: override the defaults we are getting from the page configuration
+        cardType: z
+          .enum(["requests", "duration", "dominant", "manual"])
+          .nullish(),
+        barType: z.enum(["absolute", "dominant", "manual"]).nullish(),
+      }),
+    )
+    .output(selectPublicPageSchemaWithRelation.nullish())
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        with: {
+          workspace: true,
+          statusReports: {
+            // TODO: we need to order the based on statusReportUpdates instead
+            // orderBy: (reports, { desc }) => desc(reports.createdAt),
+            with: {
+              statusReportUpdates: {
+                orderBy: (reports, { desc }) => desc(reports.date),
+                with: { statusReportUpdateToPageComponents: true },
+              },
+              statusReportsToPageComponents: { with: { pageComponent: true } },
+            },
+          },
+          maintenances: {
+            with: {
+              maintenancesToPageComponents: { with: { pageComponent: true } },
+            },
+            orderBy: (maintenances, { desc }) => desc(maintenances.from),
+          },
+          pageComponents: {
+            with: {
+              monitor: {
+                with: {
+                  incidents: true,
+                },
+              },
+              group: true,
+            },
+            orderBy: (pageComponents, { asc }) => asc(pageComponents.order),
+          },
+          pageComponentGroups: true,
+        },
+      });
+
+      if (!_page) return null;
+
+      const ws = selectWorkspaceSchema.safeParse(_page.workspace);
+      const pageComponents = selectPageComponentWithMonitorRelation
+        .array()
+        .parse(_page.pageComponents);
+
+      const configuration = pageConfigurationSchema.safeParse(
+        _page.configuration ?? {},
+      );
+
+      if (!configuration.success) {
+        console.error("Invalid configuration", configuration.error);
+        return null;
+      }
+
+      const barType = opts.input.barType ?? configuration.data.type;
+      // const cardType = opts.input.cardType ?? configuration.data.value;
+
+      const monitorComponents = pageComponents.filter(isMonitorComponent);
+
+      // Transform all page components (both monitor and static types)
+      const components = pageComponents.map((c) => {
+        const events = getEvents({
+          maintenances: _page.maintenances,
+          incidents: c.monitor?.incidents ?? [],
+          reports: _page.statusReports,
+          pageComponentId: c.id,
+          monitorId: c.monitorId ?? undefined,
+          componentType: c.type,
+        });
+
+        // Calculate status based on component type
+        let status: "success" | "degraded" | "error" | "info";
+
+        // impact-aware: an active report colors the component by its derived
+        // status (major ⇒ error); legacy reports keep flat degraded
+        const reportStatus = activeReportStatus(events);
+
+        if (c.type === "static") {
+          // Static: only reports and maintenances affect status
+          status =
+            reportStatus ??
+            (events.some(
+              (e) =>
+                e.type === "maintenance" &&
+                e.to &&
+                e.from.getTime() <= new Date().getTime() &&
+                e.to.getTime() >= new Date().getTime(),
+            )
+              ? "info"
+              : "success");
+        } else {
+          // Monitor: incidents, reports, and maintenances affect status
+          status =
+            events.some((e) => e.type === "incident" && !e.to) &&
+            barType !== "manual"
+              ? "error"
+              : (reportStatus ??
+                (events.some(
+                  (e) =>
+                    e.type === "maintenance" &&
+                    e.to &&
+                    e.from.getTime() <= new Date().getTime() &&
+                    e.to.getTime() >= new Date().getTime(),
+                )
+                  ? "info"
+                  : "success"));
+        }
+
+        return {
+          ...c,
+          status,
+          events,
+        };
+      });
+
+      // Keep monitors for backward compatibility with existing fields
+      const monitors = monitorComponents.map((c) => {
+        const events = getEvents({
+          maintenances: _page.maintenances,
+          incidents: c.monitor.incidents ?? [],
+          reports: _page.statusReports,
+          monitorId: c.monitor.id,
+        });
+        const status =
+          events.some((e) => e.type === "incident" && !e.to) &&
+          barType !== "manual"
+            ? "error"
+            : (activeReportStatus(events) ??
+              (events.some(
+                (e) =>
+                  e.type === "maintenance" &&
+                  e.to &&
+                  e.from.getTime() <= new Date().getTime() &&
+                  e.to.getTime() >= new Date().getTime(),
+              )
+                ? "info"
+                : "success"));
+        return {
+          ...c.monitor,
+          status,
+          events,
+          monitorGroupId: c.groupId,
+          order: c.order,
+          groupOrder: c.groupOrder,
+        };
+      });
+
+      // no barType gate: incident-driven error is already suppressed per
+      // monitor in manual mode; report-driven error (major_outage) must show
+      const status = monitors.some((m) => m.status === "error")
+        ? "error"
+        : monitors.some((m) => m.status === "degraded")
+          ? "degraded"
+          : monitors.some((m) => m.status === "info")
+            ? "info"
+            : "success";
+
+      // Get page-wide events (not tied to specific monitors)
+      const pageEvents = getEvents({
+        maintenances: _page.maintenances,
+        incidents: monitorComponents.flatMap((c) => c.monitor.incidents ?? []),
+        reports: _page.statusReports,
+        // No monitorId provided, so we get all events for the page
+      });
+
+      const threshold = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
+      const lastEvents = pageEvents
+        .filter((e) => {
+          if (e.type === "incident") return false;
+          if (!e.from || e.from.getTime() >= threshold) return true;
+          if (e.type === "report" && e.status !== "success") return true;
+          return false;
+        })
+        .sort((a, b) => a.from.getTime() - b.from.getTime());
+
+      const openEvents = pageEvents.filter((event) => {
+        if (event.type === "incident" && barType !== "manual") {
+          if (!event.to) return true;
+          if (event.to < new Date()) return false;
+          return false;
+        }
+        if (event.type === "report") {
+          if (!event.to) return true;
+          if (event.to < new Date()) return false;
+          return false;
+        }
+        if (event.type === "maintenance") {
+          if (!event.to) return false; // NOTE: this never happens
+          if (event.from <= new Date() && event.to >= new Date()) return true;
+          return false;
+        }
+        return false;
+      });
+
+      const monitorGroups = _page.pageComponentGroups;
+
+      // Create trackers array with grouped and ungrouped components
+      const groupedMap = new Map<
+        number | null,
+        {
+          groupId: number | null;
+          groupName: string | null;
+          defaultOpen: boolean;
+          components: typeof components;
+          minOrder: number;
+        }
+      >();
+
+      components.forEach((component) => {
+        const groupId = component.groupId ?? null;
+        const group = groupId
+          ? monitorGroups.find((g) => g?.id === groupId)
+          : null;
+        const groupName = group?.name ?? null;
+        const defaultOpen = group?.defaultOpen ?? false;
+
+        if (!groupedMap.has(groupId)) {
+          groupedMap.set(groupId, {
+            groupId,
+            groupName,
+            defaultOpen,
+            components: [],
+            minOrder: component.order ?? 0,
+          });
+        }
+        const currentGroup = groupedMap.get(groupId);
+        if (currentGroup) {
+          currentGroup.components.push(component);
+          currentGroup.minOrder = Math.min(
+            currentGroup.minOrder,
+            component.order ?? 0,
+          );
+        }
+      });
+
+      // Convert to trackers array
+      type PageComponentTracker = {
+        type: "component";
+        component: (typeof components)[number];
+        order: number;
+      };
+
+      type GroupTracker = {
+        type: "group";
+        groupId: number;
+        groupName: string;
+        defaultOpen: boolean;
+        components: typeof components;
+        status: "success" | "degraded" | "error" | "info" | "empty";
+        order: number;
+      };
+
+      type Tracker = PageComponentTracker | GroupTracker;
+
+      const trackers: Tracker[] = Array.from(groupedMap.values())
+        .flatMap((group): Tracker[] => {
+          if (group.groupId === null) {
+            // Ungrouped components - return as individual trackers
+            return group.components.map(
+              (component): PageComponentTracker => ({
+                type: "component",
+                component,
+                order: component.order ?? 0,
+              }),
+            );
+          }
+          // Grouped components - return as single group tracker
+          const sortedComponents = group.components.sort(
+            (a, b) => (a.groupOrder ?? 0) - (b.groupOrder ?? 0),
+          );
+          return [
+            {
+              type: "group",
+              groupId: group.groupId,
+              groupName: group.groupName ?? "",
+              defaultOpen: group.defaultOpen,
+              components: sortedComponents,
+              status: getWorstVariant(
+                group.components.map(
+                  (c) => c.status as "success" | "degraded" | "error" | "info",
+                ),
+              ),
+              order: group.minOrder,
+            },
+          ];
+        })
+        .sort((a, b) => a.order - b.order);
+
+      const whiteLabel = ws.data?.limits["white-label"] ?? false;
+
+      const statusReports = _page.statusReports.sort((a, b) => {
+        // Sort reports without updates to the beginning
+        if (
+          a.statusReportUpdates.length === 0 &&
+          b.statusReportUpdates.length === 0
+        )
+          return 0;
+        if (a.statusReportUpdates.length === 0) return -1;
+        if (b.statusReportUpdates.length === 0) return -1;
+        return (
+          b.statusReportUpdates[
+            b.statusReportUpdates.length - 1
+          ].date.getTime() -
+          a.statusReportUpdates[a.statusReportUpdates.length - 1].date.getTime()
+        );
+      });
+
+      const maintenances = _page.maintenances.sort(
+        (a, b) => b.from.getTime() - a.from.getTime(),
+      );
+
+      // In "manual" mode the page only surfaces user-authored events, so drop
+      // monitor-derived incidents from the components consumers read (e.g. the
+      // calendar). Mirrors the bar/uptime gating in statusPage.utils.ts.
+      const publicPageComponents =
+        barType === "manual"
+          ? pageComponents.map((c) =>
+              c.monitor
+                ? { ...c, monitor: { ...c.monitor, incidents: [] } }
+                : c,
+            )
+          : pageComponents;
+
+      return selectPublicPageSchemaWithRelation.parse({
+        ..._page,
+        monitors,
+        monitorGroups,
+        trackers,
+        incidents: monitors.flatMap((m) => m.incidents) ?? [],
+        statusReports,
+        maintenances,
+        workspacePlan: _page.workspace.plan,
+        status,
+        lastEvents,
+        openEvents,
+        pageComponents: publicPageComponents,
+        pageComponentGroups: _page.pageComponentGroups,
+        whiteLabel,
+      });
+    }),
+
+  getLight: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      // Single query with all relations
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        with: {
+          workspace: true,
+          statusReports: {
+            with: {
+              statusReportUpdates: {
+                orderBy: (reports, { desc }) => desc(reports.date),
+                with: { statusReportUpdateToPageComponents: true },
+              },
+              statusReportsToPageComponents: { with: { pageComponent: true } },
+            },
+          },
+          maintenances: {
+            with: {
+              maintenancesToPageComponents: { with: { pageComponent: true } },
+            },
+            orderBy: (maintenances, { desc }) => desc(maintenances.from),
+          },
+          pageComponents: {
+            with: {
+              monitor: { with: { incidents: true } },
+              group: true,
+            },
+            orderBy: (pageComponents, { asc }) => asc(pageComponents.order),
+          },
+          pageComponentGroups: true,
+        },
+      });
+
+      if (!_page) return null;
+
+      // Extract monitor components for backwards compatibility
+      const monitorComponents = _page.pageComponents.filter(
+        (c) =>
+          c.type === "monitor" &&
+          c.monitor &&
+          c.monitor.active &&
+          !c.monitor.deletedAt,
+      );
+
+      // Build legacy monitors array (sorted by order)
+      const monitors = monitorComponents
+        .map((c) => ({
+          ...c.monitor,
+          name: c.monitor?.externalName ?? c.monitor?.name ?? "",
+        }))
+        .sort((a, b) => {
+          const aComp = monitorComponents.find((m) => m.monitor?.id === a.id);
+          const bComp = monitorComponents.find((m) => m.monitor?.id === b.id);
+          return (aComp?.order ?? 0) - (bComp?.order ?? 0);
+        });
+
+      // Extract all incidents from monitor components
+      const incidents = monitorComponents.flatMap(
+        (c) => c.monitor?.incidents ?? [],
+      );
+
+      const ws = selectWorkspaceSchema.safeParse(_page.workspace);
+      const whiteLabel = ws.data?.limits["white-label"] ?? false;
+
+      return selectPublicPageLightSchemaWithRelation.parse({
+        ..._page,
+        monitors,
+        incidents,
+        statusReports: _page.statusReports,
+        maintenances: _page.maintenances,
+        pageComponents: _page.pageComponents,
+        pageComponentGroups: _page.pageComponentGroups,
+        workspacePlan: _page.workspace.plan,
+        whiteLabel,
+      });
+    }),
+
+  // Narrow access-check query for the markdown detail routes: returns only the
+  // gate + chrome fields, skipping the full reports/maintenances/components graph
+  // that getLight loads.
+  getGate: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        columns: {
+          slug: true,
+          customDomain: true,
+          accessType: true,
+          authEmailDomains: true,
+          allowedIpRanges: true,
+          homepageUrl: true,
+          contactUrl: true,
+        },
+        with: { workspace: true },
+      });
+
+      if (!_page) return null;
+
+      const ws = selectWorkspaceSchema.safeParse(_page.workspace);
+      const whiteLabel = ws.data?.limits["white-label"] ?? false;
+
+      const { workspace: _workspace, ...rest } = _page;
+      const gate = gateFieldsSchema.parse(rest);
+      return { ...gate, whiteLabel };
+    }),
+
+  getMaintenance: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase(), id: z.number() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db
+        .select()
+        .from(page)
+        .where(
+          sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        )
+        .get();
+
+      if (!_page) return null;
+
+      const _maintenance = await opts.ctx.db.query.maintenance.findFirst({
+        where: and(
+          eq(maintenance.id, opts.input.id),
+          eq(maintenance.pageId, _page.id),
+        ),
+        with: {
+          maintenancesToPageComponents: {
+            with: { pageComponent: { with: { monitor: true } } },
+          },
+        },
+      });
+
+      if (!_maintenance) return null;
+
+      const props: z.infer<typeof selectMaintenancePageSchema> = _maintenance;
+      return selectMaintenancePageSchema.parse(props);
+    }),
+
+  getUptime: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        pageComponentIds: z.string().array(),
+        cardType: z
+          .enum(["requests", "duration", "dominant", "manual"])
+          .prefault("requests"),
+        barType: z
+          .enum(["absolute", "dominant", "manual"])
+          .prefault("dominant"),
+      }),
+    )
+    .query(async (opts) => {
+      const input = opts.input;
+      if (!input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${input.slug} OR lower(${page.customDomain}) = ${input.slug}`,
+        with: {
+          maintenances: {
+            with: {
+              maintenancesToPageComponents: { with: { pageComponent: true } },
+            },
+          },
+          statusReports: {
+            with: {
+              statusReportsToPageComponents: { with: { pageComponent: true } },
+              statusReportUpdates: {
+                with: { statusReportUpdateToPageComponents: true },
+              },
+            },
+          },
+          pageComponents: {
+            where: inArray(
+              pageComponent.id,
+              input.pageComponentIds.map(Number),
+            ),
+            with: {
+              monitor: {
+                with: {
+                  incidents: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!_page) return null;
+
+      const pageComponents = selectPageComponentWithMonitorRelation
+        .array()
+        .parse(_page.pageComponents);
+
+      // Early return if no components to process
+      if (pageComponents.length === 0) return [];
+
+      const monitors = pageComponents.filter(isMonitorComponent);
+
+      const monitorsByType = {
+        http: monitors.filter((c) => c.monitor.jobType === "http"),
+        tcp: monitors.filter((c) => c.monitor.jobType === "tcp"),
+        dns: monitors.filter((c) => c.monitor.jobType === "dns"),
+      };
+
+      const proceduresByType = {
+        http: getStatusProcedure("45d", "http"),
+        tcp: getStatusProcedure("45d", "tcp"),
+        dns: getStatusProcedure("45d", "dns"),
+      };
+
+      const [statusHttp, statusTcp, statusDns] = await Promise.all(
+        Object.entries(proceduresByType).map(([type, procedure]) => {
+          const monitorIds = monitorsByType[
+            type as keyof typeof proceduresByType
+          ].map((c) => c.monitor.id.toString());
+          if (monitorIds.length === 0) return null;
+          // NOTE: if manual mode, don't fetch data from tinybird
+          return input.barType === "manual" ? null : procedure({ monitorIds });
+        }),
+      );
+
+      const statusDataByMonitorId = new Map<
+        string,
+        | Awaited<ReturnType<(typeof proceduresByType)["http"]>>["data"]
+        | Awaited<ReturnType<(typeof proceduresByType)["tcp"]>>["data"]
+        | Awaited<ReturnType<(typeof proceduresByType)["dns"]>>["data"]
+      >();
+
+      // Consolidate status data from all monitor types into the map
+      for (const statusResult of [statusHttp, statusTcp, statusDns]) {
+        if (statusResult?.data) {
+          statusResult.data.forEach((status) => {
+            const monitorId = status.monitorId;
+            if (!statusDataByMonitorId.has(monitorId)) {
+              statusDataByMonitorId.set(monitorId, []);
+            }
+            statusDataByMonitorId.get(monitorId)?.push(status);
+          });
+        }
+      }
+
+      const lookbackPeriod = WORKSPACES.includes(_page.workspaceId ?? 0)
+        ? 30
+        : 45;
+
+      return pageComponents.map((c) => {
+        const events = getEvents({
+          maintenances: _page.maintenances,
+          incidents: c.monitor?.incidents ?? [],
+          reports: _page.statusReports,
+          pageComponentId: c.id,
+          monitorId: c.monitorId ?? undefined,
+          componentType: c.type,
+        });
+
+        // Determine whether to use real Tinybird data or synthetic data
+        const shouldUseRealData =
+          c.type === "monitor" &&
+          c.monitor &&
+          input.barType !== "manual" &&
+          process.env.NOOP_UPTIME !== "true";
+
+        let filledData: StatusData[];
+        if (shouldUseRealData) {
+          // Monitor components with real data: use Tinybird data
+          const monitorId = c.monitor?.id.toString() || "";
+          const rawData = statusDataByMonitorId.get(monitorId) || [];
+          filledData = fillStatusDataFor45Days(
+            rawData,
+            monitorId,
+            lookbackPeriod,
+          );
+        } else {
+          // Static components, manual mode, or NOOP mode: use synthetic data
+          filledData = fillStatusDataFor45DaysNoop({
+            errorDays: [],
+            degradedDays: [],
+            lookbackPeriod,
+          });
+        }
+
+        // Static components always use manual mode since they don't have real monitoring data
+        const effectiveBarType = c.type === "static" ? "manual" : input.barType;
+        const effectiveCardType =
+          c.type === "static" ? "manual" : input.cardType;
+
+        const processedData = setDataByType({
+          events,
+          data: filledData,
+          cardType: effectiveCardType,
+          barType: effectiveBarType,
+        });
+        const uptime = getUptime({
+          data: filledData,
+          events,
+          barType: effectiveBarType,
+          cardType: effectiveCardType,
+        });
+
+        return {
+          id: c.id,
+          pageComponentId: c.id,
+          name: c.name,
+          description: c.description,
+          type: c.type,
+          // For monitor-type components, include monitor fields
+          ...(c.monitor ? { monitor: c.monitor } : {}),
+          data: processedData,
+          uptime,
+        };
+      });
+    }),
+
+  // NOTE: used for the theme store
+  getNoopUptime: publicProcedure.query(async () => {
+    const data = fillStatusDataFor45DaysNoop({
+      errorDays: [4],
+      degradedDays: [40],
+    });
+    const processedData = setDataByType({
+      events: [
+        {
+          type: "maintenance",
+          from: new Date(new Date().setDate(new Date().getDate() - 10)),
+          to: new Date(new Date().setDate(new Date().getDate() - 10)),
+          name: "DB migration",
+          id: 1,
+          status: "info",
+        },
+      ],
+      data,
+      cardType: "requests",
+      barType: "dominant",
+    });
+    return {
+      data: processedData,
+      uptime: "100%",
+    };
+  }),
+
+  getReport: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase(), id: z.number() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db
+        .select()
+        .from(page)
+        .where(
+          sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        )
+        .get();
+
+      if (!_page) return null;
+
+      const _report = await opts.ctx.db.query.statusReport.findFirst({
+        where: and(
+          eq(statusReport.id, opts.input.id),
+          eq(statusReport.pageId, _page.id),
+        ),
+        with: {
+          statusReportsToPageComponents: {
+            with: { pageComponent: { with: { monitor: true } } },
+          },
+          statusReportUpdates: {
+            orderBy: (reports, { desc }) => desc(reports.date),
+            with: { statusReportUpdateToPageComponents: true },
+          },
+        },
+      });
+
+      if (!_report) return null;
+
+      const result: z.infer<typeof selectStatusReportPageSchema> = _report;
+      return selectStatusReportPageSchema.parse(result);
+    }),
+
+  getNoopReport: publicProcedure.query(async () => {
+    const date = new Date(new Date().setDate(new Date().getDate() - 4));
+
+    const resolvedDate = new Date(date.setMinutes(date.getMinutes() - 81));
+    const monitoringDate = new Date(date.setMinutes(date.getMinutes() - 54));
+    const identifiedDate = new Date(date.setMinutes(date.getMinutes() - 32));
+    const investigatingDate = new Date(date.setMinutes(date.getMinutes() - 4));
+
+    const props: z.input<typeof selectStatusReportPageSchema> = {
+      id: 1,
+      pageId: 1,
+      workspaceId: 1,
+      status: "investigating" as const,
+      title: "API Latency Issues",
+      createdAt: new Date(new Date().setDate(new Date().getDate() - 2)),
+      updatedAt: new Date(new Date().setDate(new Date().getDate() - 1)),
+      statusReportsToPageComponents: [
+        {
+          pageComponentId: 1,
+          statusReportId: 1,
+          pageComponent: {
+            workspaceId: 1,
+            pageId: 1,
+            id: 1,
+            name: "API Monitor",
+            type: "monitor" as const,
+            monitorId: 1,
+            order: 1,
+            groupId: null,
+            groupOrder: null,
+            description: "Main API endpoint",
+            createdAt: new Date(new Date().setDate(new Date().getDate() - 30)),
+            updatedAt: new Date(new Date().setDate(new Date().getDate() - 30)),
+          },
+        },
+      ],
+      statusReportUpdates: [
+        {
+          id: 4,
+          statusReportId: 1,
+          status: "resolved" as const,
+          message:
+            "All systems are operating normally. The issue has been fully resolved.",
+          date: resolvedDate,
+          createdAt: resolvedDate,
+          updatedAt: resolvedDate,
+        },
+        {
+          id: 3,
+          statusReportId: 1,
+          status: "monitoring" as const,
+          message:
+            "We are continuing to monitor the situation to ensure that the issue is resolved.",
+          date: monitoringDate,
+          createdAt: monitoringDate,
+          updatedAt: monitoringDate,
+        },
+        {
+          id: 2,
+          statusReportId: 1,
+          status: "identified" as const,
+          message: "The issue has been identified and a fix is being deployed.",
+          date: identifiedDate,
+          createdAt: identifiedDate,
+          updatedAt: identifiedDate,
+        },
+        {
+          id: 1,
+          statusReportId: 1,
+          status: "investigating" as const,
+          message:
+            "We are investigating reports of increased latency on our API endpoints.",
+          date: investigatingDate,
+          createdAt: investigatingDate,
+          updatedAt: investigatingDate,
+        },
+      ],
+    };
+
+    return selectStatusReportPageSchema.parse(props);
+  }),
+
+  getMonitors: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      // NOTE: revalidate the public monitors first
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        with: {
+          pageComponents: {
+            with: {
+              monitor: true,
+            },
+          },
+        },
+      });
+
+      if (!_page) return null;
+
+      const pageComponents = selectPageComponentWithMonitorRelation
+        .array()
+        .parse(_page.pageComponents);
+
+      const publicMonitors = pageComponents
+        .filter(isMonitorComponent)
+        .filter((c) => c.monitor?.public);
+
+      const monitorsByType = {
+        http: publicMonitors.filter((c) => c.monitor.jobType === "http"),
+        tcp: publicMonitors.filter((c) => c.monitor.jobType === "tcp"),
+        dns: publicMonitors.filter((c) => c.monitor.jobType === "dns"),
+      };
+
+      const proceduresByType = {
+        http: getMetricsLatencyMultiProcedure("1d", "http"),
+        tcp: getMetricsLatencyMultiProcedure("1d", "tcp"),
+        dns: getMetricsLatencyMultiProcedure("1d", "dns"),
+      };
+
+      const [
+        metricsLatencyMultiHttp,
+        metricsLatencyMultiTcp,
+        metricsLatencyMultiDns,
+      ] = await Promise.all(
+        Object.entries(proceduresByType).map(([type, procedure]) => {
+          const monitorIds = monitorsByType[
+            type as keyof typeof proceduresByType
+          ].map((c) => c.monitor.id.toString());
+          if (monitorIds.length === 0) return null;
+          return procedure({ monitorIds });
+        }),
+      );
+
+      const metricsDataByMonitorId = new Map<
+        string,
+        | Awaited<ReturnType<(typeof proceduresByType)["http"]>>["data"]
+        | Awaited<ReturnType<(typeof proceduresByType)["tcp"]>>["data"]
+        | Awaited<ReturnType<(typeof proceduresByType)["dns"]>>["data"]
+      >();
+
+      if (metricsLatencyMultiHttp?.data) {
+        metricsLatencyMultiHttp.data.forEach((metric) => {
+          const monitorId = metric.monitorId;
+          if (!metricsDataByMonitorId.has(monitorId)) {
+            metricsDataByMonitorId.set(monitorId, []);
+          }
+          metricsDataByMonitorId.get(monitorId)?.push(metric);
+        });
+      }
+
+      if (metricsLatencyMultiTcp?.data) {
+        metricsLatencyMultiTcp.data.forEach((metric) => {
+          const monitorId = metric.monitorId;
+          if (!metricsDataByMonitorId.has(monitorId)) {
+            metricsDataByMonitorId.set(monitorId, []);
+          }
+          metricsDataByMonitorId.get(monitorId)?.push(metric);
+        });
+      }
+
+      if (metricsLatencyMultiDns?.data) {
+        metricsLatencyMultiDns.data.forEach((metric) => {
+          const monitorId = metric.monitorId;
+          if (!metricsDataByMonitorId.has(monitorId)) {
+            metricsDataByMonitorId.set(monitorId, []);
+          }
+          metricsDataByMonitorId.get(monitorId)?.push(metric);
+        });
+      }
+
+      return publicMonitors.map((c) => {
+        const monitorId = c.monitor.id.toString();
+        const data = metricsDataByMonitorId.get(monitorId) || [];
+
+        return {
+          ...selectPublicMonitorSchema.parse(c.monitor),
+          data,
+        };
+      });
+    }),
+
+  getMonitor: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase(), id: z.number() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        with: {
+          pageComponents: {
+            where: eq(pageComponent.monitorId, opts.input.id),
+            with: {
+              monitor: true,
+            },
+          },
+        },
+      });
+
+      if (!_page) return null;
+
+      const pageComponents = selectPageComponentWithMonitorRelation
+        .array()
+        .parse(_page.pageComponents);
+
+      const monitorComponents = pageComponents.filter(isMonitorComponent);
+
+      const _monitor = monitorComponents.find(
+        (c) => c.monitor.id === opts.input.id,
+      )?.monitor;
+
+      if (!_monitor) return null;
+      if (!_monitor.public) return null;
+      if (_monitor.deletedAt) return null;
+
+      const type = _monitor.jobType as "http" | "tcp";
+
+      const proceduresByType = {
+        http: {
+          latency: getMetricsLatencyProcedure("7d", "http"),
+          regions: getMetricsRegionsProcedure("7d", "http"),
+          uptime: getUptimeProcedure("7d", "http"),
+        },
+        tcp: {
+          latency: getMetricsLatencyProcedure("7d", "tcp"),
+          regions: getMetricsRegionsProcedure("7d", "tcp"),
+          uptime: getUptimeProcedure("7d", "tcp"),
+        },
+        dns: {
+          latency: getMetricsLatencyProcedure("7d", "dns"),
+          regions: getMetricsRegionsProcedure("7d", "dns"),
+          uptime: getUptimeProcedure("7d", "dns"),
+        },
+      };
+
+      const fromDate = startOfDay(subDays(new Date(), 7)).toISOString();
+      const toDate = endOfDay(new Date()).toISOString();
+
+      const [latency, regions, uptime] = await Promise.all([
+        await proceduresByType[type].latency({
+          monitorId: _monitor.id.toString(),
+          fromDate,
+          toDate,
+        }),
+        await proceduresByType[type].regions({
+          monitorId: _monitor.id.toString(),
+          fromDate,
+          toDate,
+        }),
+        await proceduresByType[type].uptime({
+          monitorId: _monitor.id.toString(),
+          interval: 240,
+          fromDate,
+          toDate,
+        }),
+      ]);
+
+      return {
+        ...selectPublicMonitorSchema.parse(_monitor),
+        data: {
+          latency,
+          regions,
+          uptime,
+        },
+      };
+    }),
+
+  subscribe: publicProcedure
+    .meta({ track: Events.SubscribePage, trackProps: ["slug", "email"] })
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        email: z.email(),
+        subscribeComponents: z.boolean(),
+        pageComponents: z.array(z.number().int().positive()),
+      }),
+    )
+    .mutation(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        with: {
+          workspace: true,
+        },
+      });
+
+      if (!_page) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Page not found",
+        });
+      }
+
+      const workspace = selectWorkspaceSchema.safeParse(_page.workspace);
+
+      if (!workspace.success) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Workspace data is invalid",
+        });
+      }
+
+      if (!workspace.data.limits["status-subscribers"]) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Upgrade to use status subscribers",
+        });
+      }
+
+      // Guard against email spam: reject if a pending (unverified, unexpired) subscription exists
+      const isPending = await hasPendingSubscriber({
+        input: { email: opts.input.email, pageId: _page.id },
+      });
+      if (isPending) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "A confirmation link was already sent. Please check your email or wait until it expires to request a new one.",
+        });
+      }
+
+      const subscription = await upsertSelfSignupSubscriber({
+        input: {
+          email: opts.input.email,
+          pageId: _page.id,
+          componentIds: opts.input.subscribeComponents
+            ? opts.input.pageComponents
+            : [],
+        },
+      });
+
+      // Already verified — no need to send another verification email
+      if (subscription.acceptedAt) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Email already subscribed",
+        });
+      }
+
+      return { id: subscription.id, token: subscription.token };
+    }),
+
+  getSubscriptionByToken: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase(), token: z.uuid() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const subscription = await getSubscriberByToken({
+        input: { token: opts.input.token, domain: opts.input.slug },
+      });
+
+      if (!subscription) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Subscription not found",
+        });
+      }
+
+      return subscription;
+    }),
+
+  updateSubscription: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        token: z.uuid(),
+        subscribeComponents: z.boolean(),
+        pageComponents: z.array(z.number().int().positive()),
+      }),
+    )
+    .mutation(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      try {
+        await updateSubscriberScope({
+          input: {
+            token: opts.input.token,
+            componentIds: opts.input.subscribeComponents
+              ? opts.input.pageComponents
+              : [],
+            domain: opts.input.slug,
+          },
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          const code = error.message.toLowerCase().includes("not found")
+            ? "NOT_FOUND"
+            : "BAD_REQUEST";
+          throw new TRPCError({ code, message: error.message });
+        }
+        throw error;
+      }
+
+      return { success: true };
+    }),
+
+  validateEmailDomain: publicProcedure
+    .meta({ track: Events.ValidateEmailDomain, trackProps: ["slug", "email"] })
+    .input(z.object({ slug: z.string().toLowerCase(), email: z.string() }))
+    .query(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+      });
+
+      if (!_page) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Page not found",
+        });
+      }
+
+      if (_page.accessType !== "email-domain") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Page is not configured to allow email domain authentication",
+        });
+      }
+
+      const allowedDomains = _page.authEmailDomains?.split(",") ?? [];
+
+      if (!allowedDomains.includes(opts.input.email.split("@")[1])) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid email domain",
+        });
+      }
+
+      return {
+        email: opts.input.email,
+        slug: opts.input.slug,
+        page: _page,
+      };
+    }),
+
+  verifyEmail: publicProcedure
+    .meta({ track: Events.VerifySubscribePage, trackProps: ["slug"] })
+    .input(z.object({ slug: z.string().toLowerCase(), token: z.uuid() }))
+    .mutation(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      try {
+        const subscription = await verifySelfSignupSubscriber({
+          input: { token: opts.input.token, domain: opts.input.slug },
+        });
+
+        if (!subscription) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Subscription not found",
+          });
+        }
+
+        return subscription;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof Error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
+  verifyPassword: publicProcedure
+    .input(z.object({ slug: z.string().toLowerCase(), password: z.string() }))
+    .mutation(async (opts) => {
+      if (!opts.input.slug) return null;
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+      });
+
+      if (!_page) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Page not found",
+        });
+      }
+
+      if (_page.accessType !== "password") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Page is not configured to allow password authentication",
+        });
+      }
+
+      if (!constantTimeEqual(_page.password, opts.input.password)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid password",
+        });
+      }
+
+      return true;
+    }),
+
+  // Server-side password gate for the public `/api/*` routes. Returns a boolean
+  // so the stored password never leaves the server (the `get` output omits it).
+  isPasswordAuthorized: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        queryPassword: z.string().nullish(),
+        cookiePassword: z.string().nullish(),
+      }),
+    )
+    .query(async (opts) => {
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+        columns: { password: true, accessType: true },
+      });
+      if (!_page || _page.accessType !== "password") return false;
+      // TODO: rate-limit — an unauthenticated caller can brute-force guesses here.
+      // Query param wins over cookie: a present-but-wrong `?pw=` must not fall
+      // through to a valid cookie. Mirrors isPasswordAuthorized on the proxy.
+      const submitted = opts.input.queryPassword ?? opts.input.cookiePassword;
+      return constantTimeEqual(_page.password, submitted);
+    }),
+
+  getSubscriberByToken: publicProcedure
+    .input(z.object({ token: z.uuid(), domain: z.string().toLowerCase() }))
+    .query(async (opts) => {
+      const subscription = await getSubscriberByToken({
+        input: { token: opts.input.token, domain: opts.input.domain },
+      });
+
+      if (
+        !subscription ||
+        subscription.unsubscribedAt ||
+        subscription.channelType !== "email"
+      ) {
+        return null;
+      }
+
+      return {
+        pageName: subscription.pageName,
+        maskedEmail: subscription.email,
+      };
+    }),
+
+  unsubscribe: publicProcedure
+    .input(z.object({ token: z.uuid(), domain: z.string().toLowerCase() }))
+    .mutation(async (opts) => {
+      try {
+        await unsubscribeSubscriber({
+          input: { token: opts.input.token, domain: opts.input.domain },
+        });
+        return { success: true };
+      } catch (error) {
+        if (error instanceof Error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+    }),
+});

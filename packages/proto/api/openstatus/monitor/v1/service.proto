@@ -1,0 +1,455 @@
+syntax = "proto3";
+
+package openstatus.monitor.v1;
+
+import "buf/validate/validate.proto";
+import "gnostic/openapi/v3/annotations.proto";
+import "openstatus/monitor/v1/dns_monitor.proto";
+import "openstatus/monitor/v1/http_monitor.proto";
+import "openstatus/monitor/v1/monitor.proto";
+import "openstatus/monitor/v1/tcp_monitor.proto";
+
+option go_package = "github.com/openstatushq/openstatus/packages/proto/openstatus/monitor/v1;monitorv1";
+
+// TimeRange represents the time period for metrics aggregation.
+enum TimeRange {
+  // Unspecified time range.
+  TIME_RANGE_UNSPECIFIED = 0;
+  // Last 24 hours.
+  TIME_RANGE_1D = 1;
+  // Last 7 days.
+  TIME_RANGE_7D = 2;
+  // Last 14 days.
+  TIME_RANGE_14D = 3;
+}
+
+// MonitorService provides CRUD and operational commands for monitors.
+service MonitorService {
+  // CreateHTTPMonitor creates a new HTTP monitor with URL, method, headers, assertions, and optional OpenTelemetry configuration.
+  rpc CreateHTTPMonitor(CreateHTTPMonitorRequest) returns (CreateHTTPMonitorResponse) {
+    option (gnostic.openapi.v3.operation) = {
+      description: "Creates a new HTTP monitor in the authenticated workspace. Configure the target URL, HTTP method, request headers and body, response assertions (status code, body content, headers), check periodicity, geographic regions, and optional OpenTelemetry export. The monitor starts checking immediately if set to active."
+    };
+  }
+
+  // CreateTCPMonitor creates a new TCP monitor.
+  rpc CreateTCPMonitor(CreateTCPMonitorRequest) returns (CreateTCPMonitorResponse);
+
+  // CreateDNSMonitor creates a new DNS monitor.
+  rpc CreateDNSMonitor(CreateDNSMonitorRequest) returns (CreateDNSMonitorResponse);
+
+  // UpdateHTTPMonitor updates an existing HTTP monitor.
+  rpc UpdateHTTPMonitor(UpdateHTTPMonitorRequest) returns (UpdateHTTPMonitorResponse);
+
+  // UpdateTCPMonitor updates an existing TCP monitor.
+  rpc UpdateTCPMonitor(UpdateTCPMonitorRequest) returns (UpdateTCPMonitorResponse);
+
+  // UpdateDNSMonitor updates an existing DNS monitor.
+  rpc UpdateDNSMonitor(UpdateDNSMonitorRequest) returns (UpdateDNSMonitorResponse);
+
+  // TriggerMonitor initiates an immediate check for a monitor across all configured regions.
+  rpc TriggerMonitor(TriggerMonitorRequest) returns (TriggerMonitorResponse) {
+    option (gnostic.openapi.v3.operation) = {
+      description: "Manually triggers an immediate check for the specified monitor across all configured regions. This operation is rate-limited under the synthetic-checks quota. A monitor run record is created and the check is dispatched to the checker service."
+    };
+  }
+
+  // DeleteMonitor removes a monitor.
+  rpc DeleteMonitor(DeleteMonitorRequest) returns (DeleteMonitorResponse);
+
+  // ListMonitors returns a paginated list of all monitors in the workspace.
+  rpc ListMonitors(ListMonitorsRequest) returns (ListMonitorsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // GetMonitorStatus returns the current status of all regions for a monitor.
+  rpc GetMonitorStatus(GetMonitorStatusRequest) returns (GetMonitorStatusResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // GetMonitorSummary returns aggregated metrics and statistics for a monitor over a configurable time range.
+  rpc GetMonitorSummary(GetMonitorSummaryRequest) returns (GetMonitorSummaryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (gnostic.openapi.v3.operation) = {
+      description: "Returns aggregated metrics for a monitor including latency percentiles (p50, p75, p90, p95, p99), request counts by status (successful, degraded, failed), and the timestamp of the last check. Metrics can be scoped to a time range (1 day, 7 days, or 14 days) and filtered by specific regions."
+    };
+  }
+
+  // GetMonitor returns a single monitor by ID within the authenticated workspace.
+  // Returns the monitor configuration (HTTP, TCP, or DNS) using the MonitorConfig oneof type.
+  rpc GetMonitor(GetMonitorRequest) returns (GetMonitorResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // ListMonitorHTTPResponseLogs returns paginated response logs for an HTTP monitor from the 14-day HTTP response-log window.
+  rpc ListMonitorHTTPResponseLogs(ListMonitorHTTPResponseLogsRequest) returns (ListMonitorHTTPResponseLogsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // GetMonitorHTTPResponseLog returns one response log for an HTTP monitor.
+  rpc GetMonitorHTTPResponseLog(GetMonitorHTTPResponseLogRequest) returns (GetMonitorHTTPResponseLogResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// CreateHTTPMonitorRequest is the request to create a new HTTP monitor.
+message CreateHTTPMonitorRequest {
+  // Monitor configuration (required).
+  HTTPMonitor monitor = 1 [(buf.validate.field).required = true];
+}
+
+// CreateHTTPMonitorResponse is the response after creating an HTTP monitor.
+message CreateHTTPMonitorResponse {
+  // The created monitor with assigned ID.
+  HTTPMonitor monitor = 1;
+}
+
+// CreateTCPMonitorRequest is the request to create a new TCP monitor.
+message CreateTCPMonitorRequest {
+  // Monitor configuration (required).
+  TCPMonitor monitor = 1 [(buf.validate.field).required = true];
+}
+
+// CreateTCPMonitorResponse is the response after creating a TCP monitor.
+message CreateTCPMonitorResponse {
+  // The created monitor with assigned ID.
+  TCPMonitor monitor = 1;
+}
+
+// CreateDNSMonitorRequest is the request to create a new DNS monitor.
+message CreateDNSMonitorRequest {
+  // Monitor configuration (required).
+  DNSMonitor monitor = 1 [(buf.validate.field).required = true];
+}
+
+// CreateDNSMonitorResponse is the response after creating a DNS monitor.
+message CreateDNSMonitorResponse {
+  // The created monitor with assigned ID.
+  DNSMonitor monitor = 1;
+}
+
+// UpdateHTTPMonitorRequest is the request to update an existing HTTP monitor.
+message UpdateHTTPMonitorRequest {
+  // Monitor ID to update (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // Updated monitor configuration (all fields optional for partial updates).
+  optional HTTPMonitor monitor = 2;
+}
+
+// UpdateHTTPMonitorResponse is the response after updating an HTTP monitor.
+message UpdateHTTPMonitorResponse {
+  // The updated monitor.
+  HTTPMonitor monitor = 1;
+}
+
+// UpdateTCPMonitorRequest is the request to update an existing TCP monitor.
+message UpdateTCPMonitorRequest {
+  // Monitor ID to update (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // Updated monitor configuration (all fields optional for partial updates).
+  optional TCPMonitor monitor = 2;
+}
+
+// UpdateTCPMonitorResponse is the response after updating a TCP monitor.
+message UpdateTCPMonitorResponse {
+  // The updated monitor.
+  TCPMonitor monitor = 1;
+}
+
+// UpdateDNSMonitorRequest is the request to update an existing DNS monitor.
+message UpdateDNSMonitorRequest {
+  // Monitor ID to update (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // Updated monitor configuration (all fields optional for partial updates).
+  optional DNSMonitor monitor = 2;
+}
+
+// UpdateDNSMonitorResponse is the response after updating a DNS monitor.
+message UpdateDNSMonitorResponse {
+  // The updated monitor.
+  DNSMonitor monitor = 1;
+}
+
+// TriggerMonitorRequest is the request to trigger a monitor check.
+message TriggerMonitorRequest {
+  // Monitor ID to trigger (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// TriggerMonitorResponse is the response after triggering a monitor.
+message TriggerMonitorResponse {
+  // Whether the trigger was successful.
+  bool success = 1;
+}
+
+// DeleteMonitorRequest is the request to delete a monitor.
+message DeleteMonitorRequest {
+  // Monitor ID to delete (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// DeleteMonitorResponse is the response after deleting a monitor.
+message DeleteMonitorResponse {
+  // Whether the deletion was successful.
+  bool success = 1;
+}
+
+// ListMonitorsRequest is the request to list monitors.
+message ListMonitorsRequest {
+  // Maximum number of monitors to return (1-100, defaults to 50).
+  optional int32 limit = 1 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 100
+  }];
+
+  // Number of monitors to skip for pagination (defaults to 0).
+  optional int32 offset = 2 [(buf.validate.field).int32.gte = 0];
+}
+
+// ListMonitorsResponse is the response containing a list of monitors.
+message ListMonitorsResponse {
+  // HTTP monitors in the workspace.
+  repeated HTTPMonitor http_monitors = 1;
+
+  // TCP monitors in the workspace.
+  repeated TCPMonitor tcp_monitors = 2;
+
+  // DNS monitors in the workspace.
+  repeated DNSMonitor dns_monitors = 3;
+
+  // Total number of monitors across all types.
+  int32 total_size = 4;
+}
+
+// GetMonitorStatusRequest is the request to get the status of all regions for a monitor.
+message GetMonitorStatusRequest {
+  // Monitor ID to get status for (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// RegionStatus represents the status of a monitor in a specific region.
+message RegionStatus {
+  // The region identifier.
+  Region region = 1;
+
+  // The status of the monitor in this region.
+  MonitorStatus status = 2;
+}
+
+// GetMonitorStatusResponse is the response containing the status of all regions for a monitor.
+message GetMonitorStatusResponse {
+  // Monitor ID.
+  string id = 1;
+
+  // Status for each region.
+  repeated RegionStatus regions = 2;
+}
+
+// MonitorConfig represents the type-specific configuration for a monitor.
+message MonitorConfig {
+  oneof config {
+    // HTTP monitor configuration.
+    HTTPMonitor http = 1;
+    // TCP monitor configuration.
+    TCPMonitor tcp = 2;
+    // DNS monitor configuration.
+    DNSMonitor dns = 3;
+  }
+}
+
+// GetMonitorSummaryRequest is the request to get aggregated metrics for a monitor.
+message GetMonitorSummaryRequest {
+  // Monitor ID to get summary for (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // Time range for metrics aggregation (defaults to 1 day if unspecified).
+  TimeRange time_range = 2;
+
+  // Optional filter by regions. If empty, returns metrics for all regions.
+  repeated Region regions = 3 [(buf.validate.field).repeated.max_items = 28];
+}
+
+// GetMonitorSummaryResponse is the response containing aggregated metrics for a monitor.
+message GetMonitorSummaryResponse {
+  // Monitor ID.
+  string id = 1;
+
+  // Timestamp of the last check in RFC 3339 format.
+  string last_ping_at = 2;
+
+  // Total number of successful requests.
+  int64 total_successful = 3;
+
+  // Total number of degraded requests.
+  int64 total_degraded = 4;
+
+  // Total number of failed requests.
+  int64 total_failed = 5;
+
+  // 50th percentile (median) latency in milliseconds.
+  int64 p50 = 6;
+
+  // 75th percentile latency in milliseconds.
+  int64 p75 = 7;
+
+  // 90th percentile latency in milliseconds.
+  int64 p90 = 8;
+
+  // 95th percentile latency in milliseconds.
+  int64 p95 = 9;
+
+  // 99th percentile latency in milliseconds.
+  int64 p99 = 10;
+
+  // Time range used for the metrics.
+  TimeRange time_range = 11;
+
+  // Regions included in the metrics.
+  repeated Region regions = 12;
+}
+
+// GetMonitorRequest is the request to get a single monitor by ID.
+message GetMonitorRequest {
+  // Monitor ID to retrieve (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// GetMonitorResponse is the response containing the monitor.
+message GetMonitorResponse {
+  // The monitor configuration (one of HTTP, TCP, or DNS).
+  MonitorConfig monitor = 1;
+}
+
+// HTTPResponseLogRequestStatus is the result classification for an HTTP response log.
+enum HTTPResponseLogRequestStatus {
+  // Unspecified request status.
+  HTTP_RESPONSE_LOG_REQUEST_STATUS_UNSPECIFIED = 0;
+  // The monitor response satisfied its assertions.
+  HTTP_RESPONSE_LOG_REQUEST_STATUS_SUCCESS = 1;
+  // The monitor response failed its assertions or request.
+  HTTP_RESPONSE_LOG_REQUEST_STATUS_ERROR = 2;
+  // The monitor response was slower than the degraded threshold.
+  HTTP_RESPONSE_LOG_REQUEST_STATUS_DEGRADED = 3;
+}
+
+// HTTPResponseLogTrigger describes what started the monitor check.
+enum HTTPResponseLogTrigger {
+  // Unspecified trigger.
+  HTTP_RESPONSE_LOG_TRIGGER_UNSPECIFIED = 0;
+  // Scheduled monitor run.
+  HTTP_RESPONSE_LOG_TRIGGER_CRON = 1;
+  // API-triggered monitor run.
+  HTTP_RESPONSE_LOG_TRIGGER_API = 2;
+}
+
+// HTTPResponseLogTiming contains calculated timing phases in milliseconds.
+message HTTPResponseLogTiming {
+  // DNS lookup duration.
+  int32 dns = 1;
+  // TCP connection duration.
+  int32 connect = 2;
+  // TLS handshake duration.
+  int32 tls = 3;
+  // Time to first byte duration.
+  int32 ttfb = 4;
+  // Response transfer duration.
+  int32 transfer = 5;
+}
+
+// HTTPResponseLogListItem is a compact response log entry.
+message HTTPResponseLogListItem {
+  // Response log ID.
+  optional string id = 1;
+  // Latency in milliseconds.
+  int32 latency = 2;
+  // HTTP status code.
+  optional int32 status_code = 3;
+  // Monitor ID.
+  string monitor_id = 4;
+  // Request status classification.
+  HTTPResponseLogRequestStatus request_status = 5;
+  // Region where the check ran.
+  Region region = 6;
+  // Cron bucket timestamp in Unix milliseconds.
+  int64 cron_timestamp = 7;
+  // Check trigger.
+  HTTPResponseLogTrigger trigger = 8;
+  // Response timestamp in Unix milliseconds.
+  int64 timestamp = 9;
+  // Timing phases.
+  optional HTTPResponseLogTiming timing = 10;
+}
+
+// HTTPResponseLogDetail contains full response log debugging data.
+message HTTPResponseLogDetail {
+  // Compact response log fields.
+  HTTPResponseLogListItem log = 1;
+  // Checked URL.
+  string url = 2;
+  // Whether the check errored.
+  bool error = 3;
+  // Error message, when present.
+  optional string message = 4;
+  // Redacted response headers.
+  map<string, string> headers = 5;
+  // Serialized assertions used for the check.
+  optional string assertions = 6;
+}
+
+// ListMonitorHTTPResponseLogsRequest is the request to list response logs within the 14-day HTTP response-log window.
+message ListMonitorHTTPResponseLogsRequest {
+  // Monitor ID to list response logs for (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  // Start of the response log window as Unix milliseconds within the 14-day retention window.
+  optional int64 from_timestamp = 2;
+
+  // End of the response log window as Unix milliseconds within the 14-day retention window.
+  optional int64 to_timestamp = 3;
+
+  // Maximum number of logs to return (1-100, defaults to 25).
+  optional int32 limit = 4 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 100
+  }];
+
+  // Number of logs to skip for pagination (defaults to 0).
+  optional int32 offset = 5 [(buf.validate.field).int32.gte = 0];
+}
+
+// HTTPResponseLogPagination contains offset pagination metadata.
+message HTTPResponseLogPagination {
+  // Requested page size.
+  int32 limit = 1;
+  // Requested offset.
+  int32 offset = 2;
+  // Whether more logs are available.
+  bool has_more = 3;
+  // Next offset if more logs are available.
+  optional int32 next_offset = 4;
+}
+
+// ListMonitorHTTPResponseLogsResponse is the response containing response logs.
+message ListMonitorHTTPResponseLogsResponse {
+  // Response logs.
+  repeated HTTPResponseLogListItem logs = 1;
+  // Pagination metadata.
+  HTTPResponseLogPagination pagination = 2;
+}
+
+// GetMonitorHTTPResponseLogRequest is the request to get one response log.
+message GetMonitorHTTPResponseLogRequest {
+  // Monitor ID to get a response log for (required).
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // Response log ID to retrieve (required).
+  string log_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// GetMonitorHTTPResponseLogResponse is the response containing one response log.
+message GetMonitorHTTPResponseLogResponse {
+  // Response log details.
+  HTTPResponseLogDetail log = 1;
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@openstatus/tinybird",
+  "version": "0.0.0",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@chronark/zod-bird": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@libsql/client": "catalog:",
+    "@openstatus/db": "workspace:*",
+    "@openstatus/tsconfig": "workspace:*",
+    "@openstatus/utils": "workspace:*",
+    "@types/node": "catalog:",
+    "drizzle-orm": "catalog:",
+    "typescript": "catalog:"
+  }
+}

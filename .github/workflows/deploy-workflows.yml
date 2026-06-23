@@ -1,0 +1,26 @@
+name: Fly Deploy Workflows
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/workflows/**"
+      - "packages/db/**"
+      - "packages/emails/**"
+      - "packages/utils/**"
+      - "packages/tsconfig/**"
+      - "packages/notifications/**"
+      - "packages/status-fetcher/**"
+      - "pnpm-workspace.yaml"
+jobs:
+  deploy-workflows:
+    name: Deploy Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --config apps/workflows/fly.toml
+          --dockerfile  apps/workflows/Dockerfile --remote-only --wait-timeout=500
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
