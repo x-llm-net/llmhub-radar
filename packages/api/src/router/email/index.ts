@@ -2,7 +2,6 @@ import { and, eq } from "@openstatus/db";
 import {
   invitation,
   pageSubscriber,
-  selectWorkspaceSchema,
 } from "@openstatus/db/src/schema";
 import { EmailClient } from "@openstatus/emails";
 import { notifyMaintenance } from "@openstatus/services/maintenance";
@@ -53,21 +52,6 @@ export const emailRouter = createTRPCRouter({
           code: "NOT_FOUND",
           message: "Subscriber not found",
         });
-      }
-
-      const workspace = selectWorkspaceSchema.safeParse(
-        subscriber.page?.workspace,
-      );
-
-      if (!workspace.success) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Invalid workspace",
-        });
-      }
-
-      if (!workspace.data.limits["status-subscribers"]) {
-        return;
       }
 
       if (!subscriber.email) {

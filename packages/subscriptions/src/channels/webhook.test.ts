@@ -13,6 +13,8 @@ import {
 
 const SLACK_URL = "https://hooks.slack.com/services/T1/B1/XXX";
 const DISCORD_URL = "https://discord.com/api/webhooks/1/xxx";
+const WECOM_URL =
+  "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-key";
 
 let fetchMock: any;
 
@@ -160,7 +162,7 @@ describe("sendWebhookNotifications", () => {
     expect(urls).toContain("https://hooks.slack.com/services/T2/B2/bbb");
   });
 
-  test("drops subscriptions with non-Slack/Discord URLs", async () => {
+  test("sends generic JSON payloads to non-native webhook URLs", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
     const generic = makeSub({
       id: 101,
@@ -170,9 +172,13 @@ describe("sendWebhookNotifications", () => {
 
     await sendWebhookNotifications([generic, slack], makeUpdate());
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url] = fetchMock.mock.calls[0];
-    expect(url).toBe(SLACK_URL);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const genericCall = fetchMock.mock.calls.find(
+      ([url]: [string]) => url === "https://example.com/webhook",
+    );
+    expect(genericCall).toBeDefined();
+    const body = JSON.parse(genericCall?.[1]?.body as string);
+    expect(body.type).toBe("status_report");
   });
 
   test("applies custom headers from channelConfig", async () => {
@@ -225,6 +231,10 @@ describe("detectWebhookFlavor", () => {
     ).toBe("discord");
   });
 
+  test("detects WeCom robot webhook URLs", () => {
+    expect(detectWebhookFlavor(WECOM_URL)).toBe("wecom");
+  });
+
   test("falls back to generic for unknown hosts", () => {
     expect(detectWebhookFlavor("https://example.com/webhook")).toBe("generic");
   });
@@ -255,6 +265,36 @@ describe("sendWebhookNotifications (flavor detection)", () => {
     const body = JSON.parse(init?.body as string);
     expect(body.embeds).toBeInstanceOf(Array);
     expect(body.embeds[0].title).toBe("Test Incident");
+  });
+
+  test("emits WeCom markdown payload for qyapi.weixin.qq.com URLs", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ errcode: 0, errmsg: "ok" }), {
+        status: 200,
+      }),
+    );
+    const sub = makeSub({ webhookUrl: WECOM_URL });
+
+    await sendWebhookNotifications([sub], makeUpdate());
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body.msgtype).toBe("markdown");
+    expect(body.markdown.content).toContain("Test Incident");
+  });
+
+  test("treats a WeCom errcode as a webhook failure", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ errcode: 40001, errmsg: "invalid key" }), {
+        status: 200,
+      }),
+    );
+    const sub = makeSub({ webhookUrl: WECOM_URL });
+
+    await expect(
+      sendWebhookNotifications([sub], makeUpdate()),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   test("Slack payload includes manage/unsubscribe links", async () => {
@@ -385,6 +425,15 @@ describe("buildTestPayload", () => {
     };
     expect(payload.type).toBe("test");
     expect(typeof payload.message).toBe("string");
+  });
+
+  test("WeCom flavor returns markdown payload", () => {
+    const payload = buildTestPayload("wecom") as {
+      msgtype: string;
+      markdown: { content: string };
+    };
+    expect(payload.msgtype).toBe("markdown");
+    expect(payload.markdown.content).toContain("Test Notification");
   });
 });
 

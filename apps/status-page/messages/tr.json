@@ -78,6 +78,8 @@
   "Pgb3Xj": "Abone olundu",
   "WOH7Yj": "Abone olma başarısız oldu",
   "L7z2/k": "Bu sayfada abone olunacak bileşen bulunmuyor.",
+  "My5jBx": "Webhook aboneliği tamamlandı",
+  "LO+gev": "Webhook URL",
   "BQBZU+": "Tüm Sistemler Çalışıyor",
   "Dnob31": "Çalışıyor",
   "b9fOA1": "Düşük Performans",
@@ -131,11 +133,14 @@
   "8kyEWd": "Yüzdelik dilim, veri kümenizdeki belirli bir yüzdeyi temsil eder.",
   "kd0Igx": "Örneğin, p50, 50. yüzdelik dilimdir ve verilerin %50'sinin altında kaldığı noktayı gösterir. Daha yüksek yüzdelik dilimler daha fazla veri içerir ve üst aralığı vurgular.",
   "CYs0LF": "Olay geçmişini görüntüle",
+  "GnZZHN": "Webhook",
   "sjzDbu": "Slack",
   "q0qMyV": "RSS",
   "9y9QQh": "JSON",
   "waUHa4": "SSH",
   "cVqFq/": "Bir rapor oluşturulduğunda veya çözüldüğünde e-posta bildirimi alın",
   "gczcC5": "Abone Ol",
-  "45YlLU": "Güncellemeleri almak için e-posta adresinizi doğrulayın, hepsi bu kadar."
+  "QhKc0s": "Başarılı bir doğrulama isteğinden sonra durum güncellemelerini bir webhook URL'sine gönderin.",
+  "45YlLU": "Güncellemeleri almak için e-posta adresinizi doğrulayın, hepsi bu kadar.",
+  "oq4BKz": "Webhook URL'niz bir doğrulama isteğini kabul etti."
 }

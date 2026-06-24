@@ -75,11 +75,8 @@ function getStatusUpdateTypes(page: Page): StatusUpdateType[] {
     return ["email"] as const;
   }
 
-  if (page?.workspacePlan === "free") {
-    return ["slack", "rss", "json"] as const;
-  }
-
-  return ["email", "slack", "rss", "json"] as const;
+  // LLMHub Radar treats public subscriber updates as a core v0 feature.
+  return ["email", "webhook", "slack", "rss", "json"] as const;
 }
 
 export function Header({
@@ -102,7 +99,7 @@ export function Header({
   const subscribeMutation = useMutation(
     trpc.statusPage.subscribe.mutationOptions({
       onSuccess: (data) => {
-        if (!data?.id || !data?.token) return;
+        if (!data?.id || !data?.token || data.channelType !== "email") return;
         sendPageSubscriptionMutation.mutate(
           { id: data.id, token: data.token },
           {

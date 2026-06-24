@@ -64,9 +64,21 @@ const EMAILS = {
   hasPending: "svc-has-pending-test@example.com",
 };
 
+const WEBHOOKS = {
+  upsert: "https://example.com/openstatus-self-signup-upsert",
+  upsertMerge: "https://example.com/openstatus-self-signup-merge",
+  upsertAccepted: "https://example.com/openstatus-self-signup-accepted",
+  getByToken: "https://example.com/openstatus-self-signup-token",
+};
+
 async function cleanAll() {
   for (const email of Object.values(EMAILS)) {
     await db.delete(pageSubscriber).where(eq(pageSubscriber.email, email));
+  }
+  for (const webhookUrl of Object.values(WEBHOOKS)) {
+    await db
+      .delete(pageSubscriber)
+      .where(eq(pageSubscriber.webhookUrl, webhookUrl));
   }
   await clearAuditLog(SEEDED_WORKSPACE_TEAM_ID);
 }
@@ -274,6 +286,122 @@ describe("upsertSelfSignupSubscriber", () => {
     await db.delete(pageSubscriber).where(eq(pageSubscriber.email, fresh));
   });
 
+  test("creates a webhook self-signup subscription", async () => {
+    const webhookUrl = WEBHOOKS.upsert;
+    await db
+      .delete(pageSubscriber)
+      .where(eq(pageSubscriber.webhookUrl, webhookUrl));
+
+    const result = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl,
+        pageId: PAGE_ID,
+        componentIds: [COMPONENT_1],
+      },
+    });
+
+    expect(result.channelType).toBe("webhook");
+    expect(result.email).toBeNull();
+    expect(result.webhookUrl).toBe(webhookUrl);
+    expect(result.token).toBeDefined();
+    expect(result.acceptedAt).toBeNull();
+    expect(result.componentIds).toEqual([COMPONENT_1]);
+
+    const row = await db.query.pageSubscriber.findFirst({
+      where: eq(pageSubscriber.id, result.id),
+    });
+    expect(row?.source).toBe("self_signup");
+
+    await expectAuditRow({
+      workspaceId: SEEDED_WORKSPACE_TEAM_ID,
+      action: "page_subscriber.create",
+      entityType: "page_subscriber",
+      entityId: result.id,
+      actorType: "subscriber",
+    });
+  });
+
+  test("merges new components into an existing pending webhook subscription", async () => {
+    const webhookUrl = WEBHOOKS.upsertMerge;
+    await db
+      .delete(pageSubscriber)
+      .where(eq(pageSubscriber.webhookUrl, webhookUrl));
+    const initial = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl,
+        pageId: PAGE_ID,
+        componentIds: [COMPONENT_1],
+      },
+    });
+
+    const result = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl,
+        pageId: PAGE_ID,
+        componentIds: [COMPONENT_2],
+      },
+    });
+
+    expect(result.id).toBe(initial.id);
+    expect(result.channelType).toBe("webhook");
+    expect(result.componentIds).toEqual([COMPONENT_1, COMPONENT_2]);
+
+    await expectAuditRow({
+      workspaceId: SEEDED_WORKSPACE_TEAM_ID,
+      action: "page_subscriber.update",
+      entityType: "page_subscriber",
+      entityId: result.id,
+      actorType: "subscriber",
+    });
+  });
+
+  test("returns already-verified webhook row without writing an audit row", async () => {
+    const webhookUrl = WEBHOOKS.upsertAccepted;
+    await db.delete(pageSubscriber).where(eq(pageSubscriber.webhookUrl, webhookUrl));
+
+    const initial = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl,
+        pageId: PAGE_ID,
+      },
+    });
+    await db
+      .update(pageSubscriber)
+      .set({ acceptedAt: new Date() })
+      .where(eq(pageSubscriber.id, initial.id))
+      .run();
+
+    await db
+      .delete(auditLog)
+      .where(
+        and(
+          eq(auditLog.workspaceId, SEEDED_WORKSPACE_TEAM_ID),
+          eq(auditLog.entityId, String(initial.id)),
+        ),
+      );
+
+    const result = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl,
+        pageId: PAGE_ID,
+      },
+    });
+    expect(result.id).toBe(initial.id);
+    expect(result.acceptedAt).not.toBeNull();
+
+    const rows = await readAuditLog({
+      workspaceId: SEEDED_WORKSPACE_TEAM_ID,
+      entityType: "page_subscriber",
+      entityId: initial.id,
+    });
+    expect(rows).toHaveLength(0);
+  });
+
   test("throws for component IDs that do not belong to this page", async () => {
     await expect(
       upsertSelfSignupSubscriber({
@@ -290,7 +418,7 @@ describe("upsertSelfSignupSubscriber", () => {
     ).rejects.toThrow();
   });
 
-  test("rejects when the workspace plan disables status-subscribers", async () => {
+  test("allows self-signup when the workspace plan disables status-subscribers", async () => {
     const freePage = await db
       .insert(page)
       .values({
@@ -303,12 +431,16 @@ describe("upsertSelfSignupSubscriber", () => {
       .returning()
       .get();
     try {
-      await expect(
-        upsertSelfSignupSubscriber({
-          input: { email: EMAILS.planGate, pageId: freePage.id },
-        }),
-      ).rejects.toThrow("Upgrade to use status subscribers");
+      const result = await upsertSelfSignupSubscriber({
+        input: { email: EMAILS.planGate, pageId: freePage.id },
+      });
+
+      expect(result.email).toBe(EMAILS.planGate);
+      expect(result.acceptedAt).toBeNull();
     } finally {
+      await db
+        .delete(pageSubscriber)
+        .where(eq(pageSubscriber.email, EMAILS.planGate));
       await db.delete(page).where(eq(page.id, freePage.id));
     }
   });
@@ -416,6 +548,7 @@ describe("verifySelfSignupSubscriber", () => {
 describe("getSubscriberByToken", () => {
   const email = EMAILS.getByToken;
   let token: string;
+  let webhookToken: string;
 
   beforeAll(async () => {
     await db.delete(pageSubscriber).where(eq(pageSubscriber.email, email));
@@ -424,6 +557,19 @@ describe("getSubscriberByToken", () => {
     });
     if (!sub.token) throw new Error("Token is undefined");
     token = sub.token;
+
+    await db
+      .delete(pageSubscriber)
+      .where(eq(pageSubscriber.webhookUrl, WEBHOOKS.getByToken));
+    const webhookSub = await upsertSelfSignupSubscriber({
+      input: {
+        channelType: "webhook",
+        webhookUrl: WEBHOOKS.getByToken,
+        pageId: PAGE_ID,
+      },
+    });
+    if (!webhookSub.token) throw new Error("Webhook token is undefined");
+    webhookToken = webhookSub.token;
   });
 
   test("returns null for an unknown token", async () => {
@@ -454,6 +600,17 @@ describe("getSubscriberByToken", () => {
     expect(result).not.toBeNull();
     expect(result?.pageId).toBe(PAGE_ID);
     expect(result?.pageSlug).toBe(PAGE_SLUG);
+  });
+
+  test("masks webhook URLs for token-addressed reads", async () => {
+    const result = await getSubscriberByToken({
+      input: { token: webhookToken, domain: PAGE_SLUG },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.channelType).toBe("webhook");
+    expect(result?.webhookUrl).toBe("https://example.com***");
+    expect(result?.webhookUrl).not.toBe(WEBHOOKS.getByToken);
   });
 
   test("never emits an audit row (read-only)", async () => {

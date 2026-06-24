@@ -68,11 +68,22 @@ export type DeletePageSubscriberInput = z.infer<
 
 // ===== Self-signup (visitor-driven) =====
 
-export const UpsertSelfSignupSubscriberInput = z.object({
-  email: z.email(),
-  pageId: z.number().int().positive(),
-  componentIds: componentIdList.optional(),
-});
+export const UpsertSelfSignupSubscriberInput = z.union([
+  z.object({
+    channelType: z.literal("email").optional(),
+    email: z.email(),
+    pageId: z.number().int().positive(),
+    componentIds: componentIdList.optional(),
+  }),
+  z.object({
+    channelType: z.literal("webhook"),
+    webhookUrl: z.url(),
+    name: z.string().max(255).nullish(),
+    headers: webhookHeaders.optional(),
+    pageId: z.number().int().positive(),
+    componentIds: componentIdList.optional(),
+  }),
+]);
 export type UpsertSelfSignupSubscriberInput = z.infer<
   typeof UpsertSelfSignupSubscriberInput
 >;

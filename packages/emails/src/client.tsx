@@ -16,6 +16,8 @@ import type { StatusReportProps } from "../emails/status-report";
 import TeamInvitationEmail from "../emails/team-invitation";
 import type { TeamInvitationProps } from "../emails/team-invitation";
 import { monitorAlertEmail } from "../hotfix/monitor-alert";
+import { logSkippedEmail, shouldSendEmail } from "./delivery";
+import { getEmailFrom } from "./from";
 
 // split an array into chunks of a given size.
 function chunk<T>(array: T[], size: number): T[][] {
@@ -34,16 +36,16 @@ export class EmailClient {
   }
 
   public async sendFollowUp(req: { to: string }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending follow up email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending follow up email to ${req.to}`);
       return;
     }
 
     try {
       const html = await render(<FollowUpEmail />);
       const result = await this.client.emails.send({
-        from: "Thibault Le Ouay Ducasse <welcome@openstatus.dev>",
-        replyTo: "Thibault Le Ouay Ducasse <thibault@openstatus.dev>",
+        from: getEmailFrom(),
+        replyTo: getEmailFrom(),
         subject: "How's it going with OpenStatus?",
         to: req.to,
         html,
@@ -61,15 +63,15 @@ export class EmailClient {
   }
 
   public async sendFollowUpBatched(req: { to: string[] }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending follow up emails to ${req.to.join(", ")}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending follow up emails to ${req.to.join(", ")}`);
       return;
     }
 
     const html = await render(<FollowUpEmail />);
     const result = await this.client.batch.send(
       req.to.map((subscriber) => ({
-        from: "Thibault Le Ouay Ducasse <thibault@openstatus.dev>",
+        from: getEmailFrom(),
         subject: "How's it going with OpenStatus?",
         to: subscriber,
         html,
@@ -92,16 +94,16 @@ export class EmailClient {
   }
 
   public async sendSlackFeedback(req: { to: string }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending slack feedback email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending slack feedback email to ${req.to}`);
       return;
     }
 
     try {
       const html = await render(<SlackFeedbackEmail />);
       const result = await this.client.emails.send({
-        from: "Thibault Le Ouay Ducasse <thibault@openstatus.dev>",
-        replyTo: "Thibault Le Ouay Ducasse <thibault@openstatus.dev>",
+        from: getEmailFrom(),
+        replyTo: getEmailFrom(),
         subject: "How's the Slack app working for you?",
         to: req.to,
         html,
@@ -119,15 +121,15 @@ export class EmailClient {
   }
 
   public async sendSlackFeedbackBatched(req: { to: string[] }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending slack feedback emails to ${req.to.join(", ")}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending slack feedback emails to ${req.to.join(", ")}`);
       return;
     }
 
     const html = await render(<SlackFeedbackEmail />);
     const result = await this.client.batch.send(
       req.to.map((subscriber) => ({
-        from: "Thibault Le Ouay Ducasse <thibault@openstatus.dev>",
+        from: getEmailFrom(),
         subject: "How's the Slack app working for you?",
         to: subscriber,
         html,
@@ -158,8 +160,8 @@ export class EmailClient {
       ? `https://${req.customDomain}`
       : `https://${req.pageSlug}.openstatus.dev`;
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(
+    if (!shouldSendEmail()) {
+      logSkippedEmail(
         `Sending status report update emails to ${req.subscribers
           .map((s) => s.email)
           .join(", ")}`,
@@ -175,7 +177,7 @@ export class EmailClient {
               const unsubscribeUrl = `${statusPageBaseUrl}/unsubscribe/${subscriber.token}`;
               const manageUrl = `${statusPageBaseUrl}/manage/${subscriber.token}`;
               return {
-                from: `${req.pageTitle} <notifications@notifications.openstatus.dev>`,
+                from: getEmailFrom(req.pageTitle),
                 subject: req.reportTitle,
                 to: subscriber.email,
                 react: (
@@ -212,19 +214,17 @@ export class EmailClient {
   }
 
   public async sendTeamInvitation(req: TeamInvitationProps & { to: string }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending team invitation email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending team invitation email to ${req.to}`);
       return;
     }
 
     try {
       const html = await render(<TeamInvitationEmail {...req} />);
       const result = await this.client.emails.send({
-        from: `${
-          req.workspaceName ?? "OpenStatus"
-        } <notifications@notifications.openstatus.dev>`,
+        from: getEmailFrom(req.workspaceName ?? "LLMHub Radar"),
         subject: `You've been invited to join ${
-          req.workspaceName ?? "OpenStatus"
+          req.workspaceName ?? "LLMHub Radar"
         }`,
         to: req.to,
         html,
@@ -242,8 +242,8 @@ export class EmailClient {
   }
 
   public async sendMonitorAlert(req: MonitorAlertProps & { to: string }) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending monitor alert email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending monitor alert email to ${req.to}`);
       return;
     }
 
@@ -251,7 +251,7 @@ export class EmailClient {
       // const html = await render(<MonitorAlertEmail {...req} />);
       const html = monitorAlertEmail(req);
       const result = await this.client.emails.send({
-        from: "OpenStatus <notifications@notifications.openstatus.dev>",
+        from: getEmailFrom(),
         subject: `${req.name}: ${req.type.toUpperCase()}`,
         to: req.to,
         html,
@@ -272,15 +272,15 @@ export class EmailClient {
   public async sendPageSubscription(
     req: PageSubscriptionProps & { to: string },
   ) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending page subscription email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending page subscription email to ${req.to}`);
       return;
     }
 
     try {
       const html = await render(<PageSubscriptionEmail {...req} />);
       const result = await this.client.emails.send({
-        from: "Status Page <notifications@notifications.openstatus.dev>",
+        from: getEmailFrom("服务状态"),
         subject: `Confirm your subscription to ${req.page}`,
         to: req.to,
         html,
@@ -300,8 +300,8 @@ export class EmailClient {
   public async sendStatusPageMagicLink(
     req: StatusPageMagicLinkProps & { to: string },
   ) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`Sending status page magic link email to ${req.to}`);
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending status page magic link email to ${req.to}`);
       console.log(`>>> Magic Link: ${req.link}`);
       return;
     }
@@ -309,7 +309,7 @@ export class EmailClient {
     try {
       const html = await render(<StatusPageMagicLinkEmail {...req} />);
       const result = await this.client.emails.send({
-        from: "Status Page <notifications@notifications.openstatus.dev>",
+        from: getEmailFrom("服务状态"),
         subject: `Authenticate to ${req.page}`,
         to: req.to,
         html,
@@ -341,8 +341,8 @@ export class EmailClient {
       ? `https://${req.customDomain}`
       : `https://${req.pageSlug}.openstatus.dev`;
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(
+    if (!shouldSendEmail()) {
+      logSkippedEmail(
         `Sending maintenance notification emails to ${req.subscribers
           .map((s) => s.email)
           .join(", ")}`,
@@ -358,7 +358,7 @@ export class EmailClient {
               const unsubscribeUrl = `${statusPageBaseUrl}/unsubscribe/${subscriber.token}`;
               const manageUrl = `${statusPageBaseUrl}/manage/${subscriber.token}`;
               return {
-                from: `${req.pageTitle} <notifications@notifications.openstatus.dev>`,
+                from: getEmailFrom(req.pageTitle),
                 subject: `Scheduled Maintenance: ${req.maintenanceTitle}`,
                 to: subscriber.email,
                 react: (

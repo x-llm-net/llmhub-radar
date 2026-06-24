@@ -30,10 +30,20 @@ import {
   FormSubscribeEmail,
   type FormValues,
 } from "@/components/forms/form-subscribe-email";
+import {
+  FormSubscribeWebhook,
+  type FormSubscribeWebhookValues,
+} from "@/components/forms/form-subscribe-webhook";
 import { getBaseUrl } from "@/lib/base-url";
 import { createProtectedCookieKey } from "@/lib/protected";
 
-export type StatusUpdateType = "email" | "rss" | "ssh" | "json" | "slack";
+export type StatusUpdateType =
+  | "email"
+  | "webhook"
+  | "rss"
+  | "ssh"
+  | "json"
+  | "slack";
 
 type Page = NonNullable<RouterOutputs["statusPage"]["get"]>;
 
@@ -57,7 +67,11 @@ function getUpdateLink(
 interface StatusUpdatesProps extends React.ComponentProps<typeof Button> {
   types?: StatusUpdateType[];
   page?: Page | null;
-  onSubscribe?: (values: FormValues) => Promise<void> | void;
+  onSubscribe?: (
+    values:
+      | ({ channelType: "email" } & FormValues)
+      | ({ channelType: "webhook" } & FormSubscribeWebhookValues),
+  ) => Promise<void> | void;
 }
 
 export function StatusUpdates({
@@ -68,7 +82,7 @@ export function StatusUpdates({
   ...props
 }: StatusUpdatesProps) {
   const t = useExtracted();
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<"email" | "webhook" | null>(null);
   const params = useParams();
   const domain = typeof params.domain === "string" ? params.domain : "";
   // The password lives in the cookie this browser set at login — not in the
@@ -91,6 +105,9 @@ export function StatusUpdates({
             {types.includes("email") ? (
               <TabsTrigger value="email">{t("Email")}</TabsTrigger>
             ) : null}
+            {types.includes("webhook") ? (
+              <TabsTrigger value="webhook">{t("Webhook")}</TabsTrigger>
+            ) : null}
             {types.includes("slack") ? (
               <TabsTrigger value="slack">{t("Slack")}</TabsTrigger>
             ) : null}
@@ -105,8 +122,8 @@ export function StatusUpdates({
             ) : null}
           </TabsList>
           <TabsContent value="email" className="flex flex-col gap-2">
-            {success ? (
-              <SuccessMessage />
+            {success === "email" ? (
+              <SuccessMessage type="email" />
             ) : (
               <>
                 <StatusUpdatesSection
@@ -119,14 +136,46 @@ export function StatusUpdates({
                     id="email-form"
                     page={page}
                     onSubmit={async (values) => {
-                      await onSubscribe?.(values);
-                      setSuccess(true);
+                      await onSubscribe?.({ channelType: "email", ...values });
+                      setSuccess("email");
                     }}
                   />
                 </StatusUpdatesSection>
                 <Separator />
                 <div className="px-2 pb-2">
                   <Button className="w-full" type="submit" form="email-form">
+                    {t("Subscribe")}
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
+          <TabsContent value="webhook" className="flex flex-col gap-2">
+            {success === "webhook" ? (
+              <SuccessMessage type="webhook" />
+            ) : (
+              <>
+                <StatusUpdatesSection
+                  description={t(
+                    "Send status updates to a webhook URL after a successful verification request.",
+                  )}
+                  className="py-0 pt-2"
+                >
+                  <FormSubscribeWebhook
+                    id="webhook-form"
+                    page={page}
+                    onSubmit={async (values) => {
+                      await onSubscribe?.({
+                        channelType: "webhook",
+                        ...values,
+                      });
+                      setSuccess("webhook");
+                    }}
+                  />
+                </StatusUpdatesSection>
+                <Separator />
+                <div className="px-2 pb-2">
+                  <Button className="w-full" type="submit" form="webhook-form">
                     {t("Subscribe")}
                   </Button>
                 </div>
@@ -151,14 +200,18 @@ export function StatusUpdates({
   );
 }
 
-function SuccessMessage() {
+function SuccessMessage({ type }: { type: "email" | "webhook" }) {
   const t = useExtracted();
   return (
     <div className="flex flex-col items-center justify-center gap-1 p-3">
       <Inbox className="size-4 shrink-0" />
-      <p className="text-center font-medium">{t("Check your inbox!")}</p>
+      <p className="text-center font-medium">
+        {type === "email" ? t("Check your inbox!") : t("Webhook subscribed")}
+      </p>
       <p className="text-muted-foreground text-center text-sm">
-        {t("Validate your email to receive updates and you are all set.")}
+        {type === "email"
+          ? t("Validate your email to receive updates and you are all set.")
+          : t("A verification request was accepted by your webhook URL.")}
       </p>
     </div>
   );

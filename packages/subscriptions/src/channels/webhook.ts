@@ -4,10 +4,11 @@ import { z } from "zod";
 
 import type { PageUpdate, Subscription } from "../types";
 
-export type WebhookFlavor = "slack" | "discord" | "generic";
+export type WebhookFlavor = "slack" | "discord" | "wecom" | "generic";
 
 const SLACK_PREFIX = "https://hooks.slack.com/services/";
 const DISCORD_PREFIX = "https://discord.com/api/webhooks/";
+const WECOM_ORIGIN = "https://qyapi.weixin.qq.com";
 
 /**
  * Classify a webhook URL by its incoming-webhook origin so we can emit
@@ -16,6 +17,7 @@ const DISCORD_PREFIX = "https://discord.com/api/webhooks/";
 export function detectWebhookFlavor(url: string): WebhookFlavor {
   if (url.startsWith(SLACK_PREFIX)) return "slack";
   if (url.startsWith(DISCORD_PREFIX)) return "discord";
+  if (url.startsWith(`${WECOM_ORIGIN}/cgi-bin/webhook/send`)) return "wecom";
   return "generic";
 }
 
@@ -60,6 +62,34 @@ function statusColor(status: PageUpdate["status"]): StatusColor {
   }
 }
 
+function statusLabel(status: PageUpdate["status"]) {
+  switch (status) {
+    case "investigating":
+      return "Investigating";
+    case "identified":
+      return "Identified";
+    case "monitoring":
+      return "Monitoring";
+    case "resolved":
+      return "Resolved";
+    case "maintenance":
+      return "Maintenance";
+  }
+}
+
+function wecomStatusColor(status: PageUpdate["status"]) {
+  switch (status) {
+    case "resolved":
+      return "info";
+    case "maintenance":
+    case "monitoring":
+      return "comment";
+    case "investigating":
+    case "identified":
+      return "warning";
+  }
+}
+
 export async function validateWebhookConfig(config: unknown) {
   const schema = z.object({
     headers: z
@@ -90,22 +120,79 @@ export async function sendWebhookVerification(
     throw new Error("Webhook URL is required for webhook channel");
   }
 
+  const flavor = detectWebhookFlavor(subscription.webhookUrl);
   await assertSafeUrl(subscription.webhookUrl);
   const response = await fetch(subscription.webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type: "verification",
-      token: subscription.token,
-      verifyUrl,
-    }),
+    body: JSON.stringify(
+      buildVerificationPayload(flavor, subscription, verifyUrl),
+    ),
     signal: AbortSignal.timeout(10000),
   });
 
+  await assertWebhookResponse(response, flavor, "Webhook verification failed");
+}
+
+function buildVerificationPayload(
+  flavor: WebhookFlavor,
+  subscription: Subscription,
+  verifyUrl: string,
+) {
+  switch (flavor) {
+    case "slack":
+      return {
+        text: `Verify ${subscription.pageName} status updates: ${verifyUrl}`,
+      };
+    case "discord":
+      return {
+        content: `Verify ${subscription.pageName} status updates: ${verifyUrl}`,
+      };
+    case "wecom":
+      return {
+        msgtype: "markdown",
+        markdown: {
+          content: [
+            `**${subscription.pageName} 服务状态订阅验证**`,
+            `> 验证链接：${verifyUrl}`,
+            "> 如果你看到了这条消息，说明 Webhook 可以接收 LLMHub Radar 的状态更新。",
+          ].join("\n"),
+        },
+      };
+    case "generic":
+      return {
+        type: "verification",
+        token: subscription.token,
+        verifyUrl,
+      };
+  }
+}
+
+async function assertWebhookResponse(
+  response: Response,
+  flavor: WebhookFlavor,
+  message: string,
+) {
   if (!response.ok) {
     throw new Error(
-      `Webhook verification failed: ${response.status} ${response.statusText}`,
+      `${message}: ${response.status} ${response.statusText}`,
     );
+  }
+
+  if (flavor !== "wecom") return;
+
+  const bodyText = await response.text();
+  if (!bodyText) return;
+
+  try {
+    const body = JSON.parse(bodyText) as { errcode?: number; errmsg?: string };
+    if (typeof body.errcode === "number" && body.errcode !== 0) {
+      throw new Error(`${message}: ${body.errcode} ${body.errmsg ?? ""}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith(message)) {
+      throw error;
+    }
   }
 }
 
@@ -240,6 +327,42 @@ function buildDiscordPayload(
   };
 }
 
+function buildWeComPayload(
+  pageUpdate: PageUpdate,
+  subscription: Subscription,
+  links: ManagementLinks,
+) {
+  const components =
+    pageUpdate.pageComponents.length > 0
+      ? pageUpdate.pageComponents.join(", ")
+      : "All components";
+  const lines = [
+    `**${pageUpdate.title}**`,
+    `> 页面：${subscription.pageName}`,
+    `> 状态：<font color="${wecomStatusColor(pageUpdate.status)}">${statusLabel(pageUpdate.status)}</font>`,
+    `> 影响范围：${components}`,
+    `> 时间：${pageUpdate.date}`,
+  ];
+
+  if (pageUpdate.message) {
+    lines.push("", pageUpdate.message);
+  }
+
+  if (links.manageUrl && links.unsubscribeUrl) {
+    lines.push(
+      "",
+      `[管理订阅](${links.manageUrl}) | [退订](${links.unsubscribeUrl})`,
+    );
+  }
+
+  return {
+    msgtype: "markdown",
+    markdown: {
+      content: lines.join("\n"),
+    },
+  };
+}
+
 /**
  * Prepared (staged) generic webhook payload. Currently unreachable in
  * production — the input gate rejects non-Slack/Discord URLs, and the
@@ -317,6 +440,8 @@ function buildNotificationPayload(
       return buildSlackPayload(pageUpdate, subscription, links);
     case "discord":
       return buildDiscordPayload(pageUpdate, subscription, links);
+    case "wecom":
+      return buildWeComPayload(pageUpdate, subscription, links);
     case "generic":
       return buildGenericPayload(pageUpdate, subscription, links);
   }
@@ -326,18 +451,7 @@ export async function sendWebhookNotifications(
   subscriptions: Subscription[],
   pageUpdate: PageUpdate,
 ) {
-  // Defense-in-depth: the input gate (tRPC + service layer) already rejects
-  // non-Slack/Discord URLs at save time. Drop any that slip through so the
-  // unreachable generic payload never ships to an unapproved destination.
-  const validSubscriptions = subscriptions
-    .filter(hasWebhookUrl)
-    .filter((sub) => {
-      if (detectWebhookFlavor(sub.webhookUrl) !== "generic") return true;
-      console.warn(
-        `Dropping webhook subscription ${sub.id}: generic URLs are not currently supported`,
-      );
-      return false;
-    });
+  const validSubscriptions = subscriptions.filter(hasWebhookUrl);
   if (validSubscriptions.length === 0) return;
 
   await Promise.allSettled(
@@ -353,6 +467,7 @@ export async function sendWebhookNotifications(
         );
       }
 
+      const flavor = detectWebhookFlavor(subscription.webhookUrl);
       const payload = buildNotificationPayload(pageUpdate, subscription);
 
       const headers: Record<string, string> = {
@@ -378,12 +493,11 @@ export async function sendWebhookNotifications(
           signal: AbortSignal.timeout(10000),
         });
 
-        if (!response.ok) {
-          console.error(
-            `Webhook notification failed for ${redactWebhookUrl(subscription.webhookUrl)}: ${response.status} ${response.statusText}`,
-          );
-          throw new Error(`Webhook returned ${response.status}`);
-        }
+        await assertWebhookResponse(
+          response,
+          flavor,
+          `Webhook notification failed for ${redactWebhookUrl(subscription.webhookUrl)}`,
+        );
       } catch (error) {
         console.error(
           `Failed to send webhook notification to ${redactWebhookUrl(subscription.webhookUrl)}:`,
@@ -437,6 +551,13 @@ export function buildTestPayload(flavor: WebhookFlavor) {
           },
         ],
       };
+    case "wecom":
+      return {
+        msgtype: "markdown",
+        markdown: {
+          content: "**Test Notification**\n> Your LLMHub Radar webhook is configured correctly.",
+        },
+      };
     case "generic":
       return {
         type: "test",
@@ -471,9 +592,5 @@ export async function sendTestWebhookRequest(input: {
     signal: AbortSignal.timeout(10000),
   });
 
-  if (!response.ok) {
-    throw new Error(
-      `Test webhook failed: ${response.status} ${response.statusText}`,
-    );
-  }
+  await assertWebhookResponse(response, flavor, "Test webhook failed");
 }

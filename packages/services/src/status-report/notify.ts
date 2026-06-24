@@ -1,4 +1,4 @@
-import { db as defaultDb, eq } from "@openstatus/db";
+﻿import { db as defaultDb, eq } from "@openstatus/db";
 import { statusReport, statusReportUpdate } from "@openstatus/db/src/schema";
 import { dispatchStatusReportUpdate } from "@openstatus/subscriptions";
 
@@ -10,12 +10,12 @@ import { NotifyStatusReportInput } from "./schemas";
 /**
  * Dispatch subscriber notifications for a specific status-report update.
  * Separate from the mutation services because the dashboard runs on the Edge
- * runtime and cannot fire-and-forget — callers invoke this as a second,
- * awaited call after the mutation (see service-layer-plan.md §Notifications).
+ * runtime and cannot fire-and-forget 鈥?callers invoke this as a second,
+ * awaited call after the mutation (see service-layer-plan.md 搂Notifications).
  *
  * Enforces:
  *   - Workspace owns the target update (via join to the parent report).
- *   - Plan has `status-subscribers` enabled — otherwise no-op.
+ *   - Subscriber notifications are available as a core LLMHub Radar feature.
  */
 export async function notifyStatusReport(args: {
   ctx: ServiceContext;
@@ -49,7 +49,7 @@ export async function notifyStatusReport(args: {
   }
 
   if (!ctx.workspace.limits["status-subscribers"]) {
-    // Plan does not enable subscribers — silently skip, matching existing
+    // Plan does not enable subscribers 鈥?silently skip, matching existing
     // `emailRouter.sendStatusReport` behaviour.
     return;
   }

@@ -34,6 +34,7 @@ type SubscriberColumnLabels = {
 const FLAVOR_LABELS = {
   slack: "Slack",
   discord: "Discord",
+  wecom: "企业微信",
   generic: "Webhook",
 } as const;
 

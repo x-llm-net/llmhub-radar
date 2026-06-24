@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { detectWebhookFlavor } from "@openstatus/subscriptions/client";
 import { Button } from "@openstatus/ui/components/ui/button";
 import {
   Form,
@@ -71,12 +70,6 @@ function getFormSchema(t: (key: string) => string) {
           code: "custom",
           path: ["webhookUrl"],
           message: t("invalidUrl"),
-        });
-      } else if (detectWebhookFlavor(data.webhookUrl) === "generic") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["webhookUrl"],
-          message: t("unsupportedWebhook"),
         });
       }
     }

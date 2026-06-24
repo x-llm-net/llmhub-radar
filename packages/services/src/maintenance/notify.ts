@@ -1,4 +1,4 @@
-import { db as defaultDb, eq } from "@openstatus/db";
+﻿import { db as defaultDb, eq } from "@openstatus/db";
 import { maintenance } from "@openstatus/db/src/schema";
 import { dispatchMaintenanceUpdate } from "@openstatus/subscriptions";
 
@@ -10,11 +10,11 @@ import { NotifyMaintenanceInput } from "./schemas";
 /**
  * Dispatch subscriber notifications for a maintenance. Separate from the
  * create/update mutations because the dashboard runs on Edge and cannot
- * fire-and-forget — callers invoke this as a second awaited call.
+ * fire-and-forget 鈥?callers invoke this as a second awaited call.
  *
  * Enforces:
  *   - Workspace owns the target maintenance.
- *   - Plan has `status-subscribers` enabled — otherwise no-op.
+ *   - Subscriber notifications are available as a core LLMHub Radar feature.
  */
 export async function notifyMaintenance(args: {
   ctx: ServiceContext;
@@ -36,10 +36,6 @@ export async function notifyMaintenance(args: {
   }
   if (row.workspaceId !== ctx.workspace.id) {
     throw new ForbiddenError("Maintenance does not belong to this workspace.");
-  }
-
-  if (!ctx.workspace.limits["status-subscribers"]) {
-    return;
   }
 
   await dispatchMaintenanceUpdate(input.maintenanceId);

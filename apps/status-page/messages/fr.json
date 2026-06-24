@@ -78,6 +78,8 @@
   "Pgb3Xj": "Abonné",
   "WOH7Yj": "Échec de l'abonnement",
   "L7z2/k": "Cette page n'a aucun composant auquel s'abonner.",
+  "My5jBx": "Webhook abonné",
+  "LO+gev": "URL du webhook",
   "BQBZU+": "Tous les systèmes sont opérationnels",
   "Dnob31": "Opérationnel",
   "b9fOA1": "Performances dégradées",
@@ -131,11 +133,14 @@
   "8kyEWd": "Un quantile représente un percentile spécifique dans votre jeu de données.",
   "kd0Igx": "Par exemple, p50 est le 50e percentile — le point en dessous duquel 50 % des données se situent. Les percentiles plus élevés incluent plus de données et mettent en évidence la plage supérieure.",
   "CYs0LF": "Voir l'historique des événements",
+  "GnZZHN": "Webhook",
   "sjzDbu": "Slack",
   "q0qMyV": "RSS",
   "9y9QQh": "JSON",
   "waUHa4": "SSH",
   "cVqFq/": "Recevez des notifications par email à chaque création ou résolution d'un rapport",
   "gczcC5": "S'abonner",
-  "45YlLU": "Validez votre email pour recevoir les mises à jour et le tour est joué."
+  "QhKc0s": "Envoyez les mises à jour d'état vers une URL de webhook après une demande de vérification réussie.",
+  "45YlLU": "Validez votre email pour recevoir les mises à jour et le tour est joué.",
+  "oq4BKz": "Une demande de vérification a été acceptée par votre URL de webhook."
 }

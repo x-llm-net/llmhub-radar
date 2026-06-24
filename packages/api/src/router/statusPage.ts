@@ -1,9 +1,10 @@
 import { Events } from "@openstatus/analytics";
-import { and, desc, eq, gte, inArray, sql } from "@openstatus/db";
+import { and, desc, eq, gte, inArray, isNull, sql } from "@openstatus/db";
 import {
   maintenance,
   page,
   pageComponent,
+  pageSubscriber,
   pageConfigurationSchema,
   radarCredential,
   radarPool,
@@ -29,6 +30,7 @@ import {
   upsertSelfSignupSubscriber,
   verifySelfSignupSubscriber,
 } from "@openstatus/services/page-subscriber";
+import { sendWebhookVerification } from "@openstatus/subscriptions";
 import { TRPCError } from "@trpc/server";
 import { endOfDay, startOfDay, subDays } from "date-fns";
 import { z } from "zod";
@@ -1342,14 +1344,24 @@ export const statusPageRouter = createTRPCRouter({
     }),
 
   subscribe: publicProcedure
-    .meta({ track: Events.SubscribePage, trackProps: ["slug", "email"] })
+    .meta({ track: Events.SubscribePage, trackProps: ["slug"] })
     .input(
-      z.object({
-        slug: z.string().toLowerCase(),
-        email: z.email(),
-        subscribeComponents: z.boolean(),
-        pageComponents: z.array(z.number().int().positive()),
-      }),
+      z.union([
+        z.object({
+          channelType: z.literal("email").optional(),
+          slug: z.string().toLowerCase(),
+          email: z.email(),
+          subscribeComponents: z.boolean(),
+          pageComponents: z.array(z.number().int().positive()),
+        }),
+        z.object({
+          channelType: z.literal("webhook"),
+          slug: z.string().toLowerCase(),
+          webhookUrl: z.url(),
+          subscribeComponents: z.boolean(),
+          pageComponents: z.array(z.number().int().positive()),
+        }),
+      ]),
     )
     .mutation(async (opts) => {
       if (!opts.input.slug) return null;
@@ -1368,20 +1380,82 @@ export const statusPageRouter = createTRPCRouter({
         });
       }
 
-      const workspace = selectWorkspaceSchema.safeParse(_page.workspace);
+      const statusPageBaseUrl = _page.customDomain
+        ? `https://${_page.customDomain}`
+        : `https://${_page.slug}.openstatus.dev`;
 
-      if (!workspace.success) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Workspace data is invalid",
+      if (opts.input.channelType === "webhook") {
+        const subscription = await upsertSelfSignupSubscriber({
+          input: {
+            channelType: "webhook",
+            webhookUrl: opts.input.webhookUrl,
+            pageId: _page.id,
+            componentIds: opts.input.subscribeComponents
+              ? opts.input.pageComponents
+              : [],
+          },
         });
-      }
 
-      if (!workspace.data.limits["status-subscribers"]) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Upgrade to use status subscribers",
-        });
+        if (subscription.acceptedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Webhook already subscribed",
+          });
+        }
+
+        if (!subscription.token) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Subscription has no verification token",
+          });
+        }
+
+        try {
+          await sendWebhookVerification(
+            {
+              id: subscription.id,
+              pageId: subscription.pageId,
+              pageName: subscription.pageName,
+              pageSlug: subscription.pageSlug,
+              customDomain: subscription.customDomain,
+              componentIds: subscription.componentIds,
+              channelType: "webhook",
+              webhookUrl: subscription.webhookUrl ?? opts.input.webhookUrl,
+              token: subscription.token,
+              acceptedAt: subscription.acceptedAt ?? undefined,
+            },
+            `${statusPageBaseUrl}/manage/${subscription.token}`,
+          );
+
+          const verified = await verifySelfSignupSubscriber({
+            input: { token: subscription.token, domain: opts.input.slug },
+          });
+
+          return {
+            id: subscription.id,
+            token: subscription.token,
+            channelType: "webhook" as const,
+            acceptedAt: verified?.acceptedAt ?? null,
+          };
+        } catch (error) {
+          await opts.ctx.db
+            .delete(pageSubscriber)
+            .where(
+              and(
+                eq(pageSubscriber.id, subscription.id),
+                isNull(pageSubscriber.acceptedAt),
+              ),
+            )
+            .run();
+
+          if (error instanceof Error) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: error.message,
+            });
+          }
+          throw error;
+        }
       }
 
       // Guard against email spam: reject if a pending (unverified, unexpired) subscription exists
@@ -1414,7 +1488,11 @@ export const statusPageRouter = createTRPCRouter({
         });
       }
 
-      return { id: subscription.id, token: subscription.token };
+      return {
+        id: subscription.id,
+        token: subscription.token,
+        channelType: "email" as const,
+      };
     }),
 
   getSubscriptionByToken: publicProcedure
@@ -1603,17 +1681,13 @@ export const statusPageRouter = createTRPCRouter({
         input: { token: opts.input.token, domain: opts.input.domain },
       });
 
-      if (
-        !subscription ||
-        subscription.unsubscribedAt ||
-        subscription.channelType !== "email"
-      ) {
+      if (!subscription || subscription.unsubscribedAt) {
         return null;
       }
 
       return {
         pageName: subscription.pageName,
-        maskedEmail: subscription.email,
+        maskedEmail: subscription.email ?? subscription.webhookUrl,
       };
     }),
 
