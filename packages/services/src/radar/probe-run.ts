@@ -1,5 +1,7 @@
 import { and, desc, eq, gte } from "@openstatus/db";
 import {
+  radarNotificationEvent,
+  radarPool,
   radarProbeRun,
   radarProbeTarget,
   radarTargetStatus,
@@ -10,6 +12,11 @@ import { requireScope } from "../auth";
 import { type ServiceContext, withTransaction } from "../context";
 import { NotFoundError } from "../errors";
 import { hashSecret } from "./crypto";
+import {
+  decideRadarNotificationEvent,
+  severityForRadarEvent,
+  type RadarNotificationEventType,
+} from "./notification-policy";
 import { RecordRadarProbeRunInput } from "./schemas";
 
 type TargetStatus =
@@ -72,7 +79,10 @@ function countLeading<T>(items: T[], predicate: (item: T) => boolean) {
 function percentile(values: number[], pct: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(sorted.length - 1, Math.ceil((pct / 100) * sorted.length) - 1);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.ceil((pct / 100) * sorted.length) - 1,
+  );
   return sorted[index] ?? null;
 }
 
@@ -163,10 +173,24 @@ export async function recordRadarProbeRun(args: {
       recentResults: recent,
       previousStatus: existingStatus?.currentStatus as TargetStatus | undefined,
     });
+    const latestNotificationEvent = await tx
+      .select({
+        id: radarNotificationEvent.id,
+        eventType: radarNotificationEvent.eventType,
+      })
+      .from(radarNotificationEvent)
+      .where(eq(radarNotificationEvent.targetId, target.id))
+      .orderBy(
+        desc(radarNotificationEvent.createdAt),
+        desc(radarNotificationEvent.id),
+      )
+      .limit(1)
+      .get();
     const errorCountByType: Record<string, number> = {};
     for (const item of recent) {
       if (!item.errorType) continue;
-      errorCountByType[item.errorType] = (errorCountByType[item.errorType] ?? 0) + 1;
+      errorCountByType[item.errorType] =
+        (errorCountByType[item.errorType] ?? 0) + 1;
     }
 
     await tx
@@ -179,7 +203,9 @@ export async function recordRadarProbeRun(args: {
       targetId: target.id,
       sampleCount1h,
       successRate1h:
-        sampleCount1h > 0 ? Math.round((successCount1h / sampleCount1h) * 10000) : 0,
+        sampleCount1h > 0
+          ? Math.round((successCount1h / sampleCount1h) * 10000)
+          : 0,
       sampleCount24h,
       successRate24h:
         sampleCount24h > 0
@@ -191,12 +217,8 @@ export async function recordRadarProbeRun(args: {
       p95TotalLatencyMs: percentile(totalLatencies, 95),
       errorCountByType,
       lastCheckAt: finishedAt,
-      lastSuccessAt: input.success
-        ? finishedAt
-        : existingStatus?.lastSuccessAt,
-      lastFailureAt: input.success
-        ? existingStatus?.lastFailureAt
-        : finishedAt,
+      lastSuccessAt: input.success ? finishedAt : existingStatus?.lastSuccessAt,
+      lastFailureAt: input.success ? existingStatus?.lastFailureAt : finishedAt,
       currentStatus,
       updatedAt: new Date(),
     };
@@ -210,6 +232,109 @@ export async function recordRadarProbeRun(args: {
       await tx.insert(radarTargetStatus).values(statusValues);
     }
 
+    const eventType = decideRadarNotificationEvent({
+      previousStatus: existingStatus?.currentStatus as TargetStatus | undefined,
+      currentStatus,
+      latestEventType: latestNotificationEvent?.eventType as
+        | RadarNotificationEventType
+        | undefined,
+    });
+
+    if (eventType) {
+      const pool = await tx
+        .select({
+          id: radarPool.id,
+          pageId: radarPool.pageId,
+          name: radarPool.name,
+        })
+        .from(radarPool)
+        .where(eq(radarPool.id, target.poolId))
+        .get();
+
+      if (pool?.pageId) {
+        await tx.insert(radarNotificationEvent).values({
+          workspaceId: ctx.workspace.id,
+          poolId: target.poolId,
+          targetId: target.id,
+          pageId: pool.pageId,
+          runId: run.id,
+          eventType,
+          severity: severityForRadarEvent(eventType),
+          previousStatus: existingStatus?.currentStatus,
+          currentStatus,
+          title: buildNotificationTitle(eventType, target.displayName),
+          message: buildNotificationMessage({
+            targetDisplayName: target.displayName,
+            modelName: target.modelName,
+            currentStatus,
+            successRate1h: statusValues.successRate1h,
+            sampleCount1h: statusValues.sampleCount1h,
+            p50FirstTokenMs: statusValues.p50FirstTokenMs,
+            p95FirstTokenMs: statusValues.p95FirstTokenMs,
+            safeErrorSummary: input.safeErrorSummary,
+          }),
+          dedupeKey: `radar:${target.id}:${run.id}:${eventType}`,
+        });
+      }
+    }
+
     return selectRadarProbeRunSchema.parse(run);
   });
+}
+
+function buildNotificationTitle(
+  eventType: RadarNotificationEventType,
+  targetDisplayName: string,
+) {
+  switch (eventType) {
+    case "degraded":
+      return `Service degraded: ${targetDisplayName}`;
+    case "down":
+      return `Service down: ${targetDisplayName}`;
+    case "configuration_error":
+      return `Service configuration issue: ${targetDisplayName}`;
+    case "recovered":
+      return `Service recovered: ${targetDisplayName}`;
+  }
+}
+
+function buildNotificationMessage(args: {
+  targetDisplayName: string;
+  modelName: string;
+  currentStatus: TargetStatus;
+  successRate1h: number;
+  sampleCount1h: number;
+  p50FirstTokenMs: number | null;
+  p95FirstTokenMs: number | null;
+  safeErrorSummary?: string;
+}) {
+  const lines = [
+    `API key: ${args.targetDisplayName}`,
+    `Probe model: ${args.modelName}`,
+    `Current status: ${args.currentStatus}`,
+    `1h availability: ${formatBasisPoints(args.successRate1h)} (${args.sampleCount1h} samples)`,
+  ];
+
+  if (args.p50FirstTokenMs !== null) {
+    lines.push(`TTFT P50: ${formatDuration(args.p50FirstTokenMs)}`);
+  }
+
+  if (args.p95FirstTokenMs !== null) {
+    lines.push(`TTFT P95: ${formatDuration(args.p95FirstTokenMs)}`);
+  }
+
+  if (args.safeErrorSummary) {
+    lines.push(`Last error: ${args.safeErrorSummary}`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatBasisPoints(value: number) {
+  return `${(value / 100).toFixed(2)}%`;
+}
+
+function formatDuration(ms: number) {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }

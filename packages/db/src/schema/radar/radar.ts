@@ -14,6 +14,9 @@ import {
   radarBaseUrlVisibility,
   radarEndpointTypes,
   radarErrorTypes,
+  radarNotificationDeliveryStatuses,
+  radarNotificationEventTypes,
+  radarNotificationSeverities,
   radarPoolVisibility,
   radarProviderTypes,
   radarTargetStatuses,
@@ -142,9 +145,12 @@ export const radarProbeTarget = sqliteTable(
     providerId: integer("provider_id")
       .notNull()
       .references(() => radarProvider.id, { onDelete: "cascade" }),
-    credentialId: integer("credential_id").references(() => radarCredential.id, {
-      onDelete: "set null",
-    }),
+    credentialId: integer("credential_id").references(
+      () => radarCredential.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     name: text("name", { length: 160 }).notNull(),
     displayName: text("display_name", { length: 160 }).notNull(),
     modelName: text("model_name", { length: 160 }).notNull(),
@@ -301,6 +307,64 @@ export const radarTargetOpenStatusBinding = sqliteTable(
   ],
 );
 
+export const radarNotificationEvent = sqliteTable(
+  "radar_notification_event",
+  {
+    id: integer("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    poolId: integer("pool_id")
+      .notNull()
+      .references(() => radarPool.id, { onDelete: "cascade" }),
+    targetId: integer("target_id")
+      .notNull()
+      .references(() => radarProbeTarget.id, { onDelete: "cascade" }),
+    pageId: integer("page_id").references(() => page.id, {
+      onDelete: "set null",
+    }),
+    runId: integer("run_id").references(() => radarProbeRun.id, {
+      onDelete: "cascade",
+    }),
+    eventType: text("event_type", {
+      enum: radarNotificationEventTypes,
+    }).notNull(),
+    severity: text("severity", {
+      enum: radarNotificationSeverities,
+    }).notNull(),
+    previousStatus: text("previous_status", { enum: radarTargetStatuses }),
+    currentStatus: text("current_status", {
+      enum: radarTargetStatuses,
+    }).notNull(),
+    title: text("title", { length: 180 }).notNull(),
+    message: text("message", { length: 1000 }).default("").notNull(),
+    dedupeKey: text("dedupe_key", { length: 200 }).notNull(),
+    status: text("status", {
+      enum: radarNotificationDeliveryStatuses,
+    })
+      .default("pending")
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error", { length: 500 }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    dispatchedAt: integer("dispatched_at", { mode: "timestamp" }),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    uniqueIndex("radar_notification_event_dedupe_idx").on(t.dedupeKey),
+    index("radar_notification_event_status_created_idx").on(
+      t.status,
+      t.createdAt,
+    ),
+    index("radar_notification_event_target_idx").on(t.targetId),
+    index("radar_notification_event_page_idx").on(t.pageId),
+  ],
+);
+
 export const radarPoolRelations = relations(radarPool, ({ one, many }) => ({
   workspace: one(workspace, {
     fields: [radarPool.workspaceId],
@@ -372,6 +436,7 @@ export const radarProbeTargetRelations = relations(
       fields: [radarProbeTarget.id],
       references: [radarTargetOpenStatusBinding.targetId],
     }),
+    notificationEvents: many(radarNotificationEvent),
   }),
 );
 
@@ -430,6 +495,32 @@ export const radarTargetOpenStatusBindingRelations = relations(
     monitor: one(monitor, {
       fields: [radarTargetOpenStatusBinding.monitorId],
       references: [monitor.id],
+    }),
+  }),
+);
+
+export const radarNotificationEventRelations = relations(
+  radarNotificationEvent,
+  ({ one }) => ({
+    workspace: one(workspace, {
+      fields: [radarNotificationEvent.workspaceId],
+      references: [workspace.id],
+    }),
+    pool: one(radarPool, {
+      fields: [radarNotificationEvent.poolId],
+      references: [radarPool.id],
+    }),
+    target: one(radarProbeTarget, {
+      fields: [radarNotificationEvent.targetId],
+      references: [radarProbeTarget.id],
+    }),
+    page: one(page, {
+      fields: [radarNotificationEvent.pageId],
+      references: [page.id],
+    }),
+    run: one(radarProbeRun, {
+      fields: [radarNotificationEvent.runId],
+      references: [radarProbeRun.id],
     }),
   }),
 );

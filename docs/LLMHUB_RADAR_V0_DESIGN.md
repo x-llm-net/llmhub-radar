@@ -828,11 +828,15 @@ Implemented on 2026-06-24:
 - Added dashboard `/radar` pool list and creation flow.
 - Added dashboard `/radar/[id]` pool detail view with provider, credential fingerprint, target status, and trust controls.
 - Added worker-side OpenAI-compatible probe skeleton with TTFT, TTFB, latency, token usage, error classification, redaction, SSRF URL checks, and status policy tests.
+- Added Radar notification event table and v0 notification loop:
+  - status transition detection runs after probe aggregation.
+  - degraded notifications wait for a repeated degraded state.
+  - down, configuration issue, and recovery transitions enqueue events.
+  - pending events reuse existing OpenStatus page subscriber email/webhook dispatch.
+  - delivery status is persisted as pending, sent, failed, or skipped.
 
 Launch readiness TODO as of 2026-06-24:
 
-- Build the notification loop: detect status transitions, deduplicate flapping changes, send incident and recovery messages, and persist delivery attempts.
-- Reuse email and webhook first. Defer the large OpenStatus notification catalog until real usage proves it is needed.
 - Productionize the Radar worker: run it as a deployable long-running service or scheduled job with health logs, restart behavior, and a clear owner.
 - Add hard v0 guardrails: status pages per account, API keys per page, probe targets per page, daily probes, subscribers per page, and webhook delivery retries.
 - Tighten auth and onboarding: make registration visible, keep login sessions stable, and verify the dashboard redirect flow.
@@ -840,10 +844,12 @@ Launch readiness TODO as of 2026-06-24:
 - Remove or internalize `radar.recordProbeRun` from the dashboard-facing tRPC router before production. Probe results should be written by the worker, not arbitrary client calls.
 - Add a minimal admin safety path: unpublish abusive public pages and suspend obvious spam accounts.
 - Add a smoke-test script covering create status page -> add API key -> discover models -> scheduled probe -> public page -> subscribe -> notification.
+- Decide whether generic JSON webhooks should be enabled for public subscribers, or kept as vendor-added Slack/Discord webhooks only.
 
 Verification:
 
 - `pnpm --filter @openstatus/dashboard tsc` passes.
+- `pnpm --filter @openstatus/services test src/radar/notification-policy.test.ts` passes.
 - `pnpm --filter @openstatus/workflows exec bun test src/radar/radar.test.ts` passes.
 - `pnpm --filter @openstatus/services tsc` is blocked by an existing `packages/db/src/db.ts` declaration issue for `../env.mjs`.
 - Full workflows typecheck is blocked by existing non-Radar issues in `apps/workflows/src/cron/external-status.ts` and the same `db/env.mjs` declaration issue.

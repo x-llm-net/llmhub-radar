@@ -561,6 +561,13 @@
       "when": 1782270000000,
       "tag": "0079_radar_model_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1782271200000,
+      "tag": "0080_radar_notification_events",
+      "breakpoints": true
     }
   ]
 }

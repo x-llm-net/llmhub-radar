@@ -1,11 +1,4 @@
-import {
-  and,
-  db,
-  eq,
-  isNull,
-  lte,
-  or,
-} from "@openstatus/db";
+import { and, db, eq, isNull, lte, or } from "@openstatus/db";
 import {
   radarCredential,
   radarProbeTarget,
@@ -17,6 +10,10 @@ import {
 import type { ServiceContext } from "../context";
 import { withBusyRetry } from "../retry";
 import { decryptSecret } from "./crypto";
+import {
+  dispatchPendingRadarNotifications,
+  type DispatchRadarNotificationsResult,
+} from "./notifications";
 import { runOpenAICompatibleProbe } from "./probe";
 import type { RadarProbeResult } from "./probe";
 import { recordRadarProbeRun } from "./probe-run";
@@ -34,6 +31,7 @@ export type RunRadarCronResult = {
   failed: number;
   skipped: number;
   errors: Array<{ targetId: number; message: string }>;
+  notifications: DispatchRadarNotificationsResult;
 };
 
 export async function runRadarCron(input?: {
@@ -52,7 +50,7 @@ export async function runRadarCron(input?: {
     (target) => runDueRadarTarget(target, now),
   );
 
-  return results.reduce<RunRadarCronResult>(
+  const summary = results.reduce<Omit<RunRadarCronResult, "notifications">>(
     (summary, result) => {
       summary.selected += 1;
 
@@ -84,6 +82,12 @@ export async function runRadarCron(input?: {
       errors: [],
     },
   );
+
+  const notifications = await dispatchPendingRadarNotifications({
+    limit: batchSize,
+  });
+
+  return { ...summary, notifications };
 }
 
 async function listDueRadarTargets(args: { now: Date; limit: number }) {
@@ -95,10 +99,7 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
       workspace,
     })
     .from(radarProbeTarget)
-    .innerJoin(
-      radarProvider,
-      eq(radarProvider.id, radarProbeTarget.providerId),
-    )
+    .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
     .innerJoin(
       radarCredential,
       eq(radarCredential.id, radarProbeTarget.credentialId),
@@ -173,7 +174,11 @@ async function runDueRadarTarget(
       },
     });
 
-    await scheduleNextCheck(row.target.id, finishedAt, row.target.intervalSeconds);
+    await scheduleNextCheck(
+      row.target.id,
+      finishedAt,
+      row.target.intervalSeconds,
+    );
     return { status: "success", targetId: row.target.id };
   } catch (error) {
     const finishedAt = new Date();
@@ -189,14 +194,21 @@ async function runDueRadarTarget(
           success: false,
           errorType: "unknown",
           safeErrorSummary: message,
-          totalLatencyMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+          totalLatencyMs: Math.max(
+            0,
+            finishedAt.getTime() - startedAt.getTime(),
+          ),
         },
       });
     } catch {
       // Keep the original operational error visible in the cron response.
     }
 
-    await scheduleNextCheck(row.target.id, finishedAt, row.target.intervalSeconds);
+    await scheduleNextCheck(
+      row.target.id,
+      finishedAt,
+      row.target.intervalSeconds,
+    );
     return { status: "failed", targetId: row.target.id, message };
   }
 }
@@ -319,7 +331,9 @@ async function runWithConcurrency<T, R>(
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => runNext()),
+    Array.from({ length: Math.min(concurrency, items.length) }, () =>
+      runNext(),
+    ),
   );
 
   return results;

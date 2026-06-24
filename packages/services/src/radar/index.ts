@@ -16,6 +16,10 @@ export {
   type RadarPoolDetail,
   type RadarPoolListItem,
 } from "./list";
+export {
+  dispatchPendingRadarNotifications,
+  type DispatchRadarNotificationsResult,
+} from "./notifications";
 export { recordRadarProbeRun } from "./probe-run";
 export {
   CreateRadarPoolInput,

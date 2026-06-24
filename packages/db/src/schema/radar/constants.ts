@@ -19,6 +19,26 @@ export const radarTargetStatuses = [
   "configuration_error",
 ] as const;
 
+export const radarNotificationEventTypes = [
+  "degraded",
+  "down",
+  "configuration_error",
+  "recovered",
+] as const;
+
+export const radarNotificationSeverities = [
+  "info",
+  "warning",
+  "critical",
+] as const;
+
+export const radarNotificationDeliveryStatuses = [
+  "pending",
+  "sent",
+  "failed",
+  "skipped",
+] as const;
+
 export const radarErrorTypes = [
   "auth_error",
   "rate_limited",
