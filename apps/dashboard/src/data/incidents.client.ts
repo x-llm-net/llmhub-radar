@@ -22,14 +22,18 @@ export const actions = [
 ] as const;
 
 export type IncidentAction = (typeof actions)[number];
+type IncidentActionWithHandler = Omit<IncidentAction, "label"> & {
+  label: string;
+  onClick?: () => Promise<void> | void;
+};
 
 export const getActions = (
   props: Partial<Record<IncidentAction["id"], () => Promise<void> | void>>,
-): (IncidentAction & {
-  onClick?: () => Promise<void> | void;
-})[] => {
+  labels?: Partial<Record<IncidentAction["id"], string>>,
+): IncidentActionWithHandler[] => {
   return actions.map((action) => ({
     ...action,
+    label: labels?.[action.id] ?? action.label,
     onClick: props[action.id as keyof typeof props],
   }));
 };

@@ -18,6 +18,7 @@ import {
 } from "@openstatus/ui/components/ui/tabs";
 import { cn } from "@openstatus/ui/lib/utils";
 import { Braces, TableProperties } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { IconCloudProvider } from "@/components/common/icon-cloud-provider";
 import { BlockWrapper } from "@/components/content/block-wrapper";
@@ -62,6 +63,7 @@ export function DataTableBasicsHTTP({
   };
   privateLocations?: PrivateLocation[];
 }) {
+  const t = useTranslations("responseLogs");
   const privateLocataion = privateLocations?.find(
     (location) => String(location.id) === String(data.region),
   );
@@ -76,12 +78,10 @@ export function DataTableBasicsHTTP({
       </colgroup>
       <TableBody>
         <TableRow>
-          <TableHead colSpan={2}>Request</TableHead>
+          <TableHead colSpan={2}>{t("request")}</TableHead>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Result
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("result")}</TableHead>
           {/* TODO: add colored square like list (see columns) */}
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <div className="flex items-center gap-2">
@@ -109,9 +109,7 @@ export function DataTableBasicsHTTP({
           </TableRow>
         ) : null}
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Timestamp
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("timestamp")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellDate
               value={new Date(data.cronTimestamp)}
@@ -120,9 +118,7 @@ export function DataTableBasicsHTTP({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            URL
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("url")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {data.url}
           </TableCell>
@@ -137,9 +133,7 @@ export function DataTableBasicsHTTP({
         </TableCell>
         </TableRow> */}
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Status
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("status")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellNumber
               value={data.statusCode}
@@ -148,17 +142,13 @@ export function DataTableBasicsHTTP({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Latency
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("latency")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellNumber value={data?.latency} unit="ms" />
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Region
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("region")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {regionConfig?.code}{" "}
             <span className="text-muted-foreground text-xs">
@@ -167,9 +157,7 @@ export function DataTableBasicsHTTP({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Cloud Provider
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("cloudProvider")}</TableHead>
           <TableCell className="inline-flex max-w-full overflow-x-auto font-mono whitespace-normal">
             <IconCloudProvider
               provider={regionConfig?.provider}
@@ -182,9 +170,7 @@ export function DataTableBasicsHTTP({
         </TableRow>
         {data.trigger ? (
           <TableRow className="[&>:not(:last-child)]:border-r">
-            <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-              Trigger
-            </TableHead>
+            <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("trigger")}</TableHead>
             <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
               {data?.trigger}
             </TableCell>
@@ -193,7 +179,7 @@ export function DataTableBasicsHTTP({
         {data.headers ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Headers</TableHead>
+              <TableHead colSpan={2}>{t("headers")}</TableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={2} className="p-0">
@@ -244,7 +230,7 @@ export function DataTableBasicsHTTP({
         {data.timing ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Timing</TableHead>
+              <TableHead colSpan={2}>{t("timing")}</TableHead>
             </TableRow>
             {Object.entries(data?.timing ?? {}).map(([key, value], index) => (
               <TableRow key={key} className="[&>:not(:last-child)]:border-r">
@@ -279,7 +265,7 @@ export function DataTableBasicsHTTP({
         {data?.message ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Message</TableHead>
+              <TableHead colSpan={2}>{t("message")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
@@ -293,7 +279,7 @@ export function DataTableBasicsHTTP({
         {data.body ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Body</TableHead>
+              <TableHead colSpan={2}>{t("body")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
@@ -309,13 +295,13 @@ export function DataTableBasicsHTTP({
         {data.assertions ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Assertions</TableHead>
+              <TableHead colSpan={2}>{t("assertions")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
                 {!data.assertions || data.assertions === "[]" ? (
                   <div className="text-muted-foreground p-2 font-mono text-sm">
-                    Default status code 2xx assertion
+                    {t("defaultAssertion")}
                   </div>
                 ) : (
                   <pre className="bg-muted/50 max-w-full overflow-x-auto rounded-none p-2 font-mono text-sm whitespace-pre-wrap">
@@ -340,6 +326,7 @@ export function DataTableBasicsTCP({
   };
   privateLocations?: PrivateLocation[];
 }) {
+  const t = useTranslations("responseLogs");
   const privateLocataion = privateLocations?.find(
     (location) => String(location.id) === String(data.region),
   );
@@ -354,12 +341,10 @@ export function DataTableBasicsTCP({
       </colgroup>
       <TableBody>
         <TableRow>
-          <TableHead colSpan={2}>Request</TableHead>
+          <TableHead colSpan={2}>{t("request")}</TableHead>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Result
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("result")}</TableHead>
           {/* TODO: add colored square like list (see columns) */}
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <div className="flex items-center gap-2">
@@ -387,9 +372,7 @@ export function DataTableBasicsTCP({
           </TableRow>
         ) : null}
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Timestamp
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("timestamp")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellDate
               value={new Date(data.cronTimestamp)}
@@ -398,25 +381,19 @@ export function DataTableBasicsTCP({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            URI
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("uri")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {data.uri}
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Latency
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("latency")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellNumber value={data?.latency} unit="ms" />
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Region
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("region")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {regionConfig?.flag} {regionConfig?.code}{" "}
             <span className="text-muted-foreground">
@@ -425,9 +402,7 @@ export function DataTableBasicsTCP({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Cloud Provider
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("cloudProvider")}</TableHead>
           <TableCell className="inline-flex max-w-full overflow-x-auto font-mono whitespace-normal">
             <IconCloudProvider
               provider={regionConfig?.provider}
@@ -440,9 +415,7 @@ export function DataTableBasicsTCP({
         </TableRow>
         {data.trigger ? (
           <TableRow className="[&>:not(:last-child)]:border-r">
-            <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-              Trigger
-            </TableHead>
+            <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("trigger")}</TableHead>
             <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
               {data?.trigger}
             </TableCell>
@@ -451,7 +424,7 @@ export function DataTableBasicsTCP({
         {data?.errorMessage ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Error Message</TableHead>
+              <TableHead colSpan={2}>{t("errorMessage")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
@@ -476,6 +449,7 @@ export function DataTableBasicsDNS({
   };
   privateLocations?: PrivateLocation[];
 }) {
+  const t = useTranslations("responseLogs");
   const privateLocataion = privateLocations?.find(
     (location) => String(location.id) === String(data.region),
   );
@@ -490,12 +464,10 @@ export function DataTableBasicsDNS({
       </colgroup>
       <TableBody>
         <TableRow>
-          <TableHead colSpan={2}>Request</TableHead>
+          <TableHead colSpan={2}>{t("request")}</TableHead>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Result
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("result")}</TableHead>
           {/* TODO: add colored square like list (see columns) */}
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <div className="flex items-center gap-2">
@@ -523,9 +495,7 @@ export function DataTableBasicsDNS({
           </TableRow>
         ) : null}
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Timestamp
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("timestamp")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellDate
               value={new Date(data.cronTimestamp)}
@@ -534,25 +504,19 @@ export function DataTableBasicsDNS({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            URI
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("uri")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {data.uri}
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Latency
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("latency")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             <TableCellNumber value={data?.latency} unit="ms" />
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Region
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("region")}</TableHead>
           <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
             {regionConfig?.flag} {regionConfig?.code}{" "}
             <span className="text-muted-foreground">
@@ -561,9 +525,7 @@ export function DataTableBasicsDNS({
           </TableCell>
         </TableRow>
         <TableRow className="[&>:not(:last-child)]:border-r">
-          <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-            Cloud Provider
-          </TableHead>
+          <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("cloudProvider")}</TableHead>
           <TableCell className="inline-flex max-w-full overflow-x-auto font-mono whitespace-normal">
             <IconCloudProvider
               provider={regionConfig?.provider}
@@ -576,9 +538,7 @@ export function DataTableBasicsDNS({
         </TableRow>
         {data.trigger ? (
           <TableRow className="[&>:not(:last-child)]:border-r">
-            <TableHead className="bg-muted/50 text-muted-foreground font-normal">
-              Trigger
-            </TableHead>
+            <TableHead className="bg-muted/50 text-muted-foreground font-normal">{t("trigger")}</TableHead>
             <TableCell className="max-w-full overflow-x-auto font-mono whitespace-normal">
               {data?.trigger}
             </TableCell>
@@ -587,7 +547,7 @@ export function DataTableBasicsDNS({
         {data?.records ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Records</TableHead>
+              <TableHead colSpan={2}>{t("records")}</TableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={2} className="p-0">
@@ -640,7 +600,7 @@ export function DataTableBasicsDNS({
         {data?.errorMessage ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Error Message</TableHead>
+              <TableHead colSpan={2}>{t("errorMessage")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
@@ -654,13 +614,13 @@ export function DataTableBasicsDNS({
         {data.assertions ? (
           <>
             <TableRow>
-              <TableHead colSpan={2}>Assertions</TableHead>
+              <TableHead colSpan={2}>{t("assertions")}</TableHead>
             </TableRow>
             <TableRow>
               <TableCell colSpan={2} className="p-0">
                 {!data.assertions || data.assertions === "[]" ? (
                   <div className="text-muted-foreground p-2 font-mono text-sm">
-                    No assertions
+                    {t("noAssertions")}
                   </div>
                 ) : (
                   <pre className="bg-muted/50 max-w-full overflow-x-auto rounded-none p-2 font-mono text-sm whitespace-pre-wrap">

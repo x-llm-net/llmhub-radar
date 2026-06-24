@@ -26,6 +26,28 @@ import { DataTableRowActions } from "./data-table-row-actions";
 
 type StatusReport = RouterOutputs["statusReport"]["list"][number];
 
+export type StatusReportColumnLabels = {
+  title: string;
+  currentStatus: string;
+  impact: string;
+  updates: string;
+  affected: string;
+  startedAt: string;
+  expand: (title: string) => string;
+  collapse: (title: string) => string;
+};
+
+const defaultLabels: StatusReportColumnLabels = {
+  title: "Title",
+  currentStatus: "Current Status",
+  impact: "Impact",
+  updates: "Updates",
+  affected: "Affected",
+  startedAt: "Started At",
+  expand: (title) => `Expand details for ${title}`,
+  collapse: (title) => `Collapse details for ${title}`,
+};
+
 // derived top-level impact = worst impact set by any update, not the
 // current one (a resolved report would always read "Operational");
 // legacy reports (no impact rows) read "Untriaged"
@@ -37,7 +59,10 @@ function worstReportImpact(report: StatusReport) {
   return worstImpact(impacts);
 }
 
-export const columns: ColumnDef<StatusReport>[] = [
+export function getColumns(
+  labels: StatusReportColumnLabels = defaultLabels,
+): ColumnDef<StatusReport>[] {
+  return [
   {
     id: "expander",
     header: () => null,
@@ -52,8 +77,8 @@ export const columns: ColumnDef<StatusReport>[] = [
             },
             "aria-expanded": row.getIsExpanded(),
             "aria-label": row.getIsExpanded()
-              ? `Collapse details for ${row.original.title}`
-              : `Expand details for ${row.original.title}`,
+              ? labels.collapse(row.original.title)
+              : labels.expand(row.original.title),
             size: "icon",
             variant: "ghost",
           }}
@@ -72,7 +97,7 @@ export const columns: ColumnDef<StatusReport>[] = [
   },
   {
     accessorKey: "title",
-    header: "Title",
+    header: labels.title,
     cell: ({ row }) => {
       const { id, pageId } = row.original;
 
@@ -95,7 +120,7 @@ export const columns: ColumnDef<StatusReport>[] = [
   },
   {
     accessorKey: "status",
-    header: "Current Status",
+    header: labels.currentStatus,
     cell: ({ row }) => {
       const value = String(row.getValue("status"));
       return (
@@ -115,7 +140,7 @@ export const columns: ColumnDef<StatusReport>[] = [
   {
     id: "impact",
     accessorFn: (row) => worstReportImpact(row),
-    header: "Impact",
+    header: labels.impact,
     cell: ({ row }) => {
       const impact = row.getValue<PageComponentImpact | null>("impact");
       const config = impact ? impactConfig[impact] : untriagedImpact;
@@ -128,7 +153,7 @@ export const columns: ColumnDef<StatusReport>[] = [
   {
     id: "updates",
     accessorFn: (row) => row.updates.length,
-    header: "Updates",
+    header: labels.updates,
     cell: ({ row }) => {
       const value = row.getValue("updates");
       return <TableCellNumber value={value} />;
@@ -137,7 +162,7 @@ export const columns: ColumnDef<StatusReport>[] = [
   {
     id: "pageComponents",
     accessorFn: (row) => row?.pageComponents,
-    header: "Affected",
+    header: labels.affected,
     cell: ({ row }) => {
       const value = row.getValue("pageComponents");
       if (Array.isArray(value) && value.length > 0 && "name" in value[0]) {
@@ -164,7 +189,7 @@ export const columns: ColumnDef<StatusReport>[] = [
       row.updates.sort((a, b) => a.date.getTime() - b.date.getTime())[0]
         ?.date ?? row.createdAt,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Started At" />
+      <DataTableColumnHeader column={column} title={labels.startedAt} />
     ),
     cell: ({ row }) => <TableCellDate value={row.getValue("startedAt")} />,
     enableHiding: false,
@@ -179,4 +204,7 @@ export const columns: ColumnDef<StatusReport>[] = [
       cellClassName: "w-8",
     },
   },
-];
+  ];
+}
+
+export const columns = getColumns();

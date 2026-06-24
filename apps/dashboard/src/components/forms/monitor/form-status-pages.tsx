@@ -16,6 +16,7 @@ import {
 import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -53,6 +54,7 @@ export function FormStatusPages({
   onSubmit: (values: FormValues) => Promise<void>;
   statusPages: { id: number; title: string; slug: string }[];
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -71,13 +73,13 @@ export function FormStatusPages({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -92,7 +94,7 @@ export function FormStatusPages({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Status Pages</FormCardTitle>
+            <FormCardTitle>{t("statusPages")}</FormCardTitle>
             <FormCardDescription>
               Add status pages to your monitor and configure the external name
               and description to be shown on the status page.
@@ -104,7 +106,7 @@ export function FormStatusPages({
               name="externalName"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>External Name</FormLabel>
+                  <FormLabel>{t("externalName")}</FormLabel>
                   <FormControl>
                     <Input placeholder="OpenStatus API" {...field} />
                   </FormControl>
@@ -122,7 +124,7 @@ export function FormStatusPages({
               name="description"
               render={({ field }) => (
                 <FormItem className="sm:col-span-full">
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t("description")}</FormLabel>
                   <FormControl>
                     <Input placeholder="My Status Page" {...field} />
                   </FormControl>
@@ -170,7 +172,7 @@ export function FormStatusPages({
                           }
                         }}
                       >
-                        Select all
+                        {t("selectAll")}
                       </Button>
                     </div>
                     {statusPages.map((item) => (
@@ -223,13 +225,13 @@ export function FormStatusPages({
               />
             ) : (
               <EmptyStateContainer>
-                <EmptyStateTitle>No status pages</EmptyStateTitle>
+                <EmptyStateTitle>{t("noStatusPages")}</EmptyStateTitle>
               </EmptyStateContainer>
             )}
           </FormCardContent>
           <FormCardFooter>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

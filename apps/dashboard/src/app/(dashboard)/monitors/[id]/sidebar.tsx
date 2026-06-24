@@ -4,6 +4,7 @@ import { deserialize } from "@openstatus/assertions";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import { Logs } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams, useRouter } from "next/navigation";
 
 import { TableCellLink } from "@/components/data-table/table-cell-link";
@@ -13,6 +14,8 @@ import { formatMilliseconds } from "@/lib/formatter";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Sidebar() {
+  const t = useTranslations("monitors.sidebar");
+  const common = useTranslations("common");
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
@@ -27,22 +30,22 @@ export function Sidebar() {
 
   return (
     <SidebarRight
-      header="Monitor"
+      header={t("header")}
       metadata={[
         {
-          label: "Overview",
+          label: t("overview"),
           items: [
             {
-              label: "External Name",
+              label: t("externalName"),
               value: monitor.externalName || monitor.name,
             },
             {
-              label: "Status",
+              label: t("status"),
               // FIXME: dynamic
-              value: <span className="text-success">Normal</span>,
+              value: <span className="text-success">{t("normal")}</span>,
             },
             {
-              label: "Type",
+              label: t("type"),
               value: type ? (
                 <span className="flex items-center gap-1">
                   <span className="uppercase">{type.label}</span>
@@ -53,18 +56,18 @@ export function Sidebar() {
               ),
             },
             {
-              label: "Endpoint",
+              label: t("endpoint"),
               value: monitor.url.replace(/^https?:\/\//, ""),
             },
             {
-              label: "Regions",
+              label: t("regions"),
               value:
                 monitor.regions.length > 6
-                  ? `${monitor.regions.length} regions`
+                  ? t("regionsCount", { count: monitor.regions.length })
                   : monitor.regions.join(", "),
             },
             {
-              label: "Tags",
+              label: t("tags"),
               value: (
                 <div className="group/badges flex flex-wrap -space-x-2">
                   {monitor.tags.map((tag) => (
@@ -86,28 +89,34 @@ export function Sidebar() {
           ],
         },
         {
-          label: "Configuration",
+          label: t("configuration"),
           items: [
-            { label: "Periodicity", value: monitor.periodicity },
+            { label: t("periodicity"), value: monitor.periodicity },
             {
-              label: "Timeout",
+              label: t("timeout"),
               value: formatMilliseconds(monitor.timeout),
             },
-            { label: "Public", value: String(monitor.public) },
-            { label: "Active", value: String(monitor.active) },
             {
-              label: "Follow redirects",
-              value: String(monitor.followRedirects),
+              label: t("public"),
+              value: monitor.public ? common("yes") : common("no"),
+            },
+            {
+              label: t("active"),
+              value: monitor.active ? common("yes") : common("no"),
+            },
+            {
+              label: t("followRedirects"),
+              value: monitor.followRedirects ? common("yes") : common("no"),
             },
           ],
         },
         {
-          label: "Notifications",
-          emptyMessage: "No notifications attached",
+          label: t("notifications"),
+          emptyMessage: t("noNotifications"),
           items: monitor.notifications.flatMap((notification) => {
             const arr = [];
             arr.push({
-              label: "Name",
+              label: t("name"),
               value: (
                 <TableCellLink
                   // TODO: add the ?id= to the href and open the sheet
@@ -117,12 +126,12 @@ export function Sidebar() {
               ),
             });
             arr.push({
-              label: "Type",
+              label: t("type"),
               value: notification.provider,
               isNested: true,
             });
             arr.push({
-              label: "Value",
+              label: t("value"),
               value: notification.data, // TODO: improve this based on the provider - we might wanna parse it!
               isNested: true,
             });
@@ -130,18 +139,18 @@ export function Sidebar() {
           }),
         },
         {
-          label: "Assertions",
-          emptyMessage: "No assertions configured",
+          label: t("assertions"),
+          emptyMessage: t("noAssertions"),
           items: assertions.flatMap((assertion) => {
             const arr = [];
 
             arr.push({
-              label: "Type",
+              label: t("type"),
               value: assertion.schema.type,
             });
 
             arr.push({
-              label: "Compare",
+              label: t("compare"),
               value: assertion.schema.compare,
               isNested: true,
             });
@@ -152,14 +161,14 @@ export function Sidebar() {
               assertion.schema.key
             ) {
               arr.push({
-                label: "Key",
+                label: t("key"),
                 value: assertion.schema.key,
                 isNested: true,
               });
             }
 
             arr.push({
-              label: "Value",
+              label: t("value"),
               value: assertion.schema.target,
               isNested: true,
             });
@@ -210,7 +219,7 @@ export function Sidebar() {
         children: (
           <>
             <Logs />
-            <span>View all logs</span>
+            <span>{t("viewLogs")}</span>
           </>
         ),
       }}

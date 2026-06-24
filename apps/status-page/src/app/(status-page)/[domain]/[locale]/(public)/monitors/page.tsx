@@ -12,6 +12,7 @@ import {
   StatusTitle,
 } from "@openstatus/ui/components/blocks/status-layout";
 import { useQuery } from "@tanstack/react-query";
+import { useLocale } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -20,9 +21,11 @@ import {
   ChartAreaPercentilesSkeleton,
 } from "@/components/chart/chart-area-percentiles";
 import { StatusBlankMonitors } from "@/components/status-page/status-blank";
+import { getStatusPageDescription } from "@/lib/status-page-copy";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const locale = useLocale();
   const { domain } = useParams<{ domain: string }>();
   const trpc = useTRPC();
   const { data: page } = useQuery(
@@ -40,7 +43,9 @@ export default function Page() {
     <Status>
       <StatusHeader>
         <StatusTitle>{page.title}</StatusTitle>
-        <StatusDescription>{page.description}</StatusDescription>
+        <StatusDescription>
+          {getStatusPageDescription(page.description, locale)}
+        </StatusDescription>
       </StatusHeader>
       <StatusContent className="flex flex-col gap-6">
         {publicMonitors.length > 0 ? (

@@ -19,6 +19,7 @@ import {
 } from "@openstatus/ui/components/ui/tooltip";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import { ProcessMessage } from "@/components/content/process-message";
@@ -43,6 +44,8 @@ export function DataTable({
   reportId: number;
   components?: { id: number; name: string }[];
 }) {
+  const t = useTranslations("statusPages.reports");
+  const tableT = useTranslations("statusPages.reports.table");
   const reportHasImpacts = updates.some((u) => u.componentImpacts.length > 0);
   const currentImpacts = currentImpactsFromUpdates(updates);
   const trpc = useTRPC();
@@ -81,10 +84,10 @@ export function DataTable({
       <TableHeader>
         <TableRow>
           <TableHead className="w-7">
-            <span className="sr-only">Status</span>
+            <span className="sr-only">{tableT("status")}</span>
           </TableHead>
-          <TableHead>Message</TableHead>
-          <TableHead>Date</TableHead>
+          <TableHead>{tableT("message")}</TableHead>
+          <TableHead>{tableT("date")}</TableHead>
           <TableHead className="w-[px]">
             <TooltipProvider>
               <Tooltip>
@@ -122,12 +125,12 @@ export function DataTable({
                   <TooltipTrigger asChild>
                     <Button size="icon" className="ml-auto flex h-7 w-7 p-0">
                       <Plus />
-                      <span className="sr-only">Create Report Update</span>
+                      <span className="sr-only">{t("createUpdate")}</span>
                     </Button>
                   </TooltipTrigger>
                 </FormSheetStatusReportUpdate>
                 <TooltipContent side="left" align="center">
-                  Create Report Update
+                  {t("createUpdate")}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

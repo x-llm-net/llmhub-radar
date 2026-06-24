@@ -40,6 +40,7 @@ const lambdas = [
   "apiKeyRouter",
   "integrationRouter",
   "blob",
+  "radar",
 ];
 
 export const endingLink = (opts?: {

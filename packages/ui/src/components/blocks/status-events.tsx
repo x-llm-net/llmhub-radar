@@ -22,7 +22,6 @@ import {
 } from "@openstatus/ui/components/ui/tooltip";
 import { cn } from "@openstatus/ui/lib/utils";
 import { Slot } from "@radix-ui/react-slot";
-import { formatDistanceStrict } from "date-fns";
 import { Check } from "lucide-react";
 
 // ============================================================================
@@ -53,6 +52,7 @@ import { Check } from "lucide-react";
 export function StatusEventGroup({
   className,
   children,
+  "aria-label": ariaLabel,
   ...props
 }: React.ComponentProps<"div">) {
   return (
@@ -60,7 +60,7 @@ export function StatusEventGroup({
       data-slot="status-event-group"
       className={cn("flex flex-col gap-4", className)}
       role="feed"
-      aria-label="Status events and updates"
+      aria-label={ariaLabel ?? "Status events and updates"}
       {...props}
     >
       {children}
@@ -307,7 +307,7 @@ export function StatusEventDate({
 }) {
   const labels = useStatusBlocksLabels();
   const isFuture = date > new Date();
-  const distance = formatDistanceStrict(date, new Date(), { addSuffix: true });
+  const distance = labels.formatDistance(date, new Date(), { addSuffix: true });
   return (
     <div
       data-slot="status-event-date"
@@ -515,14 +515,14 @@ export function StatusEventTimelineReport({
           const startedAt = new Date(
             sortedUpdates[sortedUpdates.length - 1].date,
           );
-          const duration = formatDistanceStrict(startedAt, updateDate);
+          const duration = labels.formatDistance(startedAt, updateDate);
 
-          if (duration !== "0 seconds" && update.status === "resolved") {
+          if (startedAt.getTime() !== updateDate.getTime() && update.status === "resolved") {
             durationText = labels.durationIn(duration);
           }
         } else {
           const lastUpdateDate = new Date(displayedUpdates[index - 1].date);
-          const timeFromLast = formatDistanceStrict(updateDate, lastUpdateDate);
+          const timeFromLast = labels.formatDistance(updateDate, lastUpdateDate);
           durationText = labels.durationEarlier(timeFromLast);
         }
 
@@ -692,7 +692,7 @@ export function StatusEventTimelineMaintenance({
   renderMessage?: (message: string) => React.ReactNode;
 }) {
   const labels = useStatusBlocksLabels();
-  const duration = formatDistanceStrict(maintenance.from, maintenance.to);
+  const duration = labels.formatDistance(maintenance.from, maintenance.to);
   const { from, to } = labels.formatDateRangeParts(
     maintenance.from,
     maintenance.to,

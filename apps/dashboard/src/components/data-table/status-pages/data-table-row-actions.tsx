@@ -4,6 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Row } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { QuickActions } from "@/components/dropdowns/quick-actions";
@@ -17,6 +18,7 @@ interface DataTableRowActionsProps {
 }
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+  const t = useTranslations("statusPages");
   const router = useRouter();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -33,15 +35,19 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     edit: () => router.push(`/status-pages/${row.original.id}/edit`),
     "copy-id": () => {
       navigator.clipboard.writeText(row.original.id.toString());
-      toast.success("Monitor ID copied to clipboard");
+      toast.success(t("nav.copiedId"));
     },
+  }, {
+    edit: t("actions.settings"),
+    "copy-id": t("actions.copyId"),
+    delete: t("actions.delete"),
   });
 
   return (
     <QuickActions
       actions={actions}
       deleteAction={{
-        confirmationValue: row.original.title ?? "status page",
+        confirmationValue: row.original.title ?? t("nav.deleteFallback"),
         submitAction: async () => {
           await deleteStatusPageMutation.mutateAsync({
             id: row.original.id,

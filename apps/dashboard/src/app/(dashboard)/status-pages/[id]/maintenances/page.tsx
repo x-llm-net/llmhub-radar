@@ -3,6 +3,7 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import { Link } from "@/components/common/link";
@@ -14,13 +15,15 @@ import {
   SectionHeaderRow,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/maintenances/columns";
+import { useMaintenanceColumns } from "@/components/data-table/maintenances/columns";
 import { FormSheetMaintenance } from "@/components/forms/maintenance/sheet";
 import { toCheckboxTreeItems } from "@/components/ui/checkbox-tree";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("statusPages.maintenances");
+  const columns = useMaintenanceColumns();
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const { data: statusPage } = useQuery(
@@ -56,9 +59,9 @@ export default function Page() {
           <SectionHeader>
             <SectionTitle>{statusPage.title}</SectionTitle>
             <SectionDescription>
-              List of all maintenances. Looking for{" "}
+              {t("descriptionPrefix")}{" "}
               <Link href={`/status-pages/${id}/status-reports`}>
-                status reports
+                {t("statusReports")}
               </Link>
               ?
             </SectionDescription>
@@ -83,7 +86,7 @@ export default function Page() {
             >
               <Button data-section="action" size="sm">
                 <Plus />
-                Create Maintenance
+                {t("create")}
               </Button>
             </FormSheetMaintenance>
           </div>

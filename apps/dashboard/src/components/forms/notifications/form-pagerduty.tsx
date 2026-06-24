@@ -17,6 +17,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { parseAsString, useQueryState } from "nuqs";
+import { useTranslations } from "next-intl";
 import React, { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ export function FormPagerDuty({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const [searchConfig] = useQueryState("config", parseAsString);
   console.log(searchConfig);
   const form = useForm<FormValues>({
@@ -80,10 +82,10 @@ export function FormPagerDuty({
       if (data.success) {
         form.setValue("data", JSON.stringify(data.data));
       } else {
-        toast.error("Invalid PagerDuty configuration");
+        toast.error(t("invalidPagerDutyConfig"));
       }
     }
-  }, [searchConfig, form]);
+  }, [searchConfig, form, t]);
 
   function submitAction(values: FormValues) {
     if (isPending) return;
@@ -92,13 +94,13 @@ export function FormPagerDuty({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -116,7 +118,7 @@ export function FormPagerDuty({
         const provider = form.getValues("provider");
         const data = form.getValues("data");
         if (!data) {
-          toast.error("No PagerDuty configuration found");
+          toast.error(t("noPagerDutyConfig"));
           return;
         }
         const promise = sendTestMutation.mutateAsync({
@@ -126,13 +128,13 @@ export function FormPagerDuty({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -155,14 +157,12 @@ export function FormPagerDuty({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -171,13 +171,13 @@ export function FormPagerDuty({
             name="data"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Config</FormLabel>
+                <FormLabel>{t("config")}</FormLabel>
                 <FormControl>
                   <Input placeholder="..." disabled {...field} />
                 </FormControl>
                 <FormMessage />
                 <FormDescription>
-                  The PagerDuty configuration that is being used.
+                  {t("pagerDutyConfigDescription")}
                 </FormDescription>
               </FormItem>
             )}
@@ -189,7 +189,7 @@ export function FormPagerDuty({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -200,16 +200,14 @@ export function FormPagerDuty({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

@@ -20,6 +20,7 @@ import {
 } from "@openstatus/ui/components/ui/select";
 import { isTRPCClientError } from "@trpc/client";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -43,25 +44,27 @@ const AVAILABLE_LOCALES = locales.map((code) => ({
   label: localeDetails[code].name,
 }));
 
-const schema = z
-  .object({
-    defaultLocale: z.enum(locales),
-    locales: z.array(z.enum(locales)).nullable(),
-  })
-  .refine(
-    (data) => {
-      if (data.locales) {
-        return data.locales.includes(data.defaultLocale);
-      }
-      return true;
-    },
-    {
-      message: "Default locale must be included in the enabled locales",
-      path: ["defaultLocale"],
-    },
-  );
+function getSchema(t: (key: string) => string) {
+  return z
+    .object({
+      defaultLocale: z.enum(locales),
+      locales: z.array(z.enum(locales)).nullable(),
+    })
+    .refine(
+      (data) => {
+        if (data.locales) {
+          return data.locales.includes(data.defaultLocale);
+        }
+        return true;
+      },
+      {
+        message: t("defaultLocaleIncluded"),
+        path: ["defaultLocale"],
+      },
+    );
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormLocale({
   defaultValues,
@@ -72,9 +75,10 @@ export function FormLocale({
   onSubmit: (values: FormValues) => Promise<void>;
   locked?: boolean;
 }) {
+  const t = useTranslations("statusPages.form");
   const [isPending, startTransition] = useTransition();
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       defaultLocale: "en",
       locales: null,
@@ -91,13 +95,13 @@ export function FormLocale({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -140,9 +144,9 @@ export function FormLocale({
         <FormCard>
           {locked ? <FormCardUpgrade /> : null}
           <FormCardHeader>
-            <FormCardTitle>Locales</FormCardTitle>
+            <FormCardTitle>{t("locales")}</FormCardTitle>
             <FormCardDescription>
-              Configure which languages are available on your status page.
+              {t("localesDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardSeparator />
@@ -152,14 +156,14 @@ export function FormLocale({
               name="defaultLocale"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Default Locale</FormLabel>
+                  <FormLabel>{t("defaultLocale")}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select default locale" />
+                        <SelectValue placeholder={t("selectDefaultLocale")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -170,9 +174,7 @@ export function FormLocale({
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    The fallback language for your status page.
-                  </FormDescription>
+                  <FormDescription>{t("defaultLocaleDescription")}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -190,7 +192,7 @@ export function FormLocale({
                   htmlFor="multi-locale"
                   className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
-                  Enable locale switcher
+                  {t("enableLocaleSwitcher")}
                 </label>
               </div>
               {isMultiLocaleEnabled ? (
@@ -221,10 +223,9 @@ export function FormLocale({
           </FormCardContent>
           <FormCardFooter>
             <FormCardFooterInfo>
-              When the locale switcher is enabled, visitors can choose their
-              preferred language. Learn more about{" "}
+              {t("localeSwitcherDescription")} {t("learnMoreAbout")}{" "}
               <Link href="https://www.openstatus.dev/docs/reference/status-page/#translations-i18n">
-                Translations
+                {t("translations")}
               </Link>
               .
             </FormCardFooterInfo>
@@ -232,12 +233,12 @@ export function FormLocale({
               <Button type="button" asChild>
                 <Link href="/settings/billing">
                   <Lock className="size-4" />
-                  Upgrade
+                  {t("upgrade")}
                 </Link>
               </Button>
             ) : (
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             )}
           </FormCardFooter>

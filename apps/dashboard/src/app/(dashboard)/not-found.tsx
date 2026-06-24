@@ -1,28 +1,30 @@
 import { Activity, Cog, LayoutGrid, PanelTop } from "lucide-react";
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 
 import { WorkspaceSwitcher } from "@/components/nav/workspace-switcher";
 
-const quickLinks = [
-  { name: "Overview", href: "/overview", icon: LayoutGrid },
-  { name: "Monitors", href: "/monitors", icon: Activity },
-  { name: "Status Pages", href: "/status-pages", icon: PanelTop },
-  { name: "Settings", href: "/settings/general", icon: Cog },
-];
+export default async function NotFound() {
+  const nav = await getTranslations("nav");
+  const t = await getTranslations("errors");
+  const quickLinks = [
+    { name: nav("overview"), href: "/overview", icon: LayoutGrid },
+    { name: nav("monitors"), href: "/monitors", icon: Activity },
+    { name: nav("statusPages"), href: "/status-pages", icon: PanelTop },
+    { name: nav("settings"), href: "/settings/general", icon: Cog },
+  ];
 
-export default function NotFound() {
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center p-4 md:p-8">
       <div className="border-border bg-sidebar mx-auto w-full max-w-md rounded-lg border">
         <div className="flex flex-col gap-6 p-6 sm:p-8">
           <div className="flex flex-col gap-1 text-center">
-            <p className="text-destructive font-mono">404 Not found</p>
+            <p className="text-destructive font-mono">{t("notFoundLabel")}</p>
             <h2 className="font-cal text-foreground text-2xl">
-              Page not found
+              {t("notFoundTitle")}
             </h2>
             <p className="text-muted-foreground text-sm">
-              This resource doesn&apos;t exist or you might not be in the right
-              workspace.
+              {t("notFoundDescription")}
             </p>
           </div>
           <WorkspaceSwitcher

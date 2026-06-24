@@ -8,7 +8,20 @@ import {
 import { Wordmark } from "@/components/layout/wordmark";
 import { cn } from "@/lib/utils";
 
-export function AuthLayout({ children }: { children: React.ReactNode }) {
+type AuthLayoutProps = {
+  children: React.ReactNode;
+  labels: {
+    docs: string;
+    heroTitle: string;
+    heroDescription: string;
+    migrationPrefix: string;
+    migrationFirstSeparator: string;
+    migrationLastSeparator: string;
+    migrationSuffix: string;
+  };
+};
+
+export function AuthLayout({ children, labels }: AuthLayoutProps) {
   return (
     <div className="relative grid min-h-screen grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div className="absolute top-4 left-4 z-10">
@@ -26,7 +39,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
           rel="noreferrer"
         >
           <BookOpen />
-          Documentation
+          {labels.docs}
         </a>
       </Button>
       {/*
@@ -52,14 +65,13 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-8 text-center md:text-left">
           <div className="mx-auto grid gap-3">
             <h1 className="font-cal text-foreground text-3xl">
-              Your status page, live in minutes.
+              {labels.heroTitle}
             </h1>
             <p className="font-commit-mono text-muted-foreground">
-              Communicate incidents, prove uptime, and monitor every endpoint
-              from 28 regions. Open source. Free to start.
+              {labels.heroDescription}
             </p>
             <p className="font-commit-mono text-muted-foreground">
-              Coming from{" "}
+              {labels.migrationPrefix}{" "}
               <a
                 href="https://openstatus.dev/guides/migrate-from-atlassian-statuspage"
                 target="_blank"
@@ -68,7 +80,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
               >
                 Atlassian Statuspage
               </a>
-              ,{" "}
+              {labels.migrationFirstSeparator}
               <a
                 href="https://openstatus.dev/guides/migrate-from-betterstack"
                 target="_blank"
@@ -77,7 +89,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
               >
                 Betterstack
               </a>
-              , or{" "}
+              {labels.migrationLastSeparator}
               <a
                 href="https://openstatus.dev/guides/migrate-from-instatus"
                 target="_blank"
@@ -86,7 +98,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
               >
                 Instatus
               </a>
-              ? We have importers for all three.
+              {labels.migrationSuffix}
             </p>
           </div>
         </div>

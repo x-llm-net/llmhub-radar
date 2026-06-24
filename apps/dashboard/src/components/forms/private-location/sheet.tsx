@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -29,6 +30,7 @@ export function FormSheetPrivateLocation({
   monitors: { id: number; name: string; url: string }[];
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("settings.privateLocations");
   const [open, setOpen] = useState(false);
 
   return (
@@ -38,10 +40,8 @@ export function FormSheetPrivateLocation({
       </FormSheetTrigger>
       <FormSheetContent>
         <FormSheetHeader>
-          <FormSheetTitle>Private Location</FormSheetTitle>
-          <FormSheetDescription>
-            Configure and update the private location.
-          </FormSheetDescription>
+          <FormSheetTitle>{t("sheetTitle")}</FormSheetTitle>
+          <FormSheetDescription>{t("sheetDescription")}</FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="overflow-y-auto">
           <FormCard className="overflow-auto rounded-none border-none">
@@ -59,7 +59,7 @@ export function FormSheetPrivateLocation({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form="private-location-form">
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

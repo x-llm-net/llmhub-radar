@@ -9,6 +9,7 @@ import {
   useSidebar,
 } from "@openstatus/ui/components/ui/sidebar";
 import type { LucideIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -27,10 +28,11 @@ export function NavOverview({
 }) {
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
+  const t = useTranslations("nav");
   const currentTop = topSegment(pathname);
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+      <SidebarGroupLabel>{t("workspace")}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>

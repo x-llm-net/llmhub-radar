@@ -25,6 +25,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { CircleX, Globe, Info } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -69,6 +70,7 @@ export function FormSchedulingRegions({
   onSubmit: (values: FormValues) => Promise<void>;
   privateLocations: { id: number; name: string }[];
 }) {
+  const t = useTranslations("monitors.form");
   const trpc = useTRPC();
   const [openDialog, setOpenDialog] = useState(false);
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -92,14 +94,14 @@ export function FormSchedulingRegions({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
             console.error(error);
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -124,9 +126,9 @@ export function FormSchedulingRegions({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Scheduling & Regions</FormCardTitle>
+            <FormCardTitle>{t("schedulingRegions")}</FormCardTitle>
             <FormCardDescription>
-              Configure the scheduling and regions for your monitor.
+              {t("schedulingRegionsDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="grid gap-4">
@@ -135,13 +137,13 @@ export function FormSchedulingRegions({
               name="periodicity"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Periodicity</FormLabel>
+                  <FormLabel>{t("periodicity")}</FormLabel>
                   <FormControl>
                     <div>
                       <Slider
                         value={[monitorPeriodicity.indexOf(field.value)]}
                         max={PERIODICITY.length - 1}
-                        aria-label="Slider with ticks"
+                        aria-label={t("sliderWithTicks")}
                         onValueChange={(value) => {
                           field.onChange(PERIODICITY[value[0]]);
                         }}
@@ -175,9 +177,9 @@ export function FormSchedulingRegions({
             {!periodicity.includes(watchPeriodicity) ? (
               <Note color="error">
                 <CircleX />
-                The periodicity you are selecting is not allowed for your plan.
+                {t("periodicityNotAllowed")}
                 <NoteButton type="button" onClick={() => setOpenDialog(true)}>
-                  Upgrade your plan
+                  {t("upgrade")} {t("yourPlan")}
                 </NoteButton>
               </Note>
             ) : null}
@@ -186,8 +188,7 @@ export function FormSchedulingRegions({
           <FormCardContent className="grid gap-4">
             <Note color="warning">
               <Info />
-              To minimize false positives, we recommend monitoring your endpoint
-              in at least 3 regions.
+              {t("regionsRecommendation")}
             </Note>
             <FormField
               control={form.control}
@@ -258,7 +259,7 @@ export function FormSchedulingRegions({
                                     }
                                   }}
                                 >
-                                  Select all
+                                  {t("selectAll")}
                                 </Button>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
@@ -343,9 +344,9 @@ export function FormSchedulingRegions({
             {privateLocations.length === 0 ? (
               <Note>
                 <Globe />
-                Monitor your endpoints from private locations.
+                {t("privateLocationsNote")}
                 <NoteButton variant="outline" asChild>
-                  <Link href="/settings/private-locations">Learn more</Link>
+                  <Link href="/settings/private-locations">{t("learnMore")}</Link>
                 </NoteButton>
               </Note>
             ) : (
@@ -356,7 +357,7 @@ export function FormSchedulingRegions({
                   <FormItem>
                     <div className="flex items-center justify-between">
                       <FormLabel>
-                        Private Locations{" "}
+                        {t("privateLocations")}{" "}
                         <span className="text-muted-foreground/70 align-baseline font-mono text-xs font-normal tabular-nums">
                           ({watchPrivateLocations.length}/
                           {privateLocations.length})
@@ -385,7 +386,7 @@ export function FormSchedulingRegions({
                           }
                         }}
                       >
-                        Select all
+                        {t("selectAll")}
                       </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -437,32 +438,32 @@ export function FormSchedulingRegions({
           </FormCardContent>
           <FormCardFooter>
             <FormCardFooterInfo>
-              Your plan allows you to run{" "}
+              {t("planRegionsPrefix")}{" "}
               <span className="text-foreground font-medium">{maxRegions}</span>{" "}
-              out of{" "}
+              {t("planRegionsMiddle")}{" "}
               <span className="text-foreground font-medium">
                 {allowedRegions.length}
               </span>{" "}
-              regions. Learn more about{" "}
+              {t("planRegionsSuffix")} {t("learnMoreAbout")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/http-monitor/#regions"
                 rel="noreferrer"
                 target="_blank"
               >
-                Regions
+                {t("regionsLink")}
               </Link>{" "}
-              and{" "}
+              {t("and")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/http-monitor/#frequency"
                 rel="noreferrer"
                 target="_blank"
               >
-                Periodicity
+                {t("periodicityLink")}
               </Link>
               .
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

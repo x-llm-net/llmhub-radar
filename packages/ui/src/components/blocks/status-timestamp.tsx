@@ -1,6 +1,7 @@
 "use client";
 
 import { UTCDate } from "@date-fns/utc";
+import { useStatusBlocksLabels } from "@openstatus/ui/components/blocks/status-i18n";
 import {
   HoverCard,
   HoverCardContent,
@@ -16,7 +17,7 @@ import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import { useMediaQuery } from "@openstatus/ui/hooks/use-media-query";
 import { cn } from "@openstatus/ui/lib/utils";
 import type { HoverCardContentProps } from "@radix-ui/react-hover-card";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format } from "date-fns";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -247,12 +248,13 @@ function RichTimestamp({
   onClick,
   ...props
 }: Omit<RichVariantProps, "variant">) {
+  const labels = useStatusBlocksLabels();
   const [open, setOpen] = useState(false);
   const isTouch = useMediaQuery("(hover: none)");
   const [_, setRerender] = useState(0);
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const relative = formatDistanceToNowStrict(date, { addSuffix: true });
+  const relative = labels.formatDistance(date, new Date(), { addSuffix: true });
   const formatted = format(date, "LLL dd, y HH:mm:ss");
   const utc = format(new UTCDate(date), "LLL dd, y HH:mm:ss");
 
@@ -288,7 +290,11 @@ function RichTimestamp({
         <dl className="flex flex-col gap-1">
           <StatusTimestampRow value={formatted} label={timezone} />
           <StatusTimestampRow value={utc} label="UTC" />
-          <StatusTimestampRow value={relative} label="Relative" />
+          <StatusTimestampRow
+            value={relative}
+            label={labels.relative}
+            successMessage={labels.linkCopiedToClipboard}
+          />
         </dl>
       </HoverCardContent>
     </HoverCard>
@@ -312,9 +318,11 @@ RichTimestamp.displayName = "RichTimestamp";
 function StatusTimestampRow({
   value,
   label,
+  successMessage,
 }: {
   value: string;
   label: string;
+  successMessage?: string;
 }) {
   const { copy, isCopied } = useCopyToClipboard();
 
@@ -324,7 +332,7 @@ function StatusTimestampRow({
       className="group flex items-center justify-between gap-4 text-sm"
       onClick={(e) => {
         e.stopPropagation();
-        copy(value, { withToast: true });
+        copy(value, { withToast: true, successMessage });
       }}
     >
       <dt className="text-muted-foreground">{label}</dt>

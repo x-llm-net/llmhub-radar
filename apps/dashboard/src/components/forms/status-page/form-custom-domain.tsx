@@ -11,6 +11,7 @@ import {
 import { Label } from "@openstatus/ui/components/ui/label";
 import { isTRPCClientError } from "@trpc/client";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type React from "react";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
@@ -50,6 +51,7 @@ export function FormCustomDomain({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -66,13 +68,13 @@ export function FormCustomDomain({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -94,9 +96,9 @@ export function FormCustomDomain({
         <FormCard>
           {locked ? <FormCardUpgrade /> : null}
           <FormCardHeader>
-            <FormCardTitle>Custom Domain</FormCardTitle>
+            <FormCardTitle>{t("customDomain")}</FormCardTitle>
             <FormCardDescription>
-              Use your own domain for your status page.
+              {t("customDomainDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
@@ -105,7 +107,7 @@ export function FormCustomDomain({
               name="domain"
               render={({ field }) => (
                 <FormItem>
-                  <Label>Domain</Label>
+                  <Label>{t("domain")}</Label>
                   <InputWithAddons
                     placeholder="status.openstatus.dev"
                     leading="https://"
@@ -127,13 +129,13 @@ export function FormCustomDomain({
           ) : null}
           <FormCardFooter>
             <FormCardFooterInfo>
-              Learn more about{" "}
+              {t("learnMoreAbout")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/status-page/#custom-domain"
                 rel="noreferrer"
                 target="_blank"
               >
-                Custom Domain
+                {t("customDomain")}
               </Link>
               .
             </FormCardFooterInfo>
@@ -141,7 +143,7 @@ export function FormCustomDomain({
               <Button type="button" asChild>
                 <Link href="/settings/billing">
                   <Lock />
-                  Upgrade
+                  {t("upgrade")}
                 </Link>
               </Button>
             ) : (
@@ -153,10 +155,10 @@ export function FormCustomDomain({
                   onClick={refresh}
                   className="hidden sm:block"
                 >
-                  {isLoading ? "Refreshing..." : "Refresh Configuration"}
+                  {isLoading ? t("refreshing") : t("refreshConfiguration")}
                 </Button>
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? "Submitting..." : "Submit"}
+                  {isPending ? t("submitting") : t("submit")}
                 </Button>
               </div>
             )}

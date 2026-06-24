@@ -24,12 +24,14 @@ import {
   HelpCircle,
   LifeBuoy,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 
 import { FormDialogSupportContact } from "@/components/forms/support-contact/dialog";
 
 export function NavHelp() {
   const { isMobile } = useSidebar();
+  const t = useTranslations("nav");
   return (
     <SidebarGroup>
       <SidebarGroupContent>
@@ -39,10 +41,10 @@ export function NavHelp() {
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
                   className="font-commit-mono tracking-tight"
-                  tooltip="Get Help"
+                  tooltip={t("getHelp")}
                 >
                   <HelpCircle />
-                  <span>Get Help</span>
+                  <span>{t("getHelp")}</span>
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -52,12 +54,12 @@ export function NavHelp() {
                 sideOffset={4}
               >
                 <DropdownMenuLabel className="text-muted-foreground text-xs">
-                  Get Help
+                  {t("getHelp")}
                 </DropdownMenuLabel>
                 <FormDialogSupportContact>
                   <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                     <LifeBuoy />
-                    Support
+                    {t("support")}
                   </DropdownMenuItem>
                 </FormDialogSupportContact>
                 <DropdownMenuItem asChild>
@@ -66,7 +68,7 @@ export function NavHelp() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <Book /> Docs
+                    <Book /> {t("docs")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -75,7 +77,7 @@ export function NavHelp() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <Braces /> API Reference
+                    <Braces /> {t("apiReference")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -84,7 +86,7 @@ export function NavHelp() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <CalendarClock /> Book a Call
+                    <CalendarClock /> {t("bookCall")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -94,7 +96,7 @@ export function NavHelp() {
                     rel="noreferrer"
                   >
                     <DiscordIcon />
-                    Community
+                    {t("community")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -104,7 +106,7 @@ export function NavHelp() {
                     rel="noreferrer"
                   >
                     <GitHubIcon />
-                    GitHub
+                    {t("github")}
                   </Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>

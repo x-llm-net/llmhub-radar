@@ -94,7 +94,7 @@ export type WheelPickerSelectProps = React.HTMLAttributes<HTMLDivElement>;
 const WheelPickerSelect = React.forwardRef<
   HTMLDivElement,
   WheelPickerSelectProps
->(({ className, children, ...props }, ref) => {
+>(({ className, children, "aria-label": ariaLabel, ...props }, ref) => {
   const { items, currentIndex, onIndexChange } = useWheelPickerContext();
 
   const moveBy = React.useCallback(
@@ -145,7 +145,7 @@ const WheelPickerSelect = React.forwardRef<
       ref={ref}
       data-slot="wheel-select"
       role="listbox"
-      aria-label="Select option"
+      aria-label={ariaLabel}
       aria-activedescendant={`wheel-option-${currentIndex}`}
       tabIndex={0}
       className={cn(

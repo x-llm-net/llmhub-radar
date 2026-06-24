@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@openstatus/ui/components/ui/tabs";
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
 import { Plus, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -36,14 +37,15 @@ import {
   type CheckboxTreeItem,
 } from "@/components/ui/checkbox-tree";
 
-const headerSchema = z.object({
-  key: z.string().min(1, "Key is required"),
-  value: z.string(),
-});
-
 // Form schema: a single flat shape with optional fields. The submit handler
 // narrows to email-only or webhook-only payload based on `channelType`.
-const formSchema = z
+function getFormSchema(t: (key: string) => string) {
+  const headerSchema = z.object({
+    key: z.string().min(1, t("keyRequired")),
+    value: z.string(),
+  });
+
+  return z
   .object({
     channelType: z.enum(["email", "webhook"]),
     name: z.string().max(255),
@@ -59,7 +61,7 @@ const formSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["email"],
-          message: "Please enter a valid email",
+          message: t("invalidEmail"),
         });
       }
     } else {
@@ -68,19 +70,20 @@ const formSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["webhookUrl"],
-          message: "Please enter a valid URL",
+          message: t("invalidUrl"),
         });
       } else if (detectWebhookFlavor(data.webhookUrl) === "generic") {
         ctx.addIssue({
           code: "custom",
           path: ["webhookUrl"],
-          message: "Only Slack and Discord webhook URLs are supported.",
+          message: t("unsupportedWebhook"),
         });
       }
     }
   });
+}
 
-export type SubscriberFormValues = z.infer<typeof formSchema>;
+export type SubscriberFormValues = z.infer<ReturnType<typeof getFormSchema>>;
 
 export type SubmitPayload =
   | {
@@ -138,8 +141,9 @@ export function FormSubscriber({
   /** When true, channel type is locked (editing an existing subscriber). */
   editMode?: boolean;
 }) {
+  const t = useTranslations("statusPages.subscribers");
   const form = useForm<SubscriberFormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(getFormSchema(t)),
     defaultValues: { ...emptyDefaults, ...defaultValues },
   });
 
@@ -164,13 +168,13 @@ export function FormSubscriber({
       try {
         const promise = onSubmit(toPayload(values));
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -193,7 +197,7 @@ export function FormSubscriber({
             name="channelType"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Channel</FormLabel>
+                <FormLabel>{t("channel")}</FormLabel>
                 <FormControl>
                   <Tabs
                     value={field.value}
@@ -206,10 +210,10 @@ export function FormSubscriber({
                   >
                     <TabsList>
                       <TabsTrigger value="email" disabled={editMode}>
-                        Email
+                        {t("email")}
                       </TabsTrigger>
                       <TabsTrigger value="webhook" disabled={editMode}>
-                        Webhook
+                        {t("webhook")}
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -226,19 +230,19 @@ export function FormSubscriber({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Display label (optional)</FormLabel>
+                <FormLabel>{t("displayLabel")}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder={
                       channelType === "webhook"
-                        ? "Supabase #incidents"
-                        : "Alice (Partner CTO)"
+                        ? t("webhookNamePlaceholder")
+                        : t("emailNamePlaceholder")
                     }
                     {...field}
                   />
                 </FormControl>
                 <FormDescription>
-                  Shown in place of the raw destination in the dashboard.
+                  {t("displayLabelDescription")}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -253,11 +257,11 @@ export function FormSubscriber({
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>{t("email")}</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
-                      placeholder="partner@example.com"
+                      placeholder={t("emailPlaceholder")}
                       autoComplete="off"
                       readOnly={editMode}
                       {...field}
@@ -265,14 +269,11 @@ export function FormSubscriber({
                   </FormControl>
                   {editMode ? (
                     <FormDescription>
-                      Email address is immutable. Delete and re-add to change
-                      it.
+                      {t("emailImmutable")}
                     </FormDescription>
                   ) : (
                     <FormDescription>
-                      By adding this email, you confirm this contact has
-                      consented to receive status updates. We'll not be sending
-                      a confirmation email.
+                      {t("emailConsent")}
                     </FormDescription>
                   )}
                   <FormMessage />
@@ -288,17 +289,16 @@ export function FormSubscriber({
                 name="webhookUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Webhook URL</FormLabel>
+                    <FormLabel>{t("webhookUrl")}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="https://hooks.slack.com/services/…"
+                        placeholder={t("webhookPlaceholder")}
                         autoComplete="off"
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
-                      Only Slack and Discord webhook URLs are supported for now
-                      - more channels to come.
+                      {t("webhookSupport")}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -308,9 +308,9 @@ export function FormSubscriber({
             <FormCardSeparator />
             <FormCardContent>
               <FormItem>
-                <FormLabel>Request Headers</FormLabel>
+                <FormLabel>{t("requestHeaders")}</FormLabel>
                 <FormDescription>
-                  Custom headers to include in every webhook request.
+                  {t("requestHeadersDescription")}
                 </FormDescription>
                 {fields.map((f, idx) => (
                   <div key={f.id} className="grid gap-2 sm:grid-cols-5">
@@ -320,7 +320,7 @@ export function FormSubscriber({
                       render={({ field }) => (
                         <FormItem className="col-span-2">
                           <FormControl>
-                            <Input placeholder="Key" {...field} />
+                            <Input placeholder={t("key")} {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -332,7 +332,7 @@ export function FormSubscriber({
                       render={({ field }) => (
                         <FormItem className="col-span-2">
                           <FormControl>
-                            <Input placeholder="Value" {...field} />
+                            <Input placeholder={t("value")} {...field} />
                           </FormControl>
                         </FormItem>
                       )}
@@ -341,7 +341,7 @@ export function FormSubscriber({
                       size="icon"
                       variant="ghost"
                       type="button"
-                      aria-label="Remove header"
+                      aria-label={t("removeHeader")}
                       onClick={() => remove(idx)}
                     >
                       <X />
@@ -356,7 +356,7 @@ export function FormSubscriber({
                     onClick={() => append({ key: "", value: "" })}
                   >
                     <Plus />
-                    Add Header
+                    {t("addHeader")}
                   </Button>
                 </div>
                 <FormMessage />
@@ -371,10 +371,9 @@ export function FormSubscriber({
             name="componentIds"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Page Components</FormLabel>
+                <FormLabel>{t("pageComponents")}</FormLabel>
                 <FormDescription>
-                  Leave empty to notify for the entire page. Select components
-                  to only notify on matching reports.
+                  {t("pageComponentsDescription")}
                 </FormDescription>
                 {items.length ? (
                   <FormControl>
@@ -386,7 +385,7 @@ export function FormSubscriber({
                   </FormControl>
                 ) : (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No page components found</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noPageComponents")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 )}
                 <FormMessage />

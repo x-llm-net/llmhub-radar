@@ -2,6 +2,7 @@
 
 import { Skeleton } from "@openstatus/ui/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 
 import { BlockWrapper } from "@/components/content/block-wrapper";
@@ -24,6 +25,7 @@ export function AuditLogsWrapper({
   interval: number;
 }) {
   const trpc = useTRPC();
+  const t = useTranslations("settings.auditLogs");
 
   const { data: auditLogs, isLoading } = useQuery(
     trpc.tinybird.auditLog.queryOptions({ monitorId, interval }),
@@ -34,8 +36,13 @@ export function AuditLogsWrapper({
   );
 
   const columns = useMemo(
-    () => getColumns(privateLocations),
-    [privateLocations],
+    () =>
+      getColumns(privateLocations, {
+        action: t("action"),
+        information: t("information"),
+        timestamp: t("timestamp"),
+      }),
+    [privateLocations, t],
   );
 
   if (isLoading) {
@@ -49,9 +56,9 @@ export function AuditLogsWrapper({
   if (!auditLogs?.data || auditLogs.data.length === 0) {
     return (
       <EmptyStateContainer>
-        <EmptyStateTitle>No audit logs</EmptyStateTitle>
+        <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
         <EmptyStateDescription>
-          No audit logs found for this monitor.
+          {t("monitorEmptyDescription")}
         </EmptyStateDescription>
       </EmptyStateContainer>
     );

@@ -15,6 +15,7 @@ import {
 } from "@openstatus/ui/components/ui/form";
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ export function FormNotifiers({
   onSubmit: (values: FormValues) => Promise<void>;
   notifiers: { id: number; name: string; provider: NotificationProvider }[];
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -66,13 +68,13 @@ export function FormNotifiers({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -87,7 +89,7 @@ export function FormNotifiers({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Notifications</FormCardTitle>
+            <FormCardTitle>{t("notifications")}</FormCardTitle>
             <FormCardDescription>
               Get notified when your monitor is degraded or down.
             </FormCardDescription>
@@ -126,7 +128,7 @@ export function FormNotifiers({
                           }
                         }}
                       >
-                        Select all
+                        {t("selectAll")}
                       </Button>
                     </div>
                     {notifiers.map((item) => (
@@ -182,13 +184,13 @@ export function FormNotifiers({
               />
             ) : (
               <EmptyStateContainer>
-                <EmptyStateTitle>No notifications</EmptyStateTitle>
+                <EmptyStateTitle>{t("noNotifications")}</EmptyStateTitle>
               </EmptyStateContainer>
             )}
           </FormCardContent>
           <FormCardFooter>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Row } from "@tanstack/react-table";
 import { isTRPCClientError } from "@trpc/client";
 import { Pencil, Send } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +21,7 @@ interface DataTableRowActionsProps {
 }
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+  const t = useTranslations("statusPages.subscribers");
   const trpc = useTRPC();
   const { refetch } = useQuery(
     trpc.pageSubscriber.list.queryOptions({
@@ -77,7 +79,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       ? [
           {
             id: "edit",
-            label: "Edit",
+            label: t("edit"),
             icon: Pencil,
             variant: "default" as const,
             onClick: () => setEditOpen(true),
@@ -88,7 +90,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       ? [
           {
             id: "test",
-            label: "Send test",
+            label: t("sendTest"),
             icon: Send,
             variant: "default" as const,
             onClick: async () => {
@@ -97,11 +99,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
                 pageId: sub.pageId,
               });
               toast.promise(promise, {
-                loading: "Sending test…",
-                success: "Test webhook sent",
+                loading: t("sendingTest"),
+                success: t("testWebhookSent"),
                 error: (error) => {
                   if (isTRPCClientError(error)) return error.message;
-                  return "Failed to send test";
+                  return t("failedToSendTest");
                 },
               });
               try {
@@ -121,7 +123,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         actions={actions}
         deleteAction={{
           confirmationValue:
-            sub.name ?? sub.email ?? sub.webhookUrl ?? "subscriber",
+            sub.name ?? sub.email ?? sub.webhookUrl ?? t("subscriberFallback"),
           submitAction: async () => {
             await deleteAction.mutateAsync({
               id: sub.id,
@@ -135,8 +137,8 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           items={items}
           defaultValues={editDefaults}
           editMode
-          title="Edit subscriber"
-          description="Update channel config, label, or component scope."
+          title={t("editSheetTitle")}
+          description={t("editSheetDescription")}
           open={editOpen}
           onOpenChange={setEditOpen}
           onSubmit={async (values) => {

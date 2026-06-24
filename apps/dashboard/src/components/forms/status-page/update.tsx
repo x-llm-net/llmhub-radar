@@ -1,6 +1,7 @@
 import type { ThemeKey } from "@openstatus/theme-store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Info } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams, useRouter } from "next/navigation";
 
 import { Link } from "@/components/common/link";
@@ -18,6 +19,7 @@ import { FormPageAccess } from "./form-page-access";
 
 export function FormStatusPageUpdate() {
   const { id } = useParams<{ id: string }>();
+  const t = useTranslations("statusPages.form");
   const router = useRouter();
   const trpc = useTRPC();
   const { data: statusPage, refetch } = useQuery(
@@ -91,8 +93,11 @@ export function FormStatusPageUpdate() {
       <Note color="info">
         <Info />
         <p>
-          Looking to connect monitors to your status page? Configure them on the{" "}
-          <Link href={`/status-pages/${id}/components`}>Components</Link> page.
+          {t("connectMonitorsPrefix")}{" "}
+          <Link href={`/status-pages/${id}/components`}>
+            {t("components")}
+          </Link>{" "}
+          {t("connectMonitorsSuffix")}
         </p>
       </Note>
       <FormGeneral

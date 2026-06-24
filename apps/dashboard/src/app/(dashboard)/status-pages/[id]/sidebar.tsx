@@ -9,6 +9,7 @@ import {
 import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import { Link } from "@/components/common/link";
@@ -17,6 +18,8 @@ import { SidebarRight } from "@/components/nav/sidebar-right";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Sidebar() {
+  const t = useTranslations("statusPages.sidebar");
+  const common = useTranslations("common");
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const { data: statusPage } = useQuery(
@@ -30,13 +33,13 @@ export function Sidebar() {
 
   return (
     <SidebarRight
-      header="Status Page"
+      header={t("header")}
       metadata={[
         {
-          label: "Overview",
+          label: t("overview"),
           items: [
             {
-              label: "Slug",
+              label: t("slug"),
               value: (
                 <Link
                   href={`https://${
@@ -50,22 +53,22 @@ export function Sidebar() {
               ),
             },
             {
-              label: "Access Type",
+              label: t("accessType"),
               value: statusPage.accessType,
             },
-            { label: "Domain", value: statusPage.customDomain || "-" },
+            { label: t("domain"), value: statusPage.customDomain || "-" },
             {
-              label: "Favicon",
+              label: t("favicon"),
               value: statusPage.icon ? (
                 <div className="bg-muted size-4 overflow-hidden rounded border">
-                  <img src={statusPage.icon} alt="favicon" />
+                  <img src={statusPage.icon} alt={t("favicon")} />
                 </div>
               ) : (
                 "-"
               ),
             },
             {
-              label: "Badge",
+              label: t("badge"),
               value: (
                 <TooltipProvider>
                   <Tooltip>
@@ -73,7 +76,7 @@ export function Sidebar() {
                       <img
                         className="h-5 rounded-sm border"
                         src={BADGE_URL}
-                        alt="badge"
+                        alt={t("badge")}
                       />
                     </TooltipTrigger>
                     <TooltipContent
@@ -90,33 +93,35 @@ export function Sidebar() {
           ],
         },
         {
-          label: "Configuration",
+          label: t("configuration"),
           items: [
             {
-              label: "Theme",
+              label: t("theme"),
               value: statusPage.configuration?.theme ?? "-",
             },
             {
-              label: "Bar Value",
+              label: t("barValue"),
               value: statusPage.configuration?.type ?? "-",
             },
             {
-              label: "Card Value",
+              label: t("cardValue"),
               value: statusPage.configuration?.value ?? "-",
             },
             {
-              label: "Show Uptime",
-              value: statusPage.configuration?.uptime ? "Yes" : "No",
+              label: t("showUptime"),
+              value: statusPage.configuration?.uptime
+                ? common("yes")
+                : common("no"),
             },
           ],
         },
         {
-          label: "Monitors",
-          emptyMessage: "No monitors attached",
+          label: t("monitors"),
+          emptyMessage: t("noMonitors"),
           items: statusPage.pageComponents.flatMap((component) => {
             const arr = [];
             arr.push({
-              label: "Name",
+              label: t("name"),
               value: (
                 <TableCellLink
                   href={`/status-pages/${statusPage.id}/components`}
@@ -125,7 +130,7 @@ export function Sidebar() {
               ),
             });
             arr.push({
-              label: "Type",
+              label: t("type"),
               value: component.type,
               isNested: true,
             });
@@ -145,7 +150,7 @@ export function Sidebar() {
         children: (
           <>
             <ExternalLink />
-            <span>Visit Status Page</span>
+            <span>{t("visitPage")}</span>
           </>
         ),
       }}

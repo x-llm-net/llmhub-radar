@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Table,
   TableBody,
@@ -6,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@openstatus/ui/components/ui/table";
+import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 /**
@@ -35,15 +38,60 @@ export type ResultTableData<K extends string = string> = {
   empty: string;
 };
 
+const RESULT_COPY_KEYS = {
+  Action: "action",
+  Active: "active",
+  Actor: "actor",
+  Duration: "duration",
+  Entity: "entity",
+  ID: "id",
+  Latency: "latency",
+  Monitor: "monitor",
+  Monitors: "monitors",
+  Name: "name",
+  Page: "page",
+  Periodicity: "periodicity",
+  Provider: "provider",
+  Region: "region",
+  Regions: "regions",
+  Slug: "slug",
+  Start: "start",
+  Status: "status",
+  Timestamp: "timestamp",
+  Timing: "timing",
+  Title: "title",
+  Snippet: "snippet",
+  Type: "type",
+  "No audit log entries.": "noAuditLogEntries",
+  "No maintenance windows.": "noMaintenanceWindows",
+  "No results.": "noResults",
+  "No monitors.": "noMonitors",
+  "No notification channels.": "noNotificationChannels",
+  "No page components.": "noPageComponents",
+  "No regions reporting yet.": "noRegionsReporting",
+  "No response logs in this window.": "noResponseLogsInWindow",
+  "No status pages.": "noStatusPages",
+  "No status reports.": "noStatusReports",
+} as const;
+
+function useToolRendererCopy() {
+  const t = useTranslations("chat.toolRenderers");
+  return (value: string) => {
+    const key = RESULT_COPY_KEYS[value as keyof typeof RESULT_COPY_KEYS];
+    return key ? t(key) : value;
+  };
+}
+
 export function ResultTable<K extends string>({
   columns,
   rows,
   empty,
 }: ResultTableData<K>) {
+  const copy = useToolRendererCopy();
   if (rows.length === 0) {
     return (
       <div className="bg-background text-muted-foreground rounded-md border p-3 text-sm">
-        {empty}
+        {copy(empty)}
       </div>
     );
   }
@@ -57,7 +105,7 @@ export function ResultTable<K extends string>({
                 key={col.key}
                 className="text-muted-foreground font-mono"
               >
-                {col.header}
+                {copy(col.header)}
               </TableHead>
             ))}
           </TableRow>

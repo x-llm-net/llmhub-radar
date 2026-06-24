@@ -3,11 +3,14 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useTranslations } from "next-intl";
 
 export function NavLogout({
   onClick,
   ...props
 }: Omit<React.ComponentProps<typeof Button>, "children">) {
+  const t = useTranslations("nav");
+
   return (
     <Button
       variant="outline"
@@ -19,7 +22,7 @@ export function NavLogout({
       {...props}
     >
       <LogOut className="size-3" />
-      Log out
+      {t("logOut")}
     </Button>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -32,6 +33,7 @@ export function FormSheetNotifier({
   monitors: { id: number; name: string }[];
   defaultOpen?: boolean;
 }) {
+  const t = useTranslations("notifications.sheet");
   const [open, setOpen] = useState(defaultOpen ?? false);
   const Form = provider ? config[provider].form : undefined;
 
@@ -42,10 +44,8 @@ export function FormSheetNotifier({
       </FormSheetTrigger>
       <FormSheetContent className="sm:max-w-lg">
         <FormSheetHeader>
-          <FormSheetTitle>Notifier</FormSheetTitle>
-          <FormSheetDescription>
-            Configure and update the notifier.
-          </FormSheetDescription>
+          <FormSheetTitle>{t("title")}</FormSheetTitle>
+          <FormSheetDescription>{t("description")}</FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="overflow-y-auto">
           <FormCard className="overflow-auto rounded-none border-none">
@@ -80,7 +80,7 @@ export function FormSheetNotifier({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form={`notifier-form-${provider}`}>
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

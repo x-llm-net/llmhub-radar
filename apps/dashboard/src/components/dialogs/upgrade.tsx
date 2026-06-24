@@ -13,6 +13,7 @@ import { Separator } from "@openstatus/ui/components/ui/separator";
 import type { DialogProps } from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import { Note, NoteButton } from "@/components/common/note";
@@ -33,6 +34,7 @@ export function UpgradeDialog(
     restrictTo?: WorkspacePlan[];
   },
 ) {
+  const t = useTranslations("dialogs.upgrade");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
 
@@ -57,17 +59,16 @@ export function UpgradeDialog(
     <Dialog {...props}>
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Upgrade Workspace</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
           <DialogDescription>
-            Upgrade your workspace to support more monitors, status pages,
-            regions, and much more. Get an overview within your{" "}
+            {t("descriptionPrefix")}{" "}
             <Link
               onClick={() => props.onOpenChange?.(false)}
               href="/settings/billing"
             >
-              billing settings
+              {t("billingSettings")}
             </Link>
-            .
+            {t("descriptionSuffix")}
           </DialogDescription>
         </DialogHeader>
         {addon && planAddons[addon] ? (
@@ -84,7 +85,7 @@ export function UpgradeDialog(
         {restrictTo.length === 0 ? (
           <Note>
             <CalendarClock />
-            Please contact us to upgrade your plan.
+            {t("contactToUpgrade")}
             <NoteButton variant="outline" asChild>
               <a
                 href="https://openstatus.dev/cal"
@@ -92,7 +93,7 @@ export function UpgradeDialog(
                 rel="noreferrer"
                 className="text-nowrap"
               >
-                Book a call
+                {t("bookCall")}
               </a>
             </NoteButton>
           </Note>

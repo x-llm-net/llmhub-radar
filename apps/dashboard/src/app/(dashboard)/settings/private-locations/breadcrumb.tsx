@@ -1,20 +1,23 @@
 "use client";
 
 import { Cog, Globe } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { NavBreadcrumb } from "@/components/nav/nav-breadcrumb";
 
 export function Breadcrumb() {
+  const t = useTranslations("settings");
+
   return (
     <NavBreadcrumb
       items={[
         {
           type: "link",
-          label: "Settings",
+          label: t("index.title"),
           icon: Cog,
           href: "/settings/general",
         },
-        { type: "page", label: "Private Locations", icon: Globe },
+        { type: "page", label: t("tabs.privateLocations"), icon: Globe },
       ]}
     />
   );

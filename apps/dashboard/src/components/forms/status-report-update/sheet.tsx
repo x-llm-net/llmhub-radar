@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -30,16 +31,15 @@ export function FormSheetStatusReportUpdate({
   components?: { id: number; name: string }[];
   allowUnsetImpacts?: boolean;
 }) {
+  const t = useTranslations("statusPages.reports.sheet");
   const [open, setOpen] = useState(false);
   return (
     <FormSheetWithDirtyProtection open={open} onOpenChange={setOpen}>
       <FormSheetTrigger asChild>{children}</FormSheetTrigger>
       <FormSheetContent className="sm:max-w-lg">
         <FormSheetHeader>
-          <FormSheetTitle>Status Report Update</FormSheetTitle>
-          <FormSheetDescription>
-            Configure and update the status of your report.
-          </FormSheetDescription>
+          <FormSheetTitle>{t("updateTitle")}</FormSheetTitle>
+          <FormSheetDescription>{t("description")}</FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="overflow-y-scroll">
           <FormCard className="overflow-auto rounded-none border-none">
@@ -58,7 +58,7 @@ export function FormSheetStatusReportUpdate({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form="status-report-update-form">
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

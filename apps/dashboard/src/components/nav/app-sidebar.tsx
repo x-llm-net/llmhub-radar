@@ -23,7 +23,9 @@ import {
   LayoutGrid,
   MessageSquare,
   PanelTop,
+  Radar,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 
 import { Kbd } from "@/components/common/kbd";
@@ -38,60 +40,26 @@ import { NavHelp } from "./nav-help";
 
 const SIDEBAR_KEYBOARD_SHORTCUT = "[";
 
-// This is sample data.
-const data = {
-  user: {
-    name: "mxkaske",
-    email: "max@openstatus.dev",
-    avatar: "/avatars/shadcn.jpg",
-  },
-  overview: [
-    {
-      name: "Overview",
-      url: "/overview",
-      icon: LayoutGrid,
-    },
-    {
-      name: "Status Pages",
-      url: "/status-pages",
-      icon: PanelTop,
-    },
-    {
-      name: "Monitors",
-      url: "/monitors",
-      icon: Activity,
-    },
-    {
-      name: "Notifications",
-      url: "/notifications",
-      icon: Bell,
-    },
-    {
-      name: "Settings",
-      url: "/settings/general",
-      icon: Cog,
-    },
-    {
-      name: "Assistant",
-      url: "/chat",
-      icon: MessageSquare,
-    },
-    {
-      name: "Slack agent",
-      url: "/agents",
-      icon: Bot,
-    },
-  ],
-};
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const t = useTranslations("nav");
+  const overview = [
+    { name: t("overview"), url: "/overview", icon: LayoutGrid },
+    { name: t("statusPages"), url: "/status-pages", icon: PanelTop },
+    { name: t("monitors"), url: "/monitors", icon: Activity },
+    { name: t("radar"), url: "/radar", icon: Radar },
+    { name: t("notifications"), url: "/notifications", icon: Bell },
+    { name: t("settings"), url: "/settings/general", icon: Cog },
+    { name: t("assistant"), url: "/chat", icon: MessageSquare },
+    { name: t("slackAgent"), url: "/agents", icon: Bot },
+  ];
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="flex h-14 justify-center gap-0 border-b p-0">
         <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        <NavOverview items={data.overview} />
+        <NavOverview items={overview} />
         <NavStatusPages />
         <NavMonitors />
         <div className="mt-auto px-2">
@@ -102,13 +70,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter className="flex h-14 flex-col justify-center gap-0 border-t p-0">
         <NavUser />
       </SidebarFooter>
-      <SidebarRail />
+      <SidebarRail aria-label={t("toggleSidebar")} title={t("toggleSidebar")} />
     </Sidebar>
   );
 }
 
 export function AppSidebarTrigger() {
   const { toggleSidebar } = useSidebar();
+  const t = useTranslations("nav");
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -130,11 +99,11 @@ export function AppSidebarTrigger() {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <SidebarTrigger />
+          <SidebarTrigger aria-label={t("toggleSidebar")} />
         </TooltipTrigger>
         <TooltipContent side="right">
           <p className="mr-px inline-flex items-center">
-            Toggle Sidebar{" "}
+            {t("toggleSidebar")}{" "}
             <Kbd className="border-muted-foreground bg-primary text-background font-mono">
               ⌘
             </Kbd>

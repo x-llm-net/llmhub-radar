@@ -15,6 +15,7 @@ import {
 import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import type { DialogProps } from "@radix-ui/react-dialog";
 import { Check, Copy } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 
@@ -32,21 +33,22 @@ const YML = `openstatus-marketing:
     method: GET`;
 
 export function ExportCodeDialog(props: DialogProps) {
+  const t = useTranslations("dialogs.exportCode");
   const { copy, isCopied } = useCopyToClipboard();
 
   return (
     <Dialog {...props}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Export Configuration</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
           <DialogDescription>
-            Export and manage your monitor configuration using Infra as Code.
+            {t("description")}
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="yml">
           <TabsList>
-            <TabsTrigger value="yml">YAML</TabsTrigger>
-            <TabsTrigger value="terraform">Terraform</TabsTrigger>
+            <TabsTrigger value="yml">{t("yaml")}</TabsTrigger>
+            <TabsTrigger value="terraform">{t("terraform")}</TabsTrigger>
           </TabsList>
           <TabsContent value="yml" className="space-y-2">
             <pre className="bg-muted relative rounded border p-2 text-xs">
@@ -65,8 +67,10 @@ export function ExportCodeDialog(props: DialogProps) {
               </Button>
             </pre>
             <p className="text-muted-foreground text-xs">
-              Use a <code>monitor.openstatus.yml</code> file to configure your
-              monitors. <Link href="#">Read more.</Link>
+              {t("yamlDescriptionPrefix")}{" "}
+              <code>monitor.openstatus.yml</code>{" "}
+              {t("yamlDescriptionSuffix")}{" "}
+              <Link href="#">{t("readMore")}</Link>
             </p>
           </TabsContent>
           <TabsContent value="terraform" className="space-y-2">
@@ -75,11 +79,11 @@ export function ExportCodeDialog(props: DialogProps) {
             </pre>
             {/* TODO: only showcase if there are any assertions */}
             <p className="text-destructive text-xs">
-              The Terraform provider does not support assertions yet.
+              {t("terraformUnsupported")}
             </p>
             <p className="text-muted-foreground text-xs">
-              Use a Terraform provider to manage your monitors.{" "}
-              <Link href="#">Read more.</Link>
+              {t("terraformDescription")}{" "}
+              <Link href="#">{t("readMore")}</Link>
             </p>
           </TabsContent>
         </Tabs>

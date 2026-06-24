@@ -18,6 +18,7 @@ import {
 } from "@openstatus/ui/components/ui/tabs";
 import { Tabs } from "@openstatus/ui/components/ui/tabs";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ export function FormMembers({
   locked?: boolean;
   onCreate: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("settings.forms");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -68,9 +70,9 @@ export function FormMembers({
       try {
         const promise = onCreate(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: () => t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
         form.reset();
@@ -86,14 +88,14 @@ export function FormMembers({
         <FormCard>
           {locked ? <FormCardUpgrade /> : null}
           <FormCardHeader>
-            <FormCardTitle>Team</FormCardTitle>
-            <FormCardDescription>Manage your team members.</FormCardDescription>
+            <FormCardTitle>{t("team")}</FormCardTitle>
+            <FormCardDescription>{t("teamDescription")}</FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
             <Tabs defaultValue="members">
               <TabsList>
-                <TabsTrigger value="members">Members</TabsTrigger>
-                <TabsTrigger value="pending">Pending</TabsTrigger>
+                <TabsTrigger value="members">{t("members")}</TabsTrigger>
+                <TabsTrigger value="pending">{t("pending")}</TabsTrigger>
               </TabsList>
               <TabsContent value="members">
                 <MembersDataTable />
@@ -111,18 +113,18 @@ export function FormMembers({
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Add member</FormLabel>
+                  <FormLabel>{t("addMember")}</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
-                      placeholder="Email"
+                      placeholder={t("email")}
                       disabled={locked}
                       {...field}
                     />
                   </FormControl>
                   <FormMessage />
                   <FormCardDescription>
-                    Send an invitation to join the team.
+                    {t("addMemberDescription")}
                   </FormCardDescription>
                 </FormItem>
               )}
@@ -132,26 +134,26 @@ export function FormMembers({
             {locked ? (
               <>
                 <FormCardFooterInfo>
-                  This feature is available on the{" "}
+                  {t("teamInvitesLocked")}{" "}
                   <Link
                     href="https://www.openstatus.dev/changelog/team-invites"
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Starter plan
+                    {t("starterPlan")}
                   </Link>
                   .
                 </FormCardFooterInfo>
                 <Button type="button" size="sm" asChild>
                   <Link href="/settings/billing">
                     <Lock />
-                    Upgrade
+                    {t("upgrade")}
                   </Link>
                 </Button>
               </>
             ) : (
               <Button type="submit" size="sm" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             )}
           </FormCardFooter>

@@ -540,6 +540,27 @@
       "when": 1781258845086,
       "tag": "0076_tense_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1782234158904,
+      "tag": "0077_opposite_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1782269432635,
+      "tag": "0078_famous_tigra",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1782270000000,
+      "tag": "0079_radar_model_catalog",
+      "breakpoints": true
     }
   ]
 }

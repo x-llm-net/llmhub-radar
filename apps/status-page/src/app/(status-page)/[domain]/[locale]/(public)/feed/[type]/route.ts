@@ -5,23 +5,43 @@ import { auth } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import { getQueryClient, trpc } from "@/lib/trpc/server";
 
-const STATUS_LABELS = {
-  investigating: "Investigating",
-  identified: "Identified",
-  monitoring: "Monitoring",
-  resolved: "Resolved",
-  maintenance: "Maintenance",
+const FEED_COPY = {
+  en: {
+    statusLabels: {
+      investigating: "Investigating",
+      identified: "Identified",
+      monitoring: "Monitoring",
+      resolved: "Resolved",
+      maintenance: "Maintenance",
+    },
+    generator: "LLMHub Radar - Status Updates",
+    maintenanceTitle: "Maintenance",
+    language: "en-US",
+  },
+  zh: {
+    statusLabels: {
+      investigating: "排查中",
+      identified: "已定位",
+      monitoring: "持续观察中",
+      resolved: "已恢复",
+      maintenance: "维护中",
+    },
+    generator: "LLMHub Radar - 状态更新",
+    maintenanceTitle: "计划维护",
+    language: "zh-CN",
+  },
 } as const;
 
 export const revalidate = 60;
 
 export async function GET(
   _request: Request,
-  props: { params: Promise<{ domain: string; type: string }> },
+  props: { params: Promise<{ domain: string; locale: string; type: string }> },
 ) {
   try {
     const queryClient = getQueryClient();
-    const { domain, type } = await props.params;
+    const { domain, locale, type } = await props.params;
+    const copy = locale === "zh" ? FEED_COPY.zh : FEED_COPY.en;
 
     if (!["rss", "atom"].includes(type)) return notFound();
 
@@ -64,7 +84,7 @@ export async function GET(
       id: `${baseUrl}/feed/${type}`,
       title: page.title,
       description: page.description,
-      generator: "OpenStatus - Status Page Updates",
+      generator: copy.generator,
       feedLinks: {
         rss: `${baseUrl}/feed/rss`,
         atom: `${baseUrl}/feed/atom`,
@@ -80,8 +100,8 @@ export async function GET(
       },
       copyright: `Copyright ${new Date()
         .getFullYear()
-        .toString()} openstatus.dev`,
-      language: "en-US",
+        .toString()} llm-hub.store`,
+      language: copy.language,
       updated: new Date(),
       ttl: 60,
     });
@@ -90,7 +110,7 @@ export async function GET(
       const maintenanceUrl = `${baseUrl}/events/maintenance/${maintenance.id}`;
       feed.addItem({
         id: maintenanceUrl,
-        title: `Maintenance - ${maintenance.title}`,
+        title: `${copy.maintenanceTitle} - ${maintenance.title}`,
         link: maintenanceUrl,
         description: maintenance.message,
         date: maintenance.updatedAt ?? maintenance.createdAt ?? new Date(),
@@ -99,10 +119,12 @@ export async function GET(
 
     for (const statusReport of page.statusReports ?? []) {
       const statusReportUrl = `${baseUrl}/events/report/${statusReport.id}`;
-      const status = STATUS_LABELS[statusReport.status] ?? statusReport.status;
+      const status =
+        copy.statusLabels[statusReport.status] ?? statusReport.status;
       const statusReportUpdates = (statusReport.statusReportUpdates ?? [])
         .map((update) => {
-          const updateStatus = STATUS_LABELS[update.status] ?? update.status;
+          const updateStatus =
+            copy.statusLabels[update.status] ?? update.status;
           return `${updateStatus}: ${update.message}.`;
         })
         .join("\n\n");

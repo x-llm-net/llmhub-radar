@@ -3,6 +3,7 @@
 import type { RouterOutputs } from "@openstatus/api";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceStrict } from "date-fns";
+import { useTranslations } from "next-intl";
 
 import { TableCellDate } from "@/components/data-table/table-cell-date";
 import { TableCellLink } from "@/components/data-table/table-cell-link";
@@ -13,70 +14,76 @@ import { DataTableRowActions } from "./data-table-row-actions";
 
 type Incident = RouterOutputs["incident"]["list"][number];
 
-export const columns: ColumnDef<Incident>[] = [
-  {
-    id: "monitor",
-    accessorFn: (row) => row.monitor.name,
-    header: "Monitor",
-    enableSorting: false,
-    enableHiding: false,
-    cell: ({ row }) => {
-      return (
-        <TableCellLink
-          value={row.getValue("monitor")}
-          href={`/monitors/${row.original.monitor.id}/overview`}
-        />
-      );
+export function useIncidentColumns(): ColumnDef<Incident>[] {
+  const t = useTranslations("common");
+
+  return [
+    {
+      id: "monitor",
+      accessorFn: (row) => row.monitor.name,
+      header: t("monitor"),
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        return (
+          <TableCellLink
+            value={row.getValue("monitor")}
+            href={`/monitors/${row.original.monitor.id}/overview`}
+          />
+        );
+      },
+      meta: {
+        cellClassName: "max-w-[150px] min-w-max",
+      },
     },
-    meta: {
-      cellClassName: "max-w-[150px] min-w-max",
+    {
+      accessorKey: "startedAt",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t("startedAt")} />
+      ),
+      cell: ({ row }) => <TableCellDate value={row.getValue("startedAt")} />,
+      enableHiding: false,
     },
-  },
-  {
-    accessorKey: "startedAt",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Started At" />
-    ),
-    cell: ({ row }) => <TableCellDate value={row.getValue("startedAt")} />,
-    enableHiding: false,
-  },
-  {
-    accessorKey: "acknowledgedAt",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Acknowledged" />
-    ),
-    cell: ({ row }) => <TableCellDate value={row.getValue("acknowledgedAt")} />,
-    enableHiding: false,
-  },
-  {
-    accessorKey: "resolvedAt",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Resolved At" />
-    ),
-    cell: ({ row }) => <TableCellDate value={row.getValue("resolvedAt")} />,
-    enableHiding: false,
-  },
-  {
-    id: "duration",
-    accessorFn: (row) =>
-      row.resolvedAt
-        ? formatDistanceStrict(row.startedAt, row.resolvedAt)
-        : "ongoing",
-    header: "Duration",
-    cell: ({ row }) => {
-      const value = row.getValue("duration");
-      if (typeof value === "string") {
-        const [amount, unit] = value.split(" ");
-        return <TableCellNumber value={amount} unit={unit} />;
-      }
-      return <TableCellNumber value={value} />;
+    {
+      accessorKey: "acknowledgedAt",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t("acknowledged")} />
+      ),
+      cell: ({ row }) => (
+        <TableCellDate value={row.getValue("acknowledgedAt")} />
+      ),
+      enableHiding: false,
     },
-  },
-  {
-    id: "actions",
-    cell: ({ row }) => <DataTableRowActions row={row} />,
-    meta: {
-      cellClassName: "w-8",
+    {
+      accessorKey: "resolvedAt",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t("resolvedAt")} />
+      ),
+      cell: ({ row }) => <TableCellDate value={row.getValue("resolvedAt")} />,
+      enableHiding: false,
     },
-  },
-];
+    {
+      id: "duration",
+      accessorFn: (row) =>
+        row.resolvedAt
+          ? formatDistanceStrict(row.startedAt, row.resolvedAt)
+          : "ongoing",
+      header: t("duration"),
+      cell: ({ row }) => {
+        const value = row.getValue("duration");
+        if (typeof value === "string") {
+          const [amount, unit] = value.split(" ");
+          return <TableCellNumber value={amount} unit={unit} />;
+        }
+        return <TableCellNumber value={value} />;
+      },
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => <DataTableRowActions row={row} />,
+      meta: {
+        cellClassName: "w-8",
+      },
+    },
+  ];
+}

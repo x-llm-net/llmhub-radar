@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import { Bot, List, Search } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import { Note, NoteButton } from "@/components/common/note";
 import {
@@ -17,8 +18,8 @@ import {
   SectionTitle,
 } from "@/components/content/section";
 import { Section } from "@/components/content/section";
-import { columns as incidentsColumns } from "@/components/data-table/incidents/columns";
-import { columns as maintenancesColumns } from "@/components/data-table/maintenances/columns";
+import { useIncidentColumns } from "@/components/data-table/incidents/columns";
+import { useMaintenanceColumns } from "@/components/data-table/maintenances/columns";
 import {
   MetricCard,
   MetricCardGroup,
@@ -38,6 +39,9 @@ import { DataTableStatusReports } from "./data-table-status-reports";
 
 export default function Page() {
   const trpc = useTRPC();
+  const t = useTranslations("overview");
+  const incidentsColumns = useIncidentColumns();
+  const maintenancesColumns = useMaintenanceColumns();
 
   const { data: monitors } = useQuery(trpc.monitor.list.queryOptions());
   const { data: pages } = useQuery(trpc.page.list.queryOptions());
@@ -68,30 +72,30 @@ export default function Page() {
     ? formatDistanceToNowStrict(lastIncident.startedAt, {
         addSuffix: true,
       })
-    : "None";
+    : t("none");
 
   const statusReportDistance = lastStatusReport?.createdAt
     ? formatDistanceToNowStrict(lastStatusReport.createdAt, {
         addSuffix: true,
       })
-    : "None";
+    : t("none");
 
   const maintenanceDistance = lastMaintenance?.createdAt
     ? formatDistanceToNowStrict(lastMaintenance.createdAt, {
         addSuffix: true,
       })
-    : "None";
+    : t("none");
 
   const metrics = [
     {
-      title: "Monitors",
+      title: t("monitors"),
       value: monitors.length,
       href: "/monitors",
       variant: "default" as const,
       icon: List,
     },
     {
-      title: "Status Pages",
+      title: t("statusPages"),
       value: pages.length,
       href: "/status-pages",
       variant: "default" as const,
@@ -100,8 +104,8 @@ export default function Page() {
     {
       title:
         lastIncident?.resolvedAt === undefined && lastIncident
-          ? "Active Incident"
-          : "Recent Incident",
+          ? t("activeIncident")
+          : t("recentIncident"),
       value: incidentDistance,
       disabled: !lastIncident?.monitorId,
       href: `/monitors/${lastIncident?.monitorId}/incidents`,
@@ -112,7 +116,7 @@ export default function Page() {
       icon: Search,
     },
     {
-      title: "Last Report",
+      title: t("lastReport"),
       value: statusReportDistance,
       disabled: !lastStatusReport?.pageId,
       href: `/status-pages/${lastStatusReport?.pageId}/status-reports`,
@@ -120,7 +124,7 @@ export default function Page() {
       icon: Search,
     },
     {
-      title: "Last Maintenance",
+      title: t("lastMaintenance"),
       value: maintenanceDistance,
       disabled: !lastMaintenance?.pageId,
       href: `/status-pages/${lastMaintenance?.pageId}/maintenances`,
@@ -133,16 +137,16 @@ export default function Page() {
     <SectionGroup>
       <Note>
         <Bot />
-        Use our Slack agent to manage your status pages and incidents.
+        {t("slackAgentNote")}
         <NoteButton variant="default" asChild>
-          <Link href="/agents">Learn more</Link>
+          <Link href="/agents">{t("learnMore")}</Link>
         </NoteButton>
       </Note>
       <Section>
         <SectionHeader>
-          <SectionTitle>Overview</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            Welcome to your OpenStatus dashboard.
+            {t("description")}
           </SectionDescription>
         </SectionHeader>
         <MetricCardGroup>
@@ -168,44 +172,44 @@ export default function Page() {
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Incidents</SectionTitle>
+          <SectionTitle>{t("incidents")}</SectionTitle>
           <SectionDescription>
-            Incidents over the last 7 days.
+            {t("incidentsDescription")}
           </SectionDescription>
         </SectionHeader>
         {incidents.length > 0 ? (
           <DataTable columns={incidentsColumns} data={incidents} />
         ) : (
           <EmptyStateContainer>
-            <EmptyStateTitle>No incidents found</EmptyStateTitle>
+            <EmptyStateTitle>{t("noIncidents")}</EmptyStateTitle>
           </EmptyStateContainer>
         )}
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Reports</SectionTitle>
-          <SectionDescription>Reports over the last 7 days.</SectionDescription>
+          <SectionTitle>{t("reports")}</SectionTitle>
+          <SectionDescription>{t("reportsDescription")}</SectionDescription>
         </SectionHeader>
         {statusReports.length > 0 ? (
           <DataTableStatusReports statusReports={statusReports} />
         ) : (
           <EmptyStateContainer>
-            <EmptyStateTitle>No reports found</EmptyStateTitle>
+            <EmptyStateTitle>{t("noReports")}</EmptyStateTitle>
           </EmptyStateContainer>
         )}
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Maintenance</SectionTitle>
+          <SectionTitle>{t("maintenance")}</SectionTitle>
           <SectionDescription>
-            Maintenance over the last 7 days.
+            {t("maintenanceDescription")}
           </SectionDescription>
         </SectionHeader>
         {maintenances.length > 0 ? (
           <DataTable columns={maintenancesColumns} data={maintenances} />
         ) : (
           <EmptyStateContainer>
-            <EmptyStateTitle>No maintenances found</EmptyStateTitle>
+            <EmptyStateTitle>{t("noMaintenances")}</EmptyStateTitle>
           </EmptyStateContainer>
         )}
       </Section>

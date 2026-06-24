@@ -17,7 +17,6 @@ import { Separator } from "@openstatus/ui/components/ui/separator";
 import { Skeleton } from "@openstatus/ui/components/ui/skeleton";
 import { useMediaQuery } from "@openstatus/ui/hooks/use-media-query";
 import { cn } from "@openstatus/ui/lib/utils";
-import { formatDistanceStrict } from "date-fns";
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 
 interface StatusBarProps {
@@ -876,8 +875,8 @@ const formatDuration = ({
 }) => {
   if (!from) return null;
   if (!to) return labels.ongoing;
-  const duration = formatDistanceStrict(from, to);
+  const duration = labels.formatDistance(from, to);
   if (isAggregated) return labels.durationAcross(duration);
-  if (duration === "0 seconds") return null;
+  if (from.getTime() === to.getTime()) return null;
   return duration;
 };

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useQueryStates } from "nuqs";
 import { useCallback, useMemo } from "react";
@@ -37,6 +38,7 @@ import { useTRPC } from "@/lib/trpc/client";
 import { searchParamsParsers } from "./search-params";
 
 export function Client() {
+  const responseLogsT = useTranslations("responseLogs");
   const trpc = useTRPC();
   const { id } = useParams<{ id: string }>();
   const [
@@ -77,8 +79,18 @@ export function Client() {
   );
 
   const columns = useMemo(
-    () => getColumns(monitor?.privateLocations ?? []),
-    [monitor?.privateLocations],
+    () =>
+      getColumns(monitor?.privateLocations ?? [], {
+        timestamp: responseLogsT("timestamp"),
+        status: responseLogsT("status"),
+        latency: responseLogsT("latency"),
+        region: responseLogsT("region"),
+        timing: responseLogsT("timing"),
+        trigger: responseLogsT("trigger"),
+        scheduled: responseLogsT("scheduled"),
+        api: responseLogsT("api"),
+      }),
+    [monitor?.privateLocations, responseLogsT],
   );
 
   if (!workspace || !monitor) return null;
@@ -152,7 +164,22 @@ export function Client() {
 }
 
 function BillingPlaceholder() {
-  const columns = useMemo(() => getColumns([]), []);
+  const t = useTranslations("monitors.logs");
+  const responseLogsT = useTranslations("responseLogs");
+  const columns = useMemo(
+    () =>
+      getColumns([], {
+        timestamp: responseLogsT("timestamp"),
+        status: responseLogsT("status"),
+        latency: responseLogsT("latency"),
+        region: responseLogsT("region"),
+        timing: responseLogsT("timing"),
+        trigger: responseLogsT("trigger"),
+        scheduled: responseLogsT("scheduled"),
+        api: responseLogsT("api"),
+      }),
+    [responseLogsT],
+  );
   return (
     <BillingOverlayContainer>
       <DataTable data={exampleLogs} columns={columns} />
@@ -160,17 +187,17 @@ function BillingPlaceholder() {
         <BillingOverlayButton asChild>
           <Link href="/settings/billing">
             <Lock />
-            Upgrade
+            {t("upgrade")}
           </Link>
         </BillingOverlayButton>
         <BillingOverlayDescription>
-          Access response headers, timing phases and more for each request.{" "}
+          {t("description")}{" "}
           <Link
             href="https://www.openstatus.dev/docs/monitoring/monitor-data-collected/"
             rel="noreferrer"
             target="_blank"
           >
-            Learn more
+            {t("learnMore")}
           </Link>
           .
         </BillingOverlayDescription>

@@ -1,6 +1,7 @@
 "use client";
 
 import type { RouterOutputs } from "@openstatus/api";
+import { useTranslations } from "next-intl";
 
 import {
   DataTableSheet,
@@ -25,6 +26,8 @@ export function DataTableSheetTest({
   monitor: Monitor;
   onClose: () => void;
 }) {
+  const t = useTranslations("responseLogs");
+
   if (!data) return null;
 
   const _data = mapping(data, monitor);
@@ -36,7 +39,7 @@ export function DataTableSheetTest({
       {/* NOTE: we are using onCloseAutoFocus to reset with a delay to avoid abrupt closing of the sheet */}
       <DataTableSheetContent className="sm:max-w-lg" onCloseAutoFocus={onClose}>
         <DataTableSheetHeader className="px-2">
-          <DataTableSheetTitle>Test Result</DataTableSheetTitle>
+          <DataTableSheetTitle>{t("testResult")}</DataTableSheetTitle>
         </DataTableSheetHeader>
         <DataTableBasics data={_data} />
       </DataTableSheetContent>

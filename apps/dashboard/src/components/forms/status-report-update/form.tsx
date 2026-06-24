@@ -39,6 +39,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { format } from "date-fns";
 import { CalendarIcon, ClockIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -86,6 +87,7 @@ export function FormStatusReportUpdate({
   /** Edit mode: components without an entry show "No change". */
   allowUnsetImpacts?: boolean;
 }) {
+  const t = useTranslations("statusPages.reports.form");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
     trpc.workspace.getWorkspace.queryOptions(),
@@ -118,13 +120,13 @@ export function FormStatusReportUpdate({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -147,7 +149,7 @@ export function FormStatusReportUpdate({
             name="status"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Status</FormLabel>
+                <FormLabel>{t("status")}</FormLabel>
                 <FormControl>
                   <Select
                     defaultValue={field.value}
@@ -173,7 +175,7 @@ export function FormStatusReportUpdate({
                         "font-mono capitalize",
                       )}
                     >
-                      <SelectValue placeholder="Select a status" />
+                      <SelectValue placeholder={t("selectStatus")} />
                     </SelectTrigger>
                     <SelectContent>
                       {statusReportStatus.map((status) => (
@@ -200,7 +202,7 @@ export function FormStatusReportUpdate({
             name="date"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Date</FormLabel>
+                <FormLabel>{t("date")}</FormLabel>
                 <Popover modal>
                   <FormControl>
                     <PopoverTrigger asChild>
@@ -216,7 +218,7 @@ export function FormStatusReportUpdate({
                         {field.value ? (
                           format(field.value, "PPP 'at' h:mm a")
                         ) : (
-                          <span>Pick a date</span>
+                          <span>{t("pickDate")}</span>
                         )}
                         <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                       </Button>
@@ -249,7 +251,7 @@ export function FormStatusReportUpdate({
                     <div className="border-t p-3">
                       <div className="flex items-center gap-3">
                         <Label htmlFor="time" className="text-xs">
-                          Enter time
+                          {t("enterTime")}
                         </Label>
                         <div className="relative grow">
                           <Input
@@ -290,15 +292,7 @@ export function FormStatusReportUpdate({
                   </PopoverContent>
                 </Popover>
                 <FormDescription>
-                  When the status report was created. Shown in your timezone (
-                  <code className="font-commit-mono text-foreground/70">
-                    {timezone}
-                  </code>
-                  ) and saved as Unix time (
-                  <code className="font-commit-mono text-foreground/70">
-                    UTC
-                  </code>
-                  ).
+                  {t("dateDescription", { timezone })}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -314,9 +308,9 @@ export function FormStatusReportUpdate({
                 name="componentImpacts"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Component Impact</FormLabel>
+                    <FormLabel>{t("componentImpact")}</FormLabel>
                     <FormDescription>
-                      How badly is each affected component impacted?
+                      {t("componentImpactDescription")}
                     </FormDescription>
                     <FormControl>
                       <ComponentImpactList
@@ -337,8 +331,8 @@ export function FormStatusReportUpdate({
         <FormCardContent>
           <Tabs defaultValue="tab-1">
             <TabsList>
-              <TabsTrigger value="tab-1">Writing</TabsTrigger>
-              <TabsTrigger value="tab-2">Preview</TabsTrigger>
+              <TabsTrigger value="tab-1">{t("writing")}</TabsTrigger>
+              <TabsTrigger value="tab-2">{t("preview")}</TabsTrigger>
             </TabsList>
             <TabsContent value="tab-1">
               <FormField
@@ -346,19 +340,19 @@ export function FormStatusReportUpdate({
                 name="message"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Message</FormLabel>
+                    <FormLabel>{t("message")}</FormLabel>
                     <FormControl>
                       <Textarea rows={6} {...field} />
                     </FormControl>
                     <FormMessage />
-                    <FormDescription>Markdown support</FormDescription>
+                    <FormDescription>{t("markdownSupport")}</FormDescription>
                   </FormItem>
                 )}
               />
             </TabsContent>
             <TabsContent value="tab-2">
               <div className="grid gap-2">
-                <Label>Preview</Label>
+                <Label>{t("preview")}</Label>
                 <div className="prose prose-sm dark:prose-invert text-foreground rounded-md border px-3 py-2 text-sm">
                   <ProcessMessage value={watchMessage} />
                 </div>
@@ -375,7 +369,7 @@ export function FormStatusReportUpdate({
                 name="notifySubscribers"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notify Subscribers</FormLabel>
+                    <FormLabel>{t("notifySubscribers")}</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-2">
                         <Checkbox
@@ -384,14 +378,13 @@ export function FormStatusReportUpdate({
                           onCheckedChange={field.onChange}
                         />
                         <Label htmlFor="notifySubscribers">
-                          Send notification to subscribers
+                          {t("notifySubscribersDescription")}
                         </Label>
                       </div>
                     </FormControl>
                     <FormMessage />
                     <FormDescription>
-                      Subscribers will be notified when creating a status
-                      report.
+                      {t("subscribersWillBeNotified")}
                     </FormDescription>
                   </FormItem>
                 )}

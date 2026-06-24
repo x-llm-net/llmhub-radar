@@ -23,6 +23,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
+import { useLocale } from "next-intl";
 import { useQueryStates } from "nuqs";
 import { useEffect, useState } from "react";
 
@@ -283,6 +284,7 @@ function ThemePlaygroundStatus({
   className,
   ...props
 }: React.ComponentProps<"div"> & {}) {
+  const locale = useLocale();
   const trpc = useTRPC();
   const { data: uptimeData, isLoading } = useQuery(
     trpc.statusPage.getNoopUptime.queryOptions(),
@@ -294,7 +296,9 @@ function ThemePlaygroundStatus({
         <StatusHeader>
           <StatusTitle>Acme Inc.</StatusTitle>
           <StatusDescription>
-            Get informed about our services.
+            {locale === "zh"
+              ? "及时了解我们的服务状态。"
+              : "Get informed about our services."}
           </StatusDescription>
         </StatusHeader>
         <StatusBanner status="success" />

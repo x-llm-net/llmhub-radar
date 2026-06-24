@@ -3,6 +3,7 @@
 import type { RouterOutputs } from "@openstatus/api";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import type { ColumnDef } from "@tanstack/react-table";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 
 import { DataTableColumnHeader } from "@/components/ui/data-table/data-table-column-header";
@@ -13,17 +14,32 @@ import { DataTableRowActions } from "./data-table-row-actions";
 
 type Notifier = RouterOutputs["notification"]["list"][number];
 
-export const columns: ColumnDef<Notifier>[] = [
+export type NotificationColumnLabels = {
+  name: string;
+  provider: string;
+  monitors: string;
+};
+
+const defaultLabels: NotificationColumnLabels = {
+  name: "Name",
+  provider: "Provider",
+  monitors: "Monitors",
+};
+
+export function getColumns(
+  labels: NotificationColumnLabels = defaultLabels,
+): ColumnDef<Notifier>[] {
+  return [
   {
     accessorKey: "name",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Name" />
+      <DataTableColumnHeader column={column} title={labels.name} />
     ),
     enableHiding: false,
   },
   {
     accessorKey: "provider",
-    header: "Provider",
+    header: labels.provider,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -39,7 +55,7 @@ export const columns: ColumnDef<Notifier>[] = [
   },
   {
     accessorKey: "monitors",
-    header: "Monitors",
+    header: labels.monitors,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -68,4 +84,16 @@ export const columns: ColumnDef<Notifier>[] = [
       cellClassName: "w-8",
     },
   },
-];
+  ];
+}
+
+export function useNotificationColumns() {
+  const t = useTranslations("notifications.table");
+  return getColumns({
+    name: t("name"),
+    provider: t("provider"),
+    monitors: t("monitors"),
+  });
+}
+
+export const columns = getColumns();

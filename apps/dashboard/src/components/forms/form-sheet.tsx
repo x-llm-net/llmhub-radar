@@ -20,6 +20,7 @@ import {
   SheetTrigger,
 } from "@openstatus/ui/components/ui/sheet";
 import { cn } from "@openstatus/ui/lib/utils";
+import { useTranslations } from "next-intl";
 import React, {
   createContext,
   useContext,
@@ -109,19 +110,21 @@ export function FormSheetAlertDialog({
 }: React.ComponentProps<typeof AlertDialog> & {
   onConfirm: () => void;
 }) {
+  const t = useTranslations("common");
+
   return (
     <AlertDialog {...props}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+          <AlertDialogTitle>{t("discardChangesTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved changes. Are you sure you want to discard them?
+            {t("discardChangesDescription")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Continue editing</AlertDialogCancel>
+          <AlertDialogCancel>{t("continueEditing")}</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm}>
-            Discard changes
+            {t("discardChanges")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

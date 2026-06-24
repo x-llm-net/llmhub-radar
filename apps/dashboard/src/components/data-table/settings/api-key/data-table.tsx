@@ -1,4 +1,5 @@
 import type { RouterOutputs } from "@openstatus/api";
+import { useTranslations } from "next-intl";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import {
   Table,
@@ -24,18 +25,21 @@ type ApiKey = RouterOutputs["apiKeyRouter"]["getAll"][number];
  * a row indicates someone hand-edited the DB or a bug bypassed the
  * input enum — surface drift instead of silently mislabeling it.
  */
-function scopeLabel(scopes: ApiKey["scopes"]): string {
+function scopeLabel(
+  scopes: ApiKey["scopes"],
+  t: ReturnType<typeof useTranslations<"settings.forms">>,
+): string {
   if (scopes.includes("*")) {
     if (typeof console !== "undefined") {
       console.warn(
         "[api-key table] row carries '*' scope — should never happen via the public API",
       );
     }
-    return "Admin";
+    return t("apiKeyScopeAdmin");
   }
-  if (scopes.includes("write")) return "Read & write";
-  if (scopes.includes("read")) return "Read-only";
-  return "Unknown";
+  if (scopes.includes("write")) return t("apiKeyScopeReadWrite");
+  if (scopes.includes("read")) return t("apiKeyScopeReadOnly");
+  return t("unknown");
 }
 
 export function DataTable({
@@ -45,6 +49,7 @@ export function DataTable({
   apiKeys: ApiKey[];
   refetch: () => void;
 }) {
+  const t = useTranslations("settings.forms");
   const trpc = useTRPC();
   const revokeApiKeyMutation = useMutation(
     trpc.apiKeyRouter.revoke.mutationOptions({
@@ -57,13 +62,13 @@ export function DataTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Prefix</TableHead>
-            <TableHead>Access</TableHead>
-            <TableHead>Expires</TableHead>
+            <TableHead>{t("name")}</TableHead>
+            <TableHead>{t("description")}</TableHead>
+            <TableHead>{t("prefix")}</TableHead>
+            <TableHead>{t("access")}</TableHead>
+            <TableHead>{t("expires")}</TableHead>
             <TableHead>
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{t("actions")}</span>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -78,7 +83,9 @@ export function DataTable({
                 <code className="text-xs">{apiKey.prefix}...</code>
               </TableCell>
               <TableCell>
-                <Badge variant="secondary">{scopeLabel(apiKey.scopes)}</Badge>
+                <Badge variant="secondary">
+                  {scopeLabel(apiKey.scopes, t)}
+                </Badge>
               </TableCell>
               <TableCell className="text-sm">
                 {apiKey.expiresAt ? formatDate(apiKey.expiresAt) : "-"}
@@ -87,7 +94,7 @@ export function DataTable({
                 <div className="flex justify-end">
                   <QuickActions
                     deleteAction={{
-                      confirmationValue: apiKey.name ?? "api key",
+                      confirmationValue: apiKey.name ?? t("apiKeyFallback"),
                       submitAction: async () =>
                         await revokeApiKeyMutation.mutateAsync({
                           keyId: apiKey.id,

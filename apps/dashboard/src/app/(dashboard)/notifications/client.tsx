@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useQueryStates } from "nuqs";
 
 import { Link } from "@/components/common/link";
@@ -22,7 +23,7 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/notifications/columns";
+import { useNotificationColumns } from "@/components/data-table/notifications/columns";
 import { FormSheetNotifier } from "@/components/forms/notifications/sheet";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { config } from "@/data/notifications.client";
@@ -37,6 +38,8 @@ const BASE_URL =
     : "https://www.openstatus.dev";
 
 export function Client() {
+  const t = useTranslations("notifications");
+  const columns = useNotificationColumns();
   const trpc = useTRPC();
   const { data: notifications, refetch } = useQuery(
     trpc.notification.list.queryOptions(),
@@ -58,15 +61,15 @@ export function Client() {
   return (
     <SectionGroup>
       <SectionHeader>
-        <SectionTitle>Notifications</SectionTitle>
+        <SectionTitle>{t("title")}</SectionTitle>
         <SectionDescription>
-          Define your notifications to receive alerts when downtime occurs.
+          {t("description")}
         </SectionDescription>
       </SectionHeader>
       <Section>
         {notifications.length === 0 ? (
           <EmptyStateContainer>
-            <EmptyStateTitle>No notifier found</EmptyStateTitle>
+            <EmptyStateTitle>{t("empty")}</EmptyStateTitle>
           </EmptyStateContainer>
         ) : (
           <DataTable columns={columns} data={notifications} />
@@ -74,15 +77,15 @@ export function Client() {
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Create a new notifier</SectionTitle>
+          <SectionTitle>{t("createTitle")}</SectionTitle>
           <SectionDescription>
-            Define your notifications to receive alerts when downtime occurs.{" "}
+            {t("createDescription")}{" "}
             <Link
               href="https://www.openstatus.dev/docs/reference/notification/"
               rel="noreferrer"
               target="_blank"
             >
-              Learn more
+              {t("learnMore")}
             </Link>
             .
           </SectionDescription>
@@ -122,7 +125,7 @@ export function Client() {
                         <ActionCardTitle>{config[key].label}</ActionCardTitle>
                       </div>
                       <ActionCardDescription>
-                        Send notifications to {config[key].label}
+                        {t("sendTo", { provider: config[key].label })}
                       </ActionCardDescription>
                     </ActionCardHeader>
                   </ActionCard>
@@ -155,7 +158,7 @@ export function Client() {
                       <ActionCardTitle>{config[key].label}</ActionCardTitle>
                     </div>
                     <ActionCardDescription>
-                      Send notifications to {config[key].label}
+                      {t("sendTo", { provider: config[key].label })}
                     </ActionCardDescription>
                   </ActionCardHeader>
                 </ActionCard>
@@ -167,12 +170,12 @@ export function Client() {
               <div className="flex items-center gap-2">
                 <div className="border-border bg-muted flex size-6 items-center justify-center rounded-md border" />
                 <ActionCardTitle className="text-muted-foreground">
-                  Your Notifier
+                  {t("customTitle")}
                 </ActionCardTitle>
               </div>
               <ActionCardDescription>
-                Missing a channel?{" "}
-                <Link href="mailto:ping@openstatus.dev">Contact us</Link>
+                {t("customDescription")}{" "}
+                <Link href="mailto:ping@openstatus.dev">{t("contactUs")}</Link>
               </ActionCardDescription>
             </ActionCardHeader>
           </ActionCard>

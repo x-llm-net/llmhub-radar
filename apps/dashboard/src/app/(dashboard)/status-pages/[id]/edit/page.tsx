@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import {
@@ -14,6 +15,7 @@ import { FormStatusPageUpdate } from "@/components/forms/status-page/update";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("statusPages.edit");
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const { data: statusPage } = useQuery(
@@ -27,7 +29,7 @@ export default function Page() {
       <Section>
         <SectionHeader>
           <SectionTitle>{statusPage.title}</SectionTitle>
-          <SectionDescription>Customize your status page.</SectionDescription>
+          <SectionDescription>{t("description")}</SectionDescription>
         </SectionHeader>
         <FormStatusPageUpdate />
       </Section>

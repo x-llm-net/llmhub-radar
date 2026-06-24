@@ -49,6 +49,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -180,6 +181,7 @@ export function FormMonitors({
   legacy: boolean;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {},
@@ -324,13 +326,13 @@ export function FormMonitors({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -345,7 +347,7 @@ export function FormMonitors({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Monitors</FormCardTitle>
+            <FormCardTitle>{t("monitors")}</FormCardTitle>
             <FormCardDescription>
               Connect your monitors to your status page.
             </FormCardDescription>
@@ -356,7 +358,7 @@ export function FormMonitors({
               name="monitors"
               render={({ field }) => (
                 <FormItem className="flex flex-col">
-                  <FormLabel className="sr-only">Monitors</FormLabel>
+                  <FormLabel className="sr-only">{t("monitors")}</FormLabel>
                   <Popover>
                     <PopoverTrigger asChild>
                       <FormControl>
@@ -369,8 +371,10 @@ export function FormMonitors({
                           )}
                         >
                           {field.value.length > 0
-                            ? `${field.value.length} monitors selected`
-                            : "Select monitors"}
+                            ? t("monitorsSelected", {
+                                count: field.value.length,
+                              })
+                            : t("selectMonitors")}
                           <ChevronsUpDown className="opacity-50" />
                         </Button>
                       </FormControl>
@@ -378,11 +382,11 @@ export function FormMonitors({
                     <PopoverContent className="p-0">
                       <Command>
                         <CommandInput
-                          placeholder="Search monitors..."
+                          placeholder={t("searchMonitors")}
                           className="h-9"
                         />
                         <CommandList>
-                          <CommandEmpty>No monitors found.</CommandEmpty>
+                          <CommandEmpty>{t("noMonitorsFound")}</CommandEmpty>
                           <CommandGroup>
                             {monitors.map((monitor) => {
                               const isInGroup = monitorsInGroups.has(
@@ -431,7 +435,7 @@ export function FormMonitors({
                       </Command>
                     </PopoverContent>
                   </Popover>
-                  <FormDescription>Choose monitors to display.</FormDescription>
+                  <FormDescription>{t("chooseMonitorsToDisplay")}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -448,7 +452,7 @@ export function FormMonitors({
                         disabled={legacy}
                       >
                         <Plus />
-                        Add Group
+                        {t("addGroup")}
                       </Button>
                     </span>
                   </TooltipTrigger>
@@ -467,7 +471,7 @@ export function FormMonitors({
                 onClick={handleAddGroup}
               >
                 <Plus />
-                Add Group
+                {t("addGroup")}
               </Button>
             )}
           </FormCardContent>
@@ -511,7 +515,7 @@ export function FormMonitors({
                 </SortableContent>
               ) : (
                 <EmptyStateContainer>
-                  <EmptyStateTitle>No monitors selected</EmptyStateTitle>
+                  <EmptyStateTitle>{t("noMonitorsSelected")}</EmptyStateTitle>
                 </EmptyStateContainer>
               )}
             </Sortable>
@@ -521,7 +525,7 @@ export function FormMonitors({
               Learn more about monitor <Link href="#">display options</Link>.
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>
@@ -539,6 +543,7 @@ interface MonitorRowProps extends Omit<
 }
 
 function MonitorRow({ monitor, className, ...props }: MonitorRowProps) {
+  const t = useTranslations("statusPages.form");
   return (
     <SortableItem
       value={monitor.id}
@@ -566,7 +571,7 @@ function MonitorRow({ monitor, className, ...props }: MonitorRowProps) {
           {monitor.url}
         </div>
         <div className="text-muted-foreground self-center truncate text-sm">
-          {monitor.active ? "Active" : "Inactive"}
+          {monitor.active ? t("active") : t("inactive")}
         </div>
       </div>
     </SortableItem>
@@ -591,6 +596,7 @@ function MonitorGroup({
   form,
   monitors,
 }: MonitorGroupProps) {
+  const t = useTranslations("statusPages.form");
   const watchGroup = form.watch(`groups.${groupIndex}`);
   const watchMonitors = form.watch("monitors");
   const watchGroups = form.watch("groups");
@@ -653,10 +659,10 @@ function MonitorGroup({
             name={`groups.${groupIndex}.name` as const}
             render={({ field }) => (
               <FormItem className="w-full">
-                <FormLabel className="sr-only">Group name</FormLabel>
+                <FormLabel className="sr-only">{t("groupName")}</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="Group Name"
+                    placeholder={t("groupName")}
                     className="bg-background w-full"
                     {...field}
                   />
@@ -672,7 +678,7 @@ function MonitorGroup({
           name={`groups.${groupIndex}.monitors` as const}
           render={({ field }) => (
             <FormItem className="flex w-full flex-col">
-              <FormLabel className="sr-only">Monitors</FormLabel>
+              <FormLabel className="sr-only">{t("monitors")}</FormLabel>
               <Popover>
                 <PopoverTrigger asChild>
                   <FormControl>
@@ -685,8 +691,10 @@ function MonitorGroup({
                       )}
                     >
                       {Array.isArray(field.value) && field.value.length > 0
-                        ? `${field.value.length} monitors selected`
-                        : "Select monitors"}
+                        ? t("monitorsSelected", {
+                            count: field.value.length,
+                          })
+                        : t("selectMonitors")}
                       <ChevronsUpDown className="opacity-50" />
                     </Button>
                   </FormControl>
@@ -694,11 +702,11 @@ function MonitorGroup({
                 <PopoverContent className="p-0">
                   <Command>
                     <CommandInput
-                      placeholder="Search monitors..."
+                      placeholder={t("searchMonitors")}
                       className="h-9"
                     />
                     <CommandList>
-                      <CommandEmpty>No monitors found.</CommandEmpty>
+                      <CommandEmpty>{t("noMonitorsFound")}</CommandEmpty>
                       <CommandGroup>
                         {monitors.map((monitor) => {
                           const current = field.value ?? [];
@@ -769,18 +777,18 @@ function MonitorGroup({
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogTitle>{t("areYouSure")}</AlertDialogTitle>
                 <AlertDialogDescription>
                   You are about to delete this group and all its monitors.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
                   onClick={() => onDeleteGroup(group.id)}
                 >
-                  Delete
+                  {t("delete")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -809,7 +817,7 @@ function MonitorGroup({
             </SortableContent>
           ) : (
             <EmptyStateContainer>
-              <EmptyStateTitle>No monitors selected</EmptyStateTitle>
+              <EmptyStateTitle>{t("noMonitorsSelected")}</EmptyStateTitle>
             </EmptyStateContainer>
           )}
         </Sortable>

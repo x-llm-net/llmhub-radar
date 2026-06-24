@@ -14,6 +14,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Row } from "@tanstack/react-table";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -29,6 +30,7 @@ interface DataTableRowActionsProps {
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [isPending, startTransition] = useTransition();
+  const t = useTranslations("monitors.incidents");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const acknowledgeIncidentMutation = useMutation(
@@ -68,12 +70,19 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [type, setType] = useState<"acknowledge" | "resolve" | null>(null);
   const open = useMemo(() => type !== null, [type]);
 
-  const actions = getActions({
-    acknowledge: row.original.acknowledgedAt
-      ? undefined
-      : () => setType("acknowledge"),
-    resolve: row.original.resolvedAt ? undefined : () => setType("resolve"),
-  });
+  const actions = getActions(
+    {
+      acknowledge: row.original.acknowledgedAt
+        ? undefined
+        : () => setType("acknowledge"),
+      resolve: row.original.resolvedAt ? undefined : () => setType("resolve"),
+    },
+    {
+      acknowledge: t("actions.acknowledge"),
+      resolve: t("actions.resolve"),
+      delete: t("actions.delete"),
+    },
+  );
 
   const handleConfirm = async () => {
     try {
@@ -87,13 +96,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
                 id: row.original.id,
               });
         toast.promise(promise, {
-          loading: "Confirming...",
-          success: "Confirmed",
+          loading: t("confirming"),
+          success: t("confirmed"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to confirm";
+            return t("failedToConfirm");
           },
         });
         await promise;
@@ -109,7 +118,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       <QuickActions
         actions={actions}
         deleteAction={{
-          confirmationValue: row.original.title || "incident",
+          confirmationValue: row.original.title || t("incidentFallback"),
           submitAction: async () => {
             await deleteIncidentMutation.mutateAsync({
               id: row.original.id,
@@ -126,14 +135,18 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm your action</AlertDialogTitle>
+            <AlertDialogTitle>{t("confirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              You are about to <span className="font-semibold">{type}</span>{" "}
-              this incident.
+              {t.rich("confirmDescription", {
+                action: type ? t(`actions.${type}`) : "",
+                strong: (chunks) => (
+                  <span className="font-semibold">{chunks}</span>
+                ),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
@@ -141,7 +154,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               }}
               disabled={isPending}
             >
-              {isPending ? "Confirming..." : "Confirm"}
+              {isPending ? t("confirming") : t("confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

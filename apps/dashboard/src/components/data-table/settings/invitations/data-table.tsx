@@ -7,6 +7,7 @@ import {
   TableRow,
 } from "@openstatus/ui/components/ui/table";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import {
   EmptyStateContainer,
@@ -18,6 +19,7 @@ import { formatDate } from "@/lib/formatter";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function DataTable() {
+  const t = useTranslations("settings.forms");
   const trpc = useTRPC();
   const { data: invitations, refetch } = useQuery(
     trpc.invitation.list.queryOptions(),
@@ -33,9 +35,9 @@ export function DataTable() {
   if (invitations.length === 0) {
     return (
       <EmptyStateContainer>
-        <EmptyStateTitle>No pending invitations</EmptyStateTitle>
+        <EmptyStateTitle>{t("noPendingInvitations")}</EmptyStateTitle>
         <EmptyStateDescription>
-          Only active invitations are shown here.
+          {t("noPendingInvitationsDescription")}
         </EmptyStateDescription>
       </EmptyStateContainer>
     );
@@ -45,13 +47,13 @@ export function DataTable() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Email</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Created At</TableHead>
-          <TableHead>Expires At</TableHead>
-          <TableHead>Accepted At</TableHead>
+          <TableHead>{t("email")}</TableHead>
+          <TableHead>{t("role")}</TableHead>
+          <TableHead>{t("createdAt")}</TableHead>
+          <TableHead>{t("expiresAt")}</TableHead>
+          <TableHead>{t("acceptedAt")}</TableHead>
           <TableHead>
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">{t("actions")}</span>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -71,7 +73,7 @@ export function DataTable() {
               <div className="flex justify-end">
                 <QuickActions
                   deleteAction={{
-                    confirmationValue: item.email ?? "invitation",
+                    confirmationValue: item.email ?? t("invitationFallback"),
                     submitAction: async () =>
                       deleteInvitationMutation.mutateAsync({ id: item.id }),
                   }}

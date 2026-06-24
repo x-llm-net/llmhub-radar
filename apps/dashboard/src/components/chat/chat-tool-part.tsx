@@ -13,12 +13,14 @@ import {
   getToolName,
 } from "ai";
 import { BracesIcon, ChevronDownIcon, TableIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { ChangesTable } from "@/components/common/changes-table";
 
 import { useChatTool } from "./chat-tool-context";
 import {
+  type ToolSummaryLabels,
   renderToolDraft,
   renderToolResult,
   summarizeToolOutput,
@@ -66,6 +68,7 @@ function ApprovalCard({
   confirmTool: (id: string) => void;
   cancelTool: (id: string, reason?: string) => void;
 }) {
+  const t = useTranslations("chat.tool");
   // Scope key handling to the card so batched approvals / popovers don't share a window listener.
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -105,10 +108,7 @@ function ApprovalCard({
       </div>
       <div className="bg-muted/30 flex items-center justify-end gap-3 border-t p-3">
         <span className="text-muted-foreground text-xs">
-          <kbd className="bg-background rounded border px-1 font-mono">Esc</kbd>{" "}
-          to cancel ·{" "}
-          <kbd className="bg-background rounded border px-1 font-mono">⌘ ↵</kbd>{" "}
-          to apply
+          {t("approvalHint")}
         </span>
         <div className="flex gap-2">
           <Button
@@ -116,10 +116,10 @@ function ApprovalCard({
             variant="outline"
             onClick={() => cancelTool(approvalId)}
           >
-            Cancel
+            {t("cancel")}
           </Button>
           <Button size="sm" onClick={() => confirmTool(approvalId)}>
-            Apply
+            {t("apply")}
           </Button>
         </div>
       </div>
@@ -134,11 +134,26 @@ function ToolDisclosure({
   part: ToolUIPart<UITools> | DynamicToolUIPart;
   toolName: string;
 }) {
+  const t = useTranslations("chat.tool");
   const state: ToolState = part.state ?? "output-available";
   const rich = renderToolResult(toolName, part.input, part.output);
+  const summaryLabels: ToolSummaryLabels = {
+    id: (id) => t("summaryId", { id }),
+    update: (id) => t("summaryUpdate", { id }),
+    resolvedUpdate: (id) => t("summaryResolvedUpdate", { id }),
+    results: (count) => t("summaryResults", { count }),
+    logs: (count, suffix) => t("summaryLogs", { count, suffix }),
+    moreAvailable: () => t("summaryMoreAvailable"),
+    regions: (count) => t("summaryRegions", { count }),
+    checksP95: (count, p95) => t("summaryChecksP95", { count, p95 }),
+    log: (id) => t("summaryLog", { id }),
+    auditLog: (action, id) => t("summaryAuditLog", { action, id }),
+    readDoc: (url, suffix) => t("summaryReadDoc", { url, suffix }),
+    truncated: () => t("summaryTruncated"),
+  };
   const summary =
-    summarizeToolOutput(toolName, part.output) ??
-    (state === "output-denied" ? "Cancelled" : undefined);
+    summarizeToolOutput(toolName, part.output, summaryLabels) ??
+    (state === "output-denied" ? t("cancelled") : undefined);
   const [open, setOpen] = useState(false);
   // Gate the height animation behind a post-mount flag so a tool that mounts
   // already-open doesn't play the open animation on first paint.
@@ -187,7 +202,7 @@ function ToolDisclosure({
                 <TabsList className="h-6 p-[2px]">
                   <TabsTrigger
                     value="rich"
-                    aria-label="Rich view"
+                    aria-label={t("richView")}
                     tabIndex={open ? 0 : -1}
                     className="h-[18px] px-1 [&_svg:not([class*='size-'])]:size-3"
                   >
@@ -195,7 +210,7 @@ function ToolDisclosure({
                   </TabsTrigger>
                   <TabsTrigger
                     value="raw"
-                    aria-label="Raw view"
+                    aria-label={t("rawView")}
                     tabIndex={open ? 0 : -1}
                     className="h-[18px] px-1 [&_svg:not([class*='size-'])]:size-3"
                   >
@@ -226,10 +241,10 @@ function ToolDisclosure({
           ) : (
             <>
               {part.input !== undefined ? (
-                <ToolPanel label="Parameters" body={part.input} />
+                <ToolPanel label={t("parameters")} body={part.input} />
               ) : null}
               {part.output !== undefined ? (
-                <ToolPanel label="Result" body={part.output} />
+                <ToolPanel label={t("result")} body={part.output} />
               ) : null}
             </>
           )}

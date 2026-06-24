@@ -13,6 +13,7 @@ import {
 import { Input } from "@openstatus/ui/components/ui/input";
 import { Lock, Plus, X } from "lucide-react";
 import NextLink from "next/link";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -32,14 +33,16 @@ import {
 
 // TODO: add headers
 
-const schema = z.object({
-  endpoint: z.url("Please enter a valid URL"),
-  headers: z
-    .array(z.object({ key: z.string(), value: z.string() }))
-    .prefault([]),
-});
+function getSchema(t: (key: string) => string) {
+  return z.object({
+    endpoint: z.url(t("invalidUrl")),
+    headers: z
+      .array(z.object({ key: z.string(), value: z.string() }))
+      .prefault([]),
+  });
+}
 
-type FormValues = z.input<typeof schema>;
+type FormValues = z.input<ReturnType<typeof getSchema>>;
 
 export function FormOtel({
   locked,
@@ -51,8 +54,9 @@ export function FormOtel({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? { endpoint: "", headers: [] },
   });
   const [isPending, startTransition] = useTransition();
@@ -64,9 +68,9 @@ export function FormOtel({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -81,10 +85,8 @@ export function FormOtel({
         <FormCard>
           {locked ? <FormCardUpgrade /> : null}
           <FormCardHeader>
-            <FormCardTitle>OpenTelemetry</FormCardTitle>
-            <FormCardDescription>
-              Configure your OpenTelemetry Exporter.
-            </FormCardDescription>
+            <FormCardTitle>{t("openTelemetry")}</FormCardTitle>
+            <FormCardDescription>{t("otelDescription")}</FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="grid grid-cols-4 gap-4">
             <FormField
@@ -92,7 +94,7 @@ export function FormOtel({
               name="endpoint"
               render={({ field }) => (
                 <FormItem className="col-span-full">
-                  <FormLabel>Endpoint</FormLabel>
+                  <FormLabel>{t("endpoint")}</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="https://otel.openstatus.dev/api/v1/metrics"
@@ -110,11 +112,11 @@ export function FormOtel({
               disabled={locked}
               render={({ field }) => (
                 <FormItem className="col-span-full">
-                  <FormLabel>Request Headers</FormLabel>
+                  <FormLabel>{t("requestHeaders")}</FormLabel>
                   {field.value?.map((header, index) => (
                     <div key={index} className="grid gap-2 sm:grid-cols-5">
                       <Input
-                        placeholder="Key"
+                        placeholder={t("key")}
                         className="col-span-2"
                         value={header.key}
                         disabled={locked}
@@ -128,7 +130,7 @@ export function FormOtel({
                         }}
                       />
                       <Input
-                        placeholder="Value"
+                        placeholder={t("value")}
                         className="col-span-2"
                         value={header.value}
                         disabled={locked}
@@ -169,7 +171,7 @@ export function FormOtel({
                       }}
                     >
                       <Plus />
-                      Add Header
+                      {t("addHeader")}
                     </Button>
                   </div>
                   <FormMessage />
@@ -179,7 +181,7 @@ export function FormOtel({
           </FormCardContent>
           <FormCardFooter>
             <FormCardFooterInfo>
-              Learn more about{" "}
+              {t("learnMoreAbout")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/http-monitor/#opentelemetry"
                 rel="noreferrer"
@@ -193,12 +195,12 @@ export function FormOtel({
               <Button asChild>
                 <NextLink href="/settings/billing">
                   <Lock className="size-4" />
-                  Upgrade
+                  {t("upgrade")}
                 </NextLink>
               </Button>
             ) : (
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             )}
           </FormCardFooter>

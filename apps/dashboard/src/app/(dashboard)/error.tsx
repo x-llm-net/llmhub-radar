@@ -3,6 +3,7 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect } from "react";
 
 import { Code } from "@/components/common/code";
@@ -14,6 +15,8 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTranslations("errors");
+
   useEffect(() => {
     Sentry.captureException(error);
   }, [error]);
@@ -23,17 +26,17 @@ export default function ErrorPage({
       <div className="border-border bg-sidebar mx-auto w-full max-w-md rounded-lg border">
         <div className="flex flex-col gap-6 p-6 sm:p-8">
           <div className="flex flex-col gap-1 text-center">
-            <p className="text-destructive font-mono">500 Error</p>
+            <p className="text-destructive font-mono">{t("serverLabel")}</p>
             <h2 className="font-cal text-foreground text-2xl">
-              Something went wrong
+              {t("serverTitle")}
             </h2>
             <p className="text-muted-foreground text-sm">
-              An unexpected error occurred. If this keeps happening, please{" "}
+              {t("serverDescriptionPrefix")}{" "}
               <a
                 href="mailto:ping@openstatus.dev"
                 className="text-foreground underline underline-offset-4"
               >
-                contact us
+                {t("contactUs")}
               </a>
               .
             </p>
@@ -46,10 +49,10 @@ export default function ErrorPage({
           )}
           <div className="flex items-center justify-center gap-4">
             <Button variant="outline" onClick={reset}>
-              Try again
+              {t("tryAgain")}
             </Button>
             <Button asChild>
-              <Link href="/overview">Home</Link>
+              <Link href="/overview">{t("home")}</Link>
             </Button>
           </div>
         </div>

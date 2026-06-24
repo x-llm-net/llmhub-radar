@@ -1,10 +1,16 @@
 import { Events } from "@openstatus/analytics";
-import { and, eq, inArray, sql } from "@openstatus/db";
+import { and, desc, eq, gte, inArray, sql } from "@openstatus/db";
 import {
   maintenance,
   page,
   pageComponent,
   pageConfigurationSchema,
+  radarCredential,
+  radarPool,
+  radarProbeRun,
+  radarProbeTarget,
+  radarProvider,
+  radarTargetStatus,
   selectMaintenancePageSchema,
   selectPageComponentWithMonitorRelation,
   selectPageSchema,
@@ -61,6 +67,234 @@ import {
  */
 const WORKSPACES =
   process.env.WORKSPACES_LOOKBACK_30?.split(",").map(Number) || [];
+
+type StatusVariant = "success" | "degraded" | "error" | "info";
+type RadarTargetStatus =
+  | "unknown"
+  | "operational"
+  | "degraded"
+  | "down"
+  | "paused"
+  | "configuration_error";
+
+const statusVariantRank: Record<StatusVariant, number> = {
+  success: 0,
+  info: 1,
+  degraded: 2,
+  error: 3,
+};
+
+function worseStatusVariant(
+  current: StatusVariant,
+  next: StatusVariant,
+): StatusVariant {
+  return statusVariantRank[next] > statusVariantRank[current] ? next : current;
+}
+
+function radarStatusToVariant(status: RadarTargetStatus): StatusVariant {
+  switch (status) {
+    case "operational":
+      return "success";
+    case "degraded":
+      return "degraded";
+    case "down":
+    case "configuration_error":
+      return "error";
+    case "paused":
+    case "unknown":
+      return "info";
+  }
+}
+
+function aggregateRadarStatus(statuses: RadarTargetStatus[]): StatusVariant {
+  const activeStatuses = statuses.filter((status) => status !== "paused");
+  if (activeStatuses.length === 0) return "info";
+
+  const allActiveTargetsDown = activeStatuses.every(
+    (status) => radarStatusToVariant(status) === "error",
+  );
+  if (allActiveTargetsDown) return "error";
+
+  return activeStatuses.reduce<StatusVariant>((current, targetStatus) => {
+    const variant = radarStatusToVariant(targetStatus);
+    return worseStatusVariant(
+      current,
+      variant === "error" ? "degraded" : variant,
+    );
+  }, "success");
+}
+
+function percentile(values: number[], percentileValue: number) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.ceil((percentileValue / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(index, sorted.length - 1))] ?? null;
+}
+
+function uniqueModels(models: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(models.filter((model): model is string => Boolean(model))),
+  );
+}
+
+async function getPublicRadarByPageId(args: {
+  db: typeof import("@openstatus/db").db;
+  pageId: number;
+}) {
+  const pool = await args.db
+    .select()
+    .from(radarPool)
+    .where(eq(radarPool.pageId, args.pageId))
+    .get();
+
+  if (!pool) return null;
+
+  const targetRows = await args.db
+    .select({
+      target: radarProbeTarget,
+      provider: radarProvider,
+      credential: radarCredential,
+      status: radarTargetStatus,
+    })
+    .from(radarProbeTarget)
+    .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
+    .leftJoin(
+      radarCredential,
+      eq(radarCredential.id, radarProbeTarget.credentialId),
+    )
+    .leftJoin(
+      radarTargetStatus,
+      eq(radarTargetStatus.targetId, radarProbeTarget.id),
+    )
+    .where(
+      and(
+        eq(radarProbeTarget.poolId, pool.id),
+        eq(radarProbeTarget.enabled, true),
+      ),
+    )
+    .all();
+  const catalogRows = await args.db
+    .select({
+      credentialId: radarProbeTarget.credentialId,
+      modelName: radarProbeTarget.modelName,
+    })
+    .from(radarProbeTarget)
+    .where(eq(radarProbeTarget.poolId, pool.id))
+    .all();
+  const catalogByCredential = new Map<number, string[]>();
+  for (const row of catalogRows) {
+    if (!row.credentialId) continue;
+    const models = catalogByCredential.get(row.credentialId) ?? [];
+    if (!models.includes(row.modelName)) models.push(row.modelName);
+    catalogByCredential.set(row.credentialId, models);
+  }
+
+  const targetIds = targetRows.map((row) => row.target.id);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentRuns =
+    targetIds.length > 0
+      ? await args.db
+          .select({
+            id: radarProbeRun.id,
+            targetId: radarProbeRun.targetId,
+            startedAt: radarProbeRun.startedAt,
+            success: radarProbeRun.success,
+            httpStatus: radarProbeRun.httpStatus,
+            errorType: radarProbeRun.errorType,
+            firstTokenMs: radarProbeRun.firstTokenMs,
+            totalLatencyMs: radarProbeRun.totalLatencyMs,
+          })
+          .from(radarProbeRun)
+          .where(
+            and(
+              inArray(radarProbeRun.targetId, targetIds),
+              gte(radarProbeRun.startedAt, sevenDaysAgo),
+            ),
+          )
+          .orderBy(desc(radarProbeRun.startedAt))
+          .limit(5000)
+          .all()
+      : [];
+
+  const runsByTargetId = new Map<number, typeof recentRuns>();
+  for (const run of recentRuns) {
+    const runs = runsByTargetId.get(run.targetId) ?? [];
+    runs.push(run);
+    runsByTargetId.set(run.targetId, runs);
+  }
+
+  const targetStatuses: RadarTargetStatus[] = [];
+  const targets = targetRows.map((row) => {
+    const currentStatus =
+      row.status?.currentStatus ?? row.target.currentStatus ?? "unknown";
+    targetStatuses.push(currentStatus);
+    const runs = runsByTargetId.get(row.target.id) ?? [];
+    const successCount = runs.filter((run) => run.success).length;
+    const firstTokenValues = runs
+      .map((run) => run.firstTokenMs)
+      .filter((value): value is number => typeof value === "number");
+    const modelCatalog = uniqueModels([
+      row.target.modelName,
+      ...(row.credential?.modelCatalog?.length
+        ? row.credential.modelCatalog
+        : row.credential
+          ? (catalogByCredential.get(row.credential.id) ?? [])
+          : []),
+    ]);
+    const serviceGroupName =
+      row.credential?.billingGroup ||
+      row.credential?.name ||
+      row.target.displayName;
+
+    return {
+      id: row.target.id,
+      providerName: row.provider.displayName,
+      name: row.target.name,
+      displayName: row.target.displayName,
+      serviceGroupName,
+      tokenGroupName: serviceGroupName,
+      modelFamily: row.credential?.modelGroup || "General",
+      modelName: row.target.modelName,
+      modelCatalog,
+      currentStatus,
+      intervalSeconds: row.target.intervalSeconds,
+      nextCheckAt: row.target.nextCheckAt ?? null,
+      lastCheckAt: row.status?.lastCheckAt ?? null,
+      lastSuccessAt: row.status?.lastSuccessAt ?? null,
+      lastFailureAt: row.status?.lastFailureAt ?? null,
+      stats7d: {
+        sampleCount: runs.length,
+        successRate:
+          runs.length === 0
+            ? null
+            : Math.round((successCount / runs.length) * 10_000),
+        p50FirstTokenMs: percentile(firstTokenValues, 50),
+        p95FirstTokenMs: percentile(firstTokenValues, 95),
+      },
+      sampleCount1h: row.status?.sampleCount1h ?? 0,
+      sampleCount24h: row.status?.sampleCount24h ?? 0,
+      successRate1h: row.status?.successRate1h ?? 0,
+      successRate24h: row.status?.successRate24h ?? 0,
+      p50FirstTokenMs: row.status?.p50FirstTokenMs ?? null,
+      p95FirstTokenMs: row.status?.p95FirstTokenMs ?? null,
+      p50TotalLatencyMs: row.status?.p50TotalLatencyMs ?? null,
+      p95TotalLatencyMs: row.status?.p95TotalLatencyMs ?? null,
+      recentRuns: runs.slice(0, 60),
+    };
+  });
+  const status = aggregateRadarStatus(targetStatuses);
+
+  return {
+    pool: {
+      id: pool.id,
+      name: pool.name,
+      slug: pool.slug,
+      description: pool.description,
+    },
+    status,
+    targets,
+  };
+}
 
 // Length-independent comparison so a wrong guess can't be timed by length or
 // character. Pure JS (no node:crypto) keeps it usable from the Edge runtime.
@@ -255,13 +489,20 @@ export const statusPageRouter = createTRPCRouter({
 
       // no barType gate: incident-driven error is already suppressed per
       // monitor in manual mode; report-driven error (major_outage) must show
-      const status = monitors.some((m) => m.status === "error")
+      const monitorStatus = monitors.some((m) => m.status === "error")
         ? "error"
         : monitors.some((m) => m.status === "degraded")
           ? "degraded"
           : monitors.some((m) => m.status === "info")
             ? "info"
             : "success";
+      const radar = await getPublicRadarByPageId({
+        db: opts.ctx.db,
+        pageId: _page.id,
+      });
+      const status = radar
+        ? worseStatusVariant(monitorStatus, radar.status)
+        : monitorStatus;
 
       // Get page-wide events (not tied to specific monitors)
       const pageEvents = getEvents({
@@ -444,6 +685,7 @@ export const statusPageRouter = createTRPCRouter({
         pageComponents: publicPageComponents,
         pageComponentGroups: _page.pageComponentGroups,
         whiteLabel,
+        radar,
       });
     }),
 

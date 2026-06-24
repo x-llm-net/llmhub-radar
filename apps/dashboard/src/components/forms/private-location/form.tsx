@@ -21,6 +21,7 @@ import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
 import { Check, Copy } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -37,13 +38,15 @@ import {
 import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { CheckboxTree } from "@/components/ui/checkbox-tree";
 
-const schema = z.object({
-  name: z.string().min(1, "Name is required"),
-  token: z.string(),
-  monitors: z.array(z.number()),
-});
+function getSchema(t: (key: string) => string) {
+  return z.object({
+    name: z.string().min(1, t("nameRequired")),
+    token: z.string(),
+    monitors: z.array(z.number()),
+  });
+}
 
-export type FormValues = z.infer<typeof schema>;
+export type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormPrivateLocation({
   defaultValues,
@@ -56,8 +59,9 @@ export function FormPrivateLocation({
   monitors: { id: number; name: string; url: string }[];
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("settings.privateLocations");
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       name: "",
       token: crypto.randomUUID(),
@@ -80,13 +84,13 @@ export function FormPrivateLocation({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -109,9 +113,9 @@ export function FormPrivateLocation({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Raspberry Pi" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -125,22 +129,22 @@ export function FormPrivateLocation({
             name="token"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Token</FormLabel>
+                <FormLabel>{t("token")}</FormLabel>
                 <FormControl>
                   <InputGroup>
                     <InputGroupInput
-                      placeholder="Private Location Token"
+                      placeholder={t("tokenPlaceholder")}
                       readOnly
                       value={field.value}
                     />
                     <InputGroupAddon align="inline-end">
                       <InputGroupButton
-                        aria-label="Copy"
-                        title="Copy"
+                        aria-label={t("copy")}
+                        title={t("copy")}
                         size="icon-xs"
                         onClick={() => {
                           copy(field.value, {
-                            successMessage: "Token copied to clipboard",
+                            successMessage: t("tokenCopied"),
                           });
                         }}
                       >
@@ -161,18 +165,15 @@ export function FormPrivateLocation({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Connected monitors will be automatically activated for the
-                  private location.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 {monitors.length ? (
                   <FormControl>
                     <CheckboxTree
                       items={[
                         {
                           id: -1,
-                          label: "Select all",
+                          label: t("selectAll"),
                           children: monitors.map((m) => ({
                             id: m.id,
                             label: m.name,
@@ -185,7 +186,7 @@ export function FormPrivateLocation({
                   </FormControl>
                 ) : (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No monitors found</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noMonitors")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 )}
                 <FormMessage />

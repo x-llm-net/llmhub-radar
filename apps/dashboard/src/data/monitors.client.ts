@@ -60,12 +60,17 @@ export const actions = [
 ] as const;
 
 export type MonitorAction = (typeof actions)[number];
+export type LocalizedMonitorAction = Omit<MonitorAction, "label"> & {
+  label: string;
+};
 
 export const getActions = (
   props: Partial<Record<MonitorAction["id"], () => Promise<void> | void>>,
-): (MonitorAction & { onClick?: () => Promise<void> | void })[] => {
+  labels: Partial<Record<MonitorAction["id"], string>> = {},
+): (LocalizedMonitorAction & { onClick?: () => Promise<void> | void })[] => {
   return actions.map((action) => ({
     ...action,
+    label: labels[action.id] ?? action.label,
     onClick: props[action.id as keyof typeof props],
   }));
 };

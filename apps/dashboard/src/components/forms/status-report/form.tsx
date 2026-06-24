@@ -39,6 +39,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { format } from "date-fns";
 import { CalendarIcon, ClockIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -62,9 +63,10 @@ import {
 import { colors } from "@/data/status-report-updates.client";
 import { useTRPC } from "@/lib/trpc/client";
 
-const schema = z.object({
+function getSchema(t: (key: string) => string) {
+  return z.object({
   status: z.enum(statusReportStatus),
-  title: z.string().min(1, "Title is required.").max(256),
+  title: z.string().min(1, t("titleRequired")).max(256),
   message: z.string(),
   date: z.date(),
   pageComponents: z.array(z.number()),
@@ -78,16 +80,21 @@ const schema = z.object({
     .optional(),
   notifySubscribers: z.boolean().optional(),
 });
+}
 
 // membership-only edit: impacts change via status report updates
-const updateSchema = schema.omit({
+function getUpdateSchema(t: (key: string) => string) {
+  return getSchema(t).omit({
   message: true,
   date: true,
   componentImpacts: true,
   notifySubscribers: true,
 });
+}
 
-export type FormValues = z.infer<typeof schema> | z.infer<typeof updateSchema>;
+export type FormValues =
+  | z.infer<ReturnType<typeof getSchema>>
+  | z.infer<ReturnType<typeof getUpdateSchema>>;
 
 export function FormStatusReport({
   defaultValues,
@@ -100,6 +107,7 @@ export function FormStatusReport({
   onSubmit: (values: FormValues) => Promise<void>;
   items: CheckboxTreeItem[];
 }) {
+  const t = useTranslations("statusPages.reports.form");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
     trpc.workspace.getWorkspace.queryOptions(),
@@ -107,7 +115,7 @@ export function FormStatusReport({
   const mobile = useIsMobile();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const form = useForm<FormValues>({
-    resolver: zodResolver(defaultValues ? updateSchema : schema),
+    resolver: zodResolver(defaultValues ? getUpdateSchema(t) : getSchema(t)),
     defaultValues: defaultValues ?? {
       status: "investigating",
       title: "",
@@ -139,13 +147,13 @@ export function FormStatusReport({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -168,7 +176,7 @@ export function FormStatusReport({
             name="title"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Title</FormLabel>
+                <FormLabel>{t("title")}</FormLabel>
                 <FormControl>
                   <Input {...field} />
                 </FormControl>
@@ -184,7 +192,7 @@ export function FormStatusReport({
             name="status"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Status</FormLabel>
+                <FormLabel>{t("status")}</FormLabel>
                 <FormControl>
                   <Select
                     defaultValue={field.value}
@@ -197,7 +205,7 @@ export function FormStatusReport({
                         "font-mono capitalize",
                       )}
                     >
-                      <SelectValue placeholder="Select a status" />
+                      <SelectValue placeholder={t("selectStatus")} />
                     </SelectTrigger>
                     <SelectContent>
                       {statusReportStatus.map((status) => (
@@ -226,7 +234,7 @@ export function FormStatusReport({
                 name="date"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Date</FormLabel>
+                    <FormLabel>{t("date")}</FormLabel>
                     <Popover modal>
                       <FormControl>
                         <PopoverTrigger asChild>
@@ -242,7 +250,7 @@ export function FormStatusReport({
                             {field.value ? (
                               format(field.value, "PPP 'at' h:mm a")
                             ) : (
-                              <span>Pick a date</span>
+                              <span>{t("pickDate")}</span>
                             )}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
@@ -275,7 +283,7 @@ export function FormStatusReport({
                         <div className="border-t p-3">
                           <div className="flex items-center gap-3">
                             <Label htmlFor="time" className="text-xs">
-                              Enter time
+                              {t("enterTime")}
                             </Label>
                             <div className="relative grow">
                               <Input
@@ -318,16 +326,7 @@ export function FormStatusReport({
                       </PopoverContent>
                     </Popover>
                     <FormDescription>
-                      When the status report was created. Shown in your timezone
-                      (
-                      <code className="font-commit-mono text-foreground/70">
-                        {timezone}
-                      </code>
-                      ) and saved as Unix time (
-                      <code className="font-commit-mono text-foreground/70">
-                        UTC
-                      </code>
-                      ).
+                      {t("dateDescription", { timezone })}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -338,8 +337,8 @@ export function FormStatusReport({
             <FormCardContent>
               <Tabs defaultValue="tab-1">
                 <TabsList>
-                  <TabsTrigger value="tab-1">Writing</TabsTrigger>
-                  <TabsTrigger value="tab-2">Preview</TabsTrigger>
+                  <TabsTrigger value="tab-1">{t("writing")}</TabsTrigger>
+                  <TabsTrigger value="tab-2">{t("preview")}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="tab-1">
                   <FormField
@@ -347,19 +346,19 @@ export function FormStatusReport({
                     name="message"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Message</FormLabel>
+                        <FormLabel>{t("message")}</FormLabel>
                         <FormControl>
                           <Textarea rows={6} {...field} />
                         </FormControl>
                         <FormMessage />
-                        <FormDescription>Markdown support</FormDescription>
+                        <FormDescription>{t("markdownSupport")}</FormDescription>
                       </FormItem>
                     )}
                   />
                 </TabsContent>
                 <TabsContent value="tab-2">
                   <div className="grid gap-2">
-                    <Label>Preview</Label>
+                    <Label>{t("preview")}</Label>
                     <div className="prose dark:prose-invert prose-sm text-foreground rounded-md border px-3 py-2 text-sm">
                       <ProcessMessage value={watchMessage} />
                     </div>
@@ -376,9 +375,9 @@ export function FormStatusReport({
             name="pageComponents"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Page Components</FormLabel>
+                <FormLabel>{t("pageComponents")}</FormLabel>
                 <FormDescription>
-                  Select the page components you want to notify.
+                  {t("pageComponentsDescription")}
                 </FormDescription>
                 {items.length ? (
                   <FormControl>
@@ -390,7 +389,7 @@ export function FormStatusReport({
                   </FormControl>
                 ) : (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No page components found</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noPageComponents")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 )}
                 <FormMessage />
@@ -407,9 +406,9 @@ export function FormStatusReport({
                 name="componentImpacts"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Component Impact</FormLabel>
+                    <FormLabel>{t("componentImpact")}</FormLabel>
                     <FormDescription>
-                      How badly is each affected component impacted?
+                      {t("componentImpactDescription")}
                     </FormDescription>
                     <FormControl>
                       <ComponentImpactList
@@ -438,7 +437,7 @@ export function FormStatusReport({
                 name="notifySubscribers"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notify Subscribers</FormLabel>
+                    <FormLabel>{t("notifySubscribers")}</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-2">
                         <Checkbox
@@ -447,14 +446,13 @@ export function FormStatusReport({
                           onCheckedChange={field.onChange}
                         />
                         <Label htmlFor="notifySubscribers">
-                          Send notification to subscribers
+                          {t("notifySubscribersDescription")}
                         </Label>
                       </div>
                     </FormControl>
                     <FormMessage />
                     <FormDescription>
-                      Subscribers will be notified when creating a status
-                      report.
+                      {t("subscribersWillBeNotified")}
                     </FormDescription>
                   </FormItem>
                 )}

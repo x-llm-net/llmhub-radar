@@ -4,6 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Row } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ interface DataTableRowActionsProps {
 }
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+  const t = useTranslations("monitors");
   const [openDialog, setOpenDialog] = useState(false);
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -33,9 +35,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     edit: () => router.push(`/monitors/${row.original.id}/edit`),
     "copy-id": () => {
       navigator.clipboard.writeText(row.original.id.toString());
-      toast.success("Monitor ID copied to clipboard");
+      toast.success(t("actions.copiedId"));
     },
     // export: () => setOpenDialog(true),
+  }, {
+    edit: t("actions.settings"),
+    "copy-id": t("actions.copyId"),
+    clone: t("actions.clone"),
+    delete: t("actions.delete"),
   });
 
   return (
@@ -43,7 +50,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       <QuickActions
         actions={actions}
         deleteAction={{
-          confirmationValue: row.original.name ?? "monitor",
+          confirmationValue: row.original.name ?? t("actions.deleteFallback"),
           submitAction: async () => {
             await deleteMonitorMutation.mutateAsync({
               id: row.original.id,

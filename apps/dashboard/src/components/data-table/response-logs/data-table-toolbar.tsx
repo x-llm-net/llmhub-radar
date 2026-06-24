@@ -4,6 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { Button } from "@openstatus/ui/components/ui/button";
 import type { Table } from "@tanstack/react-table";
 import { Activity, MapPin, TriangleAlert, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { DataTableFacetedFilter } from "@/components/ui/data-table/data-table-faceted-filter";
 import { regions } from "@/data/regions";
@@ -18,6 +19,7 @@ export interface ResponseLogsDataTableToolbarProps {
 export function ResponseLogsDataTableToolbar({
   table,
 }: ResponseLogsDataTableToolbarProps) {
+  const t = useTranslations("responseLogs");
   const isFiltered = table.getState().columnFilters.length > 0;
 
   return (
@@ -26,7 +28,7 @@ export function ResponseLogsDataTableToolbar({
         {table.getColumn("status") && (
           <DataTableFacetedFilter
             column={table.getColumn("status")}
-            title="Status"
+            title={t("status")}
             options={statusCodes.map((code) => ({
               label: code.code.toString(),
               value: code.code.toString(),
@@ -37,7 +39,7 @@ export function ResponseLogsDataTableToolbar({
         {table.getColumn("region") && (
           <DataTableFacetedFilter
             column={table.getColumn("region")}
-            title="Region"
+            title={t("region")}
             options={regions.map((region) => ({
               label: region.location,
               value: region.code,
@@ -48,10 +50,10 @@ export function ResponseLogsDataTableToolbar({
         {table.getColumn("error") && (
           <DataTableFacetedFilter
             column={table.getColumn("error")}
-            title="Error"
+            title={t("error")}
             options={[
-              { label: "Yes", value: "true" },
-              { label: "No", value: "false" },
+              { label: t("yes"), value: "true" },
+              { label: t("no"), value: "false" },
             ]}
             icon={TriangleAlert}
           />
@@ -62,7 +64,7 @@ export function ResponseLogsDataTableToolbar({
             onClick={() => table.resetColumnFilters()}
             className="h-8 px-2 lg:px-3"
           >
-            Reset
+            {t("reset")}
             <X />
           </Button>
         )}

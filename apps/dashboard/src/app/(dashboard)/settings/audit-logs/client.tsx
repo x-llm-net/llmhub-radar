@@ -3,7 +3,8 @@
 import type { RouterOutputs } from "@openstatus/api";
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
-import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { useMemo, useState } from "react";
 
 import { Link } from "@/components/common/link";
 import {
@@ -24,7 +25,7 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/audit-logs-workspace/columns";
+import { getColumns } from "@/components/data-table/audit-logs-workspace/columns";
 import { DataTableRowDetails } from "@/components/data-table/audit-logs-workspace/data-table-row-details";
 import { AuditLogsDataTableToolbar } from "@/components/data-table/audit-logs-workspace/data-table-toolbar";
 import { UpgradeDialog } from "@/components/dialogs/upgrade";
@@ -96,10 +97,23 @@ const EXAMPLES = [
 ] satisfies AuditLog[];
 
 export function Client() {
+  const t = useTranslations("settings.auditLogs");
   const trpc = useTRPC();
   const [openDialog, setOpenDialog] = useState(false);
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
   const { data: auditLogs } = useQuery(trpc.auditLog.list.queryOptions({}));
+  const columns = useMemo(
+    () =>
+      getColumns({
+        action: t("action"),
+        actor: t("actor"),
+        actorApiKey: t("actorApiKey"),
+        actorSubscriber: t("actorSubscriber"),
+        actorSystem: t("actorSystem"),
+        timestamp: t("timestamp"),
+      }),
+    [t],
+  );
 
   if (!workspace) return null;
 
@@ -108,10 +122,9 @@ export function Client() {
   return (
     <SectionGroup>
       <SectionHeader>
-        <SectionTitle>Audit Logs</SectionTitle>
+        <SectionTitle>{t("title")}</SectionTitle>
         <SectionDescription>
-          Track mutating actions taken against your workspace from the last 14
-          days.
+          {t("description")}
         </SectionDescription>
       </SectionHeader>
       <Section>
@@ -132,16 +145,16 @@ export function Client() {
             <BillingOverlay>
               <BillingOverlayButton onClick={() => setOpenDialog(true)}>
                 <Lock />
-                Upgrade
+                {t("upgrade")}
               </BillingOverlayButton>
               <BillingOverlayDescription>
-                Keep a verifiable history of every change in your workspace.{" "}
+                {t("overlayDescription")}{" "}
                 <Link
                   href="https://www.openstatus.dev/docs/"
                   rel="noreferrer"
                   target="_blank"
                 >
-                  Learn more
+                  {t("learnMore")}
                 </Link>
                 .
               </BillingOverlayDescription>
@@ -171,9 +184,9 @@ export function Client() {
           />
         ) : (
           <EmptyStateContainer>
-            <EmptyStateTitle>No audit logs</EmptyStateTitle>
+            <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
             <EmptyStateDescription>
-              Actions taken in this workspace will appear here.
+              {t("emptyDescription")}
             </EmptyStateDescription>
           </EmptyStateContainer>
         )}

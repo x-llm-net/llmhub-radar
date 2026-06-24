@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 
 import { ChatConversation } from "./chat-conversation";
 import { ChatErrorBanner } from "./chat-error-banner";
@@ -15,6 +16,7 @@ import {
 import { useChatSession } from "./use-chat-session";
 
 export function ChatNewClient() {
+  const t = useTranslations("chat.tool");
   const {
     messages,
     sendMessage,
@@ -36,14 +38,14 @@ export function ChatNewClient() {
     () => ({
       confirmTool: (approvalId) =>
         addToolApprovalResponse({ id: approvalId, approved: true }),
-      cancelTool: (approvalId, reason = "Cancelled by user.") =>
+      cancelTool: (approvalId, reason = t("cancelledByUser")) =>
         addToolApprovalResponse({
           id: approvalId,
           approved: false,
           reason,
         }),
     }),
-    [addToolApprovalResponse],
+    [addToolApprovalResponse, t],
   );
 
   return (
@@ -55,7 +57,7 @@ export function ChatNewClient() {
             <ChatHistory />
           </div>
         ) : (
-          <ChatErrorBoundary>
+          <ChatErrorBoundary message={t("renderFailed")}>
             <ChatConversation messages={messages} status={status} />
           </ChatErrorBoundary>
         )}

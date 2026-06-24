@@ -11,6 +11,7 @@ import {
 } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -41,6 +42,7 @@ export function FormLinks({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.form");
   const [isPending, startTransition] = useTransition();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -57,13 +59,13 @@ export function FormLinks({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -78,7 +80,7 @@ export function FormLinks({
       <form onSubmit={form.handleSubmit(submitAction)}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Links</FormCardTitle>
+            <FormCardTitle>{t("links")}</FormCardTitle>
             <FormCardDescription>
               Configure the links for the status page.
             </FormCardDescription>
@@ -89,7 +91,7 @@ export function FormLinks({
               name="homepageUrl"
               render={({ field }) => (
                 <FormItem className="sm:col-span-full">
-                  <FormLabel>Homepage URL</FormLabel>
+                  <FormLabel>{t("homepageUrl")}</FormLabel>
                   <FormControl>
                     <Input placeholder="https://acme.com" {...field} />
                   </FormControl>
@@ -105,7 +107,7 @@ export function FormLinks({
               name="contactUrl"
               render={({ field }) => (
                 <FormItem className="sm:col-span-full">
-                  <FormLabel>Contact URL</FormLabel>
+                  <FormLabel>{t("contactUrl")}</FormLabel>
                   <FormControl>
                     <Input placeholder="https://acme.com/contact" {...field} />
                   </FormControl>
@@ -134,7 +136,7 @@ export function FormLinks({
               .
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

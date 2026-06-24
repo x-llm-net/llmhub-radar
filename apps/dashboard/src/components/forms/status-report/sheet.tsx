@@ -2,6 +2,7 @@
 
 import { Button } from "@openstatus/ui/components/ui/button";
 import { Separator } from "@openstatus/ui/components/ui/separator";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -32,6 +33,7 @@ export function FormSheetStatusReport({
   items: CheckboxTreeItem[];
   warning?: React.ReactNode;
 }) {
+  const t = useTranslations("statusPages.reports.sheet");
   const [open, setOpen] = useState(false);
 
   return (
@@ -39,10 +41,8 @@ export function FormSheetStatusReport({
       <FormSheetTrigger asChild>{children}</FormSheetTrigger>
       <FormSheetContent className="sm:max-w-lg">
         <FormSheetHeader>
-          <FormSheetTitle>Status Report</FormSheetTitle>
-          <FormSheetDescription>
-            Configure and update the status of your report.
-          </FormSheetDescription>
+          <FormSheetTitle>{t("title")}</FormSheetTitle>
+          <FormSheetDescription>{t("description")}</FormSheetDescription>
         </FormSheetHeader>
         {warning ? (
           <>
@@ -66,7 +66,7 @@ export function FormSheetStatusReport({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form="status-report-form">
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

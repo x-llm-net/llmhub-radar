@@ -31,6 +31,7 @@ import {
 import { Separator } from "@openstatus/ui/components/ui/separator";
 import { cn } from "@openstatus/ui/lib/utils";
 import { Check, ChevronsUpDown, Settings } from "lucide-react";
+import { useParams } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import type React from "react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -140,11 +141,27 @@ export function FloatingButton({
     communityTheme,
     setCommunityTheme,
   } = useStatusPage();
+  const params = useParams<{ locale?: string }>();
   const [display, setDisplay] = useState(false);
   const [configToken, setConfigToken] = useQueryState(
     "configuration-token",
     parseAsString,
   );
+  const locale = typeof params.locale === "string" ? params.locale : "en";
+  const copy =
+    locale === "zh"
+      ? {
+          srOpen: "打开状态页设置",
+          title: "状态页设置",
+          description: "配置状态页外观",
+          save: "保存配置",
+        }
+      : {
+          srOpen: "Open status page settings",
+          title: "Status Page Settings",
+          description: "Configure the status page appearance",
+          save: "Save Configuration",
+        };
 
   useEffect(() => {
     const enabled =
@@ -179,16 +196,14 @@ export function FloatingButton({
             className="size-12 rounded-full border"
           >
             <Settings className="size-5" />
-            <span className="sr-only">Open status page settings</span>
+            <span className="sr-only">{copy.srOpen}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="end">
           <div className="space-y-4 p-4">
             <div className="space-y-2">
-              <h4 className="leading-none font-medium">Status Page Settings</h4>
-              <p className="text-muted-foreground text-sm">
-                Configure the status page appearance
-              </p>
+              <h4 className="leading-none font-medium">{copy.title}</h4>
+              <p className="text-muted-foreground text-sm">{copy.description}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -331,7 +346,7 @@ export function FloatingButton({
                 target="_blank"
                 rel="noreferrer"
               >
-                Save Configuration
+                {copy.save}
               </a>
             </Button>
           </div>

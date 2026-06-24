@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -42,12 +43,13 @@ export function FormSheetSubscriber({
   onSubmit,
   items,
   editMode = false,
-  title = "Add subscriber",
-  description = "Add an email or webhook subscriber. Partner starts receiving notifications immediately - no verification required.",
+  title,
+  description,
   open: controlledOpen,
   onOpenChange,
   triggerProps,
 }: FormSheetSubscriberProps) {
+  const t = useTranslations("statusPages.subscribers");
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -61,8 +63,10 @@ export function FormSheetSubscriber({
       ) : null}
       <FormSheetContent className="sm:max-w-lg">
         <FormSheetHeader>
-          <FormSheetTitle>{title}</FormSheetTitle>
-          <FormSheetDescription>{description}</FormSheetDescription>
+          <FormSheetTitle>{title ?? t("sheetTitle")}</FormSheetTitle>
+          <FormSheetDescription>
+            {description ?? t("sheetDescription")}
+          </FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="overflow-y-auto">
           <FormCard className="overflow-auto rounded-none border-none">
@@ -81,7 +85,7 @@ export function FormSheetSubscriber({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form="subscriber-form">
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

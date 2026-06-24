@@ -88,6 +88,9 @@ skills-lock.json
 
 .mcp.json
 
+# Local Codex app/runtime logs.
+.codex-runtime/
+
 # Local backup created when converting the OpenStatus shallow clone into the
 # LLMHub Radar repository.
 .git.openstatus-shallow/

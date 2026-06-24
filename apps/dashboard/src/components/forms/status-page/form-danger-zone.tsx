@@ -1,6 +1,7 @@
 "use client";
 
 import { FormAlertDialog } from "@/components/forms/form-alert-dialog";
+import { useTranslations } from "next-intl";
 import {
   FormCard,
   FormCardDescription,
@@ -16,11 +17,12 @@ export function FormDangerZone({
   onSubmit: () => Promise<void>;
   title: string;
 }) {
+  const t = useTranslations("statusPages.form");
   return (
     <FormCard variant="destructive">
       <FormCardHeader>
-        <FormCardTitle>Danger Zone</FormCardTitle>
-        <FormCardDescription>This action cannot be undone.</FormCardDescription>
+        <FormCardTitle>{t("dangerZone")}</FormCardTitle>
+        <FormCardDescription>{t("dangerDescription")}</FormCardDescription>
       </FormCardHeader>
       <FormCardFooter variant="destructive" className="justify-end">
         <FormAlertDialog confirmationValue={title} submitAction={onSubmit} />

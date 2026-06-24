@@ -43,6 +43,7 @@ import { isTRPCClientError } from "@trpc/client";
 import { format } from "date-fns";
 import { CalendarIcon, ClockIcon } from "lucide-react";
 import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -98,6 +99,7 @@ export function FormStatusReportUpdateCard({
   /** The report's affected components; renders the per-component impact picker. */
   components?: { id: number; name: string }[];
 }) {
+  const t = useTranslations("statusPages.reports.form");
   const { reportId } = useParams<{ id: string; reportId: string }>();
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
@@ -135,13 +137,13 @@ export function FormStatusReportUpdateCard({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
+          loading: t("saving"),
           success: () => "Saved",
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -167,7 +169,7 @@ export function FormStatusReportUpdateCard({
     <FormCard>
       <FormCardHeader>
         <FormCardTitle>
-          Status Report Update #{updates.length - index}
+          {t("statusReportUpdateTitle", { number: updates.length - index })}
         </FormCardTitle>
       </FormCardHeader>
 
@@ -183,7 +185,7 @@ export function FormStatusReportUpdateCard({
               name="status"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Status</FormLabel>
+                  <FormLabel>{t("status")}</FormLabel>
                   <FormControl>
                     <Select
                       defaultValue={field.value}
@@ -209,7 +211,7 @@ export function FormStatusReportUpdateCard({
                           "w-full font-mono capitalize",
                         )}
                       >
-                        <SelectValue placeholder="Select a status" />
+                        <SelectValue placeholder={t("selectStatus")} />
                       </SelectTrigger>
                       <SelectContent>
                         {statusReportStatus.map((status) => (
@@ -236,7 +238,7 @@ export function FormStatusReportUpdateCard({
               name="date"
               render={({ field }) => (
                 <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
+                  <FormLabel>{t("date")}</FormLabel>
                   <Popover modal>
                     <FormControl>
                       <PopoverTrigger asChild>
@@ -252,7 +254,7 @@ export function FormStatusReportUpdateCard({
                           {field.value ? (
                             format(field.value, "PPP 'at' h:mm a")
                           ) : (
-                            <span>Pick a date</span>
+                            <span>{t("pickDate")}</span>
                           )}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
@@ -285,7 +287,7 @@ export function FormStatusReportUpdateCard({
                       <div className="border-t p-3">
                         <div className="flex items-center gap-3">
                           <Label htmlFor="time" className="text-xs">
-                            Enter time
+                            {t("enterTime")}
                           </Label>
                           <div className="relative grow">
                             <Input
@@ -331,13 +333,7 @@ export function FormStatusReportUpdateCard({
           </FormCardContent>
           <FormCardContent>
             <FormDescription>
-              When the status report was created. Shown in your timezone (
-              <code className="font-commit-mono text-foreground/70">
-                {timezone}
-              </code>
-              ) and saved as Unix time (
-              <code className="font-commit-mono text-foreground/70">UTC</code>
-              ).
+              {t("dateDescription", { timezone })}
             </FormDescription>
           </FormCardContent>
           {components && components.length > 0 ? (
@@ -349,7 +345,7 @@ export function FormStatusReportUpdateCard({
                   name="componentImpacts"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Component Impact</FormLabel>
+                      <FormLabel>{t("componentImpact")}</FormLabel>
                       <FormDescription>
                         The impact this update set per component. Components
                         marked &quot;No change&quot; keep their prior impact.
@@ -373,8 +369,8 @@ export function FormStatusReportUpdateCard({
           <FormCardContent>
             <Tabs defaultValue="tab-1">
               <TabsList>
-                <TabsTrigger value="tab-1">Writing</TabsTrigger>
-                <TabsTrigger value="tab-2">Preview</TabsTrigger>
+                <TabsTrigger value="tab-1">{t("writing")}</TabsTrigger>
+                <TabsTrigger value="tab-2">{t("preview")}</TabsTrigger>
               </TabsList>
               <TabsContent value="tab-1">
                 <FormField
@@ -382,19 +378,19 @@ export function FormStatusReportUpdateCard({
                   name="message"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Message</FormLabel>
+                      <FormLabel>{t("message")}</FormLabel>
                       <FormControl>
                         <Textarea rows={6} {...field} />
                       </FormControl>
                       <FormMessage />
-                      <FormDescription>Markdown support</FormDescription>
+                      <FormDescription>{t("markdownSupport")}</FormDescription>
                     </FormItem>
                   )}
                 />
               </TabsContent>
               <TabsContent value="tab-2">
                 <div className="grid gap-2">
-                  <Label>Preview</Label>
+                  <Label>{t("preview")}</Label>
                   <div className="prose prose-sm dark:prose-invert text-foreground rounded-md border px-3 py-2 text-sm">
                     <ProcessMessage value={watchMessage} />
                   </div>
@@ -411,7 +407,7 @@ export function FormStatusReportUpdateCard({
                   name="notifySubscribers"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notify Subscribers</FormLabel>
+                      <FormLabel>{t("notifySubscribers")}</FormLabel>
                       <FormControl>
                         <div className="flex items-center gap-2">
                           <Checkbox
@@ -420,14 +416,13 @@ export function FormStatusReportUpdateCard({
                             onCheckedChange={field.onChange}
                           />
                           <Label htmlFor="notifySubscribers">
-                            Send notification to subscribers
+                            {t("notifySubscribersDescription")}
                           </Label>
                         </div>
                       </FormControl>
                       <FormMessage />
                       <FormDescription>
-                        Subscribers will be notified when creating a status
-                        report.
+                        {t("subscribersWillBeNotified")}
                       </FormDescription>
                     </FormItem>
                   )}
@@ -450,11 +445,11 @@ export function FormStatusReportUpdateCard({
             variant="outline"
             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
-            Delete
+            {t("delete")}
           </Button>
         </FormAlertDialog>
         <Button type="submit" form={`update-form-${update.id}`}>
-          {isPending ? "Submitting..." : "Submit"}
+          {isPending ? t("submitting") : t("submit")}
         </Button>
       </FormCardFooter>
     </FormCard>

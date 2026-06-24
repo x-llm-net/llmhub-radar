@@ -5,6 +5,7 @@ import type { Limits } from "@openstatus/db/src/schema/plan/schema";
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useQueryStates } from "nuqs";
 import { useEffect, useMemo, useTransition } from "react";
 import { toast } from "sonner";
@@ -76,6 +77,7 @@ function calculateTotalRequests(limits: Limits) {
 }
 
 export function Client() {
+  const t = useTranslations("settings.billing");
   const trpc = useTRPC();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -106,14 +108,14 @@ export function Client() {
   useEffect(() => {
     if (success) {
       setTimeout(() => {
-        toast.success("Billing information updated", {
+        toast.success(t("updated"), {
           duration: 5_000,
           onAutoClose: () => setSearchParams({ success: null }),
           onDismiss: () => setSearchParams({ success: null }),
         });
       }, 500);
     }
-  }, [success, setSearchParams]);
+  }, [success, setSearchParams, t]);
 
   const totalRequests = useMemo(() => {
     const httpRequests = httpWorkspace30d?.data?.reduce(
@@ -135,43 +137,43 @@ export function Client() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Billing</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            Manage your billing information and payment methods.
+            {t("description")}
           </SectionDescription>
         </SectionHeader>
         <FormCardGroup>
           <FormCard>
             <FormCardHeader>
-              <FormCardTitle>Usage</FormCardTitle>
+              <FormCardTitle>{t("usage")}</FormCardTitle>
               <FormCardDescription>
-                Overview of your current usage, limits and addons.
+                {t("usageDescription")}
               </FormCardDescription>
             </FormCardHeader>
             <FormCardContent>
               <div className="flex flex-col gap-2">
                 <BillingProgress
-                  label="Monitors"
+                  label={t("monitors")}
                   value={workspace.usage?.monitors ?? 0}
                   max={workspace.limits.monitors}
                 />
                 <BillingProgress
-                  label="Status Pages"
+                  label={t("statusPages")}
                   value={workspace.usage?.pages ?? 0}
                   max={workspace.limits["status-pages"]}
                 />
                 <BillingProgress
-                  label="Page Components"
+                  label={t("pageComponents")}
                   value={workspace.usage?.pageComponents ?? 0}
                   max={workspace.limits["page-components"]}
                 />
                 <BillingProgress
-                  label="Notifications"
+                  label={t("notifications")}
                   value={workspace.usage?.notifications ?? 0}
                   max={workspace.limits["notification-channels"]}
                 />
                 <BillingProgress
-                  label="Total requests in the last 30 days"
+                  label={t("totalRequests")}
                   value={totalRequests}
                   max={calculateTotalRequests(workspace.limits)}
                 />
@@ -180,9 +182,9 @@ export function Client() {
             <FormCardSeparator />
             <FormCardContent>
               <FormCardHeader className="col-span-full px-0 pt-0 pb-0">
-                <FormCardTitle>Add-ons</FormCardTitle>
+                <FormCardTitle>{t("addons")}</FormCardTitle>
                 <FormCardDescription>
-                  Extend your limits with additional features.
+                  {t("addonsDescription")}
                 </FormCardDescription>
               </FormCardHeader>
               <div className="flex flex-col gap-2 pt-4">
@@ -222,17 +224,19 @@ export function Client() {
                 ) : null}
                 {Object.keys(planAddons).length === 0 ? (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No add-ons available</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noAddons")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 ) : null}
               </div>
             </FormCardContent>
             <FormCardFooter>
               <FormCardFooterInfo>
-                Access your{" "}
-                <span className="font-medium">billing information</span>,{" "}
-                <span className="font-medium">invoices</span> and{" "}
-                <span className="font-medium">payment methods</span> via Stripe.
+                {t("footerPrefix")}{" "}
+                <span className="font-medium">{t("billingInformation")}</span>,{" "}
+                <span className="font-medium">{t("invoices")}</span>{" "}
+                {t("footerJoin")}{" "}
+                <span className="font-medium">{t("paymentMethods")}</span>{" "}
+                {t("footerSuffix")}
               </FormCardFooterInfo>
               <Button
                 size="sm"
@@ -246,15 +250,15 @@ export function Client() {
                 }}
                 disabled={isPending}
               >
-                {isPending ? "Loading..." : "Customer Portal"}
+                {isPending ? t("loading") : t("customerPortal")}
               </Button>
             </FormCardFooter>
           </FormCard>
           <FormCard>
             <FormCardHeader>
-              <FormCardTitle>Plans</FormCardTitle>
+              <FormCardTitle>{t("plans")}</FormCardTitle>
               <FormCardDescription>
-                Choose a plan that fits your needs.
+                {t("plansDescription")}
               </FormCardDescription>
             </FormCardHeader>
             <FormCardSeparator />

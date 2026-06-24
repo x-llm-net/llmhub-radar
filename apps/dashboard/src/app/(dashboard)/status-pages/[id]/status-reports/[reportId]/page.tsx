@@ -4,6 +4,7 @@ import { currentImpactsFromUpdates } from "@openstatus/db/src/schema/page_compon
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import {
@@ -33,6 +34,7 @@ import {
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("statusPages.reports");
   const { reportId } = useParams<{ id: string; reportId: string }>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -90,17 +92,19 @@ export default function Page() {
           <SectionHeader>
             <SectionTitle>{statusReport.title}</SectionTitle>
             <SectionDescription>
-              Manage updates for this status report. Affects{" "}
-              <span className="text-foreground">
-                {affected ? affected : "zero"}
-              </span>{" "}
-              component(s).
+              {t.rich("detailDescription", {
+                affected: () => (
+                  <span className="text-foreground">
+                    {affected ? affected : t("zero")}
+                  </span>
+                ),
+              })}
             </SectionDescription>
           </SectionHeader>
         </SectionHeaderRow>
 
         <EmptyStateContainer className="my-8 border-dashed">
-          <EmptyStateDescription>Status Page Report</EmptyStateDescription>
+          <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
           <FormSheetStatusReportUpdate
             defaultValues={{
               status: nextStatus,
@@ -138,7 +142,7 @@ export default function Page() {
           >
             <Button size="sm">
               <Plus />
-              Create Status Update
+              {t("createUpdate")}
             </Button>
           </FormSheetStatusReportUpdate>
         </EmptyStateContainer>

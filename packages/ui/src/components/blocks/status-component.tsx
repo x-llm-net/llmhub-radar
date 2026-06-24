@@ -15,7 +15,7 @@ import {
 } from "@openstatus/ui/components/ui/tooltip";
 import { useMediaQuery } from "@openstatus/ui/hooks/use-media-query";
 import { cn } from "@openstatus/ui/lib/utils";
-import { formatDistanceToNowStrict, subDays } from "date-fns";
+import { subDays } from "date-fns";
 import { InfoIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -420,7 +420,7 @@ export function StatusComponentFooter({
         {isLoading ? (
           <Skeleton className="h-3 w-18" />
         ) : data.length > 0 ? (
-          formatDistanceToNowStrict(subDays(new Date(), data.length), {
+          labels.formatDistance(subDays(new Date(), data.length), new Date(), {
             unit: "day",
             addSuffix: true,
           })

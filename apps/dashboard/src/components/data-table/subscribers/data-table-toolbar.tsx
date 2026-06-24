@@ -4,22 +4,11 @@ import type { RouterOutputs } from "@openstatus/api";
 import { Button } from "@openstatus/ui/components/ui/button";
 import type { Table } from "@tanstack/react-table";
 import { CircleCheck, Globe, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { DataTableFacetedFilter } from "@/components/ui/data-table/data-table-faceted-filter";
 
 type Subscriber = RouterOutputs["pageSubscriber"]["list"][number];
-
-const STATUS_OPTIONS = [
-  { label: "Active", value: "active" },
-  { label: "Pending", value: "pending" },
-  { label: "Unsubscribed", value: "unsubscribed" },
-];
-
-const SOURCE_OPTIONS = [
-  { label: "Self-signup", value: "self_signup" },
-  { label: "Vendor", value: "vendor" },
-  { label: "Import", value: "import" },
-];
 
 function filterAvailable<T extends { value: string }>(
   options: T[],
@@ -34,13 +23,24 @@ export function SubscribersDataTableToolbar({
 }: {
   table: Table<Subscriber>;
 }) {
+  const t = useTranslations("statusPages.subscribers.table");
   const isFiltered = table.getState().columnFilters.length > 0;
+  const statusOptionsBase = [
+    { label: t("active"), value: "active" },
+    { label: t("pending"), value: "pending" },
+    { label: t("unsubscribed"), value: "unsubscribed" },
+  ];
+  const sourceOptionsBase = [
+    { label: t("selfSignup"), value: "self_signup" },
+    { label: t("vendor"), value: "vendor" },
+    { label: t("import"), value: "import" },
+  ];
 
   const statusFacets = table.getColumn("status")?.getFacetedUniqueValues();
   const sourceFacets = table.getColumn("source")?.getFacetedUniqueValues();
 
-  const statusOptions = filterAvailable(STATUS_OPTIONS, statusFacets);
-  const sourceOptions = filterAvailable(SOURCE_OPTIONS, sourceFacets);
+  const statusOptions = filterAvailable(statusOptionsBase, statusFacets);
+  const sourceOptions = filterAvailable(sourceOptionsBase, sourceFacets);
 
   return (
     <div className="flex items-center justify-between">
@@ -48,7 +48,7 @@ export function SubscribersDataTableToolbar({
         {table.getColumn("status") && statusOptions.length > 0 && (
           <DataTableFacetedFilter
             column={table.getColumn("status")}
-            title="Status"
+            title={t("status")}
             options={statusOptions}
             icon={CircleCheck}
           />
@@ -56,7 +56,7 @@ export function SubscribersDataTableToolbar({
         {table.getColumn("source") && sourceOptions.length > 0 && (
           <DataTableFacetedFilter
             column={table.getColumn("source")}
-            title="Source"
+            title={t("source")}
             options={sourceOptions}
             icon={Globe}
           />
@@ -67,7 +67,7 @@ export function SubscribersDataTableToolbar({
             onClick={() => table.resetColumnFilters()}
             className="h-8 px-2 lg:px-3"
           >
-            Reset
+            {t("reset")}
             <X />
           </Button>
         )}

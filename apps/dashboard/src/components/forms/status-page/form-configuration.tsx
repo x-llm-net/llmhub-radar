@@ -28,6 +28,7 @@ import {
 import { isTRPCClientError } from "@trpc/client";
 import { ArrowUpRight } from "lucide-react";
 import { parseAsStringLiteral, useQueryStates } from "nuqs";
+import { useTranslations } from "next-intl";
 import { useEffect, useState, useTransition } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -83,6 +84,7 @@ export function FormConfiguration({
   onSubmit: (values: FormValues) => Promise<void>;
   configLink: string;
 }) {
+  const t = useTranslations("statusPages.form");
   const [isPending, startTransition] = useTransition();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -99,6 +101,21 @@ export function FormConfiguration({
   const watchConfigurationUptime = form.watch("configuration.uptime") as
     | "true"
     | "false";
+  const configurationMessage = {
+    type: {
+      manual: t("configurationTypeManual"),
+      absolute: t("configurationTypeAbsolute"),
+    },
+    value: {
+      duration: t("configurationValueDuration"),
+      requests: t("configurationValueRequests"),
+      default: t("configurationValueDefault"),
+    },
+    uptime: {
+      true: t("configurationUptimeTrue"),
+      false: t("configurationUptimeFalse"),
+    },
+  } as const;
 
   useEffect(() => {
     if (watchConfigurationType === "manual") {
@@ -119,13 +136,13 @@ export function FormConfiguration({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -141,9 +158,9 @@ export function FormConfiguration({
         <form id="redesign" onSubmit={form.handleSubmit(submitAction)}>
           <FormCard>
             <FormCardHeader>
-              <FormCardTitle>Components Configuration</FormCardTitle>
+              <FormCardTitle>{t("componentsConfiguration")}</FormCardTitle>
               <FormCardDescription>
-                Configure which data should be shown for your components.
+                {t("componentsConfigurationDescription")}
               </FormCardDescription>
             </FormCardHeader>
             <FormCardSeparator />
@@ -153,14 +170,14 @@ export function FormConfiguration({
                 name="configuration.type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Bar Type*</FormLabel>
+                    <FormLabel>{t("barType")}</FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={String(field.value) ?? "absolute"}
                     >
                       <FormControl>
                         <SelectTrigger className="w-full capitalize">
-                          <SelectValue placeholder="Select a type" />
+                          <SelectValue placeholder={t("selectType")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -184,7 +201,7 @@ export function FormConfiguration({
                 name="configuration.value"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Card Value*</FormLabel>
+                    <FormLabel>{t("cardValue")}</FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={String(field.value) ?? "duration"}
@@ -192,7 +209,7 @@ export function FormConfiguration({
                     >
                       <FormControl>
                         <SelectTrigger className="w-full capitalize">
-                          <SelectValue placeholder="Select a type" />
+                          <SelectValue placeholder={t("selectType")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -216,14 +233,14 @@ export function FormConfiguration({
                 name="configuration.uptime"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Show Uptime</FormLabel>
+                    <FormLabel>{t("showUptime")}</FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={String(field.value) ?? "true"}
                     >
                       <FormControl>
                         <SelectTrigger className="w-full capitalize">
-                          <SelectValue placeholder="Select a type" />
+                          <SelectValue placeholder={t("selectType")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -243,47 +260,47 @@ export function FormConfiguration({
                 )}
               />
               <p className="text-foreground/70 col-span-full text-sm">
-                *Configuration settings only apply to monitor components.
+                {t("configurationOnlyMonitorComponents")}
               </p>
               <Note className="col-span-full">
                 <ul className="list-inside list-disc">
                   <li>
-                    <span>Bar Type </span>
+                    <span>{t("barType")} </span>
                     <span className="font-medium">
                       {watchConfigurationType}
                     </span>
-                    : <span>{message.type[watchConfigurationType]}</span>
+                    : <span>{configurationMessage.type[watchConfigurationType]}</span>
                   </li>
                   <li>
-                    <span>Card Value </span>
+                    <span>{t("cardValue")} </span>
                     <span className="font-medium">
                       {watchConfigurationValue}
                     </span>
                     :{" "}
                     <span>
-                      {message.value[watchConfigurationValue] ??
-                        message.value.default}
+                      {configurationMessage.value[watchConfigurationValue] ??
+                        configurationMessage.value.default}
                     </span>
                   </li>
                   <li>
-                    <span>Show Uptime </span>
+                    <span>{t("showUptime")} </span>
                     <span className="font-medium capitalize">
                       {String(watchConfigurationUptime)}
                     </span>
-                    : <span>{message.uptime[watchConfigurationUptime]}</span>
+                    : <span>{configurationMessage.uptime[watchConfigurationUptime]}</span>
                   </li>
                 </ul>
               </Note>
             </FormCardContent>
             <FormCardFooter>
               <FormCardFooterInfo>
-                Learn more about{" "}
+                {t("learnMoreAbout")}{" "}
                 <Link
                   href="https://www.openstatus.dev/docs/tutorial/how-to-configure-status-page"
                   rel="noreferrer"
                   target="_blank"
                 >
-                  Configuration
+                  {t("configuration")}
                 </Link>
                 .
               </FormCardFooterInfo>
@@ -295,12 +312,12 @@ export function FormConfiguration({
                     target="_blank"
                     className="inline-flex items-center gap-1"
                   >
-                    View and configure status page{" "}
+                    {t("viewAndConfigureStatusPage")}{" "}
                     <ArrowUpRight className="h-4 w-4" />
                   </Link>
                 </Button>
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? "Submitting..." : "Submit"}
+                  {isPending ? t("submitting") : t("submit")}
                 </Button>
               </div>
             </FormCardFooter>
@@ -320,26 +337,6 @@ export function FormConfiguration({
   );
 }
 
-// TODO:
-const message = {
-  type: {
-    manual:
-      "only shares the duration of reports and maintenaces you are setting up - nothing else.",
-    absolute:
-      "shares the status of your endpoint for the duration of the different statuses.",
-  },
-  value: {
-    duration: "shares the duration of the different statuses.",
-    requests:
-      "shares the number of requests received (success, degraded, error).",
-    default: "shares only the worse status of the day",
-  },
-  uptime: {
-    true: "shares the uptime percentage and current status of your endpoint.",
-    false: "shares only the current status.",
-  },
-} as const;
-
 // ?type=manual&value=manual&uptime=true&theme=default
 
 const searchParams = {
@@ -357,6 +354,7 @@ function FormConfigurationDialog({
   onSubmit: (values: FormValues) => Promise<void>;
   form: UseFormReturn<FormValues>;
 }) {
+  const t = useTranslations("statusPages.form");
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [{ type, value, uptime, theme }, setSearchParams] =
@@ -379,13 +377,13 @@ function FormConfigurationDialog({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -410,10 +408,9 @@ function FormConfigurationDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Status Page Configuration</DialogTitle>
+          <DialogTitle>{t("statusPageConfiguration")}</DialogTitle>
           <DialogDescription>
-            Do you want to update the status page based on the configured
-            settings? You can always change the settings later.
+            {t("statusPageConfigurationDescription")}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
@@ -423,7 +420,7 @@ function FormConfigurationDialog({
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button variant="outline">{t("cancel")}</Button>
           </DialogClose>
           <Button
             type="button"
@@ -440,7 +437,7 @@ function FormConfigurationDialog({
             }
             disabled={isPending}
           >
-            {isPending ? "Saving..." : "Save"}
+            {isPending ? t("saving") : t("save")}
           </Button>
         </DialogFooter>
       </DialogContent>

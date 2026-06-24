@@ -5,6 +5,7 @@ import { Input } from "@openstatus/ui/components/ui/input";
 import { Label } from "@openstatus/ui/components/ui/label";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { signOut } from "next-auth/react";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import {
@@ -30,6 +31,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("settings.account");
   const trpc = useTRPC();
   const { data: user } = useQuery(trpc.user.get.queryOptions());
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -49,39 +51,39 @@ export default function Page() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Account</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
         </SectionHeader>
         <FormCard>
           <FormCardUpgrade />
           <FormCardHeader>
-            <FormCardTitle>Personal Information</FormCardTitle>
+            <FormCardTitle>{t("personalInformation")}</FormCardTitle>
             <FormCardDescription>
-              Manage your personal information.
+              {t("personalInformationDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
             <form className="grid gap-4">
               <div className="grid gap-1.5">
-                <Label>Name</Label>
+                <Label>{t("name")}</Label>
                 <Input defaultValue={user?.name ?? undefined} />
               </div>
               <div className="grid gap-1.5">
-                <Label>Email</Label>
+                <Label>{t("email")}</Label>
                 <Input defaultValue={user?.email ?? undefined} />
               </div>
             </form>
           </FormCardContent>
           <FormCardFooter className="[&>:last-child]:ml-0">
             <FormCardFooterInfo>
-              Please contact us if you want to change your email or name.
+              {t("contactToChange")}
             </FormCardFooterInfo>
           </FormCardFooter>
         </FormCard>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Appearance</FormCardTitle>
+            <FormCardTitle>{t("appearance")}</FormCardTitle>
             <FormCardDescription>
-              Choose your preferred theme.
+              {t("appearanceDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="pb-4">
@@ -90,30 +92,28 @@ export default function Page() {
         </FormCard>
         <FormCard variant="destructive">
           <FormCardHeader>
-            <FormCardTitle>Delete Account</FormCardTitle>
+            <FormCardTitle>{t("deleteAccount")}</FormCardTitle>
             <FormCardDescription>
-              This will permanently delete your account and remove you from all
-              workspaces. This action cannot be undone.
+              {t("deleteDescription")}
             </FormCardDescription>
           </FormCardHeader>
           {isDeleteDisabled ? (
             <FormCardContent>
               <p className="text-destructive text-sm">
-                You must cancel your subscription before deleting your account.
-                Go to{" "}
+                {t("cancelSubscriptionFirst")} {t("goTo")}{" "}
                 <a
                   href="/settings/billing"
                   className="font-medium underline underline-offset-4"
                 >
-                  Billing
+                  {t("billing")}
                 </a>{" "}
-                to manage your subscription.
+                {t("manageSubscription")}
               </p>
             </FormCardContent>
           ) : null}
           <FormCardFooter variant="destructive">
             <FormCardFooterInfo>
-              Need help? Contact us at{" "}
+              {t("needHelpPrefix")}{" "}
               <Link href="mailto:ping@openstatus.dev">ping@openstatus.dev</Link>
               .
             </FormCardFooterInfo>
@@ -129,7 +129,7 @@ export default function Page() {
                 size="sm"
                 disabled={isDeleteDisabled}
               >
-                Delete
+                {t("delete")}
               </Button>
             </FormAlertDialog>
           </FormCardFooter>

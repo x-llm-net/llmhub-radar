@@ -2,12 +2,14 @@
 
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { useChatSessionContext } from "@/components/chat/chat-session-context";
 import { NavBreadcrumb } from "@/components/nav/nav-breadcrumb";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Breadcrumb() {
+  const t = useTranslations("chat");
   // Context (not `useParams`) so we follow runtime `replaceState` URL swaps.
   const { sessionId } = useChatSessionContext();
 
@@ -21,7 +23,7 @@ export function Breadcrumb() {
   if (sessionId === undefined) {
     return (
       <NavBreadcrumb
-        items={[{ type: "page", label: "Assistant", icon: MessageSquare }]}
+        items={[{ type: "page", label: t("assistant"), icon: MessageSquare }]}
       />
     );
   }
@@ -31,11 +33,11 @@ export function Breadcrumb() {
       items={[
         {
           type: "link",
-          label: "Assistant",
+          label: t("assistant"),
           href: "/chat",
           icon: MessageSquare,
         },
-        { type: "page", label: session?.title ?? "New chat" },
+        { type: "page", label: session?.title ?? t("newChat") },
       ]}
     />
   );

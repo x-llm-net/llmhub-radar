@@ -17,6 +17,24 @@ import { TableCellDate } from "../table-cell-date";
 
 type AuditLog = RouterOutputs["auditLog"]["list"]["items"][number];
 
+type AuditLogColumnLabels = {
+  action: string;
+  actor: string;
+  actorApiKey: string;
+  actorSubscriber: string;
+  actorSystem: string;
+  timestamp: string;
+};
+
+const defaultLabels: AuditLogColumnLabels = {
+  action: "Action",
+  actor: "Actor",
+  actorApiKey: "API Key",
+  actorSubscriber: "Subscriber",
+  actorSystem: "System",
+  timestamp: "Timestamp",
+};
+
 /**
  * djb2 — tiny deterministic string hash. Used to derive a stable avatar
  * seed from the user's email without shipping the email itself to
@@ -41,10 +59,13 @@ function getActionBadgeColor(action: string) {
   return "bg-muted/10 text-muted-foreground border-muted/20";
 }
 
-export const columns: ColumnDef<AuditLog>[] = [
+export function getColumns(
+  labels: AuditLogColumnLabels = defaultLabels,
+): ColumnDef<AuditLog>[] {
+  return [
   {
     accessorKey: "user",
-    header: "Actor",
+    header: labels.actor,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -57,7 +78,9 @@ export const columns: ColumnDef<AuditLog>[] = [
               <div className="bg-muted-foreground/10 flex size-6 items-center justify-center rounded-md">
                 <KeyIcon className="text-muted-foreground size-4" />
               </div>
-              <span className="text-muted-foreground">API Key</span>
+              <span className="text-muted-foreground">
+                {labels.actorApiKey}
+              </span>
             </div>
           );
         }
@@ -87,7 +110,9 @@ export const columns: ColumnDef<AuditLog>[] = [
               <div className="bg-muted-foreground/10 flex size-6 items-center justify-center rounded-md">
                 <ServerIcon className="text-muted-foreground size-4" />
               </div>
-              <span className="text-muted-foreground">System</span>
+              <span className="text-muted-foreground">
+                {labels.actorSystem}
+              </span>
             </div>
           );
         }
@@ -97,7 +122,9 @@ export const columns: ColumnDef<AuditLog>[] = [
               <div className="bg-muted-foreground/10 flex size-6 items-center justify-center rounded-md">
                 <MailIcon className="text-muted-foreground size-4" />
               </div>
-              <span className="text-muted-foreground">Subscriber</span>
+              <span className="text-muted-foreground">
+                {labels.actorSubscriber}
+              </span>
             </div>
           );
         }
@@ -131,7 +158,7 @@ export const columns: ColumnDef<AuditLog>[] = [
   },
   {
     accessorKey: "action",
-    header: "Action",
+    header: labels.action,
     enableSorting: false,
     enableHiding: false,
     filterFn: (row, id, filterValue: string[]) => {
@@ -172,7 +199,7 @@ export const columns: ColumnDef<AuditLog>[] = [
   },
   {
     accessorKey: "createdAt",
-    header: "Timestamp",
+    header: labels.timestamp,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -184,4 +211,5 @@ export const columns: ColumnDef<AuditLog>[] = [
       cellClassName: "text-right",
     },
   },
-];
+  ];
+}

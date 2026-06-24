@@ -9,6 +9,14 @@ import type {
 import { defaultStatusBlocksLabels } from "@openstatus/ui/components/blocks/status.utils";
 import { createContext, useContext } from "react";
 
+type StatusDistanceUnit =
+  | "second"
+  | "minute"
+  | "hour"
+  | "day"
+  | "month"
+  | "year";
+
 /**
  * Labels and locale-aware formatters consumed by block components.
  *
@@ -51,6 +59,7 @@ export type StatusBlocksLabels = {
   ariaStatusTracker: string;
   ariaDayStatus: (n: number) => string;
   clickAgainToUnpin: string;
+  relative: string;
 
   /** Heading shown on the status-calendar block. */
   calendarTitle: string;
@@ -63,6 +72,11 @@ export type StatusBlocksLabels = {
   formatDate: (d: Date) => string;
   formatDateShort: (d: Date) => string;
   formatDateTime: (d: Date) => string;
+  formatDistance: (
+    from: Date,
+    to: Date | undefined,
+    options?: { addSuffix?: boolean; unit?: StatusDistanceUnit },
+  ) => string;
   formatDateRange: (from?: Date, to?: Date) => string;
   /**
    * Returns the start/end of a closed range as separate strings, so callers

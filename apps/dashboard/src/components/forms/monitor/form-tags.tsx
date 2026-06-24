@@ -27,6 +27,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -66,6 +67,7 @@ export function FormTags({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const trpc = useTRPC();
   const { data: tags, refetch } = useQuery(trpc.monitorTag.list.queryOptions());
   const syncTagsMutation = useMutation(
@@ -89,9 +91,9 @@ export function FormTags({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -130,7 +132,7 @@ export function FormTags({
       >
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Tags</FormCardTitle>
+            <FormCardTitle>{t("tags")}</FormCardTitle>
             <FormCardDescription>
               Add tags to categorize and organize your monitor.
             </FormCardDescription>
@@ -141,7 +143,7 @@ export function FormTags({
               name="tags"
               render={({ field }) => (
                 <FormItem className="flex flex-col md:col-span-1">
-                  <FormLabel>Tags</FormLabel>
+                  <FormLabel>{t("tags")}</FormLabel>
                   <Popover>
                     <PopoverTrigger asChild>
                       <FormControl>
@@ -170,7 +172,7 @@ export function FormTags({
                               ))
                             ) : (
                               <span className="text-muted-foreground">
-                                No tags selected
+                                {t("noTagsSelected")}
                               </span>
                             )}
                           </div>
@@ -182,7 +184,7 @@ export function FormTags({
                       <Command>
                         <CommandInput placeholder="Search tags..." />
                         <CommandList className="w-full">
-                          <CommandEmpty>No tag found.</CommandEmpty>
+                          <CommandEmpty>{t("noTagFound")}</CommandEmpty>
                           <CommandGroup>
                             {tags?.map((tag) => (
                               <CommandItem
@@ -270,7 +272,7 @@ export function FormTags({
               and how to use them.
             </FormCardFooterInfo>
             <Button type="submit" form="monitor-tags-form" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

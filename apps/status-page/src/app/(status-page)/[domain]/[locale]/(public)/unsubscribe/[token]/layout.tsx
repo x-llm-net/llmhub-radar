@@ -8,8 +8,10 @@ import {
   StatusTitle,
 } from "@openstatus/ui/components/blocks/status-layout";
 import { useQuery } from "@tanstack/react-query";
+import { useLocale } from "next-intl";
 import { useParams } from "next/navigation";
 
+import { getStatusPageDescription } from "@/lib/status-page-copy";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function UnsubscribeLayout({
@@ -17,6 +19,7 @@ export default function UnsubscribeLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const locale = useLocale();
   const { domain } = useParams<{ domain: string }>();
   const trpc = useTRPC();
   const { data: page } = useQuery(
@@ -29,7 +32,9 @@ export default function UnsubscribeLayout({
     <Status>
       <StatusHeader>
         <StatusTitle>{page.title}</StatusTitle>
-        <StatusDescription>{page.description}</StatusDescription>
+        <StatusDescription>
+          {getStatusPageDescription(page.description, locale)}
+        </StatusDescription>
       </StatusHeader>
       <StatusContent>{children}</StatusContent>
     </Status>

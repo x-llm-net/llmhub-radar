@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 import { useChatSessionContext } from "@/components/chat/chat-session-context";
@@ -16,6 +17,7 @@ import { SidebarRight } from "@/components/nav/sidebar-right";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Sidebar() {
+  const t = useTranslations("chat");
   const router = useRouter();
   const { sessionId: activeId } = useChatSessionContext();
 
@@ -42,17 +44,17 @@ export function Sidebar() {
   const metadata: SidebarMetadataProps[] = [];
   if (activeSession) {
     metadata.push({
-      label: "Details",
+      label: t("details"),
       items: [
-        { label: "Title", value: activeSession.title },
+        { label: t("title"), value: activeSession.title },
         {
-          label: "Created",
+          label: t("created"),
           value: formatDistanceToNow(activeSession.createdAt, {
             addSuffix: true,
           }),
         },
         {
-          label: "Updated",
+          label: t("updated"),
           value: formatDistanceToNow(activeSession.updatedAt, {
             addSuffix: true,
           }),
@@ -61,7 +63,7 @@ export function Sidebar() {
     });
   }
   metadata.push({
-    label: "Recent",
+    label: t("recent"),
     type: "list",
     items: (sessions ?? []).map((s) => ({
       id: s.id,
@@ -80,14 +82,14 @@ export function Sidebar() {
 
   return (
     <SidebarRight
-      header="Conversations"
+      header={t("conversations")}
       metadata={metadata}
       footerButton={{
         onClick: () => router.push("/chat"),
         children: (
           <>
             <Plus />
-            <span>New chat</span>
+            <span>{t("newChat")}</span>
           </>
         ),
       }}

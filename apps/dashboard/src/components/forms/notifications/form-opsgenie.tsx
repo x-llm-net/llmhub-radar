@@ -22,6 +22,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ export function FormOpsGenie({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -80,13 +82,13 @@ export function FormOpsGenie({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -110,13 +112,13 @@ export function FormOpsGenie({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -139,14 +141,12 @@ export function FormOpsGenie({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -155,12 +155,12 @@ export function FormOpsGenie({
             name="data.apiKey"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>API Key</FormLabel>
+                <FormLabel>{t("apiKey")}</FormLabel>
                 <FormControl>
                   <Input placeholder="your-api-key" {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>Enter your OpsGenie API key.</FormDescription>
+                <FormDescription>{t("apiKeyDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -169,14 +169,14 @@ export function FormOpsGenie({
             name="data.region"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Region</FormLabel>
+                <FormLabel>{t("region")}</FormLabel>
                 <Select
                   onValueChange={field.onChange}
                   defaultValue={field.value}
                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select a region" />
+                      <SelectValue placeholder={t("selectRegion")} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
@@ -185,7 +185,7 @@ export function FormOpsGenie({
                   </SelectContent>
                 </Select>
                 <FormMessage />
-                <FormDescription>Select your OpsGenie region.</FormDescription>
+                <FormDescription>{t("regionDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -196,7 +196,7 @@ export function FormOpsGenie({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -207,16 +207,14 @@ export function FormOpsGenie({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

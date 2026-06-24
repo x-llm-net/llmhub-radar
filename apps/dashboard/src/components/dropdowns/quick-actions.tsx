@@ -32,6 +32,7 @@ import {
   MoreHorizontal,
   Trash2,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type * as React from "react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -63,8 +64,10 @@ export function QuickActions({
   actions,
   deleteAction,
   children,
+  "aria-label": ariaLabel,
   ...props
 }: QuickActionsProps) {
+  const t = useTranslations("quickActions");
   const [value, setValue] = useState("");
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -75,13 +78,13 @@ export function QuickActions({
       if (!deleteAction?.submitAction) return;
       const promise = deleteAction.submitAction();
       toast.promise(promise, {
-        loading: "Deleting...",
-        success: "Deleted",
+        loading: t("deleteLoading"),
+        success: t("deleteSuccess"),
         error: (error) => {
           if (isTRPCClientError(error)) {
             return error.message;
           }
-          return "Failed to delete";
+          return t("deleteError");
         },
       });
       try {
@@ -102,6 +105,7 @@ export function QuickActions({
             <Button
               variant="ghost"
               size="icon"
+              aria-label={ariaLabel ?? t("openMenu")}
               className={className ?? "data-[state=open]:bg-accent h-7 w-7"}
               {...props}
             >
@@ -111,7 +115,7 @@ export function QuickActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} side={side} className="w-36">
           <DropdownMenuLabel className="sr-only">
-            Quick Actions
+            {t("label")}
           </DropdownMenuLabel>
           {actions
             ?.filter((item) => item.id !== "delete")
@@ -137,7 +141,7 @@ export function QuickActions({
               <AlertDialogTrigger asChild>
                 <DropdownMenuItem variant="destructive">
                   <Trash2 className="text-muted-foreground" />
-                  Delete
+                  {t("delete")}
                 </DropdownMenuItem>
               </AlertDialogTrigger>
             </>
@@ -154,18 +158,17 @@ export function QuickActions({
         <AlertDialogHeader>
           <AlertDialogTitle>
             {deleteAction?.confirmationValue
-              ? `Are you sure about deleting \`${deleteAction.confirmationValue}\`?`
-              : "Are you sure?"}
+              ? t("deleteTitle", { value: deleteAction.confirmationValue })
+              : t("deleteTitleFallback")}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently remove the entry
-            from the database.
+            {t("deleteDescription")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {deleteAction?.confirmationValue ? (
           <form id="form-alert-dialog" className="space-y-1.5">
             <p className="text-muted-foreground text-sm">
-              Type{" "}
+              {t("typeToConfirmPrefix")}{" "}
               <Button
                 variant="secondary"
                 size="sm"
@@ -180,14 +183,14 @@ export function QuickActions({
                 {deleteAction.confirmationValue}
                 {isCopied ? <Check /> : <Copy />}
               </Button>{" "}
-              to confirm
+              {t("typeToConfirmSuffix")}
             </p>
             <Input value={value} onChange={(e) => setValue(e.target.value)} />
           </form>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
-            Cancel
+            {t("cancel")}
           </AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
@@ -203,7 +206,7 @@ export function QuickActions({
               handleDelete();
             }}
           >
-            {isPending ? "Deleting..." : "Delete"}
+            {isPending ? t("deleteLoading") : t("delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

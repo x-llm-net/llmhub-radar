@@ -2,45 +2,61 @@ import { GitHubIcon } from "@openstatus/icons";
 import { GoogleIcon } from "@openstatus/icons";
 import { Separator } from "@openstatus/ui/components/ui/separator";
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import type { SearchParams } from "nuqs/server";
 
+import { LanguageSwitcher } from "@/components/i18n/language-switcher";
 import { signIn } from "@/lib/auth";
 
+import { DevEmailLoginForm } from "./_components/dev-email-login-form";
 import { LoginButton } from "./_components/login-button";
 import MagicLinkForm from "./_components/magic-link-form";
 import { searchParamsCache } from "./search-params";
 
-export const metadata: Metadata = {
-  title: "Sign In",
-  description:
-    "Sign in to openstatus. Monitor your services and keep your users informed.",
-  robots: {
-    index: true,
-    follow: true,
-  },
-  alternates: {
-    canonical: "https://app.openstatus.dev/login",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("auth");
+
+  return {
+    title: t("signInTitle"),
+    description: t("signInDescription"),
+    robots: {
+      index: true,
+      follow: true,
+    },
+    alternates: {
+      canonical: "https://app.openstatus.dev/login",
+    },
+  };
+}
 
 export default async function Page(props: {
   searchParams: Promise<SearchParams>;
 }) {
   const searchParams = await props.searchParams;
   const { redirectTo } = searchParamsCache.parse(searchParams);
+  const t = await getTranslations("auth");
 
   return (
     <div className="my-16 grid w-full max-w-lg gap-6">
+      <div className="flex justify-end px-4">
+        <LanguageSwitcher />
+      </div>
       <div className="flex flex-col gap-1 text-center">
-        <h1 className="font-cal text-3xl tracking-tight">Sign In</h1>
+        <h1 className="font-cal text-3xl tracking-tight">
+          {t("signInTitle")}
+        </h1>
         <p className="font-commit-mono text-muted-foreground text-sm text-pretty">
-          Get started now. No credit card required.
+          {t("signInDescription")}
         </p>
       </div>
       <div className="grid gap-4 p-4">
-        {process.env.NODE_ENV === "development" ||
-        process.env.SELF_HOST === "true" ? (
+        {process.env.NODE_ENV === "development" ? (
+          <div className="grid gap-4">
+            <DevEmailLoginForm redirectTo={redirectTo ?? undefined} />
+            <Separator />
+          </div>
+        ) : process.env.SELF_HOST === "true" ? (
           <div className="grid gap-4">
             <MagicLinkForm />
             <Separator />
@@ -54,7 +70,7 @@ export default async function Page(props: {
           className="w-full"
         >
           <LoginButton type="submit" provider="github">
-            Sign in with GitHub <GitHubIcon className="ml-2 h-4 w-4" />
+            {t("signInGithub")} <GitHubIcon className="ml-2 h-4 w-4" />
           </LoginButton>
         </form>
         <form
@@ -65,24 +81,24 @@ export default async function Page(props: {
           className="w-full"
         >
           <LoginButton type="submit" provider="google">
-            Sign in with Google <GoogleIcon className="ml-2 h-4 w-4" />
+            {t("signInGoogle")} <GoogleIcon className="ml-2 h-4 w-4" />
           </LoginButton>
         </form>
       </div>
       <p className="text-muted-foreground mx-auto max-w-md px-8 text-center text-xs text-pretty">
-        By clicking continue, you agree to our{" "}
+        {t("termsPrefix")}{" "}
         <Link
           href="https://openstatus.dev/legal/terms"
           className="hover:text-primary underline underline-offset-4 hover:no-underline"
         >
-          Terms of Service
+          {t("terms")}
         </Link>{" "}
-        and{" "}
+        {t("privacyJoin")}{" "}
         <Link
           href="https://openstatus.dev/legal/privacy"
           className="hover:text-primary underline underline-offset-4 hover:no-underline"
         >
-          Privacy Policy
+          {t("privacy")}
         </Link>
         .
       </p>

@@ -27,6 +27,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Table } from "@tanstack/react-table";
 import { isTRPCClientError } from "@trpc/client";
 import { Check, CheckCircle2, Copy, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -39,11 +40,6 @@ import { useTRPC } from "@/lib/trpc/client";
 
 type Monitor = RouterOutputs["monitor"]["list"][number];
 
-const ACTIVE = [
-  { label: "active", value: true },
-  { label: "inactive", value: false },
-];
-
 interface MonitorDataTableActionBarProps {
   table: Table<Monitor>;
 }
@@ -51,11 +47,18 @@ interface MonitorDataTableActionBarProps {
 export function MonitorDataTableActionBar({
   table,
 }: MonitorDataTableActionBarProps) {
+  const t = useTranslations("monitors.bulk");
+  const common = useTranslations("common");
+  const quickActions = useTranslations("quickActions");
   const [open, setOpen] = React.useState(false);
   const [isPending, startTransition] = React.useTransition();
   const [value, setValue] = React.useState("");
   const { copy, isCopied } = useCopyToClipboard();
   const rows = table.getFilteredSelectedRowModel().rows;
+  const activeOptions = [
+    { label: t("active"), value: "active", active: true },
+    { label: t("inactive"), value: "inactive", active: false },
+  ];
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const deleteMonitorsMutation = useMutation(
@@ -95,13 +98,13 @@ export function MonitorDataTableActionBar({
           ids: rows.map((row) => row.original.id),
         });
         toast.promise(promise, {
-          loading: "Deleting...",
-          success: "Deleted",
+          loading: common("deleting"),
+          success: common("deleted"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to delete";
+            return common("failedToDelete");
           },
         });
         await promise;
@@ -128,29 +131,29 @@ export function MonitorDataTableActionBar({
                 active: v === "active",
               }),
               {
-                loading: "Updating...",
-                success: "Updated",
+                loading: t("updating"),
+                success: t("updated"),
                 error: (error) => {
                   if (isTRPCClientError(error)) {
                     return error.message;
                   }
-                  return "Failed to update";
+                  return t("updateFailed");
                 },
               },
             );
           }}
         >
           <SelectTrigger asChild>
-            <DataTableActionBarAction size="icon" tooltip="Update status">
+            <DataTableActionBarAction size="icon" tooltip={t("updateStatus")}>
               <CheckCircle2 />
             </DataTableActionBarAction>
           </SelectTrigger>
           <SelectContent align="center">
             <SelectGroup>
-              {ACTIVE.map((status) => (
+              {activeOptions.map((status) => (
                 <SelectItem
-                  key={status.label}
-                  value={status.label}
+                  key={status.value}
+                  value={status.value}
                   className="capitalize"
                 >
                   {status.label}
@@ -163,7 +166,7 @@ export function MonitorDataTableActionBar({
           <AlertDialogTrigger asChild>
             <DataTableActionBarAction
               size="icon"
-              tooltip="Delete monitors"
+              tooltip={t("deleteMonitors")}
               isPending={isPending || deleteMonitorsMutation.isPending}
             >
               <Trash2 />
@@ -178,16 +181,15 @@ export function MonitorDataTableActionBar({
           >
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Delete {rows.length} monitor{rows.length > 1 ? "s" : ""}?
+                {t("deleteTitle", { count: rows.length })}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently remove the
-                selected monitor(s) from the database.
+                {t("deleteDescription")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <form id="form-alert-dialog" className="space-y-1.5">
               <p className="text-muted-foreground text-sm">
-                Type{" "}
+                {quickActions("typeToConfirmPrefix")}{" "}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -198,13 +200,13 @@ export function MonitorDataTableActionBar({
                   {confirmationValue}
                   {isCopied ? <Check /> : <Copy />}
                 </Button>{" "}
-                to confirm
+                {quickActions("typeToConfirmSuffix")}
               </p>
               <Input value={value} onChange={(e) => setValue(e.target.value)} />
             </form>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
-                Cancel
+                {common("cancel")}
               </AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
@@ -216,7 +218,7 @@ export function MonitorDataTableActionBar({
                   handleDelete();
                 }}
               >
-                {isPending ? "Deleting..." : "Delete"}
+                {isPending ? common("deleting") : common("delete")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -2,6 +2,7 @@
 import type { RouterOutputs } from "@openstatus/api";
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Link } from "@/components/common/link";
@@ -18,7 +19,7 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/private-locations/columns";
+import { usePrivateLocationColumns } from "@/components/data-table/private-locations/columns";
 import { UpgradeDialog } from "@/components/dialogs/upgrade";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { useTRPC } from "@/lib/trpc/client";
@@ -49,6 +50,8 @@ const EXAMPLES = [
 ] satisfies RouterOutputs["privateLocation"]["list"];
 
 export function Client() {
+  const t = useTranslations("settings.privateLocations");
+  const columns = usePrivateLocationColumns();
   const trpc = useTRPC();
   const [openDialog, setOpenDialog] = useState(false);
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -61,9 +64,9 @@ export function Client() {
   return (
     <SectionGroup>
       <SectionHeader>
-        <SectionTitle>Private Locations</SectionTitle>
+        <SectionTitle>{t("title")}</SectionTitle>
         <SectionDescription>
-          Create and manage your private locations.
+          {t("description")}
         </SectionDescription>
       </SectionHeader>
       <Section>
@@ -76,16 +79,16 @@ export function Client() {
             <BillingOverlay>
               <BillingOverlayButton onClick={() => setOpenDialog(true)}>
                 <Lock />
-                Upgrade
+                {t("upgrade")}
               </BillingOverlayButton>
               <BillingOverlayDescription>
-                Create private locations to monitor your internal services.{" "}
+                {t("overlayDescription")}{" "}
                 <Link
                   href="https://www.openstatus.dev/docs/tutorial/how-to-create-private-location/"
                   rel="noreferrer"
                   target="_blank"
                 >
-                  Learn more
+                  {t("learnMore")}
                 </Link>
                 .
               </BillingOverlayDescription>

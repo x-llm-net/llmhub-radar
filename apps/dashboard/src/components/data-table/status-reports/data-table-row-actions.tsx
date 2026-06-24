@@ -4,6 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { currentImpactsFromUpdates } from "@openstatus/db/src/schema/page_components/constants";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Row } from "@tanstack/react-table";
+import { useTranslations } from "next-intl";
 import { useRef } from "react";
 
 import { QuickActions } from "@/components/dropdowns/quick-actions";
@@ -24,9 +25,10 @@ interface DataTableRowActionsProps {
 // because we are using the table in the /overview page
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
-  if (!row.original.pageId) return null;
+  const t = useTranslations("statusPages.reports.actions");
   const buttonCreateRef = useRef<HTMLButtonElement>(null);
   const buttonUpdateRef = useRef<HTMLButtonElement>(null);
+  if (!row.original.pageId) return null;
   const actions = getActions({
     "create-update": () => buttonCreateRef.current?.click(),
     edit: () => buttonUpdateRef.current?.click(),
@@ -41,6 +43,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         );
       }
     },
+  }, {
+    settings: t("settings"),
+    createUpdate: t("createUpdate"),
+    viewReport: t("viewReport"),
+    delete: t("delete"),
   });
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -125,7 +132,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       <QuickActions
         actions={actions}
         deleteAction={{
-          confirmationValue: row.original.title ?? "status report",
+          confirmationValue: row.original.title ?? t("deleteFallback"),
           submitAction: async () => {
             await deleteStatusReportMutation.mutateAsync({
               id: row.original.id,
@@ -156,7 +163,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         }}
       >
         <button ref={buttonUpdateRef} type="button" className="sr-only">
-          Open sheet
+          {t("openSheet")}
         </button>
       </FormSheetStatusReport>
       <FormSheetStatusReportUpdate
@@ -188,7 +195,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         }}
       >
         <button ref={buttonCreateRef} type="button" className="sr-only">
-          Open sheet
+          {t("openSheet")}
         </button>
       </FormSheetStatusReportUpdate>
     </>

@@ -3,6 +3,7 @@
 import type { RouterOutputs } from "@openstatus/api";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceStrict } from "date-fns";
+import { useTranslations } from "next-intl";
 
 import { ProcessMessage } from "@/components/content/process-message";
 import { TableCellDate } from "@/components/data-table/table-cell-date";
@@ -13,56 +14,60 @@ import { DataTableRowActions } from "./data-table-row-actions";
 
 type Maintenance = RouterOutputs["maintenance"]["list"][number];
 
-export const columns: ColumnDef<Maintenance>[] = [
-  {
-    accessorKey: "title",
-    header: "Title",
-    enableSorting: false,
-    enableHiding: false,
-    meta: {
-      cellClassName: "max-w-[200px] truncate",
+export function useMaintenanceColumns(): ColumnDef<Maintenance>[] {
+  const t = useTranslations("common");
+
+  return [
+    {
+      accessorKey: "title",
+      header: t("title"),
+      enableSorting: false,
+      enableHiding: false,
+      meta: {
+        cellClassName: "max-w-[200px] truncate",
+      },
     },
-  },
-  {
-    accessorKey: "message",
-    header: "Message",
-    enableSorting: false,
-    enableHiding: false,
-    cell: ({ row }) => {
-      const value = String(row.getValue("message"));
-      return (
-        <div className="prose dark:prose-invert prose-sm text-muted-foreground line-clamp-3 max-w-[200px] truncate">
-          <ProcessMessage value={value} />
-        </div>
-      );
+    {
+      accessorKey: "message",
+      header: t("message"),
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const value = String(row.getValue("message"));
+        return (
+          <div className="prose dark:prose-invert prose-sm text-muted-foreground line-clamp-3 max-w-[200px] truncate">
+            <ProcessMessage value={value} />
+          </div>
+        );
+      },
     },
-  },
-  {
-    accessorKey: "from",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Start Date" />
-    ),
-    cell: ({ row }) => <TableCellDate value={row.getValue("from")} />,
-    enableHiding: false,
-  },
-  {
-    id: "duration",
-    accessorFn: (row) => formatDistanceStrict(row.from, row.to),
-    header: "Duration",
-    cell: ({ row }) => {
-      const value = row.getValue("duration");
-      if (typeof value === "string") {
-        const [amount, unit] = value.split(" ");
-        return <TableCellNumber value={amount} unit={unit} />;
-      }
-      return <TableCellNumber value={value} />;
+    {
+      accessorKey: "from",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t("startDate")} />
+      ),
+      cell: ({ row }) => <TableCellDate value={row.getValue("from")} />,
+      enableHiding: false,
     },
-  },
-  {
-    id: "actions",
-    cell: ({ row }) => <DataTableRowActions row={row} />,
-    meta: {
-      cellClassName: "w-8",
+    {
+      id: "duration",
+      accessorFn: (row) => formatDistanceStrict(row.from, row.to),
+      header: t("duration"),
+      cell: ({ row }) => {
+        const value = row.getValue("duration");
+        if (typeof value === "string") {
+          const [amount, unit] = value.split(" ");
+          return <TableCellNumber value={amount} unit={unit} />;
+        }
+        return <TableCellNumber value={value} />;
+      },
     },
-  },
-];
+    {
+      id: "actions",
+      cell: ({ row }) => <DataTableRowActions row={row} />,
+      meta: {
+        cellClassName: "w-8",
+      },
+    },
+  ];
+}

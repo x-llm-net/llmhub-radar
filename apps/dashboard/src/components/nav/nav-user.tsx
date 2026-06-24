@@ -1,5 +1,6 @@
 "use client";
 
+import { localeDetails, locales } from "@openstatus/locales";
 import {
   Avatar,
   AvatarFallback,
@@ -28,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronsUpDown,
   CreditCard,
+  Languages,
   Laptop,
   LogOut,
   Moon,
@@ -35,15 +37,22 @@ import {
   Sun,
   User,
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
+import { localeCookieName } from "@/i18n/config";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function NavUser() {
   const { isMobile, setOpenMobile } = useSidebar();
   const { theme, setTheme } = useTheme();
+  const locale = useLocale();
+  const router = useRouter();
+  const t = useTranslations("nav");
+  const languageT = useTranslations("language");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
   const { data: user } = useQuery(trpc.user.get.queryOptions());
@@ -51,6 +60,10 @@ export function NavUser() {
   if (!user || !workspace) return null;
 
   const userName = user?.name ?? `${user?.firstName} ${user?.lastName}`.trim();
+  const setLocale = (nextLocale: string) => {
+    document.cookie = `${localeCookieName}=${nextLocale}; path=/; max-age=31536000; samesite=lax`;
+    router.refresh();
+  };
 
   return (
     <SidebarMenu>
@@ -116,7 +129,7 @@ export function NavUser() {
                     className="font-commit-mono tracking-tight"
                   >
                     <Sparkles />
-                    Upgrade Workspace
+                    {t("upgradeWorkspace")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -129,7 +142,7 @@ export function NavUser() {
                   onClick={() => setOpenMobile(false)}
                 >
                   <User />
-                  Account
+                  {t("account")}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSub>
@@ -141,19 +154,43 @@ export function NavUser() {
                   ) : (
                     <Laptop />
                   )}
-                  Theme
+                  {t("theme")}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent className="font-commit-mono tracking-tight">
                     <DropdownMenuItem onClick={() => setTheme("light")}>
-                      <Sun /> Light
+                      <Sun /> {t("themeLight")}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setTheme("dark")}>
-                      <Moon /> Dark
+                      <Moon /> {t("themeDark")}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setTheme("system")}>
-                      <Laptop /> System
+                      <Laptop /> {t("themeSystem")}
                     </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="[&_svg:not([class*='text-'])]:text-muted-foreground gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+                  <Languages />
+                  {languageT("switch")}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent className="font-commit-mono tracking-tight">
+                    {locales.map((item) => (
+                      <DropdownMenuItem
+                        key={item}
+                        onClick={() => setLocale(item)}
+                      >
+                        <span className="w-5">{localeDetails[item].flag}</span>
+                        <span>{localeDetails[item].name}</span>
+                        {item === locale ? (
+                          <span className="text-muted-foreground ml-auto text-xs">
+                            {languageT("current")}
+                          </span>
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
@@ -163,7 +200,7 @@ export function NavUser() {
                   onClick={() => setOpenMobile(false)}
                 >
                   <CreditCard />
-                  Billing
+                  {t("billing")}
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -173,7 +210,7 @@ export function NavUser() {
               className="font-commit-mono tracking-tight"
             >
               <LogOut />
-              Log out
+              {t("logOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

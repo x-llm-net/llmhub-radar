@@ -2,6 +2,7 @@
 
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { UpgradeDialog } from "@/components/dialogs/upgrade";
@@ -10,6 +11,7 @@ import { NavFeedback } from "@/components/nav/nav-feedback";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function NavActions() {
+  const t = useTranslations("settings.privateLocations");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [openDialog, setOpenDialog] = useState(false);
@@ -39,7 +41,7 @@ export function NavActions() {
           className="data-[disabled=true]:opacity-50"
           onClick={() => setOpenDialog(true)}
         >
-          Create Private Location
+          {t("create")}
         </Button>
       ) : (
         <FormSheetPrivateLocation
@@ -52,7 +54,7 @@ export function NavActions() {
             });
           }}
         >
-          <Button size="sm">Create Private Location</Button>
+          <Button size="sm">{t("create")}</Button>
         </FormSheetPrivateLocation>
       )}
       <UpgradeDialog

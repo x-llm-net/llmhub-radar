@@ -5,6 +5,8 @@ import "./globals.css";
 import { cn } from "@openstatus/ui/lib/utils";
 import type { Metadata } from "next";
 import { SessionProvider } from "next-auth/react";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import LocalFont from "next/font/local";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
@@ -81,9 +83,11 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await auth();
+  const locale = await getLocale();
+  const messages = await getMessages();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body
         className={cn(
           geistSans.variable,
@@ -94,31 +98,33 @@ export default async function RootLayout({
           "font-sans antialiased",
         )}
       >
-        <SessionProvider session={session}>
-          <TRPCReactProvider>
-            <NuqsAdapter>
-              <ThemeProvider
-                attribute="class"
-                defaultTheme="system"
-                enableSystem
-                disableTransitionOnChange
-              >
-                {children}
-                <TailwindIndicator />
-                <Toaster richColors expand />
-                {process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID && (
-                  <OpenPanelComponent
-                    clientId={process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID}
-                    trackScreenViews
-                    trackOutgoingLinks
-                    trackAttributes
-                    sessionReplay={{ enabled: true }}
-                  />
-                )}
-              </ThemeProvider>
-            </NuqsAdapter>
-          </TRPCReactProvider>
-        </SessionProvider>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <SessionProvider session={session}>
+            <TRPCReactProvider>
+              <NuqsAdapter>
+                <ThemeProvider
+                  attribute="class"
+                  defaultTheme="system"
+                  enableSystem
+                  disableTransitionOnChange
+                >
+                  {children}
+                  <TailwindIndicator />
+                  <Toaster richColors expand />
+                  {process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID && (
+                    <OpenPanelComponent
+                      clientId={process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID}
+                      trackScreenViews
+                      trackOutgoingLinks
+                      trackAttributes
+                      sessionReplay={{ enabled: true }}
+                    />
+                  )}
+                </ThemeProvider>
+              </NuqsAdapter>
+            </TRPCReactProvider>
+          </SessionProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

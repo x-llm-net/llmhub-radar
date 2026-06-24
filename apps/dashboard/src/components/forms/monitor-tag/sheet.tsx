@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import {
@@ -31,6 +32,7 @@ export function FormSheetMonitorTag({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const [open, setOpen] = useState(false);
 
   return (
@@ -40,10 +42,8 @@ export function FormSheetMonitorTag({
       </FormSheetTrigger>
       <FormSheetContent>
         <FormSheetHeader>
-          <FormSheetTitle>Monitor Tag</FormSheetTitle>
-          <FormSheetDescription>
-            Configure and update the monitor tag.
-          </FormSheetDescription>
+          <FormSheetTitle>{t("monitorTag")}</FormSheetTitle>
+          <FormSheetDescription>{t("monitorTagDescription")}</FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="flex-1 overflow-y-auto">
           <FormCard className="flex-1 overflow-auto rounded-none border-none">
@@ -59,8 +59,8 @@ export function FormSheetMonitorTag({
         </FormCardGroup>
         <FormSheetFooter>
           <Button type="submit" form="tags-form">
-            Submit
-          </Button>
+              {t("submit")}
+            </Button>
         </FormSheetFooter>
       </FormSheetContent>
     </FormSheetWithDirtyProtection>

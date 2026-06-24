@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
@@ -5,6 +6,22 @@ import { notFound } from "next/navigation";
 import { DateFnsProvider } from "@/components/date-fns-provider";
 import { StatusBlocksProvider } from "@/components/i18n/status-blocks-provider";
 import { routing } from "@/i18n/routing";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  const statusPageTitle = locale === "zh" ? "状态页" : "Status Page";
+
+  return {
+    title: {
+      template: `%s | ${statusPageTitle}`,
+      default: statusPageTitle,
+    },
+  };
+}
 
 export default async function LocaleLayout({
   children,

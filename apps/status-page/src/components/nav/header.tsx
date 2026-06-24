@@ -24,7 +24,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { Menu, MessageCircleMore } from "lucide-react";
-import { useExtracted } from "next-intl";
+import { useExtracted, useLocale } from "next-intl";
 import NextLink from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useState } from "react";
@@ -87,6 +87,7 @@ export function Header({
   ...props
 }: React.ComponentProps<"header">) {
   const t = useExtracted();
+  const locale = useLocale();
   const trpc = useTRPC();
   const { domain } = useParams<{ domain: string }>();
   const { data: page } = useQuery({
@@ -136,7 +137,11 @@ export function Header({
                 {page?.icon ? (
                   <img
                     src={page.icon}
-                    alt={`${page.title} status page`}
+                    alt={
+                      locale === "zh"
+                        ? `${page.title} 状态页`
+                        : `${page.title} status page`
+                    }
                     className="size-8"
                   />
                 ) : (

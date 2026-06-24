@@ -15,6 +15,21 @@ import { formatDate } from "@/lib/formatter";
 import { DataTableRowActions } from "./data-table-row-actions";
 
 type Subscriber = RouterOutputs["pageSubscriber"]["list"][number];
+type SubscriberColumnLabels = {
+  destination: string;
+  source: string;
+  vendor: string;
+  import: string;
+  selfSignup: string;
+  components: string;
+  entirePage: string;
+  componentsCount: (count: number) => string;
+  status: string;
+  unsubscribed: string;
+  pending: string;
+  active: string;
+  createdAt: string;
+};
 
 const FLAVOR_LABELS = {
   slack: "Slack",
@@ -27,10 +42,13 @@ function detectFlavorBadge(url: string | null) {
   return FLAVOR_LABELS[detectWebhookFlavor(url)];
 }
 
-export const columns: ColumnDef<Subscriber>[] = [
+export function getColumns(
+  labels: SubscriberColumnLabels,
+): ColumnDef<Subscriber>[] {
+  return [
   {
     id: "destination",
-    header: "Destination",
+    header: labels.destination,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -57,7 +75,7 @@ export const columns: ColumnDef<Subscriber>[] = [
   {
     id: "source",
     accessorFn: (row) => row.source,
-    header: "Source",
+    header: labels.source,
     enableSorting: false,
     enableHiding: false,
     filterFn: (row, id, filterValue: string[]) => {
@@ -68,10 +86,10 @@ export const columns: ColumnDef<Subscriber>[] = [
       const source = row.original.source;
       const label =
         source === "vendor"
-          ? "Vendor"
+          ? labels.vendor
           : source === "import"
-            ? "Import"
-            : "Self-signup";
+            ? labels.import
+            : labels.selfSignup;
       return (
         <Badge variant="outline" className="text-xs">
           {label}
@@ -81,20 +99,24 @@ export const columns: ColumnDef<Subscriber>[] = [
   },
   {
     id: "components",
-    header: "Components",
+    header: labels.components,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
       const { components, isEntirePage } = row.original;
       if (isEntirePage) {
         return (
-          <span className="text-muted-foreground text-xs">Entire page</span>
+          <span className="text-muted-foreground text-xs">
+            {labels.entirePage}
+          </span>
         );
       }
       return (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="text-xs">{components.length} components</span>
+            <span className="text-xs">
+              {labels.componentsCount(components.length)}
+            </span>
           </TooltipTrigger>
           <TooltipContent>
             {components.map((c) => c.name).join(", ")}
@@ -110,7 +132,7 @@ export const columns: ColumnDef<Subscriber>[] = [
       if (!row.acceptedAt) return "pending";
       return "active";
     },
-    header: "Status",
+    header: labels.status,
     enableSorting: false,
     enableHiding: false,
     filterFn: (row, id, filterValue: string[]) => {
@@ -120,17 +142,17 @@ export const columns: ColumnDef<Subscriber>[] = [
     cell: ({ row }) => {
       const status = row.getValue("status") as string;
       if (status === "unsubscribed") {
-        return <Badge variant="destructive">Unsubscribed</Badge>;
+        return <Badge variant="destructive">{labels.unsubscribed}</Badge>;
       }
       if (status === "pending") {
-        return <Badge variant="outline">Pending</Badge>;
+        return <Badge variant="outline">{labels.pending}</Badge>;
       }
-      return <Badge variant="secondary">Active</Badge>;
+      return <Badge variant="secondary">{labels.active}</Badge>;
     },
   },
   {
     accessorKey: "createdAt",
-    header: "Created At",
+    header: labels.createdAt,
     enableSorting: false,
     enableHiding: false,
     cell: ({ row }) => {
@@ -150,4 +172,5 @@ export const columns: ColumnDef<Subscriber>[] = [
       cellClassName: "w-8",
     },
   },
-];
+  ];
+}

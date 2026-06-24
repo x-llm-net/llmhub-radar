@@ -55,6 +55,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
 import { Globe, Network, Plus, Server, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -76,11 +77,12 @@ const TYPES = ["http", "tcp", "dns"] as const;
 const HTTP_ASSERTION_TYPES = ["status", "header", "textBody"] as const;
 const DNS_ASSERTION_TYPES = dnsRecords;
 
-const schema = z.object({
-  name: z.string().min(1, "Name is required"),
+function getSchema(t: (key: string) => string) {
+  return z.object({
+  name: z.string().min(1, t("nameRequired")),
   type: z.enum(TYPES),
   method: z.enum(monitorMethods),
-  url: z.string().min(1, "URL is required"),
+  url: z.string().min(1, t("urlRequired")),
   headers: z.array(
     z.object({
       key: z.string(),
@@ -101,8 +103,9 @@ const schema = z.object({
   skipCheck: z.boolean().optional().prefault(false),
   saveCheck: z.boolean().optional().prefault(false),
 });
+}
 
-type FormValues = z.input<typeof schema>;
+type FormValues = z.input<ReturnType<typeof getSchema>>;
 
 export function FormGeneral({
   defaultValues,
@@ -114,9 +117,10 @@ export function FormGeneral({
   onSubmit: (values: FormValues) => Promise<void>;
   disabled?: boolean;
 }) {
+  const t = useTranslations("monitors.form");
   const [error, setError] = useState<string | null>(null);
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       active: true,
       name: "",
@@ -156,40 +160,40 @@ export function FormGeneral({
       if (assertion.type === "status") {
         if (typeof assertion.target !== "number" || assertion.target <= 0) {
           form.setError(`assertions.${i}.target`, {
-            message: "Status target must be a positive number",
+            message: t("statusTargetPositive"),
           });
           return;
         }
       } else if (assertion.type === "header") {
         if (!assertion.key || assertion.key.trim() === "") {
           form.setError(`assertions.${i}.key`, {
-            message: "Header key is required",
+            message: t("headerKeyRequired"),
           });
           return;
         }
         if (!assertion.target || assertion.target.trim() === "") {
           form.setError(`assertions.${i}.target`, {
-            message: "Header target is required",
+            message: t("headerTargetRequired"),
           });
           return;
         }
       } else if (assertion.type === "textBody") {
         if (!assertion.target || assertion.target.trim() === "") {
           form.setError(`assertions.${i}.target`, {
-            message: "Body target is required",
+            message: t("bodyTargetRequired"),
           });
           return;
         }
       } else if (assertion.type === "dnsRecord") {
         if (!assertion.key || assertion.key.trim() === "") {
           form.setError(`assertions.${i}.key`, {
-            message: "DNS record key is required",
+            message: t("dnsRecordKeyRequired"),
           });
           return;
         }
         if (!assertion.target || assertion.target.trim() === "") {
           form.setError(`assertions.${i}.target`, {
-            message: "DNS record target is required",
+            message: t("dnsRecordTargetRequired"),
           });
           return;
         }
@@ -200,14 +204,14 @@ export function FormGeneral({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               setError(error.message);
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -222,9 +226,9 @@ export function FormGeneral({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Monitor Configuration</FormCardTitle>
+            <FormCardTitle>{t("monitorConfiguration")}</FormCardTitle>
             <FormCardDescription>
-              Configure your monitor settings and endpoints.
+              {t("monitorConfigurationDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="grid gap-4 sm:grid-cols-3">
@@ -233,13 +237,13 @@ export function FormGeneral({
               name="name"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>{t("name")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="OpenStatus API" {...field} />
+                    <Input placeholder={t("namePlaceholder")} {...field} />
                   </FormControl>
                   <FormMessage />
                   <FormDescription>
-                    Displayed on the status page.
+                    {t("nameDescription")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -249,7 +253,7 @@ export function FormGeneral({
               name="active"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center">
-                  <FormLabel>Active</FormLabel>
+                  <FormLabel>{t("active")}</FormLabel>
                   <FormControl>
                     <Switch
                       checked={field.value}
@@ -267,7 +271,7 @@ export function FormGeneral({
               name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Monitoring Type</FormLabel>
+                  <FormLabel>{t("monitoringType")}</FormLabel>
                   <FormControl>
                     <RadioGroup
                       onValueChange={field.onChange}
@@ -309,7 +313,7 @@ export function FormGeneral({
                               </FormItem>
                             </TooltipTrigger>
                             <TooltipContent>
-                              Monitor type cannot be changed after creation.
+                              {t("monitorTypeImmutable")}
                             </TooltipContent>
                           </Tooltip>
                         );
@@ -319,8 +323,8 @@ export function FormGeneral({
                           "text-muted-foreground col-span-1 self-end text-xs sm:place-self-end",
                         )}
                       >
-                        Missing a type?{" "}
-                        <a href="mailto:ping@openstatus.dev">Contact us</a>
+                        {t("missingType")}{" "}
+                        <a href="mailto:ping@openstatus.dev">{t("contactUs")}</a>
                       </div>
                     </RadioGroup>
                   </FormControl>
@@ -339,14 +343,14 @@ export function FormGeneral({
                     name="method"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Method</FormLabel>
+                        <FormLabel>{t("method")}</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           defaultValue={field.value}
                         >
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select a method" />
+                              <SelectValue placeholder={t("selectMethod")} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -368,7 +372,7 @@ export function FormGeneral({
                     name="url"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>URL</FormLabel>
+                        <FormLabel>{t("url")}</FormLabel>
                         <FormControl>
                           <Input
                             placeholder="https://openstatus.dev"
@@ -386,11 +390,11 @@ export function FormGeneral({
                   name="headers"
                   render={({ field }) => (
                     <FormItem className="col-span-full">
-                      <FormLabel>Request Headers</FormLabel>
+                      <FormLabel>{t("requestHeaders")}</FormLabel>
                       {field.value.map((header, index) => (
                         <div key={index} className="grid gap-2 sm:grid-cols-5">
                           <Input
-                            placeholder="Key"
+                            placeholder={t("key")}
                             className="col-span-2"
                             value={header.key}
                             onChange={(e) => {
@@ -403,7 +407,7 @@ export function FormGeneral({
                             }}
                           />
                           <Input
-                            placeholder="Value"
+                            placeholder={t("value")}
                             className="col-span-2"
                             value={header.value}
                             onChange={(e) => {
@@ -442,7 +446,7 @@ export function FormGeneral({
                           }}
                         >
                           <Plus />
-                          Add Header
+                          {t("addHeader")}
                         </Button>
                       </div>
                       <FormMessage />
@@ -455,11 +459,11 @@ export function FormGeneral({
                     name="body"
                     render={({ field }) => (
                       <FormItem className="col-span-full">
-                        <FormLabel>Body</FormLabel>
+                        <FormLabel>{t("body")}</FormLabel>
                         <FormControl>
                           <Textarea {...field} />
                         </FormControl>
-                        <FormDescription>Write your payload</FormDescription>
+                        <FormDescription>{t("writePayload")}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -473,11 +477,10 @@ export function FormGeneral({
                   name="assertions"
                   render={({ field }) => (
                     <FormItem className="col-span-full">
-                      <FormLabel>Assertions</FormLabel>
+                      <FormLabel>{t("assertions")}</FormLabel>
                       <FormDescription>
-                        Validate the response to ensure your service is working
-                        as expected. <br />
-                        Add body, header, or status assertions.
+                        {t("assertionsDescription")} <br />
+                        {t("addHttpAssertions")}
                       </FormDescription>
                       {field.value.map((assertion, index) => (
                         <div key={index} className="grid gap-2 sm:grid-cols-6">
@@ -499,7 +502,7 @@ export function FormGeneral({
                                     }
                                     className="w-full"
                                   >
-                                    <SelectValue placeholder="Select type" />
+                                    <SelectValue placeholder={t("selectType")} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {HTTP_ASSERTION_TYPES.map((type) => (
@@ -523,7 +526,7 @@ export function FormGeneral({
                                 >
                                   <SelectTrigger className="w-full min-w-16">
                                     <span className="truncate">
-                                      <SelectValue placeholder="Select compare" />
+                                      <SelectValue placeholder={t("selectCompare")} />
                                     </span>
                                   </SelectTrigger>
                                   <SelectContent>
@@ -555,7 +558,7 @@ export function FormGeneral({
                               render={({ field }) => (
                                 <FormItem>
                                   <Input
-                                    placeholder="Header key"
+                                    placeholder={t("headerKeyPlaceholder")}
                                     className="w-full"
                                     {...field}
                                     value={field.value as string}
@@ -571,7 +574,7 @@ export function FormGeneral({
                             render={({ field }) => (
                               <FormItem>
                                 <Input
-                                  placeholder="Target value"
+                                  placeholder={t("targetValuePlaceholder")}
                                   className="w-full"
                                   type={
                                     assertion.type === "status"
@@ -627,7 +630,7 @@ export function FormGeneral({
                           }}
                         >
                           <Plus />
-                          Add Status Assertion
+                          {t("addStatusAssertion")}
                         </Button>
                         <Button
                           size="sm"
@@ -649,7 +652,7 @@ export function FormGeneral({
                           }}
                         >
                           <Plus />
-                          Add Header Assertion
+                          {t("addHeaderAssertion")}
                         </Button>
                         <Button
                           size="sm"
@@ -670,7 +673,7 @@ export function FormGeneral({
                           }}
                         >
                           <Plus />
-                          Add Body Assertion
+                          {t("addBodyAssertion")}
                         </Button>
                       </div>
                       <FormMessage />
@@ -687,7 +690,7 @@ export function FormGeneral({
                 name="url"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
-                    <FormLabel>Host:Port</FormLabel>
+                    <FormLabel>{t("hostPort")}</FormLabel>
                     <FormControl>
                       <Input placeholder="127.0.0.0.1:8080" {...field} />
                     </FormControl>
@@ -731,13 +734,13 @@ export function FormGeneral({
                   name="url"
                   render={({ field }) => (
                     <FormItem className="sm:col-span-2">
-                      <FormLabel>URI</FormLabel>
+                      <FormLabel>{t("uri")}</FormLabel>
                       <FormControl>
                         <Input placeholder="openstatus.dev" {...field} />
                       </FormControl>
                       <FormMessage />
                       <FormDescription>
-                        The input supports both domain names and URIs.
+                        {t("urlHelp")}
                       </FormDescription>
                     </FormItem>
                   )}
@@ -750,11 +753,10 @@ export function FormGeneral({
                   name="assertions"
                   render={({ field }) => (
                     <FormItem className="col-span-full">
-                      <FormLabel>Assertions</FormLabel>
+                      <FormLabel>{t("assertions")}</FormLabel>
                       <FormDescription>
-                        Validate the response to ensure your service is working
-                        as expected. <br />
-                        Add DNS record assertions.
+                        {t("assertionsDescription")} <br />
+                        {t("addDnsRecordAssertions")}
                       </FormDescription>
                       {field.value.map((assertion, index) => (
                         <div key={index} className="grid gap-2 sm:grid-cols-6">
@@ -770,7 +772,7 @@ export function FormGeneral({
                                   disabled
                                 >
                                   <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select type" />
+                                    <SelectValue placeholder={t("selectType")} />
                                   </SelectTrigger>
                                 </Select>
                               </FormItem>
@@ -817,7 +819,7 @@ export function FormGeneral({
                                 >
                                   <SelectTrigger className="w-full min-w-16">
                                     <span className="truncate">
-                                      <SelectValue placeholder="Select compare" />
+                                      <SelectValue placeholder={t("selectCompare")} />
                                     </span>
                                   </SelectTrigger>
                                   <SelectContent>
@@ -841,7 +843,7 @@ export function FormGeneral({
                               render={({ field }) => (
                                 <FormItem>
                                   <Input
-                                    placeholder="Header key"
+                                    placeholder={t("headerKeyPlaceholder")}
                                     className="w-full"
                                     {...field}
                                     value={field.value as string}
@@ -857,7 +859,7 @@ export function FormGeneral({
                             render={({ field }) => (
                               <FormItem>
                                 <Input
-                                  placeholder="Target value"
+                                  placeholder={t("targetValuePlaceholder")}
                                   className="w-full"
                                   type={
                                     assertion.type === "status"
@@ -914,7 +916,7 @@ export function FormGeneral({
                           }}
                         >
                           <Plus />
-                          Add DNS Record Assertion
+                          {t("addDnsRecordAssertion")}
                         </Button>
                       </div>
                       <FormMessage />
@@ -926,43 +928,42 @@ export function FormGeneral({
           )}
           <FormCardFooter>
             <FormCardFooterInfo>
-              Learn more about{" "}
+              {t("learnMoreAbout")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/tutorial/how-to-create-monitor/"
                 rel="noreferrer"
                 target="_blank"
               >
-                Monitor Type
+                {t("monitorTypeLink")}
               </Link>{" "}
-              and{" "}
+              {t("and")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/tutorial/how-to-create-monitor/"
                 rel="noreferrer"
                 target="_blank"
               >
-                Assertions
+                {t("assertionsLink")}
               </Link>
-              . We test your endpoint before saving the monitor.
+              . {t("saveAndTestDescription")}
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending || disabled}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>
         <AlertDialog open={!!error} onOpenChange={() => setError(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Still save?</AlertDialogTitle>
+              <AlertDialogTitle>{t("stillSave")}</AlertDialogTitle>
               <AlertDialogDescription>
-                It seems like the endpoint is not reachable or the assertions
-                failed. Do you want to save the monitor anyway?
+                {t("stillSaveDescription")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="border-destructive/20 bg-destructive/10 max-h-48 overflow-auto rounded-md border p-2 whitespace-pre">
               <p className="text-destructive font-mono text-sm">{error}</p>
             </div>
             <AlertDialogFooter>
-              <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+              <AlertDialogCancel type="button">{t("cancel")}</AlertDialogCancel>
               <AlertDialogAction
                 type="button"
                 onClick={async (e) => {
@@ -974,7 +975,7 @@ export function FormGeneral({
                 }}
                 disabled={isPending}
               >
-                Save
+                {t("save")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

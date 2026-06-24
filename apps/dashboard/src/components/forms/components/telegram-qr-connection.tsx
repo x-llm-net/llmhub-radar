@@ -1,6 +1,7 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { Input } from "@openstatus/ui/components/ui/input";
 import { Label } from "@openstatus/ui/components/ui/label";
+import { useTranslations } from "next-intl";
 import type { UseFormReturn } from "react-hook-form";
 
 import type { FormValues } from "../notifications/form-telegram";
@@ -32,14 +33,15 @@ export function TelegramQRConnection({
   onReset,
   onConfirmPrivateChat,
 }: TelegramQRConnectionProps) {
+  const t = useTranslations("notifications.form");
   const chatId = form.watch("data.chatId");
   const isGroup = !!groupTitle;
 
   // When we have a chat ID (group or private), show the manual input with connection info
   if (chatId) {
     const successMsg = isGroup
-      ? `Connected to ${groupTitle}`
-      : `Connected to ${userName || "Unknown"}'s private chat`;
+      ? t("telegramConnectedToGroup", { group: groupTitle ?? "" })
+      : t("telegramConnectedToPrivate", { user: userName || t("unknown") });
     return (
       <div className="flex flex-col gap-2">
         <TelegramManualInput
@@ -54,7 +56,7 @@ export function TelegramQRConnection({
           onClick={onReset}
           className="w-full"
         >
-          {isGroup ? "Reset Group ID" : "Add Group"}
+          {isGroup ? t("telegramResetGroupId") : t("telegramAddGroup")}
         </Button>
       </div>
     );
@@ -66,18 +68,18 @@ export function TelegramQRConnection({
       <div className="flex flex-col gap-2">
         {/* Show read-only private chat info */}
         <div className="space-y-2">
-          <Label>Private Chat ID</Label>
+          <Label>{t("telegramPrivateChatId")}</Label>
           <Input value={privateChatId} readOnly className="bg-muted" />
           {userName && (
             <div className="text-sm font-medium text-green-600">
-              {`Connected to: ${userName}`}
+              {t("telegramConnectedTo", { user: userName })}
             </div>
           )}
         </div>
 
         {/* Show second QR code for group connection */}
         <div className="text-muted-foreground text-sm">
-          Step 2 of 2: Add bot to your group
+          {t("telegramStep2")}
         </div>
         <TelegramQRCode
           chatType="group"
@@ -92,7 +94,7 @@ export function TelegramQRConnection({
           onClick={onConfirmPrivateChat}
           className="w-full"
         >
-          Use private chat only
+          {t("telegramUsePrivateOnly")}
         </Button>
       </div>
     );
@@ -102,7 +104,7 @@ export function TelegramQRConnection({
   return (
     <div className="flex flex-col gap-2">
       <div className="text-muted-foreground text-sm">
-        Step 1 of 2: Connect your Telegram account
+        {t("telegramStep1")}
       </div>
       <TelegramQRCode
         chatType="private"

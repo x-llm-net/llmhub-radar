@@ -43,7 +43,25 @@ export type ToolRenderer<N extends AgentToolName> = {
     input: AgentToolInput<N>;
     output: AgentToolOutput<N>;
   }) => ReactNode;
-  summary?: (output: AgentToolOutput<N>) => string | undefined;
+  summary?: (
+    output: AgentToolOutput<N>,
+    labels: ToolSummaryLabels,
+  ) => string | undefined;
+};
+
+export type ToolSummaryLabels = {
+  id: (id: string | number) => string;
+  update: (id: string | number) => string;
+  resolvedUpdate: (id: string | number) => string;
+  results: (count: number) => string;
+  logs: (count: number, suffix: string) => string;
+  moreAvailable: () => string;
+  regions: (count: number) => string;
+  checksP95: (count: number, p95: string | number) => string;
+  log: (id: string | number) => string;
+  auditLog: (action: string, id: string | number) => string;
+  readDoc: (url: string, suffix: string) => string;
+  truncated: () => string;
 };
 
 /**
@@ -61,25 +79,25 @@ export const toolRenderers: ToolRendererRegistry = {
     renderResult: ({ output }) => (
       <ResultTable {...listStatusPagesTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   list_page_components: {
     renderResult: ({ output }) => (
       <ResultTable {...listPageComponentsTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   list_status_reports: {
     renderResult: ({ output }) => (
       <ResultTable {...listStatusReportsTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   list_maintenances: {
     renderResult: ({ output }) => (
       <ResultTable {...listMaintenancesTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
 
   // ── Destructive tools ────────────────────────────────────────
@@ -94,7 +112,7 @@ export const toolRenderers: ToolRendererRegistry = {
         })}
       />
     ),
-    summary: (o) => `ID ${o.statusReport.id}`,
+    summary: (o, labels) => labels.id(o.statusReport.id),
   },
   add_status_report_update: {
     renderDraft: (input) => addStatusReportUpdateChanges(input),
@@ -106,14 +124,14 @@ export const toolRenderers: ToolRendererRegistry = {
         })}
       />
     ),
-    summary: (o) => `update #${o.statusReportUpdateId}`,
+    summary: (o, labels) => labels.update(o.statusReportUpdateId),
   },
   update_status_report: {
     renderDraft: (input) => updateStatusReportChanges(input),
     renderResult: ({ input }) => (
       <ChangesTable changes={updateStatusReportChanges(input)} />
     ),
-    summary: (o) => `ID ${o.id}`,
+    summary: (o, labels) => labels.id(o.id),
   },
   resolve_status_report: {
     renderDraft: (input) => resolveStatusReportChanges(input),
@@ -125,7 +143,7 @@ export const toolRenderers: ToolRendererRegistry = {
         })}
       />
     ),
-    summary: (o) => `resolved · update #${o.statusReportUpdateId}`,
+    summary: (o, labels) => labels.resolvedUpdate(o.statusReportUpdateId),
   },
   create_maintenance: {
     renderDraft: (input) => createMaintenanceChanges(input),
@@ -137,80 +155,88 @@ export const toolRenderers: ToolRendererRegistry = {
         })}
       />
     ),
-    summary: (o) => `ID ${o.id}`,
+    summary: (o, labels) => labels.id(o.id),
   },
   list_monitors: {
     renderResult: ({ output }) => (
       <ResultTable {...listMonitorsTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   list_notifications: {
     renderResult: ({ output }) => (
       <ResultTable {...listNotificationsTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   list_response_logs: {
     renderResult: ({ output }) => (
       <ResultTable {...listResponseLogsTable(output)} />
     ),
-    summary: (o) =>
-      `${o.logs.length} log${o.logs.length === 1 ? "" : "s"}${o.hasMore ? " (more available)" : ""}`,
+    summary: (o, labels) =>
+      labels.logs(o.logs.length, o.hasMore ? labels.moreAvailable() : ""),
   },
   get_monitor: {
     renderResult: ({ input, output }) => (
       <DetailsTable {...getMonitorDetails(input, output)} />
     ),
-    summary: (o) => `ID ${o.id}`,
+    summary: (o, labels) => labels.id(o.id),
   },
   get_monitor_status: {
     renderResult: ({ output }) => (
       <ResultTable {...getMonitorStatusTable(output)} />
     ),
-    summary: (o) =>
-      `${o.regions.length} region${o.regions.length === 1 ? "" : "s"}`,
+    summary: (o, labels) => labels.regions(o.regions.length),
   },
   get_monitor_summary: {
     renderResult: ({ input, output }) => (
       <DetailsTable {...getMonitorSummaryDetails(input, output)} />
     ),
-    summary: (o) =>
-      `${o.totalSuccessful + o.totalDegraded + o.totalFailed} checks · p95 ${o.p95}ms`,
+    summary: (o, labels) =>
+      labels.checksP95(
+        o.totalSuccessful + o.totalDegraded + o.totalFailed,
+        o.p95,
+      ),
   },
   get_response_log: {
     renderResult: ({ input, output }) => (
       <DetailsTable {...getResponseLogDetails(input, output)} />
     ),
-    summary: (o) => (o.id ? `log ${o.id}` : undefined),
+    summary: (o, labels) => (o.id ? labels.log(o.id) : undefined),
   },
   list_audit_logs: {
     renderResult: ({ output }) => (
       <ResultTable {...listAuditLogsTable(output)} />
     ),
-    summary: (o) => itemsCountSummary(o.items),
+    summary: (o, labels) => itemsCountSummary(o.items, labels),
   },
   get_audit_log: {
     renderResult: ({ output }) => (
       <ChangesTable changes={getAuditLogChanges(output)} />
     ),
-    summary: (o) => `${o.action} · #${o.id}`,
+    summary: (o, labels) => labels.auditLog(o.action, o.id),
   },
   search_docs: {
     renderResult: ({ output }) => <ResultTable {...searchDocsTable(output)} />,
-    summary: (o) => (o.error ? o.error : itemsCountSummary(o.results)),
+    summary: (o, labels) =>
+      o.error ? o.error : itemsCountSummary(o.results, labels),
   },
   // No renderResult — a full markdown page in the transcript is noise; the
   // summary line plus the model's cited answer is the UX.
   get_doc_page: {
-    summary: (o) =>
-      o.error ? o.error : `read ${o.url}${o.truncated ? " (truncated)" : ""}`,
+    summary: (o, labels) =>
+      o.error
+        ? o.error
+        : labels.readDoc(o.url, o.truncated ? labels.truncated() : ""),
   },
 };
 
-function itemsCountSummary(items: unknown[] | undefined): string | undefined {
+function itemsCountSummary(
+  items: unknown[] | undefined,
+  labels: ToolSummaryLabels,
+): string | undefined {
   if (!items) return undefined;
-  return `${items.length} result${items.length === 1 ? "" : "s"}`;
+  return labels.results(items.length);
 }
 
 // String-keyed dispatch — these helpers own the `as never` cast that
@@ -254,7 +280,8 @@ export function renderToolResult(
 export function summarizeToolOutput(
   toolName: string,
   output: unknown,
+  labels: ToolSummaryLabels,
 ): string | undefined {
   if (output === undefined) return undefined;
-  return findRenderer(toolName)?.summary?.(output as never);
+  return findRenderer(toolName)?.summary?.(output as never, labels);
 }

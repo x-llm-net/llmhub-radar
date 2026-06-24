@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { FormCard, FormCardGroup } from "@/components/forms/form-card";
@@ -32,6 +33,7 @@ export function FormSheetMaintenance({
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useTranslations("statusPages.reports.sheet");
 
   return (
     <FormSheetWithDirtyProtection open={open} onOpenChange={setOpen}>
@@ -40,9 +42,9 @@ export function FormSheetMaintenance({
       </FormSheetTrigger>
       <FormSheetContent className="sm:max-w-lg">
         <FormSheetHeader>
-          <FormSheetTitle>Maintenance</FormSheetTitle>
+          <FormSheetTitle>{t("maintenanceTitle")}</FormSheetTitle>
           <FormSheetDescription>
-            Configure and update the maintenance.
+            {t("maintenanceDescription")}
           </FormSheetDescription>
         </FormSheetHeader>
         <FormCardGroup className="overflow-y-auto">
@@ -62,12 +64,12 @@ export function FormSheetMaintenance({
         <FormSheetFooter>
           {defaultValues ? (
             <FormSheetFooterInfo>
-              Last Updated {/* TODO: use updatedAt */}
+              {t("lastUpdated")} {/* TODO: use updatedAt */}
               <time>{defaultValues.startDate.toLocaleString()}</time>
             </FormSheetFooterInfo>
           ) : null}
           <Button type="submit" form="maintenance-form">
-            Submit
+            {t("submit")}
           </Button>
         </FormSheetFooter>
       </FormSheetContent>

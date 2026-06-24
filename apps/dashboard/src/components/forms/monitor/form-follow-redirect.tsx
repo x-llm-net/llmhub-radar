@@ -11,6 +11,7 @@ import {
   FormLabel,
 } from "@openstatus/ui/components/ui/form";
 import { Switch } from "@openstatus/ui/components/ui/switch";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -43,6 +44,7 @@ export function FormFollowRedirect({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -58,9 +60,9 @@ export function FormFollowRedirect({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -74,7 +76,7 @@ export function FormFollowRedirect({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Follow Redirects</FormCardTitle>
+            <FormCardTitle>{t("followRedirects")}</FormCardTitle>
             <FormCardDescription>
               Configure whether to follow redirects.
             </FormCardDescription>
@@ -86,7 +88,7 @@ export function FormFollowRedirect({
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between">
                   <div className="space-y-0.5">
-                    <FormLabel>Follow redirects</FormLabel>
+                    <FormLabel>{t("followRedirectsField")}</FormLabel>
                     <FormDescription>
                       When enabled, the monitor will automatically follow HTTP
                       redirects (3xx status codes) to their final destination.
@@ -117,7 +119,7 @@ export function FormFollowRedirect({
               .
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

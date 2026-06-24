@@ -3,6 +3,7 @@
 import { useSidebar } from "@openstatus/ui/components/ui/sidebar";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import { useTRPC } from "@/lib/trpc/client";
@@ -10,6 +11,7 @@ import { useTRPC } from "@/lib/trpc/client";
 const MAX_VISIBLE = 5;
 
 export function ChatHistory() {
+  const t = useTranslations("chat");
   const trpc = useTRPC();
   const { data } = useQuery(trpc.chatSession.list.queryOptions());
   const { setOpen } = useSidebar();
@@ -23,7 +25,7 @@ export function ChatHistory() {
     <div className="flex w-full max-w-xl flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">
-          Recent
+          {t("recent")}
         </span>
       </div>
       <ul className="flex flex-col gap-2">
@@ -49,7 +51,7 @@ export function ChatHistory() {
           onClick={() => setOpen(true)}
           className="text-muted-foreground hover:text-foreground self-start font-mono text-xs"
         >
-          {extra} more {extra === 1 ? "conversation" : "conversations"}
+          {t("moreConversations", { count: extra })}
         </button>
       ) : null}
     </div>

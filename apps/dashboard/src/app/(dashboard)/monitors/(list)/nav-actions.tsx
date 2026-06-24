@@ -3,6 +3,7 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { UpgradeDialog } from "@/components/dialogs/upgrade";
@@ -10,6 +11,7 @@ import { NavFeedback } from "@/components/nav/nav-feedback";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function NavActions() {
+  const t = useTranslations("monitors");
   const trpc = useTRPC();
   const [openDialog, setOpenDialog] = useState(false);
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -29,11 +31,11 @@ export function NavActions() {
           className="data-[limited=true]:opacity-80"
           onClick={() => setOpenDialog(true)}
         >
-          Create Monitor
+          {t("list.create")}
         </Button>
       ) : (
         <Button size="sm" asChild>
-          <Link href="/monitors/create">Create Monitor</Link>
+          <Link href="/monitors/create">{t("list.create")}</Link>
         </Button>
       )}
       <UpgradeDialog open={openDialog} onOpenChange={setOpenDialog} />

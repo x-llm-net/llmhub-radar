@@ -16,6 +16,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { Plus, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -30,22 +31,23 @@ import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { CheckboxTree } from "@/components/ui/checkbox-tree";
 import { useTRPC } from "@/lib/trpc/client";
 
-const schema = z.object({
-  name: z.string(),
-  provider: z.literal("webhook"),
-  data: z.object({
-    endpoint: z.string().url(),
-    headers: z.array(
-      z.object({
-        key: z.string().min(1, "Key is required"),
-        value: z.string(),
-      }),
-    ),
-  }),
-  monitors: z.array(z.number()),
-});
+const getSchema = (t: ReturnType<typeof useTranslations<"notifications.form">>) =>
+  z.object({
+    name: z.string(),
+    provider: z.literal("webhook"),
+    data: z.object({
+      endpoint: z.string().url(),
+      headers: z.array(
+        z.object({
+          key: z.string().min(1, t("keyRequired")),
+          value: z.string(),
+        }),
+      ),
+    }),
+    monitors: z.array(z.number()),
+  });
 
-type FormValues = z.input<typeof schema>;
+type FormValues = z.input<ReturnType<typeof getSchema>>;
 
 export function FormWebhook({
   defaultValues,
@@ -58,6 +60,8 @@ export function FormWebhook({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
+  const schema = getSchema(t);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -94,13 +98,13 @@ export function FormWebhook({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -125,13 +129,13 @@ export function FormWebhook({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -154,14 +158,12 @@ export function FormWebhook({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -170,19 +172,19 @@ export function FormWebhook({
             name="data.endpoint"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Webhook URL</FormLabel>
+                <FormLabel>{t("webhookUrl")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="https://example.com/webhook" {...field} />
+                  <Input placeholder={t("webhookPlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
                 <FormDescription>
-                  Send notifications to a custom webhook URL.{" "}
+                  {t("customWebhookDescription")}{" "}
                   <Link
                     href="https://www.openstatus.dev/docs/reference/notification/#webhook"
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Read more
+                    {t("readMore")}
                   </Link>
                   .
                 </FormDescription>
@@ -190,10 +192,8 @@ export function FormWebhook({
             )}
           />
           <FormItem>
-            <FormLabel>Request Headers</FormLabel>
-            <FormDescription>
-              Custom headers to include in every webhook request.
-            </FormDescription>
+            <FormLabel>{t("requestHeaders")}</FormLabel>
+            <FormDescription>{t("requestHeadersDescription")}</FormDescription>
             {fields.map((field, index) => (
               <div key={field.id} className="grid gap-2 sm:grid-cols-5">
                 <FormField
@@ -202,7 +202,7 @@ export function FormWebhook({
                   render={({ field }) => (
                     <FormItem className="col-span-2">
                       <FormControl>
-                        <Input placeholder="Key" {...field} />
+                        <Input placeholder={t("key")} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -214,7 +214,7 @@ export function FormWebhook({
                   render={({ field }) => (
                     <FormItem className="col-span-2">
                       <FormControl>
-                        <Input placeholder="Value" {...field} />
+                        <Input placeholder={t("value")} {...field} />
                       </FormControl>
                     </FormItem>
                   )}
@@ -223,7 +223,7 @@ export function FormWebhook({
                   size="icon"
                   variant="ghost"
                   type="button"
-                  aria-label="Remove header"
+                  aria-label={t("removeHeader")}
                   onClick={() => remove(index)}
                 >
                   <X />
@@ -238,7 +238,7 @@ export function FormWebhook({
                 onClick={() => append({ key: "", value: "" })}
               >
                 <Plus />
-                Add Header
+                {t("addHeader")}
               </Button>
             </div>
             <FormMessage />
@@ -250,7 +250,7 @@ export function FormWebhook({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -261,16 +261,14 @@ export function FormWebhook({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

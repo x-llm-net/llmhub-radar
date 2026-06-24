@@ -13,6 +13,7 @@ import {
 import { Switch } from "@openstatus/ui/components/ui/switch";
 import { Lock } from "lucide-react";
 import NextLink from "next/link";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ export function FormVisibility({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -61,9 +63,9 @@ export function FormVisibility({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -78,9 +80,9 @@ export function FormVisibility({
         <FormCard>
           {locked ? <FormCardUpgrade /> : null}
           <FormCardHeader>
-            <FormCardTitle>Visibility</FormCardTitle>
+            <FormCardTitle>{t("visibility")}</FormCardTitle>
             <FormCardDescription>
-              Share your monitor stats with the public.
+              {t("visibilityDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
@@ -91,10 +93,9 @@ export function FormVisibility({
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between">
                   <div className="space-y-0.5">
-                    <FormLabel>Allow public access</FormLabel>
+                    <FormLabel>{t("allowPublicAccess")}</FormLabel>
                     <FormDescription>
-                      Change monitor visibility. The monitor stats will be
-                      attached to the status page the monitor is connected to.
+                      {t("visibilityHelp")}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -110,13 +111,13 @@ export function FormVisibility({
           </FormCardContent>
           <FormCardFooter>
             <FormCardFooterInfo>
-              Learn more about{" "}
+              {t("learnMoreAbout")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/http-monitor/#public"
                 rel="noreferrer"
                 target="_blank"
               >
-                monitor visibility
+                {t("monitorVisibilityLink")}
               </Link>
               .
             </FormCardFooterInfo>
@@ -124,12 +125,12 @@ export function FormVisibility({
               <Button asChild>
                 <NextLink href="/settings/billing">
                   <Lock className="size-4" />
-                  Upgrade
+                  {t("upgrade")}
                 </NextLink>
               </Button>
             ) : (
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             )}
           </FormCardFooter>

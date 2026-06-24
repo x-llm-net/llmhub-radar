@@ -2,7 +2,7 @@
 
 import { StatusBlankAction } from "@openstatus/ui/components/blocks/status-blank";
 import { StatusFeed as BlockStatusFeed } from "@openstatus/ui/components/blocks/status-feed";
-import { useExtracted } from "next-intl";
+import { useExtracted, useLocale } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import { ProcessMessage } from "@/components/content/process-message";
@@ -28,6 +28,7 @@ export function StatusFeed({
 >) {
   const prefix = usePathnamePrefix();
   const t = useExtracted();
+  const locale = useLocale();
   const eventsHref = `${prefix ? `/${prefix}` : ""}/events`;
 
   return (
@@ -55,6 +56,7 @@ export function StatusFeed({
           {t("View events history")}
         </StatusBlankLink>
       }
+      aria-label={locale === "zh" ? "状态事件与更新" : "Status events and updates"}
       {...props}
     />
   );

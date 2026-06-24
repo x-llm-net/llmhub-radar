@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 import {
   EmptyStateContainer,
@@ -18,6 +19,7 @@ import { FormGeneral } from "@/components/forms/monitor/form-general";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("monitors.create");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -44,7 +46,7 @@ export default function Page() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Create Monitor</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
         </SectionHeader>
         <FormGeneral
           onSubmit={async (data) => {
@@ -65,14 +67,8 @@ export default function Page() {
       </Section>
       <Section>
         <EmptyStateContainer>
-          <EmptyStateTitle>Create and start customizing</EmptyStateTitle>
-          <EmptyStateDescription>
-            Change the <span className="text-foreground">periodicity</span>, set
-            up the <span className="text-foreground">regions</span>,{" "}
-            <span className="text-foreground">timeout</span> or{" "}
-            <span className="text-foreground">degraded</span> duration and
-            more...
-          </EmptyStateDescription>
+          <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
+          <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
         </EmptyStateContainer>
       </Section>
     </SectionGroup>

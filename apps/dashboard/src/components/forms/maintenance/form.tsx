@@ -30,6 +30,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { addDays, format } from "date-fns";
 import { CalendarIcon, ClockIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -51,9 +52,10 @@ import {
 } from "@/components/ui/checkbox-tree";
 import { useTRPC } from "@/lib/trpc/client";
 
-const schema = z
+function getSchema(t: (key: string) => string) {
+  return z
   .object({
-    title: z.string().min(1, "Title is required"),
+    title: z.string().min(1, t("titleRequired")),
     message: z.string(),
     startDate: z.date(),
     endDate: z.date(),
@@ -61,11 +63,12 @@ const schema = z
     notifySubscribers: z.boolean().optional(),
   })
   .refine((data) => data.endDate > data.startDate, {
-    error: "End date cannot be earlier than start date.",
+    error: t("endBeforeStart"),
     path: ["endDate"],
   });
+}
 
-export type FormValues = z.infer<typeof schema>;
+export type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormMaintenance({
   defaultValues,
@@ -78,6 +81,7 @@ export function FormMaintenance({
   items: CheckboxTreeItem[];
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.reports.form");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
     trpc.workspace.getWorkspace.queryOptions(),
@@ -85,7 +89,7 @@ export function FormMaintenance({
   const mobile = useIsMobile();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       title: "",
       message: "",
@@ -112,13 +116,13 @@ export function FormMaintenance({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
+          loading: t("saving"),
+          success: () => t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -141,7 +145,7 @@ export function FormMaintenance({
             name="title"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Title</FormLabel>
+                <FormLabel>{t("title")}</FormLabel>
                 <FormControl>
                   <Input placeholder="DB migration..." {...field} />
                 </FormControl>
@@ -158,7 +162,7 @@ export function FormMaintenance({
             name="startDate"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Start Date</FormLabel>
+                <FormLabel>{t("startDate")}</FormLabel>
                 <Popover modal>
                   <FormControl>
                     <PopoverTrigger asChild>
@@ -174,7 +178,7 @@ export function FormMaintenance({
                         {field.value ? (
                           format(field.value, "PPP 'at' h:mm a")
                         ) : (
-                          <span>Pick a date</span>
+                          <span>{t("pickDate")}</span>
                         )}
                         <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                       </Button>
@@ -210,7 +214,7 @@ export function FormMaintenance({
                     <div className="border-t p-3">
                       <div className="flex items-center gap-3">
                         <Label htmlFor="time-start" className="text-xs">
-                          Enter time
+                          {t("enterTime")}
                         </Label>
                         <div className="relative grow">
                           <Input
@@ -255,15 +259,7 @@ export function FormMaintenance({
                   </PopoverContent>
                 </Popover>
                 <FormDescription>
-                  When the maintenance starts. Shown in your timezone (
-                  <code className="font-commit-mono text-foreground/70">
-                    {timezone}
-                  </code>
-                  ) and saved as Unix time (
-                  <code className="font-commit-mono text-foreground/70">
-                    UTC
-                  </code>
-                  ).
+                  {t("startDateDescription", { timezone })}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -277,7 +273,7 @@ export function FormMaintenance({
             name="endDate"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>End Date</FormLabel>
+                <FormLabel>{t("endDate")}</FormLabel>
                 <Popover modal>
                   <FormControl>
                     <PopoverTrigger asChild>
@@ -293,7 +289,7 @@ export function FormMaintenance({
                         {field.value ? (
                           format(field.value, "PPP 'at' h:mm a")
                         ) : (
-                          <span>Pick a date</span>
+                          <span>{t("pickDate")}</span>
                         )}
                         <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                       </Button>
@@ -324,7 +320,7 @@ export function FormMaintenance({
                     <div className="border-t p-3">
                       <div className="flex items-center gap-3">
                         <Label htmlFor="time-end" className="text-xs">
-                          Enter time
+                          {t("enterTime")}
                         </Label>
                         <div className="relative grow">
                           <Input
@@ -369,15 +365,7 @@ export function FormMaintenance({
                   </PopoverContent>
                 </Popover>
                 <FormDescription>
-                  When the maintenance ends. Shown in your timezone (
-                  <code className="font-commit-mono text-foreground/70">
-                    {timezone}
-                  </code>
-                  ) and saved as Unix time (
-                  <code className="font-commit-mono text-foreground/70">
-                    UTC
-                  </code>
-                  ).
+                  {t("endDateDescription", { timezone })}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -388,8 +376,8 @@ export function FormMaintenance({
         <FormCardContent>
           <Tabs defaultValue="tab-1">
             <TabsList>
-              <TabsTrigger value="tab-1">Writing</TabsTrigger>
-              <TabsTrigger value="tab-2">Preview</TabsTrigger>
+              <TabsTrigger value="tab-1">{t("writing")}</TabsTrigger>
+              <TabsTrigger value="tab-2">{t("preview")}</TabsTrigger>
             </TabsList>
             <TabsContent value="tab-1">
               <FormField
@@ -397,19 +385,19 @@ export function FormMaintenance({
                 name="message"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Message</FormLabel>
+                    <FormLabel>{t("message")}</FormLabel>
                     <FormControl>
                       <Textarea rows={6} {...field} />
                     </FormControl>
                     <FormMessage />
-                    <FormDescription>Markdown support</FormDescription>
+                    <FormDescription>{t("markdownSupport")}</FormDescription>
                   </FormItem>
                 )}
               />
             </TabsContent>
             <TabsContent value="tab-2">
               <div className="grid gap-2">
-                <Label>Preview</Label>
+                <Label>{t("preview")}</Label>
                 <div className="prose dark:prose-invert prose-sm text-foreground rounded-md border px-3 py-2 text-sm">
                   <ProcessMessage value={watchMessage} />
                 </div>
@@ -424,10 +412,9 @@ export function FormMaintenance({
             name="pageComponents"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Page Components</FormLabel>
+                <FormLabel>{t("pageComponents")}</FormLabel>
                 <FormDescription>
-                  Connected page components will be affected for the period of
-                  time.
+                  {t("maintenancePageComponentsDescription")}
                 </FormDescription>
                 {items.length ? (
                   <FormControl>
@@ -439,7 +426,7 @@ export function FormMaintenance({
                   </FormControl>
                 ) : (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No page components found</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noPageComponents")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 )}
                 <FormMessage />
@@ -456,7 +443,7 @@ export function FormMaintenance({
                 name="notifySubscribers"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notify Subscribers</FormLabel>
+                    <FormLabel>{t("notifySubscribers")}</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-2">
                         <Checkbox
@@ -465,13 +452,13 @@ export function FormMaintenance({
                           onCheckedChange={field.onChange}
                         />
                         <Label htmlFor="notifySubscribers">
-                          Send notification to subscribers
+                          {t("notifySubscribersDescription")}
                         </Label>
                       </div>
                     </FormControl>
                     <FormMessage />
                     <FormDescription>
-                      Subscribers will be notified when creating a maintenance.
+                      {t("subscribersWillBeNotified")}
                     </FormDescription>
                   </FormItem>
                 )}

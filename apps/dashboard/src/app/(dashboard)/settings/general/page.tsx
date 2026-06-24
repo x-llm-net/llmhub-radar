@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import {
   Section,
@@ -19,6 +20,7 @@ import { useTRPC } from "@/lib/trpc/client";
 const BASE_URL = "https://app.openstatus.dev/invite";
 
 export default function Page() {
+  const t = useTranslations("settings.general");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -54,9 +56,9 @@ export default function Page() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>General</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            Manage your workspace settings.
+            {t("description")}
           </SectionDescription>
         </SectionHeader>
         <FormCardGroup>

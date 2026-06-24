@@ -10,10 +10,21 @@ import { DataTableRowActions } from "./data-table-row-actions";
 
 type StatusPage = RouterOutputs["page"]["list"][number];
 
-export const columns: ColumnDef<StatusPage>[] = [
+type StatusPageColumnLabels = {
+  title: string;
+  favicon: string;
+  faviconAlt: (title: string) => string;
+  slug: string;
+  domain: string;
+};
+
+export function getColumns(
+  labels: StatusPageColumnLabels,
+): ColumnDef<StatusPage>[] {
+  return [
   {
     accessorKey: "title",
-    header: "Title",
+    header: labels.title,
     cell: ({ row }) => {
       return (
         <TableCellLink
@@ -30,7 +41,7 @@ export const columns: ColumnDef<StatusPage>[] = [
   },
   {
     accessorKey: "icon",
-    header: "Favicon",
+    header: labels.favicon,
     cell: ({ row }) => {
       const value = row.getValue("icon");
       if (!value || typeof value !== "string")
@@ -38,7 +49,7 @@ export const columns: ColumnDef<StatusPage>[] = [
       return (
         <img
           src={`${value}`}
-          alt={`Favicon for ${row.getValue("title")}`}
+          alt={labels.faviconAlt(String(row.getValue("title")))}
           className="bg-muted h-4 w-4 rounded border"
         />
       );
@@ -48,7 +59,7 @@ export const columns: ColumnDef<StatusPage>[] = [
   },
   {
     accessorKey: "slug",
-    header: "Slug",
+    header: labels.slug,
     cell: ({ row }) => {
       const domain = row.getValue("domain");
       const slug = row.getValue("slug");
@@ -68,7 +79,7 @@ export const columns: ColumnDef<StatusPage>[] = [
   {
     accessorKey: "domain",
     accessorFn: (row) => row.customDomain,
-    header: "Domain",
+    header: labels.domain,
     cell: ({ row }) => {
       const value = row.getValue("domain");
       if (typeof value !== "string")
@@ -89,4 +100,5 @@ export const columns: ColumnDef<StatusPage>[] = [
       cellClassName: "w-8",
     },
   },
-];
+  ];
+}

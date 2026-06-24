@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 
 import {
@@ -19,6 +20,7 @@ import { FormGeneral } from "@/components/forms/status-page/form-general";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Client() {
+  const t = useTranslations("statusPages.create");
   const [isPending, startTransition] = useTransition();
   const trpc = useTRPC();
   const router = useRouter();
@@ -43,7 +45,7 @@ export function Client() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Create Status Page</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
         </SectionHeader>
         <FormGeneral
           disabled={isPending}
@@ -59,12 +61,9 @@ export function Client() {
       </Section>
       <Section>
         <EmptyStateContainer>
-          <EmptyStateTitle>Create and start customizing</EmptyStateTitle>
+          <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
           <EmptyStateDescription>
-            Connect your <span className="text-foreground">monitors</span>, set
-            up a <span className="text-foreground">custom domain</span>,{" "}
-            <span className="text-foreground">password protect</span> it and
-            more...
+            {t("emptyDescription")}
           </EmptyStateDescription>
         </EmptyStateContainer>
       </Section>

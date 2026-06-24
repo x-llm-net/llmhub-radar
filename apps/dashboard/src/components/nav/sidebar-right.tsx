@@ -20,6 +20,7 @@ import {
 } from "@openstatus/ui/components/ui/tooltip";
 import { cn } from "@openstatus/ui/lib/utils";
 import { PanelRight } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 
 import { Kbd } from "../common/kbd";
@@ -39,6 +40,8 @@ export function SidebarRight({
   footerButton,
   ...props
 }: SidebarRightProps) {
+  const t = useTranslations("nav");
+
   return (
     <Sidebar
       collapsible="offcanvas"
@@ -56,7 +59,7 @@ export function SidebarRight({
               </TooltipTrigger>
               <TooltipContent side="left">
                 <p className="mr-px inline-flex items-center">
-                  Toggle Sidebar{" "}
+                  {t("toggleSidebar")}{" "}
                   <Kbd className="border-muted-foreground bg-primary text-background font-mono">
                     ⌘
                   </Kbd>
@@ -93,6 +96,7 @@ export function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
+  const t = useTranslations("nav");
   const { toggleSidebar } = useSidebar();
 
   React.useEffect(() => {
@@ -124,7 +128,7 @@ export function SidebarTrigger({
       {...props}
     >
       <PanelRight />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t("toggleSidebar")}</span>
     </Button>
   );
 }

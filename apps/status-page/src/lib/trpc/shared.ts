@@ -42,10 +42,14 @@ function stripScheme(url: string): string {
 
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
-  // Note: status-page has its own tRPC API routes
+  // Status-page has its own tRPC API routes. In local dev NEXT_PUBLIC_URL is
+  // used by the dashboard app, so do not use it as a server-side fallback here.
+  if (process.env.NEXT_PUBLIC_STATUS_PAGE_URL)
+    return process.env.NEXT_PUBLIC_STATUS_PAGE_URL;
+  if (process.env.STATUS_PAGE_URL) return process.env.STATUS_PAGE_URL;
   if (process.env.VERCEL_URL)
     return `https://${stripScheme(process.env.VERCEL_URL)}`;
-  return "http://localhost:3000"; // Local dev and Docker (internal calls)
+  return "http://localhost:3001"; // Local dev fallback
 };
 
 const lambdas = ["stripeRouter", "emailRouter"];

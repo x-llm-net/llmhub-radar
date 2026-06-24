@@ -21,6 +21,7 @@ import { Tabs, TabsList, TabsTrigger } from "@openstatus/ui/components/ui/tabs";
 import { useCookieState } from "@openstatus/ui/hooks/use-cookie-state";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 
@@ -38,6 +39,7 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
   const [interval, setInterval] = useState<BillingInterval>("monthly");
   const [currency] = useCookieState("x-currency", "USD");
   const trpc = useTRPC();
+  const t = useTranslations("settings.billing");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -75,20 +77,21 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
         onValueChange={(v) => setInterval(v as BillingInterval)}
       >
         <TabsList>
-          <TabsTrigger value="monthly">Monthly</TabsTrigger>
+          <TabsTrigger value="monthly">{t("monthly")}</TabsTrigger>
           <TabsTrigger value="yearly">
-            Yearly <Badge className="ml-1.5 text-[10px]">2 months free</Badge>
+            {t("yearly")}{" "}
+            <Badge className="ml-1.5 text-[10px]">{t("yearlyDiscount")}</Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
       <Table className="relative table-fixed">
         <TableCaption>
-          A list to compare the different features by plan.
+          {t("plansTableCaption")}
         </TableCaption>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="p-2 align-bottom">
-              Features comparison
+              {t("featuresComparison")}
             </TableHead>
             {filteredPlans.map(({ id, ...plan }) => {
               const isCurrentPlan = workspace.plan === id;
@@ -111,7 +114,7 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
                     </div>
                     <div className="text-right">
                       {isFreePlan ? (
-                        <p className="font-mono text-lg">Free</p>
+                        <p className="font-mono text-lg">{t("free")}</p>
                       ) : (
                         <p>
                           <span className="font-mono text-lg">
@@ -121,7 +124,7 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
                             }).format(price.value)}
                           </span>
                           <span className="text-muted-foreground text-sm">
-                            {interval === "yearly" ? "/year" : "/month"}
+                            {interval === "yearly" ? t("perYear") : t("perMonth")}
                           </span>
                         </p>
                       )}
@@ -152,10 +155,10 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
                       disabled={isPending || isCurrentPlan}
                     >
                       {isCurrentPlan
-                        ? "Current Plan"
+                        ? t("currentPlan")
                         : isPending
-                          ? "Choosing..."
-                          : "Choose"}
+                          ? t("choosing")
+                          : t("choose")}
                     </Button>
                   </div>
                 </TableHead>
@@ -219,7 +222,7 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
                                       style: "currency",
                                       currency: price.currency,
                                     }).format(price.value)}
-                                    {isNumber ? "/mo./each" : "/mo."}
+                                    {isNumber ? t("perMonthEach") : t("perMonthShort")}
                                   </span>
                                 </span>
                               </div>
@@ -266,7 +269,7 @@ export function DataTable({ restrictTo }: { restrictTo?: WorkspacePlan[] }) {
                             )}
                           >
                             {renderContent()}
-                            {monthly ? "/mo." : ""}
+                            {monthly ? t("perMonthShort") : ""}
                           </TableCell>
                         );
                       })}

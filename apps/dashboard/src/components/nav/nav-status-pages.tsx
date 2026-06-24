@@ -21,6 +21,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Plus } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -37,6 +38,8 @@ const STATUS = {
 };
 
 export function NavStatusPages() {
+  const t = useTranslations("statusPages");
+  const common = useTranslations("common");
   const { isMobile, setOpenMobile } = useSidebar();
   const [openUpgradeDialog, setOpenUpgradeDialog] = useState(false);
   const pathname = usePathname();
@@ -68,7 +71,7 @@ export function NavStatusPages() {
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel className="flex items-center justify-between pr-1">
         <div className="flex items-center gap-1">
-          <span>Status Pages</span>
+          <span>{t("list.title")}</span>
           {isLoading ? (
             <Skeleton className="h-4 w-5 shrink-0" />
           ) : (
@@ -94,11 +97,11 @@ export function NavStatusPages() {
                   }}
                 >
                   <Plus className="text-muted-foreground" />
-                  <span className="sr-only">Create Status Page</span>
+                  <span className="sr-only">{t("nav.create")}</span>
                 </SidebarMenuAction>
               </TooltipTrigger>
               <TooltipContent side="right" align="center">
-                {limitReached ? "Upgrade" : "Create Status Page"}
+                {limitReached ? common("upgrade") : t("nav.create")}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -116,7 +119,7 @@ export function NavStatusPages() {
               edit: () => router.push(`/status-pages/${item.id}/edit`),
               "copy-id": async () => {
                 await navigator.clipboard.writeText(item.id.toString());
-                toast.success("Status Page ID copied to clipboard");
+                toast.success(t("nav.copiedId"));
               },
             });
             const hasActiveStatusReport = item.statusReports.some(
@@ -159,7 +162,7 @@ export function NavStatusPages() {
                 <QuickActions
                   actions={actions}
                   deleteAction={{
-                    confirmationValue: item.title ?? "status page",
+                    confirmationValue: item.title ?? t("nav.deleteFallback"),
                     submitAction: async () => {
                       await deleteStatusPage.mutateAsync({ id: item.id });
                       if (pathname.includes(`/status-pages/${item.id}`)) {
@@ -172,7 +175,7 @@ export function NavStatusPages() {
                 >
                   <SidebarMenuAction showOnHover>
                     <MoreHorizontal />
-                    <span className="sr-only">More</span>
+                    <span className="sr-only">{common("more")}</span>
                   </SidebarMenuAction>
                 </QuickActions>
               </SidebarMenuItem>
@@ -181,7 +184,7 @@ export function NavStatusPages() {
         ) : (
           <SidebarMenuItem>
             <SidebarMenuButton disabled>
-              <span>No status pages found</span>
+              <span>{t("nav.empty")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}

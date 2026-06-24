@@ -9,6 +9,7 @@ import {
 } from "@openstatus/ui/components/ui/sidebar";
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, CircleDashed, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import { useTRPC } from "@/lib/trpc/client";
@@ -18,6 +19,7 @@ export function NavBannerChecklist({
 }: {
   handleClose: () => void;
 }) {
+  const t = useTranslations("banner.checklist");
   const trpc = useTRPC();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
 
@@ -31,17 +33,17 @@ export function NavBannerChecklist({
 
   const items = [
     {
-      title: "Create Monitor",
+      title: t("createMonitor"),
       checked: hasMonitors,
       href: "/monitors/create",
     },
     {
-      title: "Create Status Page",
+      title: t("createStatusPage"),
       checked: hasStatusPages,
       href: "/status-pages/create",
     },
     {
-      title: "Create Notification",
+      title: t("createNotification"),
       checked: hastNotifications,
       href: "/notifications",
     },
@@ -50,7 +52,7 @@ export function NavBannerChecklist({
   return (
     <SidebarGroup className="bg-background rounded-lg border group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel className="flex items-center justify-between pr-1">
-        <span>Getting Started</span>
+        <span>{t("title")}</span>
         <SidebarMenuAction
           className="relative top-0 right-0"
           onClick={handleClose}

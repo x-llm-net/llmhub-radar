@@ -1,6 +1,6 @@
 import { UTCDate } from "@date-fns/utc";
 import type { StatusBlocksLabels } from "@openstatus/ui/components/blocks/status-i18n";
-import { endOfDay, isSameDay, startOfDay } from "date-fns";
+import { endOfDay, formatDistanceStrict, isSameDay, startOfDay } from "date-fns";
 
 /**
  * Formats a date range in a human-readable format.
@@ -338,6 +338,7 @@ export const defaultStatusBlocksLabels = {
   ariaStatusTracker: "Status tracker",
   ariaDayStatus: (n: number) => `Day ${n} status`,
   clickAgainToUnpin: "Click again to unpin",
+  relative: "Relative",
 
   calendarTitle: "Calendar",
 
@@ -349,6 +350,8 @@ export const defaultStatusBlocksLabels = {
   formatDate: (d: Date) => withUTC(formatDate(d)),
   formatDateShort: (d: Date) => withUTC(formatDateShort(d)),
   formatDateTime: (d: Date) => withUTC(formatDateTime(d)),
+  formatDistance: (from: Date, to: Date | undefined, options) =>
+    formatDistanceStrict(from, to ?? new Date(), options),
   formatDateRange: (from?: Date, to?: Date) => {
     const range = formatDateRange(from, to);
     return from || to ? withUTC(range) : range;

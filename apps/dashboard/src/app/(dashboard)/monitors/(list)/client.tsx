@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
 import { ArrowDown, CheckCircle, ListFilter } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useQueryStates } from "nuqs";
 import { useEffect, useState } from "react";
 
@@ -13,7 +14,7 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/monitors/columns";
+import { getColumns } from "@/components/data-table/monitors/columns";
 import { MonitorDataTableActionBar } from "@/components/data-table/monitors/data-table-action-bar";
 import { MonitorDataTableToolbar } from "@/components/data-table/monitors/data-table-toolbar";
 import {
@@ -43,6 +44,7 @@ const icons = {
 } as const;
 
 export function Client() {
+  const t = useTranslations("monitors");
   const trpc = useTRPC();
   const { data: monitors } = useQuery(trpc.monitor.list.queryOptions());
   const { data: tags } = useQuery(trpc.monitorTag.list.queryOptions());
@@ -101,9 +103,9 @@ export function Client() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Monitors</SectionTitle>
+          <SectionTitle>{t("list.title")}</SectionTitle>
           <SectionDescription>
-            Create and manage your monitors.
+            {t("list.description")}
           </SectionDescription>
         </SectionHeader>
         <MetricCardGroup>
@@ -164,7 +166,20 @@ export function Client() {
       </Section>
       <Section>
         <DataTable
-          columns={columns}
+          columns={getColumns({
+            selectAll: t("table.selectAll"),
+            selectRow: t("table.selectRow"),
+            name: t("table.name"),
+            endpoint: t("table.endpoint"),
+            type: t("table.type"),
+            status: t("table.status"),
+            tags: t("table.tags"),
+            lastIncident: t("table.lastIncident"),
+            lastChecked: t("table.lastChecked"),
+            p50: t("table.p50"),
+            p90: t("table.p90"),
+            p95: t("table.p95"),
+          })}
           data={monitors.map((monitor) => ({
             ...monitor,
             globalMetrics:

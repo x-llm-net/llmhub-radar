@@ -4,6 +4,7 @@ import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 import { Link } from "@/components/common/link";
@@ -37,6 +38,7 @@ export function SlackIntegrationCard({
   locked,
   integration,
 }: SlackIntegrationCardProps) {
+  const t = useTranslations("settings.integrations.slack");
   const router = useRouter();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -76,34 +78,36 @@ export function SlackIntegrationCard({
       <FormCardHeader>
         <div className="flex items-center gap-2">
           <FormCardTitle>Slack</FormCardTitle>
-          {isConnected && <Badge variant="secondary">Connected</Badge>}
+          {isConnected && <Badge variant="secondary">{t("connected")}</Badge>}
         </div>
-        <FormCardDescription>
-          Manage status reports directly from Slack. Mention the bot in a
-          channel to create and update incidents.
-        </FormCardDescription>
+        <FormCardDescription>{t("description")}</FormCardDescription>
       </FormCardHeader>
       <FormCardContent>
         {isConnected ? (
           <p className="text-muted-foreground text-sm">
-            Connected to{" "}
-            <strong>{integration.data?.teamName ?? "Slack workspace"}</strong>
+            {t.rich("connectedTo", {
+              team: () => (
+                <strong>
+                  {integration.data?.teamName ?? t("fallbackWorkspace")}
+                </strong>
+              ),
+            })}
           </p>
         ) : (
           <p className="text-muted-foreground text-sm">
-            Connect your Slack workspace to get started.
+            {t("connectPrompt")}
           </p>
         )}
       </FormCardContent>
       <FormCardFooter>
         <FormCardFooterInfo>
-          Learn more about{" "}
+          {t("learnMorePrefix")}{" "}
           <Link
             href="https://www.openstatus.dev/blog/openstatus-slack-agent"
             rel="noreferrer"
             target="_blank"
           >
-            Slack Agent
+            {t("agent")}
           </Link>
           .
         </FormCardFooterInfo>
@@ -111,7 +115,7 @@ export function SlackIntegrationCard({
           <Button type="button" asChild>
             <Link href="/settings/billing">
               <Lock />
-              Upgrade
+              {t("upgrade")}
             </Link>
           </Button>
         ) : isConnected ? (
@@ -121,7 +125,9 @@ export function SlackIntegrationCard({
             onClick={handleDisconnect}
             disabled={deleteIntegration.isPending}
           >
-            {deleteIntegration.isPending ? "Disconnecting..." : "Disconnect"}
+            {deleteIntegration.isPending
+              ? t("disconnecting")
+              : t("disconnect")}
           </Button>
         ) : (
           <Button
@@ -129,7 +135,7 @@ export function SlackIntegrationCard({
             onClick={handleInstall}
             disabled={generateToken.isPending}
           >
-            {generateToken.isPending ? "Connecting..." : "Add to Slack"}
+            {generateToken.isPending ? t("connecting") : t("add")}
           </Button>
         )}
       </FormCardFooter>

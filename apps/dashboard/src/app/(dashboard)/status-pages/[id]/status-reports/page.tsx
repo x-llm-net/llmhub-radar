@@ -3,6 +3,7 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Gauge, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import NextLink from "next/link";
 import { useParams } from "next/navigation";
 
@@ -17,13 +18,15 @@ import {
   SectionTitle,
 } from "@/components/content/section";
 import { DataTable as UpdatesDataTable } from "@/components/data-table/status-report-updates/data-table";
-import { columns } from "@/components/data-table/status-reports/columns";
+import { getColumns } from "@/components/data-table/status-reports/columns";
 import { FormSheetStatusReport } from "@/components/forms/status-report/sheet";
 import { toCheckboxTreeItems } from "@/components/ui/checkbox-tree";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("statusPages.reports");
+  const tableT = useTranslations("statusPages.reports.table");
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -64,13 +67,13 @@ export default function Page() {
     <SectionGroup>
       <Note>
         <Gauge />
-        Status reports now support per-component impacts.
+        {t("impactNote")}
         <NoteButton variant="default" asChild>
           <NextLink
             href="https://www.openstatus.dev/changelog/status-page-components-impact"
             target="_blank"
           >
-            Learn more
+            {t("learnMore")}
           </NextLink>
         </NoteButton>
       </Note>
@@ -79,9 +82,9 @@ export default function Page() {
           <SectionHeader>
             <SectionTitle>{page.title}</SectionTitle>
             <SectionDescription>
-              List of all status reports. Looking for{" "}
+              {t("descriptionPrefix")}{" "}
               <Link href={`/status-pages/${id}/maintenances`}>
-                maintenances
+                {t("maintenances")}
               </Link>
               ?
             </SectionDescription>
@@ -90,11 +93,7 @@ export default function Page() {
             <FormSheetStatusReport
               warning={
                 hasUnresolvedIssue ? (
-                  <>
-                    An unresolved report already exists. Consider adding a{" "}
-                    <span className="font-semibold">status report update</span>{" "}
-                    instead.
-                  </>
+                  <>{t("unresolvedWarning")}</>
                 ) : undefined
               }
               items={toCheckboxTreeItems(
@@ -132,13 +131,22 @@ export default function Page() {
             >
               <Button data-section="action" size="sm">
                 <Plus />
-                Create Status Report
+                {t("create")}
               </Button>
             </FormSheetStatusReport>
           </div>
         </SectionHeaderRow>
         <DataTable
-          columns={columns}
+          columns={getColumns({
+            title: tableT("title"),
+            currentStatus: tableT("currentStatus"),
+            impact: tableT("impact"),
+            updates: tableT("updates"),
+            affected: tableT("affected"),
+            startedAt: tableT("startedAt"),
+            expand: (title) => tableT("expand", { title }),
+            collapse: (title) => tableT("collapse", { title }),
+          })}
           data={statusReports}
           onRowClick={(row) =>
             row.getCanExpand() ? row.toggleExpanded() : undefined

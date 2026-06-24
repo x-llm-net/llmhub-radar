@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { MoreHorizontal, Plus } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -40,6 +41,8 @@ export const STATUS = {
 };
 
 export function NavMonitors() {
+  const t = useTranslations("monitors");
+  const common = useTranslations("common");
   const [openDialog, setOpenDialog] = useState(false);
   const [openUpgradeDialog, setOpenUpgradeDialog] = useState(false);
   const { isMobile, setOpenMobile } = useSidebar();
@@ -86,7 +89,7 @@ export function NavMonitors() {
         style={{ paddingRight: 4 }}
       >
         <div className="flex items-center gap-1">
-          <span>Monitors</span>
+          <span>{t("list.title")}</span>
           {isLoading ? (
             <Skeleton className="h-4 w-5 shrink-0" />
           ) : (
@@ -110,11 +113,11 @@ export function NavMonitors() {
                   }}
                 >
                   <Plus className="text-muted-foreground" />
-                  <span className="sr-only">Create Monitor</span>
+                  <span className="sr-only">{t("list.create")}</span>
                 </SidebarMenuAction>
               </TooltipTrigger>
               <TooltipContent side="right" align="center">
-                {limitReached ? "Upgrade" : "Create Monitor"}
+                {limitReached ? common("upgrade") : t("list.create")}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -132,20 +135,20 @@ export function NavMonitors() {
               edit: () => router.push(`/monitors/${item.id}/edit`),
               "copy-id": () => {
                 navigator.clipboard.writeText(item.id.toString());
-                toast.success("Monitor ID copied to clipboard");
+                toast.success(t("actions.copiedId"));
               },
               clone: () => {
                 const promise = cloneMonitorMutation.mutateAsync({
                   id: item.id,
                 });
                 toast.promise(promise, {
-                  loading: "Cloning monitor...",
-                  success: "Monitor cloned",
+                  loading: t("actions.cloning"),
+                  success: t("actions.cloned"),
                   error: (error) => {
                     if (isTRPCClientError(error)) {
                       return error.message;
                     }
-                    return "Failed to clone monitor";
+                    return t("actions.cloneFailed");
                   },
                 });
               },
@@ -187,7 +190,7 @@ export function NavMonitors() {
                 <QuickActions
                   actions={actions}
                   deleteAction={{
-                    confirmationValue: item.name ?? "monitor",
+                    confirmationValue: item.name ?? t("actions.deleteFallback"),
                     submitAction: async () => {
                       await deleteMonitorMutation.mutateAsync({
                         id: item.id,
@@ -202,7 +205,7 @@ export function NavMonitors() {
                 >
                   <SidebarMenuAction showOnHover>
                     <MoreHorizontal />
-                    <span className="sr-only">More</span>
+                    <span className="sr-only">{common("more")}</span>
                   </SidebarMenuAction>
                 </QuickActions>
               </SidebarMenuItem>
@@ -211,7 +214,7 @@ export function NavMonitors() {
         ) : (
           <SidebarMenuItem>
             <SidebarMenuButton disabled>
-              <span>No monitors found</span>
+              <span>{t("list.empty")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}

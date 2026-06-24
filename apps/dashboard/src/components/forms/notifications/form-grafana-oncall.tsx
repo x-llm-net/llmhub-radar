@@ -15,6 +15,7 @@ import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import React from "react";
 import { useForm } from "react-hook-form";
@@ -50,6 +51,7 @@ export function FormGrafanaOncall({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -82,13 +84,13 @@ export function FormGrafanaOncall({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -112,13 +114,13 @@ export function FormGrafanaOncall({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -141,14 +143,12 @@ export function FormGrafanaOncall({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -157,7 +157,7 @@ export function FormGrafanaOncall({
             name="data.webhookUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Webhook URL</FormLabel>
+                <FormLabel>{t("webhookUrl")}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder="https://oncall-prod-us-central-0.grafana.net/oncall/integrations/v1/webhook/..."
@@ -166,8 +166,7 @@ export function FormGrafanaOncall({
                 </FormControl>
                 <FormMessage />
                 <FormDescription>
-                  Enter your Grafana OnCall incoming webhook URL. You can find
-                  this in your Grafana OnCall integration settings.
+                  {t("grafanaOncallDescription")}
                 </FormDescription>
               </FormItem>
             )}
@@ -179,7 +178,7 @@ export function FormGrafanaOncall({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -190,16 +189,14 @@ export function FormGrafanaOncall({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

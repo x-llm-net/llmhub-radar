@@ -7,12 +7,14 @@ import {
   TableRow,
 } from "@openstatus/ui/components/ui/table";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import { QuickActions } from "@/components/dropdowns/quick-actions";
 import { formatDate } from "@/lib/formatter";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function DataTable() {
+  const t = useTranslations("settings.forms");
   const trpc = useTRPC();
   const { data: members, refetch } = useQuery(trpc.member.list.queryOptions());
   const deleteMemberMutation = useMutation(
@@ -27,12 +29,12 @@ export function DataTable() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Created</TableHead>
+          <TableHead>{t("name")}</TableHead>
+          <TableHead>{t("email")}</TableHead>
+          <TableHead>{t("role")}</TableHead>
+          <TableHead>{t("created")}</TableHead>
           <TableHead>
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">{t("actions")}</span>
           </TableHead>
         </TableRow>
       </TableHeader>

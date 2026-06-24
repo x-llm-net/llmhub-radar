@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@openstatus/ui/components/ui/button";
+import { useTranslations } from "next-intl";
 import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import { Check, Copy } from "lucide-react";
 import { z } from "zod";
@@ -23,15 +24,16 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function FormSlug({ defaultValues }: { defaultValues?: FormValues }) {
+  const t = useTranslations("settings.forms");
   const { copy, isCopied } = useCopyToClipboard();
   console.log({ defaultValues, schema });
 
   return (
     <FormCard>
       <FormCardHeader>
-        <FormCardTitle>Slug</FormCardTitle>
+        <FormCardTitle>{t("slug")}</FormCardTitle>
         <FormCardDescription>
-          The unique slug for your workspace.
+          {t("slugDescription")}
         </FormCardDescription>
       </FormCardHeader>
       <FormCardContent>
@@ -39,12 +41,12 @@ export function FormSlug({ defaultValues }: { defaultValues?: FormValues }) {
           variant="outline"
           size="sm"
           onClick={() =>
-            copy(defaultValues?.slug ?? "unknown slug", {
-              successMessage: "Copied slug to clipboard",
+            copy(defaultValues?.slug ?? t("unknownSlug"), {
+              successMessage: t("copiedSlug"),
             })
           }
         >
-          {defaultValues?.slug ?? "unknown slug"}
+          {defaultValues?.slug ?? t("unknownSlug")}
           {isCopied ? (
             <Check size={16} className="text-muted-foreground" />
           ) : (
@@ -54,17 +56,17 @@ export function FormSlug({ defaultValues }: { defaultValues?: FormValues }) {
       </FormCardContent>
       <FormCardFooter className="[&>:last-child]:ml-0">
         <FormCardFooterInfo>
-          Used when interacting with the API or for help on Discord.{" "}
+          {t("slugHelpPrefix")}{" "}
           <FormDialogSupportContact>
             <Button
               variant="ghost"
               size="sm"
               className="text-accent-foreground px-0 py-0 hover:bg-transparent dark:hover:bg-transparent"
             >
-              Let us know
+              {t("supportCta")}
             </Button>
           </FormDialogSupportContact>{" "}
-          if you&apos;d like to change it.
+          {t("slugHelpSuffix")}
         </FormCardFooterInfo>
       </FormCardFooter>
     </FormCard>

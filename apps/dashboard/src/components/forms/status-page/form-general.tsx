@@ -17,6 +17,7 @@ import { useDebounce } from "@openstatus/ui/hooks/use-debounce";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -35,16 +36,11 @@ import {
 } from "@/components/forms/form-card";
 import { useTRPC } from "@/lib/trpc/client";
 
-const SLUG_UNIQUE_ERROR_MESSAGE =
-  "This slug is already taken. Please choose another one.";
-
 // Keep in sync with `slugSchema` in
 // `packages/db/src/schema/pages/validation.ts`. We can't import that on the
 // client because `@openstatus/db` is server-only. Slugs are stored lowercase
 // (subdomains are case-insensitive), so we restrict input client-side too.
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
-const SLUG_PATTERN_MESSAGE =
-  "Only use digits (0-9), hyphen (-) or lowercase characters (a-z).";
 
 function formatSlug(title: string) {
   return title
@@ -53,17 +49,19 @@ function formatSlug(title: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-const schema = z.object({
-  title: z.string().min(1, "Title is required"),
+function getSchema(t: (key: string) => string) {
+  return z.object({
+  title: z.string().min(1, t("titleRequired")),
   slug: z
     .string()
-    .min(3, "Slug is required")
-    .regex(SLUG_PATTERN, SLUG_PATTERN_MESSAGE),
+    .min(3, t("slugRequired"))
+    .regex(SLUG_PATTERN, t("slugPattern")),
   icon: z.string().optional(),
   description: z.string().optional(),
 });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 /** Convert a File to a base64 string without the data: prefix */
 async function fileToBase64(file: File): Promise<string> {
@@ -89,8 +87,9 @@ export function FormGeneral({
   onSubmit: (values: FormValues) => Promise<void>;
   disabled?: boolean;
 }) {
+  const t = useTranslations("statusPages.form");
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       title: "",
       slug: "",
@@ -124,11 +123,11 @@ export function FormGeneral({
     if (defaultValues?.slug === debouncedSlug) return;
 
     if (!isUnique) {
-      form.setError("slug", { message: SLUG_UNIQUE_ERROR_MESSAGE });
+      form.setError("slug", { message: t("slugTaken") });
     } else {
       form.clearErrors("slug");
     }
-  }, [isUnique, form, debouncedSlug, defaultValues?.slug]);
+  }, [isUnique, form, debouncedSlug, defaultValues?.slug, t]);
 
   function submitAction(values: FormValues) {
     if (isPending || disabled) return;
@@ -136,20 +135,20 @@ export function FormGeneral({
     startTransition(async () => {
       try {
         if (isUnique === false && defaultValues?.slug !== values.slug) {
-          toast.error(SLUG_UNIQUE_ERROR_MESSAGE);
-          form.setError("slug", { message: SLUG_UNIQUE_ERROR_MESSAGE });
+          toast.error(t("slugTaken"));
+          form.setError("slug", { message: t("slugTaken") });
           return;
         }
 
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -163,9 +162,9 @@ export function FormGeneral({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>General</FormCardTitle>
+            <FormCardTitle>{t("general")}</FormCardTitle>
             <FormCardDescription>
-              Configure the essential details for your status page.
+              {t("generalDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardSeparator />
@@ -175,13 +174,13 @@ export function FormGeneral({
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Title</FormLabel>
+                  <FormLabel>{t("title")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My Status Page" {...field} />
+                    <Input placeholder={t("titlePlaceholder")} {...field} />
                   </FormControl>
                   <FormMessage />
                   <FormDescription>
-                    Enter a descriptive name for your status page.
+                    {t("titleDescription")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -191,7 +190,7 @@ export function FormGeneral({
               name="slug"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Slug</FormLabel>
+                  <FormLabel>{t("slug")}</FormLabel>
                   <FormControl>
                     <InputWithAddons
                       placeholder="status"
@@ -201,8 +200,7 @@ export function FormGeneral({
                   </FormControl>
                   <FormMessage />
                   <FormDescription>
-                    Choose a unique subdomain for your status page (minimum 3
-                    characters).
+                    {t("slugDescription")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -212,7 +210,7 @@ export function FormGeneral({
               name="icon"
               render={() => (
                 <FormItem>
-                  <FormLabel>Icon</FormLabel>
+                  <FormLabel>{t("icon")}</FormLabel>
                   <FormControl>
                     <div className="flex items-center space-x-2">
                       {watchIcon ? (
@@ -222,7 +220,7 @@ export function FormGeneral({
                               src={watchIcon}
                               width={36}
                               height={36}
-                              alt="Icon preview"
+                              alt={t("iconPreviewAlt")}
                             />
                           </div>
                           <Button
@@ -231,7 +229,7 @@ export function FormGeneral({
                             type="button"
                             onClick={() => form.setValue("icon", undefined)}
                           >
-                            Remove
+                            {t("remove")}
                           </Button>
                         </>
                       ) : (
@@ -252,7 +250,7 @@ export function FormGeneral({
                               }
                             } catch (err) {
                               console.error(err);
-                              toast.error("Upload failed");
+                              toast.error(t("uploadFailed"));
                             }
                           }}
                         />
@@ -261,8 +259,7 @@ export function FormGeneral({
                   </FormControl>
                   <FormMessage />
                   <FormDescription>
-                    Select an icon for your status page. PNG/ICO: 512x512px
-                    recommended. SVG also supported. Will be used as favicon.
+                    {t("iconDescription")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -272,13 +269,13 @@ export function FormGeneral({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t("description")}</FormLabel>
                   <FormControl>
                     <Textarea {...field} />
                   </FormControl>
                   <FormMessage />
                   <FormDescription>
-                    Provide a brief overview of your status page purpose.
+                    {t("descriptionDescription")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -286,7 +283,7 @@ export function FormGeneral({
           </FormCardContent>
           <FormCardFooter>
             <Button type="submit" disabled={isPending || disabled}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

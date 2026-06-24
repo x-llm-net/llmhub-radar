@@ -25,6 +25,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Fragment } from "react";
 
@@ -75,6 +76,7 @@ export function DataTable<TData, TValue>({
   pagination,
   setPagination,
 }: DataTableProps<TData, TValue>) {
+  const t = useTranslations("common");
   // oxlint-disable-next-line typescript/no-explicit-any
   const [globalFilter, setGlobalFilter] = React.useState<any>();
   const [rowSelection, setRowSelection] = React.useState({});
@@ -193,7 +195,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                {t("noResults")}
               </TableCell>
             </TableRow>
           )}

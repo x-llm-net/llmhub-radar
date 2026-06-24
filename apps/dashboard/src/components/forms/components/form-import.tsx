@@ -27,6 +27,7 @@ import { Switch } from "@openstatus/ui/components/ui/switch";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { AlertTriangle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -45,34 +46,36 @@ import {
 } from "@/components/forms/form-card";
 import { useTRPC } from "@/lib/trpc/client";
 
-const schema = z.object({
-  provider: z.enum(["statuspage", "betterstack", "instatus"]),
-  apiKey: z.string().min(1, "API key is required"),
-  statuspagePageId: z.string().optional(),
-  betterstackStatusPageId: z.string().optional(),
-  instatusPageId: z.string().optional(),
-  includeMonitors: z.boolean(),
-  includeStatusReports: z.boolean(),
-  includeSubscribers: z.boolean(),
-  includeComponents: z.boolean(),
-});
+function getSchema(t: (key: string) => string) {
+  return z.object({
+    provider: z.enum(["statuspage", "betterstack", "instatus"]),
+    apiKey: z.string().min(1, t("apiKeyRequired")),
+    statuspagePageId: z.string().optional(),
+    betterstackStatusPageId: z.string().optional(),
+    instatusPageId: z.string().optional(),
+    includeMonitors: z.boolean(),
+    includeStatusReports: z.boolean(),
+    includeSubscribers: z.boolean(),
+    includeComponents: z.boolean(),
+  });
+}
 
-export type ImportFormValues = z.input<typeof schema>;
+export type ImportFormValues = z.input<ReturnType<typeof getSchema>>;
 
 function getPhaseCount(preview: ImportSummary, phase: string): number {
   return preview.phases.find((p) => p.phase === phase)?.resources.length ?? 0;
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  monitors: "Monitors",
-  componentGroups: "Component Groups",
-  monitorGroups: "Monitor Groups",
-  sections: "Sections",
-  components: "Components",
-  incidents: "Status Reports",
-  maintenances: "Maintenances",
-  subscribers: "Subscribers",
-};
+const PHASE_KEYS = [
+  "monitors",
+  "componentGroups",
+  "monitorGroups",
+  "sections",
+  "components",
+  "incidents",
+  "maintenances",
+  "subscribers",
+] as const;
 
 export function FormImport({
   pageId,
@@ -81,8 +84,9 @@ export function FormImport({
   pageId: number;
   onSubmit: (values: ImportFormValues) => Promise<ImportSummary>;
 }) {
+  const t = useTranslations("statusPages.import");
   const form = useForm<ImportFormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: {
       provider: undefined,
       apiKey: "",
@@ -109,7 +113,7 @@ export function FormImport({
         if (isTRPCClientError(error)) {
           toast.error(error.message);
         } else {
-          toast.error("Failed to preview import");
+          toast.error(t("previewFailed"));
         }
       },
     }),
@@ -118,7 +122,7 @@ export function FormImport({
   async function runPreview() {
     const apiKey = form.getValues("apiKey");
     if (!apiKey) {
-      form.setError("apiKey", { message: "API key is required" });
+      form.setError("apiKey", { message: t("apiKeyRequired") });
       return;
     }
     previewMutation.mutate({
@@ -147,17 +151,17 @@ export function FormImport({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Importing...",
+          loading: t("importing"),
           success: (result) => {
             if (result.status === "partial")
-              return "Import completed with warnings";
-            return "Import completed";
+              return t("completedWithWarnings");
+            return t("completed");
           },
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Import failed";
+            return t("failed");
           },
         });
         await promise;
@@ -171,10 +175,9 @@ export function FormImport({
       <form onSubmit={form.handleSubmit(submitAction)}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Import</FormCardTitle>
+            <FormCardTitle>{t("title")}</FormCardTitle>
             <FormCardDescription>
-              Import components, incidents, and subscribers from an external
-              status page provider.
+              {t("description")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardSeparator />
@@ -184,7 +187,7 @@ export function FormImport({
               name="provider"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Provider</FormLabel>
+                  <FormLabel>{t("provider")}</FormLabel>
                   <FormControl>
                     <RadioGroup
                       onValueChange={field.onChange}
@@ -237,8 +240,8 @@ export function FormImport({
                         </FormLabel>
                       </FormItem>
                       <div className="text-muted-foreground col-span-1 self-end text-xs sm:place-self-end">
-                        Missing a provider?{" "}
-                        <a href="mailto:ping@openstatus.dev">Contact us</a>
+                        {t("missingProvider")}{" "}
+                        <a href="mailto:ping@openstatus.dev">{t("contactUs")}</a>
                       </div>
                     </RadioGroup>
                   </FormControl>
@@ -256,7 +259,7 @@ export function FormImport({
                   name="apiKey"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>API Key</FormLabel>
+                      <FormLabel>{t("apiKey")}</FormLabel>
                       <FormControl>
                         <Input
                           type="password"
@@ -273,10 +276,10 @@ export function FormImport({
                       <FormMessage />
                       <FormDescription>
                         {watchProvider === "betterstack"
-                          ? "Your Better Stack API token. Found in Better Stack > API tokens."
+                          ? t("betterstackApiDescription")
                           : watchProvider === "instatus"
-                            ? "Your Instatus API key. Found in your Instatus account under Settings > API."
-                            : "Your Statuspage API key. Found in your Statuspage account under Manage Account > API."}{" "}
+                            ? t("instatusApiDescription")
+                            : t("statuspageApiDescription")}{" "}
                         <Link
                           href={
                             watchProvider === "betterstack"
@@ -286,7 +289,7 @@ export function FormImport({
                                 : "https://openstatus.dev/guides/migrate-from-atlassian-statuspage"
                           }
                         >
-                          Full migration guide.
+                          {t("migrationGuide")}
                         </Link>
                       </FormDescription>
                     </FormItem>
@@ -298,13 +301,12 @@ export function FormImport({
                     name="statuspagePageId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Page ID (optional)</FormLabel>
+                        <FormLabel>{t("pageIdOptional")}</FormLabel>
                         <FormControl>
                           <Input placeholder="e.g. abc123def456" {...field} />
                         </FormControl>
                         <FormDescription>
-                          Import a specific page. Leave empty to import across
-                          pages.
+                          {t("statuspagePageIdDescription")}
                         </FormDescription>
                       </FormItem>
                     )}
@@ -316,13 +318,12 @@ export function FormImport({
                     name="betterstackStatusPageId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Status Page ID (optional)</FormLabel>
+                        <FormLabel>{t("statusPageIdOptional")}</FormLabel>
                         <FormControl>
                           <Input placeholder="e.g. 123456789" {...field} />
                         </FormControl>
                         <FormDescription>
-                          Import a specific status page. Leave empty to use the
-                          first available.
+                          {t("betterstackPageIdDescription")}
                         </FormDescription>
                       </FormItem>
                     )}
@@ -334,13 +335,12 @@ export function FormImport({
                     name="instatusPageId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Page ID (optional)</FormLabel>
+                        <FormLabel>{t("pageIdOptional")}</FormLabel>
                         <FormControl>
                           <Input placeholder="e.g. clx1abc2def3" {...field} />
                         </FormControl>
                         <FormDescription>
-                          Import a specific page. Leave empty to import all
-                          pages.
+                          {t("instatusPageIdDescription")}
                         </FormDescription>
                       </FormItem>
                     )}
@@ -353,8 +353,8 @@ export function FormImport({
                   disabled={previewMutation.isPending}
                 >
                   {previewMutation.isPending
-                    ? "Loading preview..."
-                    : "Preview Import"}
+                    ? t("loadingPreview")
+                    : t("previewImport")}
                 </Button>
               </FormCardContent>
             </>
@@ -364,14 +364,14 @@ export function FormImport({
               <FormCardSeparator />
               <FormCardContent className="grid gap-4">
                 <div>
-                  <FormLabel>Preview</FormLabel>
+                  <FormLabel>{t("preview")}</FormLabel>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {Object.entries(PHASE_LABELS).map(([key, label]) => {
+                    {PHASE_KEYS.map((key) => {
                       const count = getPhaseCount(previewMutation.data, key);
                       if (count === 0) return null;
                       return (
                         <Badge key={key} variant="secondary">
-                          {label}: {count}
+                          {t(`phases.${key}`)}: {count}
                         </Badge>
                       );
                     })}
@@ -392,10 +392,9 @@ export function FormImport({
                     render={({ field }) => (
                       <FormItem className="flex flex-row items-center justify-between">
                         <div className="space-y-0.5">
-                          <FormLabel>Monitors</FormLabel>
+                          <FormLabel>{t("monitors")}</FormLabel>
                           <FormDescription>
-                            Import monitors with their URL, frequency, and
-                            regions.
+                            {t("monitorsDescription")}
                           </FormDescription>
                         </div>
                         <FormControl>
@@ -413,11 +412,10 @@ export function FormImport({
                   name="includeStatusReports"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between">
-                      <div className="space-y-0.5">
-                        <FormLabel>Status Reports & Maintenances</FormLabel>
+                        <div className="space-y-0.5">
+                        <FormLabel>{t("statusReportsMaintenances")}</FormLabel>
                         <FormDescription>
-                          Import incidents as status reports and scheduled
-                          maintenances.
+                          {t("statusReportsMaintenancesDescription")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -434,10 +432,10 @@ export function FormImport({
                   name="includeComponents"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between">
-                      <div className="space-y-0.5">
-                        <FormLabel>Components</FormLabel>
+                        <div className="space-y-0.5">
+                        <FormLabel>{t("components")}</FormLabel>
                         <FormDescription>
-                          Import components and groups.
+                          {t("componentsDescription")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -456,9 +454,9 @@ export function FormImport({
                     render={({ field }) => (
                       <FormItem className="flex flex-row items-center justify-between">
                         <div className="space-y-0.5">
-                          <FormLabel>Subscribers</FormLabel>
+                          <FormLabel>{t("subscribers")}</FormLabel>
                           <FormDescription>
-                            Import email subscribers.
+                            {t("subscribersDescription")}
                           </FormDescription>
                         </div>
                         <FormControl>
@@ -483,7 +481,7 @@ export function FormImport({
                 previewMutation.data.errors.length > 0
               }
             >
-              {isPending ? "Importing..." : "Import"}
+              {isPending ? t("importing") : t("title")}
             </Button>
           </FormCardFooter>
         </FormCard>

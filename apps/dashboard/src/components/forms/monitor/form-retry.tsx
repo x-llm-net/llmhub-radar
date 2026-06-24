@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ export function FormRetry({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -65,9 +67,9 @@ export function FormRetry({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -81,7 +83,7 @@ export function FormRetry({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Retry Policy</FormCardTitle>
+            <FormCardTitle>{t("retryPolicy")}</FormCardTitle>
             <FormCardDescription>
               Configure the retry policy for your monitor.
             </FormCardDescription>
@@ -92,7 +94,7 @@ export function FormRetry({
               name="retry"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Retry</FormLabel>
+                  <FormLabel>{t("retry")}</FormLabel>
                   <FormControl>
                     <Input
                       min={RETRY_MIN}
@@ -123,7 +125,7 @@ export function FormRetry({
               .
             </FormCardFooterInfo>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

@@ -12,6 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { Zap } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ type TestHTTP = RouterOutputs["checker"]["testHttp"];
 type TestDNS = RouterOutputs["checker"]["testDns"];
 
 export function NavActions() {
+  const t = useTranslations("monitors");
   const { id } = useParams<{ id: string }>();
   const [test, setTest] = useState<TestTCP | TestHTTP | TestDNS | null>(null);
   const queryClient = useQueryClient();
@@ -70,23 +72,28 @@ export function NavActions() {
     edit: () => router.push(`/monitors/${id}/edit`),
     "copy-id": async () => {
       await navigator.clipboard.writeText(id);
-      toast.success("Monitor ID copied to clipboard");
+      toast.success(t("actions.copiedId"));
     },
     clone: () => {
       const promise = cloneMonitorMutation.mutateAsync({
         id: Number.parseInt(id),
       });
       toast.promise(promise, {
-        loading: "Cloning monitor...",
-        success: "Monitor cloned",
+        loading: t("actions.cloning"),
+        success: t("actions.cloned"),
         error: (error) => {
           if (isTRPCClientError(error)) {
             return error.message;
           }
-          return "Failed to clone monitor";
+          return t("actions.cloneFailed");
         },
       });
     },
+  }, {
+    edit: t("actions.settings"),
+    "copy-id": t("actions.copyId"),
+    clone: t("actions.clone"),
+    delete: t("actions.delete"),
   });
 
   async function testAction() {
@@ -101,32 +108,32 @@ export function NavActions() {
       });
 
       toast.promise(promise, {
-        loading: "Testing HTTP request...",
+        loading: t("actions.testingHttp"),
         success: (data) => {
           setTest(data);
-          return "HTTP test completed successfully";
+          return t("actions.httpSuccess");
         },
         error: (error) => {
           if (isTRPCClientError(error)) {
             return error.message;
           }
-          return "HTTP test failed";
+          return t("actions.httpFailed");
         },
       });
     } else if (monitor?.jobType === "tcp") {
       const promise = testTcpMutation.mutateAsync({ url: monitor.url });
 
       toast.promise(promise, {
-        loading: "Testing TCP connection...",
+        loading: t("actions.testingTcp"),
         success: (data) => {
           setTest(data);
-          return "TCP test completed successfully";
+          return t("actions.tcpSuccess");
         },
         error: (error) => {
           if (isTRPCClientError(error)) {
             return error.message;
           }
-          return "TCP test failed";
+          return t("actions.tcpFailed");
         },
       });
     } else if (monitor?.jobType === "dns") {
@@ -137,16 +144,16 @@ export function NavActions() {
       });
 
       toast.promise(promise, {
-        loading: "Testing DNS request...",
+        loading: t("actions.testingDns"),
         success: (data) => {
           setTest(data);
-          return "DNS test completed successfully";
+          return t("actions.dnsSuccess");
         },
         error: (error) => {
           if (isTRPCClientError(error)) {
             return error.message;
           }
-          return "DNS test failed";
+          return t("actions.dnsFailed");
         },
       });
     }
@@ -190,13 +197,13 @@ export function NavActions() {
               <Zap className="text-muted-foreground group-hover:text-foreground" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Test Monitor</TooltipContent>
+          <TooltipContent>{t("actions.test")}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <QuickActions
         actions={actions}
         deleteAction={{
-          confirmationValue: monitor.name ?? "monitor",
+          confirmationValue: monitor.name ?? t("actions.deleteFallback"),
           submitAction: async () => {
             await deleteMonitorMutation.mutateAsync({
               id: Number.parseInt(id),

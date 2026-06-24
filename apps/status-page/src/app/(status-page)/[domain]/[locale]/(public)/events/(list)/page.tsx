@@ -7,7 +7,7 @@ import {
   TabsTrigger,
 } from "@openstatus/ui/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
-import { useExtracted } from "next-intl";
+import { useExtracted, useLocale } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueryStates } from "nuqs";
@@ -33,6 +33,7 @@ import { searchParamsParsers } from "./search-params";
 
 export default function Page() {
   const t = useExtracted();
+  const locale = useLocale();
   const [{ tab }, setSearchParams] = useQueryStates(searchParamsParsers);
   const { domain } = useParams<{ domain: string }>();
   const trpc = useTRPC();
@@ -57,7 +58,9 @@ export default function Page() {
         <TabsTrigger value="maintenances">{t("Maintenances")}</TabsTrigger>
       </TabsList>
       <TabsContent value="reports">
-        <StatusEventGroup>
+        <StatusEventGroup
+          aria-label={locale === "zh" ? "状态事件与更新" : "Status events and updates"}
+        >
           {statusReports.length > 0 ? (
             statusReports.map((report) => {
               const updates = report.statusReportUpdates.sort(
@@ -115,7 +118,9 @@ export default function Page() {
         </StatusEventGroup>
       </TabsContent>
       <TabsContent value="maintenances">
-        <StatusEventGroup>
+        <StatusEventGroup
+          aria-label={locale === "zh" ? "状态事件与更新" : "Status events and updates"}
+        >
           {maintenances.length > 0 ? (
             maintenances.map((maintenance) => {
               return (

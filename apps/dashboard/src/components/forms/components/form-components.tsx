@@ -61,6 +61,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -102,29 +103,35 @@ type ComponentGroup = {
   components: PageComponent[];
 };
 
-const componentSchema = z.object({
-  id: z.number(),
-  monitorId: z.number().nullish(),
-  order: z.number(),
-  name: z.string().min(1, { message: "Name is required" }),
-  description: z.string().optional(),
-  type: z.enum(["monitor", "static"]),
-});
+function getComponentSchema(t: (key: string) => string) {
+  return z.object({
+    id: z.number(),
+    monitorId: z.number().nullish(),
+    order: z.number(),
+    name: z.string().min(1, { message: t("nameRequired") }),
+    description: z.string().optional(),
+    type: z.enum(["monitor", "static"]),
+  });
+}
 
-const schema = z.object({
-  components: z.array(componentSchema),
-  groups: z.array(
-    z.object({
-      id: z.number(),
-      order: z.number(),
-      name: z.string(),
-      defaultOpen: z.boolean(),
-      components: z.array(componentSchema).min(1, {
-        message: "At least one component is required",
+function getSchema(t: (key: string) => string) {
+  const componentSchema = getComponentSchema(t);
+
+  return z.object({
+    components: z.array(componentSchema),
+    groups: z.array(
+      z.object({
+        id: z.number(),
+        order: z.number(),
+        name: z.string(),
+        defaultOpen: z.boolean(),
+        components: z.array(componentSchema).min(1, {
+          message: t("componentRequired"),
+        }),
       }),
-    }),
-  ),
-});
+    ),
+  });
+}
 
 const getSortedComponents = (
   components: PageComponent[],
@@ -258,7 +265,7 @@ const getSortedItems = (
     .map((entry) => entry.item);
 };
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormComponents({
   defaultValues,
@@ -282,8 +289,9 @@ export function FormComponents({
   workspace: Workspace;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.components");
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? { components: [], groups: [] },
   });
   const [isPending, startTransition] = useTransition();
@@ -479,13 +487,13 @@ export function FormComponents({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -501,27 +509,27 @@ export function FormComponents({
         <form onSubmit={form.handleSubmit(submitAction)} {...props}>
           <FormCard>
             <FormCardHeader>
-              <FormCardTitle>Components</FormCardTitle>
+              <FormCardTitle>{t("title")}</FormCardTitle>
               <FormCardDescription>
-                Manage your page components
+                {t("manageDescription")}
               </FormCardDescription>
             </FormCardHeader>
             <FormCardContent className="flex flex-row gap-2">
               <Button variant="outline" type="button" onClick={handleAddGroup}>
                 <Plus />
-                Add Component Group
+                {t("addComponentGroup")}
               </Button>
               <FormField
                 control={form.control}
                 name="components"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel className="sr-only">Components</FormLabel>
+                    <FormLabel className="sr-only">{t("title")}</FormLabel>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="w-full">
                           <Plus />
-                          Add Component
+                          {t("addComponent")}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
@@ -543,22 +551,22 @@ export function FormComponents({
                             }}
                           >
                             <Link2Off className="text-muted-foreground" />
-                            Add Static Component
+                            {t("addStaticComponent")}
                           </DropdownMenuItem>
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger className="[&_svg:not([class*='text-'])]:text-muted-foreground gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
                               <Link2 className="text-muted-foreground" />
-                              Add Monitor Component
+                              {t("addMonitorComponent")}
                             </DropdownMenuSubTrigger>
                             <DropdownMenuSubContent className="p-0">
                               <Command>
                                 <CommandInput
-                                  placeholder="Search monitors..."
+                                  placeholder={t("searchMonitors")}
                                   className="h-9"
                                 />
                                 <CommandList>
                                   <CommandEmpty>
-                                    No monitors found.
+                                    {t("noMonitorsFound")}
                                   </CommandEmpty>
                                   <CommandGroup>
                                     {monitors.map((monitor) => {
@@ -621,7 +629,7 @@ export function FormComponents({
                           </DropdownMenuSub>
                           <DropdownMenuItem disabled>
                             <Plug className="text-muted-foreground" />
-                            Add Third-Party Component
+                            {t("addThirdPartyComponent")}
                           </DropdownMenuItem>
                         </DropdownMenuGroup>
                       </DropdownMenuContent>
@@ -683,21 +691,21 @@ export function FormComponents({
                   </SortableContent>
                 ) : (
                   <EmptyStateContainer>
-                    <EmptyStateTitle>No components selected</EmptyStateTitle>
+                    <EmptyStateTitle>{t("noComponentsSelected")}</EmptyStateTitle>
                   </EmptyStateContainer>
                 )}
               </Sortable>
             </FormCardContent>
             <FormCardFooter>
               <FormCardFooterInfo>
-                Learn more about{" "}
+                {t("learnMoreAbout")}{" "}
                 <Link href="https://www.openstatus.dev/docs/reference/status-page/#page-components">
-                  page components
+                  {t("pageComponents")}
                 </Link>
                 .
               </FormCardFooterInfo>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             </FormCardFooter>
           </FormCard>
@@ -731,6 +739,8 @@ function ComponentRow({
   fieldNamePrefix,
   ...props
 }: ComponentRowProps) {
+  const t = useTranslations("statusPages.components");
+
   return (
     <SortableItem
       value={component.id}
@@ -754,10 +764,10 @@ function ComponentRow({
               name={`${fieldNamePrefix}.name` as "components.0.name"}
               render={({ field }) => (
                 <FormItem className="w-full">
-                  <FormLabel className="sr-only">Component name</FormLabel>
+                  <FormLabel className="sr-only">{t("componentName")}</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Name"
+                      placeholder={t("name")}
                       className="bg-background w-full"
                       {...field}
                     />
@@ -783,11 +793,11 @@ function ComponentRow({
               render={({ field }) => (
                 <FormItem className="w-full">
                   <FormLabel className="sr-only">
-                    Component description
+                    {t("componentDescription")}
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Description"
+                      placeholder={t("componentDescription")}
                       className="bg-background w-full"
                       {...field}
                     />
@@ -815,7 +825,7 @@ function ComponentRow({
           ) : (
             <span className="text-muted-foreground flex items-center gap-2 text-sm">
               <Link2Off className="size-4 shrink-0" />{" "}
-              <span className="truncate">Static Component</span>
+              <span className="truncate">{t("staticComponent")}</span>
             </span>
           )}
         </div>
@@ -829,14 +839,14 @@ function ComponentRow({
                       <TooltipTrigger>
                         <Eye className="text-muted-foreground size-4" />
                       </TooltipTrigger>
-                      <TooltipContent>Public</TooltipContent>
+                      <TooltipContent>{t("public")}</TooltipContent>
                     </Tooltip>
                   ) : (
                     <Tooltip>
                       <TooltipTrigger>
                         <EyeOff className="text-muted-foreground size-4" />
                       </TooltipTrigger>
-                      <TooltipContent>Private</TooltipContent>
+                      <TooltipContent>{t("private")}</TooltipContent>
                     </Tooltip>
                   )}
                 </TooltipProvider>
@@ -868,10 +878,9 @@ function ComponentRow({
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogTitle>{t("areYouSure")}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Once saved, this will unlink the component from attached
-                  status reports and maintenances.
+                  {t("deleteComponentDescription")}
                 </AlertDialogDescription>
                 <ComponentAttachments
                   statusReports={component.statusReports ?? []}
@@ -879,12 +888,12 @@ function ComponentRow({
                 />
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
                   onClick={() => onDelete(component.id)}
                 >
-                  Remove
+                  {t("remove")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -917,6 +926,7 @@ function ComponentGroupRow({
   monitors,
   validateLimit,
 }: ComponentGroupRowProps) {
+  const t = useTranslations("statusPages.components");
   const watchGroup = form.watch(`groups.${groupIndex}`);
   const watchComponents = form.watch("components");
   const watchGroups = form.watch("groups");
@@ -1013,10 +1023,10 @@ function ComponentGroupRow({
             name={`groups.${groupIndex}.name` as const}
             render={({ field }) => (
               <FormItem className="w-full">
-                <FormLabel className="sr-only">Group name</FormLabel>
+                <FormLabel className="sr-only">{t("groupName")}</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="Group Name"
+                    placeholder={t("groupName")}
                     className="bg-background w-full"
                     {...field}
                   />
@@ -1032,12 +1042,12 @@ function ComponentGroupRow({
           name={`groups.${groupIndex}.components` as const}
           render={({ field }) => (
             <FormItem className="flex flex-col">
-              <FormLabel className="sr-only">Components</FormLabel>
+              <FormLabel className="sr-only">{t("title")}</FormLabel>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="w-full">
                     <Plus />
-                    Add Component
+                    {t("addComponent")}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
@@ -1062,21 +1072,21 @@ function ComponentGroupRow({
                       }}
                     >
                       <Link2Off className="text-muted-foreground" />
-                      Add Static Component
+                      {t("addStaticComponent")}
                     </DropdownMenuItem>
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger className="[&_svg:not([class*='text-'])]:text-muted-foreground gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
                         <Link2 className="text-muted-foreground" />
-                        Add Monitor Component
+                        {t("addMonitorComponent")}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="p-0">
                         <Command>
                           <CommandInput
-                            placeholder="Search monitors..."
+                            placeholder={t("searchMonitors")}
                             className="h-9"
                           />
                           <CommandList>
-                            <CommandEmpty>No monitors found.</CommandEmpty>
+                            <CommandEmpty>{t("noMonitorsFound")}</CommandEmpty>
                             <CommandGroup>
                               {monitors.map((monitor) => {
                                 const current = field.value ?? [];
@@ -1139,7 +1149,7 @@ function ComponentGroupRow({
                     </DropdownMenuSub>
                     <DropdownMenuItem disabled>
                       <Plug className="text-muted-foreground" />
-                      Add Third-Party Component
+                      {t("addThirdPartyComponent")}
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -1162,7 +1172,7 @@ function ComponentGroupRow({
                 />
               </FormControl>
               <FormLabel className="text-muted-foreground !mt-0 text-sm font-normal">
-                Open by default
+                {t("openByDefault")}
               </FormLabel>
             </FormItem>
           )}
@@ -1185,10 +1195,9 @@ function ComponentGroupRow({
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogTitle>{t("areYouSure")}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Once saved, this will delete all components in the group and
-                  unlink them from attached status reports and maintenances.
+                  {t("deleteGroupDescription")}
                 </AlertDialogDescription>
                 <ComponentAttachments
                   statusReports={Array.from(
@@ -1208,12 +1217,12 @@ function ComponentGroupRow({
                 />
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 text-white shadow-xs"
                   onClick={() => onDeleteGroup(group.id)}
                 >
-                  Remove
+                  {t("remove")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -1253,7 +1262,7 @@ function ComponentGroupRow({
             </SortableContent>
           ) : (
             <EmptyStateContainer>
-              <EmptyStateTitle>No components selected</EmptyStateTitle>
+              <EmptyStateTitle>{t("noComponentsSelected")}</EmptyStateTitle>
             </EmptyStateContainer>
           )}
         </Sortable>

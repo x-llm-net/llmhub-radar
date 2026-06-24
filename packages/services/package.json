@@ -29,6 +29,10 @@
       "import": "./src/monitor/index.ts",
       "types": "./src/monitor/index.ts"
     },
+    "./radar": {
+      "import": "./src/radar/index.ts",
+      "types": "./src/radar/index.ts"
+    },
     "./notification": {
       "import": "./src/notification/index.ts",
       "types": "./src/notification/index.ts"

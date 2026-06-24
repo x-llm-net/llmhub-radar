@@ -12,6 +12,7 @@ import {
 } from "@openstatus/ui/components/ui/form";
 import { Form } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ export function FormResponseTime({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -60,9 +62,9 @@ export function FormResponseTime({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: () => t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -76,9 +78,9 @@ export function FormResponseTime({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Response Time Thresholds</FormCardTitle>
+            <FormCardTitle>{t("responseTimeThresholds")}</FormCardTitle>
             <FormCardDescription>
-              Configure your degraded and timeout thresholds.
+              {t("responseTimeDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="grid gap-4 sm:grid-cols-2">
@@ -87,12 +89,12 @@ export function FormResponseTime({
               name="degradedAfter"
               render={({ field }) => (
                 <FormItem className="self-start">
-                  <FormLabel>Degraded (in ms.)</FormLabel>
+                  <FormLabel>{t("degradedMs")}</FormLabel>
                   <FormControl>
                     <Input placeholder="30000" type="number" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Time after which the endpoint is considered degraded.
+                    {t("degradedDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -103,12 +105,12 @@ export function FormResponseTime({
               name="timeout"
               render={({ field }) => (
                 <FormItem className="self-start">
-                  <FormLabel>Timeout (in ms.)</FormLabel>
+                  <FormLabel>{t("timeoutMs")}</FormLabel>
                   <FormControl>
                     <Input placeholder="45000" type="number" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Max. time allowed for request to complete.
+                    {t("timeoutDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -117,7 +119,7 @@ export function FormResponseTime({
           </FormCardContent>
           <FormCardFooter>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

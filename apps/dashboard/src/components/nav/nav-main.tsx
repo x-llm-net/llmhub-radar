@@ -17,7 +17,9 @@ import {
   useSidebar,
 } from "@openstatus/ui/components/ui/sidebar";
 import { ChevronRight, type LucideIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
+
 export function NavMain({
   items,
 }: {
@@ -32,10 +34,11 @@ export function NavMain({
     }[];
   }[];
 }) {
+  const t = useTranslations("nav");
   const { setOpenMobile } = useSidebar();
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Workspace Data</SidebarGroupLabel>
+      <SidebarGroupLabel>{t("workspaceData")}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <Collapsible

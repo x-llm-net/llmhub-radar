@@ -9,6 +9,7 @@ import {
 } from "@openstatus/ui/components/ui/tooltip";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ import { getActions } from "@/data/status-pages.client";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function NavActions() {
+  const t = useTranslations("statusPages");
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const trpc = useTRPC();
@@ -45,8 +47,12 @@ export function NavActions() {
     edit: () => router.push(`/status-pages/${id}/edit`),
     "copy-id": async () => {
       await navigator.clipboard.writeText(id);
-      toast.success("Status Page ID copied to clipboard");
+      toast.success(t("nav.copiedId"));
     },
+  }, {
+    edit: t("actions.settings"),
+    "copy-id": t("actions.copyId"),
+    delete: t("actions.delete"),
   });
 
   if (!statusPage) return null;
@@ -69,13 +75,13 @@ export function NavActions() {
               </a>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>View Page</TooltipContent>
+          <TooltipContent>{t("nav.viewPage")}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <QuickActions
         actions={actions}
         deleteAction={{
-          confirmationValue: statusPage.title ?? "status page",
+          confirmationValue: statusPage.title ?? t("nav.deleteFallback"),
           submitAction: async () => {
             await deleteStatusPageMutation.mutateAsync({
               id: Number.parseInt(id),

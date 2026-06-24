@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import {
   Section,
@@ -15,6 +16,7 @@ import { useTRPC } from "@/lib/trpc/client";
 import { SlackIntegrationCard } from "./slack-card";
 
 export default function Page() {
+  const t = useTranslations("settings.integrations");
   const trpc = useTRPC();
   //  FIXME: we should use workspace limit here
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -31,9 +33,9 @@ export default function Page() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Integrations</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            Connect third-party services to your workspace.
+            {t("description")}
           </SectionDescription>
         </SectionHeader>
         <FormCardGroup>

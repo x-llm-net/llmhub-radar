@@ -9,6 +9,7 @@ import {
   FormMessage,
 } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
+import { useTranslations } from "next-intl";
 import type { UseFormReturn } from "react-hook-form";
 
 import { Link } from "@/components/common/link";
@@ -26,13 +27,15 @@ export function TelegramManualInput({
   successMsg,
   showDescription = true,
 }: TelegramManualInputProps) {
+  const t = useTranslations("notifications.form");
+
   return (
     <FormField
       control={form.control}
       name="data.chatId"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Telegram Chat ID</FormLabel>
+          <FormLabel>{t("telegramChatId")}</FormLabel>
           <FormControl>
             <Input placeholder="1234567890" {...field} />
           </FormControl>
@@ -44,13 +47,13 @@ export function TelegramManualInput({
           )}
           {showDescription && (
             <FormDescription>
-              Enter the Telegram chat ID to send notifications to.{" "}
+              {t("telegramChatIdDescription")}{" "}
               <Link
                 href="https://www.openstatus.dev/docs/reference/notification/#telegram"
                 rel="noreferrer"
                 target="_blank"
               >
-                Learn more
+                {t("readMore")}
               </Link>
             </FormDescription>
           )}

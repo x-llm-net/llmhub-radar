@@ -14,6 +14,7 @@ import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -22,17 +23,19 @@ import { z } from "zod";
 import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { useTRPC } from "@/lib/trpc/client";
 
-const tagSchema = z.object({
-  id: z.number().optional(),
-  name: z.string().min(1, "Name is required"),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Invalid color format"),
-});
+function getSchema(t: (key: string) => string) {
+  const tagSchema = z.object({
+    id: z.number().optional(),
+    name: z.string().min(1, t("nameRequired")),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, t("invalidColor")),
+  });
 
-const schema = z.object({
-  tags: z.array(tagSchema),
-});
+  return z.object({
+    tags: z.array(tagSchema),
+  });
+}
 
-export type FormValues = z.infer<typeof schema>;
+export type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 // FIXME: rename, its not monitor specfic, its all the tags
 export function FormMonitorTag({
@@ -44,11 +47,12 @@ export function FormMonitorTag({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("monitors.form");
   const trpc = useTRPC();
   const { data: tags } = useQuery(trpc.monitorTag.list.queryOptions());
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       tags: [],
     },
@@ -74,9 +78,9 @@ export function FormMonitorTag({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving tags...",
-          success: "Tags saved successfully",
-          error: "Failed to save tags",
+          loading: t("savingTags"),
+          success: t("tagsSaved"),
+          error: t("failedToSaveTags"),
         });
         await promise;
       } catch (error) {
@@ -102,7 +106,7 @@ export function FormMonitorTag({
       >
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <FormLabel>Tags</FormLabel>
+            <FormLabel>{t("tags")}</FormLabel>
             <Button
               type="button"
               variant="ghost"
@@ -110,7 +114,7 @@ export function FormMonitorTag({
               onClick={() => append({ name: "", color: "#00008B" })}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add Tag
+              {t("addTag")}
             </Button>
           </div>
 
@@ -139,7 +143,7 @@ export function FormMonitorTag({
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormControl>
-                      <Input placeholder="Tag name" {...field} />
+                      <Input placeholder={t("tagNamePlaceholder")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

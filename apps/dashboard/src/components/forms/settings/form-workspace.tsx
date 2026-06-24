@@ -11,6 +11,7 @@ import {
   FormMessage,
 } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ export function FormWorkspace({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("settings.forms");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -54,9 +56,9 @@ export function FormWorkspace({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: () => "Saved",
-          error: "Failed to save",
+          loading: t("saving"),
+          success: () => t("saved"),
+          error: t("failedToSave"),
         });
         await promise;
       } catch (error) {
@@ -70,9 +72,9 @@ export function FormWorkspace({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Workspace</FormCardTitle>
+            <FormCardTitle>{t("workspace")}</FormCardTitle>
             <FormCardDescription>
-              Manage your workspace name.
+              {t("workspaceDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
@@ -81,7 +83,7 @@ export function FormWorkspace({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>{t("name")}</FormLabel>
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
@@ -92,7 +94,7 @@ export function FormWorkspace({
           </FormCardContent>
           <FormCardFooter>
             <Button type="submit" disabled={isPending} size="sm">
-              {isPending ? "Submitting..." : "Submit"}
+              {isPending ? t("submitting") : t("submit")}
             </Button>
           </FormCardFooter>
         </FormCard>

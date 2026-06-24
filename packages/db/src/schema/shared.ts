@@ -148,6 +148,79 @@ const trackersSchema = z
   )
   .prefault([]);
 
+const publicRadarTargetStatusSchema = z.enum([
+  "unknown",
+  "operational",
+  "degraded",
+  "down",
+  "paused",
+  "configuration_error",
+]);
+
+const publicStatusVariantSchema = z.enum([
+  "success",
+  "degraded",
+  "error",
+  "info",
+]);
+
+export const selectPublicRadarSchema = z
+  .object({
+    pool: z.object({
+      id: z.number(),
+      name: z.string(),
+      slug: z.string(),
+      description: z.string(),
+    }),
+    status: publicStatusVariantSchema.prefault("info"),
+    targets: z.array(
+      z.object({
+        id: z.number(),
+        providerName: z.string(),
+        name: z.string(),
+        displayName: z.string(),
+        serviceGroupName: z.string(),
+        tokenGroupName: z.string(),
+        modelFamily: z.string(),
+        modelName: z.string(),
+        modelCatalog: z.array(z.string()).prefault([]),
+        currentStatus: publicRadarTargetStatusSchema.prefault("unknown"),
+        intervalSeconds: z.number(),
+        nextCheckAt: z.date().nullable(),
+        lastCheckAt: z.date().nullable(),
+        lastSuccessAt: z.date().nullable(),
+        lastFailureAt: z.date().nullable(),
+        stats7d: z.object({
+          sampleCount: z.number(),
+          successRate: z.number().nullable(),
+          p50FirstTokenMs: z.number().nullable(),
+          p95FirstTokenMs: z.number().nullable(),
+        }),
+        sampleCount1h: z.number(),
+        sampleCount24h: z.number(),
+        successRate1h: z.number(),
+        successRate24h: z.number(),
+        p50FirstTokenMs: z.number().nullable(),
+        p95FirstTokenMs: z.number().nullable(),
+        p50TotalLatencyMs: z.number().nullable(),
+        p95TotalLatencyMs: z.number().nullable(),
+        recentRuns: z.array(
+          z.object({
+            id: z.number(),
+            startedAt: z.date(),
+            success: z.boolean(),
+            httpStatus: z.number().nullable(),
+            errorType: z.string().nullable(),
+            firstTokenMs: z.number().nullable(),
+            totalLatencyMs: z.number().nullable(),
+          }),
+        ),
+      }),
+    ),
+  })
+  .nullable()
+  .prefault(null);
+
 export const selectPageComponentWithMonitorRelation =
   selectPageComponentSchema.extend({
     monitor: selectPublicMonitorBaseSchema
@@ -180,6 +253,7 @@ export const selectPublicPageLightSchemaWithRelation = selectPageSchema
     pageComponents: selectPageComponentWithMonitorRelation.array().prefault([]),
     pageComponentGroups: selectPageComponentGroupSchema.array().prefault([]),
     whiteLabel: z.boolean().prefault(false),
+    radar: selectPublicRadarSchema,
   })
   // `password` is access-control state, never client-facing — gates read it
   // server-side from the DB. See status-page markdown/feed routes.
@@ -209,6 +283,7 @@ export const selectPublicPageSchemaWithRelation = selectPageSchema
       .prefault("free")
       .transform((val) => val ?? "free"),
     whiteLabel: z.boolean().prefault(false),
+    radar: selectPublicRadarSchema,
   })
   .omit({ password: true });
 

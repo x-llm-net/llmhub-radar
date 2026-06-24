@@ -4,6 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lock, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { notFound, useParams } from "next/navigation";
 import { useState } from "react";
 
@@ -27,7 +28,7 @@ import {
   SectionTitle,
 } from "@/components/content/section";
 import { Section } from "@/components/content/section";
-import { columns } from "@/components/data-table/subscribers/columns";
+import { getColumns } from "@/components/data-table/subscribers/columns";
 import { SubscribersDataTableToolbar } from "@/components/data-table/subscribers/data-table-toolbar";
 import { UpgradeDialog } from "@/components/dialogs/upgrade";
 import { FormSheetSubscriber } from "@/components/forms/subscriber/sheet";
@@ -72,6 +73,7 @@ const EXAMPLES = [
 ] satisfies Subscriber[];
 
 export default function Page() {
+  const t = useTranslations("statusPages.subscribers");
   const { id } = useParams<{ id: string }>();
   const pageId = Number(id);
   if (!Number.isInteger(pageId) || pageId <= 0) notFound();
@@ -100,6 +102,21 @@ export default function Page() {
     components ?? [],
     page?.pageComponentGroups ?? [],
   );
+  const columns = getColumns({
+    destination: t("table.destination"),
+    source: t("table.source"),
+    vendor: t("table.vendor"),
+    import: t("table.import"),
+    selfSignup: t("table.selfSignup"),
+    components: t("table.components"),
+    entirePage: t("table.entirePage"),
+    componentsCount: (count) => t("table.componentsCount", { count }),
+    status: t("table.status"),
+    unsubscribed: t("table.unsubscribed"),
+    pending: t("table.pending"),
+    active: t("table.active"),
+    createdAt: t("table.createdAt"),
+  });
 
   return (
     <SectionGroup>
@@ -107,7 +124,7 @@ export default function Page() {
         <SectionHeaderRow>
           <SectionHeader>
             <SectionTitle>{page?.title}</SectionTitle>
-            <SectionDescription>List of all subscribers.</SectionDescription>
+            <SectionDescription>{t("description")}</SectionDescription>
           </SectionHeader>
           {isLimited ? (
             <Button
@@ -115,7 +132,7 @@ export default function Page() {
               size="sm"
               onClick={() => setOpenDialog(true)}
             >
-              <Lock className="mr-1 size-3.5" /> Add subscriber
+              <Lock className="mr-1 size-3.5" /> {t("add")}
             </Button>
           ) : (
             <FormSheetSubscriber
@@ -144,7 +161,7 @@ export default function Page() {
               }}
             >
               <Button variant="outline" size="sm">
-                <Plus className="mr-1 size-3.5" /> Add subscriber
+                <Plus className="mr-1 size-3.5" /> {t("add")}
               </Button>
             </FormSheetSubscriber>
           )}
@@ -161,16 +178,16 @@ export default function Page() {
             <BillingOverlay>
               <BillingOverlayButton onClick={() => setOpenDialog(true)}>
                 <Lock />
-                Upgrade
+                {t("upgrade")}
               </BillingOverlayButton>
               <BillingOverlayDescription>
-                Keep your users in the loop with status page updates.{" "}
+                {t("upgradeDescription")}{" "}
                 <Link
                   href="https://www.openstatus.dev/docs/reference/subscriber/"
                   rel="noreferrer"
                   target="_blank"
                 >
-                  Learn more
+                  {t("learnMore")}
                 </Link>
                 .
               </BillingOverlayDescription>
@@ -191,10 +208,8 @@ export default function Page() {
           />
         ) : (
           <EmptyStateContainer>
-            <EmptyStateTitle>No subscribers</EmptyStateTitle>
-            <EmptyStateDescription>
-              Nobody has been subscribed to this status page.
-            </EmptyStateDescription>
+            <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
+            <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
           </EmptyStateContainer>
         )}
       </Section>

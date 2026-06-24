@@ -20,6 +20,7 @@ import { Switch } from "@openstatus/ui/components/ui/switch";
 import { cn } from "@openstatus/ui/lib/utils";
 import { isTRPCClientError } from "@trpc/client";
 import { Key, Lock, LockOpen, ShieldAlert, ShieldUser } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { type Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -94,6 +95,7 @@ export function FormPageAccess({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.form");
   const [isPending, startTransition] = useTransition();
   const form = useForm<FormValues>({
     // zod v4 preprocess types input as `unknown`; runtime-validated by schema.
@@ -115,13 +117,13 @@ export function FormPageAccess({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -136,7 +138,7 @@ export function FormPageAccess({
       <form onSubmit={form.handleSubmit(submitAction)} {...props}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Page Access</FormCardTitle>
+            <FormCardTitle>{t("pageAccess")}</FormCardTitle>
             <FormCardDescription>
               Enable protection for your status page. Choose between simple
               password, email domain authentication via magic link, or IP
@@ -149,7 +151,7 @@ export function FormPageAccess({
               name="accessType"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Protection Type</FormLabel>
+                  <FormLabel>{t("protectionType")}</FormLabel>
                   <FormControl>
                     <RadioGroup
                       onValueChange={field.onChange}
@@ -213,7 +215,7 @@ export function FormPageAccess({
                 disabled={locked}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel>{t("password")}</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
@@ -236,7 +238,7 @@ export function FormPageAccess({
                 disabled={locked}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email Domains</FormLabel>
+                    <FormLabel>{t("emailDomains")}</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
@@ -260,7 +262,7 @@ export function FormPageAccess({
                 disabled={locked}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Allowed IP Ranges</FormLabel>
+                    <FormLabel>{t("allowedIpRanges")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="192.168.1.0/24, 10.0.0.1"
@@ -288,7 +290,7 @@ export function FormPageAccess({
               render={({ field }) => (
                 <FormItem className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <FormLabel>Allow search engine indexing</FormLabel>
+                    <FormLabel>{t("allowSearchIndexing")}</FormLabel>
                     <FormDescription>
                       {watchAccessType !== "public"
                         ? "Protected pages cannot be indexed by search engines."
@@ -327,7 +329,7 @@ export function FormPageAccess({
               </Button>
             ) : (
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             )}
           </FormCardFooter>

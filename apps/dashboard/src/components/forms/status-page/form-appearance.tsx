@@ -19,6 +19,7 @@ import {
 } from "@openstatus/ui/components/ui/select";
 import { isTRPCClientError } from "@trpc/client";
 import { ArrowUpRight, Laptop, Moon, Sun } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ export function FormAppearance({
   defaultValues?: FormValues;
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
+  const t = useTranslations("statusPages.form");
   const [isPending, startTransition] = useTransition();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -67,13 +69,13 @@ export function FormAppearance({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -88,9 +90,9 @@ export function FormAppearance({
       <form onSubmit={form.handleSubmit(submitAction)}>
         <FormCard>
           <FormCardHeader>
-            <FormCardTitle>Appearance</FormCardTitle>
+            <FormCardTitle>{t("appearance")}</FormCardTitle>
             <FormCardDescription>
-              Forced theme will override the user&apos;s preference.
+              {t("appearanceDescription")}
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent className="grid gap-4 sm:grid-cols-3">
@@ -99,40 +101,40 @@ export function FormAppearance({
               name="forceTheme"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Mode</FormLabel>
+                  <FormLabel>{t("mode")}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a theme" />
+                        <SelectValue placeholder={t("selectTheme")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="light">
                         <div className="flex items-center gap-2">
                           <Sun className="h-4 w-4" />
-                          <span>Light</span>
+                          <span>{t("light")}</span>
                         </div>
                       </SelectItem>
                       <SelectItem value="dark">
                         <div className="flex items-center gap-2">
                           <Moon className="h-4 w-4" />
-                          <span>Dark</span>
+                          <span>{t("dark")}</span>
                         </div>
                       </SelectItem>
                       <SelectItem value="system">
                         <div className="flex items-center gap-2">
                           <Laptop className="h-4 w-4" />
-                          <span>System</span>
+                          <span>{t("system")}</span>
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
                   <FormDescription>
-                    Override the user&apos;s preference.
+                    {t("overrideUserPreference")}
                   </FormDescription>
                 </FormItem>
               )}
@@ -142,21 +144,20 @@ export function FormAppearance({
               name="configuration.theme"
               render={({ field }) => (
                 <FormItem className="min-w-0">
-                  <FormLabel>Style</FormLabel>
+                  <FormLabel>{t("style")}</FormLabel>
                   <ThemePickerPopover
                     value={field.value as ThemeKey}
                     onChange={field.onChange}
                   />
                   <FormMessage />
-                  <FormDescription>Choose a theme to apply.</FormDescription>
+                  <FormDescription>{t("chooseTheme")}</FormDescription>
                 </FormItem>
               )}
             />
           </FormCardContent>
           <FormCardFooter>
             <FormCardFooterInfo>
-              Your user will still be able to change the mode via the theme
-              toggle.
+              {t("themeToggleNote")}
             </FormCardFooterInfo>
             <div className="flex items-center gap-2">
               <Button type="button" variant="ghost" asChild>
@@ -165,11 +166,11 @@ export function FormAppearance({
                   rel="noreferrer"
                   target="_blank"
                 >
-                  View Theme Explorer <ArrowUpRight className="h-4 w-4" />
+                  {t("viewThemeExplorer")} <ArrowUpRight className="h-4 w-4" />
                 </Link>
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Submitting..." : "Submit"}
+                {isPending ? t("submitting") : t("submit")}
               </Button>
             </div>
           </FormCardFooter>

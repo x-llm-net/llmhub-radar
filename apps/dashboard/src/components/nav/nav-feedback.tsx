@@ -19,6 +19,7 @@ import { Textarea } from "@openstatus/ui/components/ui/textarea";
 import { useIsMobile } from "@openstatus/ui/hooks/use-mobile";
 import { useMutation } from "@tanstack/react-query";
 import { AudioLines, Inbox, LoaderCircle, Mic } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -31,6 +32,7 @@ const schema = z.object({
 });
 
 export function NavFeedback() {
+  const t = useTranslations("feedback");
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const form = useForm<z.infer<typeof schema>>({
@@ -108,13 +110,13 @@ export function NavFeedback() {
         isMobile,
       });
       toast.promise(promise, {
-        loading: "Sending feedback...",
-        success: "Feedback sent",
-        error: "Failed to send feedback",
+        loading: t("sending"),
+        success: t("sent"),
+        error: t("failed"),
       });
       await promise;
     },
-    [feedbackMutation, isMobile],
+    [feedbackMutation, isMobile, t],
   );
 
   useEffect(() => {
@@ -169,7 +171,7 @@ export function NavFeedback() {
           size="sm"
           className="group text-muted-foreground hover:text-foreground data-[state=open]:text-foreground gap-0 px-2 text-sm hover:bg-transparent"
         >
-          Feedback{" "}
+          {t("trigger")}{" "}
           <Kbd className="group-hover:text-foreground group-data-[state=open]:text-foreground ml-1 font-mono">
             F
           </Kbd>
@@ -179,9 +181,9 @@ export function NavFeedback() {
         {feedbackMutation.isSuccess ? (
           <div className="border-input flex h-[110px] flex-col items-center justify-center gap-1 rounded-md border p-3 text-base shadow-xs">
             <Inbox className="size-4 shrink-0" />
-            <p className="text-center font-medium">Thanks for sharing!</p>
+            <p className="text-center font-medium">{t("thanks")}</p>
             <p className="text-muted-foreground text-center text-sm">
-              We&apos;ll get in touch if there&apos;s a follow-up.
+              {t("followUp")}
             </p>
           </div>
         ) : (
@@ -192,10 +194,10 @@ export function NavFeedback() {
                 name="message"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="sr-only">Feedback</FormLabel>
+                    <FormLabel className="sr-only">{t("trigger")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Ideas, bugs, or anything else..."
+                        placeholder={t("placeholder")}
                         className="field-sizing-fixed h-[110px] resize-none p-3"
                         rows={4}
                         {...field}
@@ -230,7 +232,7 @@ export function NavFeedback() {
                   <LoaderCircle className="size-4 animate-spin" />
                 ) : (
                   <>
-                    Send
+                    {t("send")}
                     <Kbd className="group-hover:text-foreground ml-1 font-mono">
                       ⌘
                     </Kbd>

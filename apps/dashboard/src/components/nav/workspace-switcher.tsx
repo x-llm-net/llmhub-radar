@@ -17,6 +17,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { Link } from "@/components/common/link";
 import { useTRPC } from "@/lib/trpc/client";
@@ -27,6 +28,7 @@ interface WorkspaceSwitcherProps {
 }
 
 export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
+  const t = useTranslations("workspaceSwitcher");
   const { isMobile, setOpenMobile } = useSidebar();
   const trpc = useTRPC();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
@@ -55,20 +57,20 @@ export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
                 <div className="size-8 overflow-hidden rounded-lg">
                   <img
                     src={`https://api.dicebear.com/9.x/glass/svg?seed=${workspace.slug}`}
-                    alt="avatar"
+                    alt={t("avatarAlt")}
                   />
                 </div>
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <div className="truncate font-medium">
-                  {workspace.name || "Untitled Workspace"}
+                  {workspace.name || t("untitled")}
                 </div>
                 <div className="truncate text-xs">
                   <span className="font-commit-mono tracking-tight">
                     {workspace.slug}
                   </span>{" "}
                   <span className="text-muted-foreground">
-                    {workspace.plan === "team" ? "pro" : workspace.plan}
+                    {workspace.plan === "team" ? t("pro") : workspace.plan}
                   </span>
                 </div>
               </div>
@@ -82,7 +84,7 @@ export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-muted-foreground text-xs">
-              Workspaces
+              {t("workspaces")}
             </DropdownMenuLabel>
             {workspaces?.map((workspace) => (
               <DropdownMenuItem
@@ -94,7 +96,7 @@ export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
                 className="gap-2 p-2"
               >
                 <span className="truncate">
-                  {workspace.name || "Untitled Workspace"}
+                  {workspace.name || t("untitled")}
                 </span>
                 <span className="text-muted-foreground truncate font-mono text-xs">
                   {workspace.slug}
@@ -106,7 +108,7 @@ export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
               <Link href="/settings/general">
                 <Plus />
                 <div className="font-commit-mono text-muted-foreground tracking-tight">
-                  Add team member
+                  {t("addTeamMember")}
                 </div>
               </Link>
             </DropdownMenuItem>

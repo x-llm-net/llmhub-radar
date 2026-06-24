@@ -4,6 +4,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 type Props = {
   children: ReactNode;
+  message?: ReactNode;
 };
 
 type State = {
@@ -26,7 +27,8 @@ export class ChatErrorBoundary extends Component<Props, State> {
       return (
         <div className="mx-auto max-w-3xl p-6 text-sm">
           <div className="bg-destructive/10 text-destructive rounded-md border p-4">
-            The conversation failed to render. Reload to recover.
+            {this.props.message ??
+              "The conversation failed to render. Reload to recover."}
           </div>
         </div>
       );

@@ -1,9 +1,16 @@
 import { db, eq } from "@openstatus/db";
 import { user, usersToWorkspaces, workspace } from "@openstatus/db/src/schema";
-import type { AdapterUser } from "next-auth/adapters";
 import * as randomWordSlugs from "random-word-slugs";
 
-export async function createUser(data: AdapterUser) {
+type CreateUserInput = {
+  email: string;
+  image?: string | null;
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export async function createUser(data: CreateUserInput) {
   const newUser = await db
     .insert(user)
     .values({

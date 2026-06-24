@@ -16,6 +16,7 @@ import { cn } from "@openstatus/ui/lib/utils";
 import { safeUrlSchema } from "@openstatus/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ export function FormMsTeams({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -82,13 +84,13 @@ export function FormMsTeams({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -112,13 +114,13 @@ export function FormMsTeams({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -141,14 +143,12 @@ export function FormMsTeams({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -157,7 +157,7 @@ export function FormMsTeams({
             name="data.webhookUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Microsoft Teams Workflow URL</FormLabel>
+                <FormLabel>{t("msTeamsWorkflowUrl")}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder="https://prod-00.westeurope.logic.azure.com:443/workflows/..."
@@ -165,10 +165,7 @@ export function FormMsTeams({
                   />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Create a "Post to a channel when a webhook request is
-                  received" workflow in Teams, then paste the URL here.
-                </FormDescription>
+                <FormDescription>{t("msTeamsDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -179,7 +176,7 @@ export function FormMsTeams({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -190,16 +187,14 @@ export function FormMsTeams({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

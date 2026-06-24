@@ -8,6 +8,7 @@ import {
 } from "@openstatus/ui/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { endOfDay } from "date-fns";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useQueryStates } from "nuqs";
 import React, { useEffect, useMemo } from "react";
@@ -50,6 +51,7 @@ import { searchParamsParsers } from "./search-params";
 const TIMELINE_INTERVAL = 30; // in days
 
 export function Client() {
+  const t = useTranslations("monitors.overview");
   const trpc = useTRPC();
   const { id } = useParams<{ id: string }>();
   const [{ period, regions, percentile, interval }, setSearchParams] =
@@ -67,13 +69,13 @@ export function Client() {
   useEffect(() => {
     if (!isBlockedPeriod) return;
     const timeout = setTimeout(() => {
-      toast.error("30 and 90 day windows require a paid plan", {
-        description: "Showing the last 14 days instead.",
+      toast.error(t("paidWindowTitle"), {
+        description: t("paidWindowDescription"),
       });
       setSearchParams({ period: FREE_MAX_PERIOD });
     }, 0);
     return () => clearTimeout(timeout);
-  }, [isBlockedPeriod, setSearchParams]);
+  }, [isBlockedPeriod, setSearchParams, t]);
 
   const selectedRegions = regions ?? undefined;
   const fromDate = periodToFromDate[effectivePeriod];
@@ -132,7 +134,7 @@ export function Client() {
         </SectionHeader>
         <div className="flex flex-wrap gap-2">
           <div>
-            <DropdownPeriod /> including{" "}
+            <DropdownPeriod /> {t("including")}{" "}
             <CommandRegion
               regions={monitor.regions}
               privateLocations={monitor.privateLocations}
@@ -151,10 +153,8 @@ export function Client() {
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Uptime</SectionTitle>
-          <SectionDescription>
-            Uptime across all the selected regions
-          </SectionDescription>
+          <SectionTitle>{t("uptime")}</SectionTitle>
+          <SectionDescription>{t("uptimeDescription")}</SectionDescription>
         </SectionHeader>
         <ChartBarUptime
           monitorId={id}
@@ -166,17 +166,16 @@ export function Client() {
       <Section>
         {/* TODO: based on http, we have Timing Phases instead of Latency */}
         <SectionHeader>
-          <SectionTitle>Latency</SectionTitle>
-          <SectionDescription>
-            Response time across all the regions
-          </SectionDescription>
+          <SectionTitle>{t("latency")}</SectionTitle>
+          <SectionDescription>{t("latencyDescription")}</SectionDescription>
         </SectionHeader>
         <div className="flex flex-wrap gap-2">
           <div>
-            The <DropdownPercentile />{" "}
-            <PopoverQuantile>quantile</PopoverQuantile> within a{" "}
+            {t("quantilePrefix")} <DropdownPercentile />{" "}
+            <PopoverQuantile>{t("quantile")}</PopoverQuantile>{" "}
+            {t("resolutionInfix")}{" "}
             <DropdownInterval />{" "}
-            <PopoverResolution>resolution</PopoverResolution>
+            <PopoverResolution>{t("resolution")}</PopoverResolution>
           </div>
           <div>
             <ButtonReset only={["percentile", "interval"]} />
@@ -205,15 +204,14 @@ export function Client() {
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Regions</SectionTitle>
-          <SectionDescription>
-            Every selected region&apos;s latency trend
-          </SectionDescription>
+          <SectionTitle>{t("regions")}</SectionTitle>
+          <SectionDescription>{t("regionsDescription")}</SectionDescription>
         </SectionHeader>
         <div className="flex flex-wrap gap-2">
           <div>
-            The <DropdownPercentile />{" "}
-            <PopoverQuantile>quantile</PopoverQuantile> trend over the{" "}
+            {t("quantilePrefix")} <DropdownPercentile />{" "}
+            <PopoverQuantile>{t("quantile")}</PopoverQuantile>{" "}
+            {t("trendInfix")}{" "}
             <DropdownPeriod />
           </div>
           <div>
@@ -222,8 +220,8 @@ export function Client() {
         </div>
         <Tabs defaultValue="table">
           <TabsList>
-            <TabsTrigger value="table">Table</TabsTrigger>
-            <TabsTrigger value="chart">Chart</TabsTrigger>
+            <TabsTrigger value="table">{t("table")}</TabsTrigger>
+            <TabsTrigger value="chart">{t("chart")}</TabsTrigger>
           </TabsList>
           <TabsContent value="table">
             <DataTable
@@ -264,9 +262,9 @@ export function Client() {
       </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>Timeline</SectionTitle>
+          <SectionTitle>{t("timeline")}</SectionTitle>
           <SectionDescription>
-            What happened to your monitor over the last {TIMELINE_INTERVAL} days
+            {t("timelineDescription", { days: TIMELINE_INTERVAL })}
           </SectionDescription>
         </SectionHeader>
         <AuditLogsWrapper monitorId={id} interval={TIMELINE_INTERVAL} />

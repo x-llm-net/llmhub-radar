@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import {
@@ -14,6 +15,7 @@ import { FormMonitorUpdate } from "@/components/forms/monitor/update";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("monitors.edit");
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const { data: monitor } = useQuery(
@@ -27,7 +29,7 @@ export default function Page() {
       <Section>
         <SectionHeader>
           <SectionTitle>{monitor.name}</SectionTitle>
-          <SectionDescription>Customize your monitor.</SectionDescription>
+          <SectionDescription>{t("description")}</SectionDescription>
         </SectionHeader>
         <FormMonitorUpdate />
       </Section>

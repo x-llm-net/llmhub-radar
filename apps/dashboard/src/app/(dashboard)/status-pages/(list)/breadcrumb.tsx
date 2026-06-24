@@ -1,13 +1,16 @@
 "use client";
 
 import { PanelTop } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { NavBreadcrumb } from "@/components/nav/nav-breadcrumb";
 
 export function Breadcrumb() {
+  const t = useTranslations("statusPages");
+
   return (
     <NavBreadcrumb
-      items={[{ type: "page", label: "Status Pages", icon: PanelTop }]}
+      items={[{ type: "page", label: t("list.title"), icon: PanelTop }]}
     />
   );
 }

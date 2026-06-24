@@ -6,6 +6,7 @@ import { Button } from "@openstatus/ui/components/ui/button";
 import { Separator } from "@openstatus/ui/components/ui/separator";
 import { useCopyToClipboard } from "@openstatus/ui/hooks/use-copy-to-clipboard";
 import { Check, Copy } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import {
   DataTableSheet,
@@ -30,6 +31,7 @@ export function Sheet({
   onClose: () => void;
   showCopyUrl?: boolean;
 }) {
+  const t = useTranslations("monitors.logs");
   const { copy, isCopied } = useCopyToClipboard();
   if (!data) return null;
 
@@ -37,7 +39,7 @@ export function Sheet({
     <DataTableSheet defaultOpen onOpenChange={(open) => !open && onClose()}>
       <DataTableSheetContent className="sm:max-w-lg">
         <DataTableSheetHeader className="px-2">
-          <DataTableSheetTitle>Response Logs</DataTableSheetTitle>
+          <DataTableSheetTitle>{t("sheetTitle")}</DataTableSheetTitle>
         </DataTableSheetHeader>
         <DataTableBasics data={data} privateLocations={privateLocations} />
         {showCopyUrl ? (
@@ -54,7 +56,7 @@ export function Sheet({
                   }
                 }}
               >
-                Copy Request Log URL
+                {t("copyUrl")}
                 {isCopied ? <Check /> : <Copy />}
               </Button>
             </DataTableSheetFooter>

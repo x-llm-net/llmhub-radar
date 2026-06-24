@@ -45,6 +45,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
 import { format, parse } from "date-fns";
 import { CalendarIcon, Check, Copy } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -70,8 +71,9 @@ import { useTRPC } from "@/lib/trpc/client";
 
 // we should prefetch the api key on the server (layout)
 
-const schema = z.object({
-  name: z.string().min(1, "Name is required"),
+function getSchema(t: (key: string) => string) {
+  return z.object({
+  name: z.string().min(1, t("nameRequired")),
   description: z.string().optional(),
   expiresAt: z.string().optional(),
   // Single-value radio. The wire format on the create-key API is
@@ -87,11 +89,13 @@ const schema = z.object({
   // mismatch. Keep this list in sync with
   // `packages/db/src/schema/api-keys/constants.ts`.
   scope: z.enum(["read", "write"]),
-});
+  });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormApiKey() {
+  const t = useTranslations("settings.forms");
   const trpc = useTRPC();
   const [isPending, startTransition] = useTransition();
   const { copy, isCopied } = useCopyToClipboard();
@@ -102,7 +106,7 @@ export function FormApiKey() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: {
       name: "",
       description: "",
@@ -129,7 +133,7 @@ export function FormApiKey() {
           setCreateDialogOpen(false);
           form.reset();
         } else {
-          throw new Error("Failed to create API key");
+          throw new Error(t("failedToCreateApiKey"));
         }
       },
     }),
@@ -149,13 +153,13 @@ export function FormApiKey() {
           scopes: [values.scope],
         });
         toast.promise(promise, {
-          loading: "Creating...",
-          success: () => "Created",
+          loading: t("creating"),
+          success: () => t("createdSuccess"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to create API key";
+            return t("failedToCreateApiKey");
           },
         });
         await promise;
@@ -168,17 +172,15 @@ export function FormApiKey() {
   return (
     <FormCard>
       <FormCardHeader>
-        <FormCardTitle>API Keys</FormCardTitle>
-        <FormCardDescription>
-          Create and manage your API keys.
-        </FormCardDescription>
+        <FormCardTitle>{t("apiKeys")}</FormCardTitle>
+        <FormCardDescription>{t("apiKeysDescription")}</FormCardDescription>
       </FormCardHeader>
       <FormCardContent>
         {apiKeys.length === 0 ? (
           <EmptyStateContainer>
-            <EmptyStateTitle>No API keys</EmptyStateTitle>
+            <EmptyStateTitle>{t("noApiKeys")}</EmptyStateTitle>
             <EmptyStateDescription>
-              Access your data via API.
+              {t("noApiKeysDescription")}
             </EmptyStateDescription>
           </EmptyStateContainer>
         ) : (
@@ -187,19 +189,19 @@ export function FormApiKey() {
       </FormCardContent>
       <FormCardFooter>
         <FormCardFooterInfo>
-          Trigger monitors via CLI, CI/CD or create your own status page.{" "}
+          {t("apiKeysFooter")}{" "}
           <Link
             href="https://api.openstatus.dev/v1"
             rel="noreferrer"
             target="_blank"
           >
-            Learn more
+            {t("learnMore")}
           </Link>
           .
         </FormCardFooterInfo>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm">Create</Button>
+            <Button size="sm">{t("create")}</Button>
           </DialogTrigger>
           <DialogContent
             className="max-h-[80vh] overflow-y-auto"
@@ -209,10 +211,8 @@ export function FormApiKey() {
             }}
           >
             <DialogHeader>
-              <DialogTitle>Create API Key</DialogTitle>
-              <DialogDescription>
-                Create a new API key to access your workspace data.
-              </DialogDescription>
+              <DialogTitle>{t("createApiKey")}</DialogTitle>
+              <DialogDescription>{t("createApiKeyDescription")}</DialogDescription>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(createAction)}>
@@ -222,9 +222,12 @@ export function FormApiKey() {
                     name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Name</FormLabel>
+                        <FormLabel>{t("name")}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Production API" {...field} />
+                          <Input
+                            placeholder={t("apiKeyNamePlaceholder")}
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -235,10 +238,10 @@ export function FormApiKey() {
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Description</FormLabel>
+                        <FormLabel>{t("description")}</FormLabel>
                         <FormControl>
                           <Textarea
-                            placeholder="Used for production deployment"
+                            placeholder={t("apiKeyDescriptionPlaceholder")}
                             rows={3}
                             {...field}
                           />
@@ -252,7 +255,7 @@ export function FormApiKey() {
                     name="scope"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Access</FormLabel>
+                        <FormLabel>{t("access")}</FormLabel>
                         <FormControl>
                           <RadioGroup
                             value={field.value}
@@ -263,11 +266,10 @@ export function FormApiKey() {
                               <RadioGroupItem value="read" className="mt-1" />
                               <div className="space-y-0.5">
                                 <div className="text-sm font-medium">
-                                  Read-only
+                                  {t("readOnly")}
                                 </div>
                                 <div className="text-muted-foreground text-xs">
-                                  Recommended for AI agents and read-only
-                                  dashboards.
+                                  {t("readOnlyDescription")}
                                 </div>
                               </div>
                             </label>
@@ -275,10 +277,10 @@ export function FormApiKey() {
                               <RadioGroupItem value="write" className="mt-1" />
                               <div className="space-y-0.5">
                                 <div className="text-sm font-medium">
-                                  Read &amp; write
+                                  {t("readWrite")}
                                 </div>
                                 <div className="text-muted-foreground text-xs">
-                                  Required for CI/CD and automation.
+                                  {t("readWriteDescription")}
                                 </div>
                               </div>
                             </label>
@@ -293,7 +295,7 @@ export function FormApiKey() {
                     name="expiresAt"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Expiration Date</FormLabel>
+                        <FormLabel>{t("expirationDate")}</FormLabel>
                         <Popover modal>
                           <FormControl>
                             <PopoverTrigger asChild>
@@ -309,7 +311,7 @@ export function FormApiKey() {
                                 {field.value ? (
                                   format(new Date(field.value), "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{t("pickDate")}</span>
                                 )}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
@@ -355,10 +357,10 @@ export function FormApiKey() {
                     type="button"
                     onClick={() => setCreateDialogOpen(false)}
                   >
-                    Cancel
+                    {t("cancel")}
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    Create
+                    {t("create")}
                   </Button>
                 </DialogFooter>
               </form>
@@ -374,10 +376,9 @@ export function FormApiKey() {
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>API Key Created</AlertDialogTitle>
+            <AlertDialogTitle>{t("apiKeyCreated")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Ensure you copy your API key before closing this dialog. You will
-              not see it again.
+              {t("apiKeyCopyWarning")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div>
@@ -386,7 +387,7 @@ export function FormApiKey() {
               size="sm"
               onClick={() => {
                 copy(result?.token || "", {
-                  successMessage: "Copied API key to clipboard",
+                  successMessage: t("apiKeyCopied"),
                 });
               }}
             >
@@ -399,7 +400,7 @@ export function FormApiKey() {
             </Button>
           </div>
           <AlertDialogFooter>
-            <Button onClick={() => setResult(null)}>Done</Button>
+            <Button onClick={() => setResult(null)}>{t("done")}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -12,8 +12,19 @@ import { cn } from "@/lib/utils";
 
 type AuditLog = RouterOutputs["tinybird"]["auditLog"]["data"][number];
 
+type AuditLogColumnLabels = {
+  action: string;
+  information: string;
+  timestamp: string;
+};
+
 export function getColumns(
   privateLocations?: PrivateLocation[],
+  labels: AuditLogColumnLabels = {
+    action: "Action",
+    information: "Information",
+    timestamp: "Timestamp",
+  },
 ): ColumnDef<AuditLog>[] {
   const metadata = getMetadata(privateLocations);
   return [
@@ -35,7 +46,7 @@ export function getColumns(
     },
     {
       accessorKey: "action",
-      header: "Action",
+      header: labels.action,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -47,7 +58,7 @@ export function getColumns(
     },
     {
       accessorKey: "metadata",
-      header: "Information",
+      header: labels.information,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -76,7 +87,7 @@ export function getColumns(
     },
     {
       accessorKey: "timestamp",
-      header: "Timestamp",
+      header: labels.timestamp,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import { Link } from "@/components/common/link";
@@ -18,12 +19,14 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { columns } from "@/components/data-table/incidents/columns";
+import { useIncidentColumns } from "@/components/data-table/incidents/columns";
 import { DataTable } from "@/components/ui/data-table/data-table";
 import { DataTablePaginationSimple } from "@/components/ui/data-table/data-table-pagination";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
+  const t = useTranslations("monitors.incidents");
+  const columns = useIncidentColumns();
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const { data: incidents } = useQuery(
@@ -42,9 +45,9 @@ export default function Page() {
       <Note color="info">
         <Info />
         <p>
-          Incidents are automatically created when a monitor detects downtime.
-          To communicate updates to your users, use Status Reports on a{" "}
-          <Link href="/status-pages">Status Page</Link>.
+          {t("notePrefix")}{" "}
+          <Link href="/status-pages">{t("statusPage")}</Link>
+          {t("noteSuffix")}
         </p>
       </Note>
       <Section>
@@ -62,10 +65,8 @@ export default function Page() {
         </SectionHeader>
         {incidents.length === 0 ? (
           <EmptyStateContainer>
-            <EmptyStateTitle>No incidents</EmptyStateTitle>
-            <EmptyStateDescription>
-              No incidents found for this monitor.
-            </EmptyStateDescription>
+            <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
+            <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
           </EmptyStateContainer>
         ) : (
           <DataTable

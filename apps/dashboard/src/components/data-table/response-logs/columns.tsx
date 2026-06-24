@@ -20,9 +20,32 @@ import { getStatusCodeVariant, textColors } from "@/data/status-codes";
 
 type ResponseLog = RouterOutputs["tinybird"]["list"]["data"][number];
 
+export type ResponseLogColumnLabels = {
+  timestamp: string;
+  status: string;
+  latency: string;
+  region: string;
+  timing: string;
+  trigger: string;
+  scheduled: string;
+  api: string;
+};
+
+const defaultLabels: ResponseLogColumnLabels = {
+  timestamp: "Timestamp",
+  status: "Status",
+  latency: "Latency",
+  region: "Region",
+  timing: "Timing",
+  trigger: "Trigger",
+  scheduled: "Scheduled",
+  api: "API",
+};
+
 // export const columns: ColumnDef<ResponseLog>[] =
 export function getColumns(
   privateLocations: PrivateLocation[],
+  labels: ResponseLogColumnLabels = defaultLabels,
 ): ColumnDef<ResponseLog>[] {
   return [
     {
@@ -46,7 +69,7 @@ export function getColumns(
     },
     {
       accessorKey: "timestamp",
-      header: "Timestamp",
+      header: labels.timestamp,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -63,7 +86,7 @@ export function getColumns(
     },
     {
       accessorKey: "statusCode",
-      header: "Status",
+      header: labels.status,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -80,7 +103,7 @@ export function getColumns(
     },
     {
       accessorKey: "latency",
-      header: "Latency",
+      header: labels.latency,
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -89,7 +112,7 @@ export function getColumns(
     },
     {
       accessorKey: "region",
-      header: "Region",
+      header: labels.region,
       cell: ({ row }) => (
         <TableCellRegion
           value={row.getValue("region")}
@@ -105,7 +128,7 @@ export function getColumns(
     },
     {
       accessorKey: "timing",
-      header: "Timing",
+      header: labels.timing,
       cell: ({ row }) => {
         const log = row.original;
         if (log.type === "http" && log.timing) {
@@ -118,12 +141,12 @@ export function getColumns(
     },
     {
       accessorKey: "trigger",
-      header: "Trigger",
+      header: labels.trigger,
       cell: ({ row }) => {
         const value = row.getValue("trigger");
         if (value === "cron" || value === "api") {
           const Icon = value === "cron" ? Clock : Workflow;
-          const label = value === "cron" ? "Scheduled" : "API";
+          const label = value === "cron" ? labels.scheduled : labels.api;
           return (
             <TooltipProvider>
               <Tooltip>

@@ -15,6 +15,7 @@ import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -48,6 +49,7 @@ export function FormNtfy({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -81,13 +83,13 @@ export function FormNtfy({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -111,13 +113,13 @@ export function FormNtfy({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -140,14 +142,12 @@ export function FormNtfy({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -156,7 +156,7 @@ export function FormNtfy({
             name="data.topic"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Topic</FormLabel>
+                <FormLabel>{t("topic")}</FormLabel>
                 <FormControl>
                   <Input placeholder="your-topic" {...field} />
                 </FormControl>
@@ -172,7 +172,7 @@ export function FormNtfy({
             name="data.serverUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Server URL</FormLabel>
+                <FormLabel>{t("serverUrl")}</FormLabel>
                 <FormControl>
                   <Input placeholder="https://ntfy.sh" {...field} />
                 </FormControl>
@@ -188,7 +188,7 @@ export function FormNtfy({
             name="data.token"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Bearer Token</FormLabel>
+                <FormLabel>{t("bearerToken")}</FormLabel>
                 <FormControl>
                   <Input placeholder="tk_iloveopenstatus" {...field} />
                 </FormControl>
@@ -206,7 +206,7 @@ export function FormNtfy({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -217,16 +217,14 @@ export function FormNtfy({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

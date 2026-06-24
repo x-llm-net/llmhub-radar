@@ -10,6 +10,7 @@ import {
 import { cn } from "@openstatus/ui/lib/utils";
 import type { Table } from "@tanstack/react-table";
 import { Loader, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 
@@ -128,6 +129,7 @@ interface DataTableActionBarSelectionProps<TData> {
 function DataTableActionBarSelection<TData>({
   table,
 }: DataTableActionBarSelectionProps<TData>) {
+  const t = useTranslations("common");
   const onClearSelection = React.useCallback(() => {
     table.toggleAllRowsSelected(false);
   }, [table]);
@@ -135,7 +137,9 @@ function DataTableActionBarSelection<TData>({
   return (
     <div className="flex h-7 items-center rounded-md border pr-1 pl-2.5">
       <span className="text-xs whitespace-nowrap">
-        {table.getFilteredSelectedRowModel().rows.length} selected
+        {t("selectedCount", {
+          count: table.getFilteredSelectedRowModel().rows.length,
+        })}
       </span>
       <Separator
         orientation="vertical"
@@ -156,7 +160,7 @@ function DataTableActionBarSelection<TData>({
           sideOffset={10}
           className="bg-accent text-foreground flex items-center gap-2 border px-2 py-1 font-semibold dark:bg-zinc-900 [&>span]:hidden"
         >
-          <p>Clear selection</p>
+          <p>{t("clearSelection")}</p>
           <kbd className="bg-background text-foreground rounded border px-1.5 py-px font-mono text-[0.7rem] font-normal shadow-xs select-none">
             <abbr title="Escape" className="no-underline">
               Esc

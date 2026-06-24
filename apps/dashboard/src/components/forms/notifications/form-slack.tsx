@@ -15,6 +15,7 @@ import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
+import { useTranslations } from "next-intl";
 import React, { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -29,14 +30,16 @@ import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { CheckboxTree } from "@/components/ui/checkbox-tree";
 import { useTRPC } from "@/lib/trpc/client";
 
-const schema = z.object({
+function getSchema(t: (key: string) => string) {
+  return z.object({
   name: z.string(),
   provider: z.literal("slack"),
-  data: z.url("Please enter a valid URL"),
+  data: z.url(t("invalidUrl")),
   monitors: z.array(z.number()),
 });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof getSchema>>;
 
 export function FormSlack({
   defaultValues,
@@ -49,8 +52,9 @@ export function FormSlack({
   onSubmit: (values: FormValues) => Promise<void>;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(getSchema(t)),
     defaultValues: defaultValues ?? {
       name: "",
       provider: "slack",
@@ -78,13 +82,13 @@ export function FormSlack({
       try {
         const promise = onSubmit(values);
         toast.promise(promise, {
-          loading: "Saving...",
-          success: "Saved",
+          loading: t("saving"),
+          success: t("saved"),
           error: (error) => {
             if (isTRPCClientError(error)) {
               return error.message;
             }
-            return "Failed to save";
+            return t("failedToSave");
           },
         });
         await promise;
@@ -108,13 +112,13 @@ export function FormSlack({
           },
         });
         toast.promise(promise, {
-          loading: "Sending test...",
-          success: "Test sent",
+          loading: t("sendingTest"),
+          success: t("testSent"),
           error: (error) => {
             if (error instanceof Error) {
               return error.message;
             }
-            return "Failed to send test";
+            return t("failedToSendTest");
           },
         });
         await promise;
@@ -137,14 +141,12 @@ export function FormSlack({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Name</FormLabel>
+                <FormLabel>{t("name")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="My Notifier" {...field} />
+                  <Input placeholder={t("namePlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
-                <FormDescription>
-                  Enter a descriptive name for your notifier.
-                </FormDescription>
+                <FormDescription>{t("nameDescription")}</FormDescription>
               </FormItem>
             )}
           />
@@ -153,19 +155,19 @@ export function FormSlack({
             name="data"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Webhook URL</FormLabel>
+                <FormLabel>{t("webhookUrl")}</FormLabel>
                 <FormControl>
-                  <Input placeholder="https://example.com/webhook" {...field} />
+                  <Input placeholder={t("webhookPlaceholder")} {...field} />
                 </FormControl>
                 <FormMessage />
                 <FormDescription>
-                  Enter the webhook URL to your Slack channel.{" "}
+                  {t("slackWebhookDescription")}{" "}
                   <Link
                     href="https://www.openstatus.dev/docs/reference/notification/#slack"
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Read more
+                    {t("readMore")}
                   </Link>
                   .
                 </FormDescription>
@@ -179,7 +181,7 @@ export function FormSlack({
               type="button"
               onClick={testAction}
             >
-              Send Test
+              {t("sendTest")}
             </Button>
           </div>
         </FormCardContent>
@@ -190,16 +192,14 @@ export function FormSlack({
             name="monitors"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Monitors</FormLabel>
-                <FormDescription>
-                  Select the monitors you want to notify.
-                </FormDescription>
+                <FormLabel>{t("monitors")}</FormLabel>
+                <FormDescription>{t("monitorsDescription")}</FormDescription>
                 <FormControl>
                   <CheckboxTree
                     items={[
                       {
                         id: -1,
-                        label: "Select all",
+                        label: t("selectAll"),
                         children: monitors.map((m) => ({
                           id: m.id,
                           label: m.name,

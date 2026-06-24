@@ -1,9 +1,11 @@
 "use client";
 
+import { dateFnsLocales } from "@openstatus/locales";
 import {
   StatusBlocksI18nProvider,
   type StatusBlocksLabels,
 } from "@openstatus/ui/components/blocks/status-i18n";
+import { formatDistanceStrict } from "date-fns";
 import { useExtracted, useLocale } from "next-intl";
 import { useMemo } from "react";
 
@@ -13,6 +15,7 @@ import {
   formatDateRangeParts,
   formatDateTime,
 } from "@/lib/formatter";
+import type { Locale } from "@/i18n/config";
 
 // Status-page timestamps render in UTC; the suffix tells viewers which zone.
 const withUTC = (value: string) => `${value} (UTC)`;
@@ -34,7 +37,8 @@ export function StatusBlocksProvider({
   children: React.ReactNode;
 }) {
   const t = useExtracted();
-  const locale = useLocale();
+  const locale = useLocale() as Locale;
+  const dateFnsLocale = dateFnsLocales[locale];
 
   const value = useMemo<StatusBlocksLabels>(
     () => ({
@@ -106,6 +110,7 @@ export function StatusBlocksProvider({
       ariaStatusTracker: t("Status tracker"),
       ariaDayStatus: (n: number) => t("Day {n} status", { n: String(n) }),
       clickAgainToUnpin: t("Click again to unpin"),
+      relative: t("Relative"),
 
       calendarTitle: t("Calendar"),
 
@@ -120,6 +125,11 @@ export function StatusBlocksProvider({
       formatDateShort: (d: Date) =>
         withUTC(formatDate(d, { month: "short", locale })),
       formatDateTime: (d: Date) => withUTC(formatDateTime(d, locale)),
+      formatDistance: (from: Date, to: Date | undefined, options) =>
+        formatDistanceStrict(from, to ?? new Date(), {
+          ...options,
+          locale: dateFnsLocale,
+        }),
       formatDateRange: (from?: Date, to?: Date) => {
         const range = formatDateRange(from, to, locale);
         return from || to ? withUTC(range) : range;
@@ -129,7 +139,7 @@ export function StatusBlocksProvider({
         return { from: start, to: withUTC(end) };
       },
     }),
-    [t, locale],
+    [dateFnsLocale, t, locale],
   );
 
   return (

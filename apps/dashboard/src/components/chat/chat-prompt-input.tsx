@@ -6,6 +6,7 @@ import {
 } from "@openstatus/ui/components/ui/input-group";
 import { Spinner } from "@openstatus/ui/components/ui/spinner";
 import { CornerDownLeftIcon, SquareIcon, XIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export function ChatPromptInput({ onSubmit, onStop, status }: Props) {
+  const t = useTranslations("chat.prompt");
   const [value, setValue] = useState("");
   const isGenerating = status === "submitted" || status === "streaming";
 
@@ -64,7 +66,7 @@ export function ChatPromptInput({ onSubmit, onStop, status }: Props) {
         <form onSubmit={handleSubmit}>
           <InputGroup>
             <InputGroupTextarea
-              placeholder="Ask openstatus…"
+              placeholder={t("placeholder")}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -80,7 +82,7 @@ export function ChatPromptInput({ onSubmit, onStop, status }: Props) {
                 size="icon-sm"
                 onClick={handleClick}
                 disabled={!isGenerating && !value.trim()}
-                aria-label={isGenerating ? "Stop" : "Send"}
+                aria-label={isGenerating ? t("stop") : t("send")}
               >
                 {status === "submitted" ? (
                   <Spinner />
@@ -96,8 +98,7 @@ export function ChatPromptInput({ onSubmit, onStop, status }: Props) {
           </InputGroup>
         </form>
         <p className="text-muted-foreground text-center text-xs">
-          Powered by Claude. AI responses may contain errors, double-check
-          results.
+          {t("poweredBy")}
         </p>
       </div>
     </div>

@@ -22,7 +22,23 @@ type Monitor = RouterOutputs["monitor"]["list"][number] & {
     | false;
 };
 
-export const columns: ColumnDef<Monitor>[] = [
+type MonitorColumnLabels = {
+  selectAll: string;
+  selectRow: string;
+  name: string;
+  endpoint: string;
+  type: string;
+  status: string;
+  tags: string;
+  lastIncident: string;
+  lastChecked: string;
+  p50: string;
+  p90: string;
+  p95: string;
+};
+
+export function getColumns(labels: MonitorColumnLabels): ColumnDef<Monitor>[] {
+  return [
   {
     id: "select",
     header: ({ table }) => (
@@ -32,14 +48,14 @@ export const columns: ColumnDef<Monitor>[] = [
           (table.getIsSomePageRowsSelected() && "indeterminate")
         }
         onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
+        aria-label={labels.selectAll}
       />
     ),
     cell: ({ row }) => (
       <Checkbox
         checked={row.getIsSelected()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
+        aria-label={labels.selectRow}
       />
     ),
     enableSorting: false,
@@ -48,7 +64,7 @@ export const columns: ColumnDef<Monitor>[] = [
   {
     accessorKey: "name",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Name" />
+      <DataTableColumnHeader column={column} title={labels.name} />
     ),
     cell: ({ row }) => {
       return (
@@ -66,7 +82,7 @@ export const columns: ColumnDef<Monitor>[] = [
   {
     accessorKey: "url",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Endpoint" />
+      <DataTableColumnHeader column={column} title={labels.endpoint} />
     ),
     cell: ({ row }) => {
       return (
@@ -80,7 +96,7 @@ export const columns: ColumnDef<Monitor>[] = [
   },
   {
     accessorKey: "jobType",
-    header: "Type",
+    header: labels.type,
     enableHiding: true,
   },
   {
@@ -89,7 +105,7 @@ export const columns: ColumnDef<Monitor>[] = [
       console.log(row);
       return row.active ? row.status : "inactive";
     },
-    header: "Status",
+    header: labels.status,
     cell: ({ row }) => {
       const value = String(row.getValue("status"));
 
@@ -127,7 +143,7 @@ export const columns: ColumnDef<Monitor>[] = [
   },
   {
     accessorKey: "tags",
-    header: "Tags",
+    header: labels.tags,
     cell: ({ row }) => {
       const value = row.getValue("tags");
       if (!Array.isArray(value)) return null;
@@ -166,7 +182,7 @@ export const columns: ColumnDef<Monitor>[] = [
   },
   {
     id: "lastIncident",
-    header: "Last Incident",
+    header: labels.lastIncident,
     accessorFn: (row) => row.incidents?.[0]?.createdAt,
     cell: ({ row }) => {
       const value = row.getValue("lastIncident");
@@ -192,7 +208,7 @@ export const columns: ColumnDef<Monitor>[] = [
   // },
   {
     id: "lastTimestamp",
-    header: "Last Checked",
+    header: labels.lastChecked,
     accessorFn: (row) =>
       typeof row.globalMetrics === "object"
         ? row.globalMetrics.lastTimestamp
@@ -220,7 +236,7 @@ export const columns: ColumnDef<Monitor>[] = [
         ? row.globalMetrics.p50Latency
         : row.globalMetrics,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="P50" />
+      <DataTableColumnHeader column={column} title={labels.p50} />
     ),
     cell: ({ row }) => {
       const value = row.getValue("p50");
@@ -237,7 +253,7 @@ export const columns: ColumnDef<Monitor>[] = [
         ? row.globalMetrics.p90Latency
         : row.globalMetrics,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="P90" />
+      <DataTableColumnHeader column={column} title={labels.p90} />
     ),
     cell: ({ row }) => {
       const value = row.getValue("p90");
@@ -255,7 +271,7 @@ export const columns: ColumnDef<Monitor>[] = [
         ? row.globalMetrics.p95Latency
         : row.globalMetrics,
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="P95" />
+      <DataTableColumnHeader column={column} title={labels.p95} />
     ),
     cell: ({ row }) => {
       const value = row.getValue("p95");
@@ -273,4 +289,5 @@ export const columns: ColumnDef<Monitor>[] = [
       cellClassName: "w-8",
     },
   },
-];
+  ];
+}

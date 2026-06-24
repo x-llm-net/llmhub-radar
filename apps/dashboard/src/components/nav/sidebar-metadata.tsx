@@ -31,6 +31,7 @@ import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { LucideIcon } from "lucide-react";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 
 import { QuickActions } from "@/components/dropdowns/quick-actions";
@@ -91,7 +92,8 @@ export type SidebarMetadataProps =
     };
 
 export function SidebarMetadata(props: SidebarMetadataProps) {
-  const { label, emptyMessage = "None" } = props;
+  const t = useTranslations("common");
+  const { label, emptyMessage = t("none") } = props;
   return (
     <SidebarGroup className="p-0">
       <Collapsible defaultOpen className="group/collapsible border-b">
@@ -140,6 +142,7 @@ function SidebarMetadataTable({
   }[];
   emptyMessage: string;
 }) {
+  const t = useTranslations("common");
   if (items.length === 0) {
     return <SidebarMetadataEmpty message={emptyMessage} />;
   }
@@ -147,8 +150,8 @@ function SidebarMetadataTable({
     <Table>
       <TableHeader className="sr-only">
         <TableRow>
-          <TableHead className="w-26">Label</TableHead>
-          <TableHead>Value</TableHead>
+          <TableHead className="w-26">{t("label")}</TableHead>
+          <TableHead>{t("value")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -177,6 +180,7 @@ function SidebarMetadataList({
   items: SidebarMetadataListItem[];
   emptyMessage: string;
 }) {
+  const t = useTranslations("common");
   if (items.length === 0) {
     return <SidebarMetadataEmpty message={emptyMessage} />;
   }
@@ -232,7 +236,7 @@ function SidebarMetadataList({
                     className="bg-sidebar-accent before:from-sidebar-accent -translate-y-1/2 peer-data-[size=default]/menu-button:top-1/2 before:absolute before:inset-y-0 before:right-full before:-left-6 before:bg-gradient-to-l before:to-transparent focus-visible:ring-inset"
                   >
                     <MoreHorizontal />
-                    <span className="sr-only">More</span>
+                    <span className="sr-only">{t("more")}</span>
                   </SidebarMenuAction>
                 </QuickActions>
               ) : null}
@@ -248,6 +252,7 @@ function SidebarMetadataTableCell({
   className,
   ...props
 }: React.ComponentProps<typeof TableCell>) {
+  const t = useTranslations("common");
   const ref = React.useRef<HTMLTableCellElement>(null);
   const [isTruncated, setIsTruncated] = React.useState(false);
   const { copy, isCopied } = useCopyToClipboard();
@@ -294,7 +299,7 @@ function SidebarMetadataTableCell({
               onPointerDownOutside={(event) => event.preventDefault()}
               side="left"
             >
-              {isCopied ? "Copied" : props.children}
+              {isCopied ? t("copied") : props.children}
             </TooltipContent>
           </Tooltip>
         ) : (

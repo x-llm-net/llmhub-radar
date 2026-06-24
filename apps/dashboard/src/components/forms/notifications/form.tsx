@@ -12,6 +12,7 @@ import {
 import { Form } from "@openstatus/ui/components/ui/form";
 import { Input } from "@openstatus/ui/components/ui/input";
 import { cn } from "@openstatus/ui/lib/utils";
+import { useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -53,6 +54,7 @@ export function NotifierForm({
   onSubmit?: (values: FormValues) => Promise<void> | void;
   monitors: { id: number; name: string }[];
 }) {
+  const t = useTranslations("notifications.form");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
@@ -72,9 +74,9 @@ export function NotifierForm({
       try {
         const promise = new Promise((resolve) => setTimeout(resolve, 1000));
         toast.promise(promise, {
-          loading: "Saving...",
+          loading: t("saving"),
           success: () => JSON.stringify(values),
-          error: "Failed to save",
+          error: t("failedToSave"),
         });
         await promise;
         onSubmit?.(values);
@@ -97,14 +99,12 @@ export function NotifierForm({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>{t("name")}</FormLabel>
               <FormControl>
-                <Input placeholder="My Notifier" {...field} />
+                <Input placeholder={t("namePlaceholder")} {...field} />
               </FormControl>
               <FormMessage />
-              <FormDescription>
-                Enter a descriptive name for your notifier.
-              </FormDescription>
+              <FormDescription>{t("nameDescription")}</FormDescription>
             </FormItem>
           )}
         />
@@ -113,9 +113,9 @@ export function NotifierForm({
           name="data.webhook"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Webhook URL</FormLabel>
+              <FormLabel>{t("webhookUrl")}</FormLabel>
               <FormControl>
-                <Input placeholder="https://example.com/webhook" {...field} />
+                <Input placeholder={t("webhookPlaceholder")} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -126,16 +126,14 @@ export function NotifierForm({
           name="monitors"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Monitors</FormLabel>
-              <FormDescription>
-                Select the monitors you want to notify.
-              </FormDescription>
+              <FormLabel>{t("monitors")}</FormLabel>
+              <FormDescription>{t("monitorsDescription")}</FormDescription>
               <FormControl>
                 <CheckboxTree
                   items={[
-                    {
-                      id: -1,
-                      label: "Select all",
+                      {
+                        id: -1,
+                      label: t("selectAll"),
                       children: monitors.map((m) => ({
                         id: m.id,
                         label: m.name,

@@ -6,10 +6,13 @@ import {
   TooltipTrigger,
 } from "@openstatus/ui/components/ui/tooltip";
 import { Book } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { NavFeedback } from "@/components/nav/nav-feedback";
 
 export function NavActions() {
+  const t = useTranslations("agents");
+
   return (
     <div className="flex items-center gap-2 text-sm">
       <NavFeedback />
@@ -26,7 +29,7 @@ export function NavActions() {
               </a>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>View Documentation</TooltipContent>
+          <TooltipContent>{t("viewDocumentation")}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>

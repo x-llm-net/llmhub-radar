@@ -7,6 +7,7 @@ import {
   HoverCardTrigger,
 } from "@openstatus/ui/components/ui/hover-card";
 import { format, formatDistanceToNowStrict } from "date-fns";
+import { useTranslations } from "next-intl";
 import type { ComponentPropsWithoutRef } from "react";
 
 import { CopyRow } from "./copy-row";
@@ -32,6 +33,7 @@ export function HoverCardTimestamp({
   sideOffset,
   children,
 }: HoverCardTimestampProps) {
+  const t = useTranslations("common");
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
@@ -42,7 +44,7 @@ export function HoverCardTimestamp({
         {...{ side, align, alignOffset, sideOffset }}
       >
         <dl className="flex flex-col gap-1">
-          <CopyRow value={String(date.getTime())} label="Timestamp" />
+          <CopyRow value={String(date.getTime())} label={t("timestamp")} />
           <CopyRow
             value={format(new UTCDate(date), "LLL dd, y HH:mm:ss")}
             label="UTC"
@@ -53,7 +55,7 @@ export function HoverCardTimestamp({
           />
           <CopyRow
             value={formatDistanceToNowStrict(date, { addSuffix: true })}
-            label="Relative"
+            label={t("relative")}
           />
         </dl>
       </HoverCardContent>

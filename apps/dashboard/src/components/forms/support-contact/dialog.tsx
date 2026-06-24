@@ -8,6 +8,7 @@ import {
 } from "@openstatus/ui/components/ui/dialog";
 import { useIsMobile } from "@openstatus/ui/hooks/use-mobile";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Link } from "@/components/common/link";
@@ -27,6 +28,7 @@ export function FormDialogSupportContact({
   const trpc = useTRPC();
   const { data: user } = useQuery(trpc.user.get.queryOptions());
   const feedbackMutation = useMutation(trpc.feedback.submit.mutationOptions());
+  const t = useTranslations("supportContact");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -35,10 +37,9 @@ export function FormDialogSupportContact({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Support</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
           <DialogDescription>
-            Please fill out the form below to get in touch with us. Or send us
-            an email to{" "}
+            {t("descriptionPrefix")}{" "}
             <Link href="mailto:ping@openstatus.dev">ping@openstatus.dev</Link>.
           </DialogDescription>
         </DialogHeader>

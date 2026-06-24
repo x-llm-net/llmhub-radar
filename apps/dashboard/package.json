@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "radar:cron": "bun src/scripts/radar-cron-loop.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -79,6 +80,7 @@
     "lucide-react": "catalog:",
     "next": "catalog:",
     "next-auth": "catalog:",
+    "next-intl": "catalog:",
     "next-themes": "catalog:",
     "nuqs": "catalog:",
     "random-word-slugs": "catalog:",

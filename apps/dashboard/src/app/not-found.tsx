@@ -2,9 +2,11 @@
 
 import { Button } from "@openstatus/ui/components/ui/button";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 export default function NotFound() {
+  const t = useTranslations("errors");
   const router = useRouter();
 
   return (
@@ -13,12 +15,12 @@ export default function NotFound() {
         <div className="bg-card mx-auto max-w-xl rounded-lg border text-center">
           <div className="flex flex-col gap-4 p-6 sm:p-12">
             <div className="flex flex-col gap-1">
-              <p className="text-foreground font-mono">404 Page not found</p>
+              <p className="text-foreground font-mono">{t("notFoundLabel")}</p>
               <h2 className="font-cal text-foreground text-2xl">
-                Oops, something went wrong.
+                {t("notFoundTitle")}
               </h2>
               <p className="text-muted-foreground text-sm sm:text-base">
-                The page you are looking for doesn&apos;t exist.
+                {t("notFoundDescription")}
               </p>
             </div>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -28,10 +30,10 @@ export default function NotFound() {
                 onClick={router.back}
                 className="cursor-pointer"
               >
-                Go Back
+                {t("goBack")}
               </Button>
               <Button size="lg" asChild>
-                <Link href="/">Home</Link>
+                <Link href="/">{t("home")}</Link>
               </Button>
             </div>
           </div>

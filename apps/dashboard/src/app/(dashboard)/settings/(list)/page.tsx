@@ -13,37 +13,40 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
+import { getTranslations } from "next-intl/server";
 
-const settings = [
-  {
-    title: "General",
-    description: "Manage your workspace settings.",
-    href: "/settings/general",
-  },
-  {
-    title: "Billing",
-    description: "Manage your billing information and payment methods.",
-    href: "/settings/billing",
-  },
-  {
-    title: "Account",
-    description: "Manage your account information.",
-    href: "/settings/account",
-  },
-  {
-    title: "Integrations",
-    description: "Connect third-party services to your workspace.",
-    href: "/settings/integrations",
-  },
-];
-export default function Page() {
+export default async function Page() {
+  const t = await getTranslations("settings.index");
+  const settings = [
+    {
+      title: t("general"),
+      description: t("generalDescription"),
+      href: "/settings/general",
+    },
+    {
+      title: t("billing"),
+      description: t("billingDescription"),
+      href: "/settings/billing",
+    },
+    {
+      title: t("account"),
+      description: t("accountDescription"),
+      href: "/settings/account",
+    },
+    {
+      title: t("integrations"),
+      description: t("integrationsDescription"),
+      href: "/settings/integrations",
+    },
+  ];
+
   return (
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Settings</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            All your settings in one place.
+            {t("description")}
           </SectionDescription>
         </SectionHeader>
         <ActionCardGroup>

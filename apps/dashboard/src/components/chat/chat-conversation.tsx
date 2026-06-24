@@ -1,5 +1,6 @@
 import { TextShimmer } from "@openstatus/ui/components/custom/text-shimmer";
 import { type UIMessage, isToolUIPart } from "ai";
+import { useTranslations } from "next-intl";
 import { useEffect } from "react";
 
 import { Message, MessageContent, MessageMarkdown } from "./chat-message";
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function ChatConversation({ messages, status }: Props) {
+  const t = useTranslations("chat");
   // No inner overflow container — pin the window itself.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -66,7 +68,7 @@ export function ChatConversation({ messages, status }: Props) {
         })}
         {showThinking ? (
           <p>
-            <TextShimmer>Thinking…</TextShimmer>
+            <TextShimmer>{t("thinking")}</TextShimmer>
           </p>
         ) : null}
       </div>
