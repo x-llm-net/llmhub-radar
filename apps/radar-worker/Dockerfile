@@ -1,8 +1,12 @@
 FROM node:24-slim AS install
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 ENV PNPM_HOME="/pnpm" PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 
-RUN corepack enable pnpm
+RUN corepack enable pnpm && \
+    pnpm config set registry "$NPM_REGISTRY" && \
+    pnpm config set fetch-timeout 300000 && \
+    pnpm config set fetch-retries 5
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/dashboard/package.json apps/dashboard/package.json

@@ -3,6 +3,7 @@
 
 # builder
 FROM node@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 LABEL \
     org.opencontainers.image.base.digest="sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2" \
     org.opencontainers.image.base.name="docker.io/node:24-slim"
@@ -32,6 +33,9 @@ COPY \
     --link \
     "." "/app/"
 RUN corepack enable && \
+    pnpm config set registry "$NPM_REGISTRY" && \
+    pnpm config set fetch-timeout 300000 && \
+    pnpm config set fetch-retries 5 && \
     pnpm install --frozen-lockfile && \
     pnpm turbo run build --filter=@openstatus/status-page
 
