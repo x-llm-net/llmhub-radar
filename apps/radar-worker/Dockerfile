@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.19.0
-
 FROM node:24-slim AS install
 ENV PNPM_HOME="/pnpm" PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
