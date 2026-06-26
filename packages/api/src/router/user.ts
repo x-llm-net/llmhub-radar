@@ -1,4 +1,9 @@
-import { deleteAccount, getUser } from "@openstatus/services/user";
+import {
+  deleteAccount,
+  getUser,
+  updateUserProfile,
+  UpdateUserProfileInput,
+} from "@openstatus/services/user";
 
 import { toServiceCtx, toTRPCError } from "../service-adapter";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -14,6 +19,19 @@ export const userRouter = createTRPCRouter({
       toTRPCError(err);
     }
   }),
+
+  updateProfile: protectedProcedure
+    .input(UpdateUserProfileInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await updateUserProfile({
+          ctx: toServiceCtx(ctx),
+          input,
+        });
+      } catch (err) {
+        toTRPCError(err);
+      }
+    }),
 
   deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
     try {

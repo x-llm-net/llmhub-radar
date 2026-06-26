@@ -13,7 +13,11 @@ import {
 } from "@openstatus/ui/components/ui/select";
 import { cn } from "@openstatus/ui/lib/utils";
 
-import { impactConfig } from "@/data/status-report-updates.client";
+import {
+  getPageComponentImpactLabel,
+  impactConfig,
+  type PageComponentImpactLabels,
+} from "@/data/status-report-updates.client";
 
 export type ComponentImpactValue = {
   pageComponentId: number;
@@ -27,6 +31,7 @@ export function ComponentImpactList({
   allowUnset = false,
   defaultImpact = "operational",
   placeholder = "No change",
+  impactLabels,
 }: {
   components: { id: number; name: string }[];
   value: ComponentImpactValue[];
@@ -36,6 +41,7 @@ export function ComponentImpactList({
   /** Shown for components without an entry; the caller must apply the same fallback on submit. */
   defaultImpact?: PageComponentImpact;
   placeholder?: string;
+  impactLabels?: PageComponentImpactLabels;
 }) {
   function impactFor(id: number): PageComponentImpact | undefined {
     const found = value.find((v) => v.pageComponentId === id)?.impact;
@@ -70,7 +76,7 @@ export function ComponentImpactList({
                 size="sm"
                 className={cn(
                   impact ? impactConfig[impact].color : "text-muted-foreground",
-                  "w-[180px] font-mono",
+                  "w-[180px] font-medium",
                 )}
               >
                 <SelectValue placeholder={placeholder} />
@@ -80,9 +86,9 @@ export function ComponentImpactList({
                   <SelectItem
                     key={option}
                     value={option}
-                    className={cn(impactConfig[option].color, "font-mono")}
+                    className={cn(impactConfig[option].color, "font-medium")}
                   >
-                    {impactConfig[option].label}
+                    {getPageComponentImpactLabel(option, impactLabels)}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -91,7 +91,11 @@ describe("sendEmailVerification", () => {
   });
 
   test("calls sendPageSubscription with the correct arguments", async () => {
-    const sub = makeSub({ email: "user@example.com", pageName: "My Page" });
+    const sub = makeSub({
+      email: "user@example.com",
+      pageName: "My Page",
+      locale: "zh",
+    });
     await sendEmailVerification(sub, "https://example.com/verify/abc");
 
     expect(sendPageSubscriptionMock).toHaveBeenCalledTimes(1);
@@ -99,6 +103,7 @@ describe("sendEmailVerification", () => {
     expect(args.to).toBe("user@example.com");
     expect(args.link).toBe("https://example.com/verify/abc");
     expect(args.page).toBe("My Page");
+    expect(args.locale).toBe("zh");
   });
 });
 
@@ -133,12 +138,13 @@ describe("sendEmailNotifications", () => {
   });
 
   test("passes page components to sendStatusReportUpdate", async () => {
-    const sub = makeSub({ email: "user@example.com" });
+    const sub = makeSub({ email: "user@example.com", locale: "zh" });
     const update = makeUpdate({ pageComponents: ["API", "Database"] });
 
     await sendEmailNotifications([sub], update);
 
     const [args] = sendStatusReportUpdateMock.mock.calls[0];
     expect(args.pageComponents).toEqual(["API", "Database"]);
+    expect(args.subscribers[0].locale).toBe("zh");
   });
 });

@@ -64,6 +64,7 @@ import {
 import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { ComponentImpactList } from "@/components/forms/status-report/component-impact-field";
 import { colors } from "@/data/status-report-updates.client";
+import { useStatusReportLabels } from "@/hooks/use-status-report-labels";
 import { useTRPC } from "@/lib/trpc/client";
 
 const schema = z.object({
@@ -100,6 +101,7 @@ export function FormStatusReportUpdateCard({
   components?: { id: number; name: string }[];
 }) {
   const t = useTranslations("statusPages.reports.form");
+  const { statusLabel, componentImpactLabels } = useStatusReportLabels();
   const { reportId } = useParams<{ id: string; reportId: string }>();
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
@@ -208,7 +210,7 @@ export function FormStatusReportUpdateCard({
                         size="sm"
                         className={cn(
                           colors[field.value],
-                          "w-full font-mono capitalize",
+                          "w-full font-medium",
                         )}
                       >
                         <SelectValue placeholder={t("selectStatus")} />
@@ -220,10 +222,10 @@ export function FormStatusReportUpdateCard({
                             value={status}
                             className={cn(
                               colors[status],
-                              "font-mono capitalize",
+                              "font-medium",
                             )}
                           >
-                            {status}
+                            {statusLabel(status)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -347,8 +349,7 @@ export function FormStatusReportUpdateCard({
                     <FormItem>
                       <FormLabel>{t("componentImpact")}</FormLabel>
                       <FormDescription>
-                        The impact this update set per component. Components
-                        marked &quot;No change&quot; keep their prior impact.
+                        {t("componentImpactUpdateDescription")}
                       </FormDescription>
                       <FormControl>
                         <ComponentImpactList
@@ -356,6 +357,8 @@ export function FormStatusReportUpdateCard({
                           value={field.value ?? []}
                           onValueChange={field.onChange}
                           allowUnset
+                          placeholder={t("noImpactChange")}
+                          impactLabels={componentImpactLabels}
                         />
                       </FormControl>
                       <FormMessage />

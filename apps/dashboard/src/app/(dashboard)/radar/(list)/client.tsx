@@ -11,10 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@openstatus/ui/components/ui/table";
-import {
-  ExternalLink,
-  RadioTower,
-} from "lucide-react";
+import { RadioTower } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo } from "react";
@@ -107,12 +104,6 @@ export function Client() {
               {t("description")}
             </SectionDescription>
           </SectionHeader>
-          <Button size="sm" variant="outline" asChild>
-            <Link href="/status-pages">
-              {t("statusPages")}
-              <ExternalLink className="size-3.5" />
-            </Link>
-          </Button>
         </SectionHeaderRow>
         <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
           {metrics.map((metric) => (

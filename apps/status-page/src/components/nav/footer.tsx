@@ -53,11 +53,11 @@ export function Footer({
           {!page.whiteLabel ? (
             <StatusPagePoweredBy>
               <Link
-                href={`https://openstatus.dev?utm_medium=status-page&utm_source=${page.slug}`}
+                href="https://llm-hub.store"
                 target="_blank"
                 rel="noreferrer"
               >
-                openstatus.dev
+                LLMHub Radar
               </Link>
             </StatusPagePoweredBy>
           ) : null}

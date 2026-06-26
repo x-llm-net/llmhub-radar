@@ -24,6 +24,7 @@ export const CreatePageSubscriberInput = z.discriminatedUnion("channelType", [
     email: z.email(),
     name: z.string().max(255).nullish(),
     componentIds: componentIdList.optional(),
+    locale: z.string().max(16).optional(),
   }),
   z.object({
     pageId: z.number().int().positive(),
@@ -74,6 +75,7 @@ export const UpsertSelfSignupSubscriberInput = z.union([
     email: z.email(),
     pageId: z.number().int().positive(),
     componentIds: componentIdList.optional(),
+    locale: z.string().max(16).optional(),
   }),
   z.object({
     channelType: z.literal("webhook"),

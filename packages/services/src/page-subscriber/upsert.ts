@@ -30,6 +30,7 @@ export type UpsertSelfSignupResult = {
   channelType: "email" | "webhook";
   email: string | null;
   webhookUrl?: string | null;
+  locale?: string | null;
   token: string | null;
   acceptedAt: Date | null;
   unsubscribedAt?: Date | null;
@@ -274,6 +275,7 @@ export async function upsertSelfSignupSubscriber(args: {
         customDomain: pageData.customDomain,
         channelType: existing.channelType,
         email: existing.email ?? emailLower,
+        locale: existing.locale ?? null,
         token: existing.token,
         acceptedAt: existing.acceptedAt,
         componentIds: existing.components.map((c) => c.pageComponentId),
@@ -303,7 +305,11 @@ export async function upsertSelfSignupSubscriber(args: {
       const beforeRow = selectPageSubscriberSchema.parse(existing);
       const updatedRow = await tx
         .update(pageSubscriber)
-        .set({ expiresAt: newExpiresAt, updatedAt: new Date() })
+        .set({
+          expiresAt: newExpiresAt,
+          locale: input.locale ?? existing.locale,
+          updatedAt: new Date(),
+        })
         .where(eq(pageSubscriber.id, existing.id))
         .returning()
         .get();
@@ -337,6 +343,7 @@ export async function upsertSelfSignupSubscriber(args: {
         customDomain: pageData.customDomain,
         channelType: existing.channelType,
         email: existing.email ?? emailLower,
+        locale: updatedRow?.locale ?? existing.locale ?? null,
         token: existing.token,
         acceptedAt: null,
         componentIds: mergedIds,
@@ -352,6 +359,7 @@ export async function upsertSelfSignupSubscriber(args: {
         channelType: "email",
         email: emailLower,
         webhookUrl: null,
+        locale: input.locale,
         pageId: input.pageId,
         source: "self_signup",
         token,
@@ -394,6 +402,7 @@ export async function upsertSelfSignupSubscriber(args: {
       customDomain: pageData.customDomain,
       channelType: "email" as const,
       email: inserted.email ?? emailLower,
+      locale: inserted.locale ?? null,
       token: inserted.token,
       acceptedAt: inserted.acceptedAt ?? null,
       unsubscribedAt: inserted.unsubscribedAt ?? null,

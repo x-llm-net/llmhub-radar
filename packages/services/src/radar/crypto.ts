@@ -2,6 +2,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 const DEV_SECRET = "llmhub-radar-dev-secret-change-me";
+const MIN_SECRET_LENGTH = 32;
 
 function getCrypto(): Crypto {
   if (!globalThis.crypto?.subtle) {
@@ -34,7 +35,7 @@ async function sha256Bytes(input: string): Promise<Uint8Array> {
 }
 
 async function getAesKey(): Promise<CryptoKey> {
-  const secret = process.env.RADAR_CREDENTIAL_SECRET || DEV_SECRET;
+  const secret = getCredentialSecret();
   const keyBytes = await sha256Bytes(secret);
   return getCrypto().subtle.importKey(
     "raw",
@@ -43,6 +44,39 @@ async function getAesKey(): Promise<CryptoKey> {
     false,
     ["encrypt", "decrypt"],
   );
+}
+
+function isProductionRuntime() {
+  return (
+    process.env.NODE_ENV === "production" || process.env.SELF_HOST === "true"
+  );
+}
+
+function getCredentialSecret() {
+  const secret = process.env.RADAR_CREDENTIAL_SECRET?.trim();
+
+  if (!secret) {
+    if (isProductionRuntime()) {
+      throw new Error(
+        "RADAR_CREDENTIAL_SECRET is required in production. Generate it once, keep it stable across deployments, and store it outside Git.",
+      );
+    }
+    return DEV_SECRET;
+  }
+
+  if (secret === DEV_SECRET) {
+    throw new Error(
+      "RADAR_CREDENTIAL_SECRET must not use the development default value.",
+    );
+  }
+
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `RADAR_CREDENTIAL_SECRET must be at least ${MIN_SECRET_LENGTH} characters long.`,
+    );
+  }
+
+  return secret;
 }
 
 export async function encryptSecret(plainText: string): Promise<string> {

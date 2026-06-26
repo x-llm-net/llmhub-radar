@@ -32,21 +32,9 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const actions = getActions({
     "create-update": () => buttonCreateRef.current?.click(),
     edit: () => buttonUpdateRef.current?.click(),
-    "view-report": () => {
-      if (typeof window !== "undefined") {
-        window.open(
-          `https://${
-            row.original.page.customDomain ||
-            `${row.original.page.slug}.openstatus.dev`
-          }/events/report/${row.original.id}`,
-          "_blank",
-        );
-      }
-    },
   }, {
     settings: t("settings"),
     createUpdate: t("createUpdate"),
-    viewReport: t("viewReport"),
     delete: t("delete"),
   });
   const trpc = useTRPC();

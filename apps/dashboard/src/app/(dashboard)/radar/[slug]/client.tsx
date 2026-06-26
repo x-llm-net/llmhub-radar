@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  RadarServiceCard,
+  type RadarServiceCardRunSlot,
+} from "@openstatus/ui/components/blocks/radar-service-card";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -14,18 +18,11 @@ import {
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Clock,
-  ExternalLink,
-  Pencil,
-  Plus,
-  RadioTower,
-  Trash2,
-} from "lucide-react";
+import { Pencil, Plus, RadioTower, Trash2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -38,7 +35,6 @@ import {
   SectionDescription,
   SectionGroup,
   SectionHeader,
-  SectionHeaderRow,
   SectionTitle,
 } from "@/components/content/section";
 import {
@@ -68,7 +64,9 @@ type RecentRun = {
 
 function formatAvailability(value: number | null | undefined) {
   if (value == null) return "-";
-  return `${(value / 100).toFixed(2)}%`;
+  const percent = Math.round((value / 100) * 100) / 100;
+  if (percent >= 100) return "100%";
+  return `${percent.toFixed(2)}%`;
 }
 
 function availabilityClass(value: number | null | undefined) {
@@ -82,7 +80,9 @@ function availabilityClass(value: number | null | undefined) {
 
 function formatMs(value: number | null | undefined) {
   if (value == null) return "-";
-  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}s`;
+  }
   return `${value}ms`;
 }
 
@@ -111,16 +111,6 @@ function uniqueModels(models: Array<string | null | undefined>) {
   return Array.from(
     new Set(models.filter((model): model is string => Boolean(model))),
   );
-}
-
-function getPublicStatusHref(slug: string, locale: string) {
-  const publicLocale = locale.startsWith("zh") ? "zh" : "en";
-  const origin =
-    process.env.NEXT_PUBLIC_STATUS_PAGE_URL ??
-    (process.env.NODE_ENV === "development"
-      ? "http://localhost:3001"
-      : "https://llm-hub.store");
-  return `${origin}/${slug}/${publicLocale}`;
 }
 
 function modelFamilyTone(modelFamily: string) {
@@ -190,6 +180,32 @@ function runTone(run: RecentRun | null) {
   if (run.firstTokenMs != null && run.firstTokenMs > 5_000)
     return "bg-amber-500";
   return "bg-emerald-500";
+}
+
+function buildTimelineRuns(
+  runs: RecentRun[],
+  labels: RadarProbeTooltipLabels,
+  locale: string,
+): RadarServiceCardRunSlot[] {
+  const chronologicalRuns = [...runs].reverse();
+  const slots = [
+    ...Array(Math.max(60 - chronologicalRuns.length, 0)).fill(null),
+    ...chronologicalRuns.slice(-60),
+  ] as Array<RecentRun | null>;
+
+  return slots.map((run, index) =>
+    run
+      ? {
+          key: `${new Date(run.startedAt).getTime()}-${index}`,
+          errorType: run.errorType ?? "-",
+          firstToken: formatMs(run.firstTokenMs),
+          httpStatus: run.httpStatus ?? "-",
+          result: getProbeResultLabel(run, labels),
+          time: formatDateTime(run.startedAt, locale),
+          toneClassName: runTone(run),
+        }
+      : null,
+  );
 }
 
 type RadarProbeTooltipLabels = {
@@ -293,46 +309,6 @@ function ProbeTooltipRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TimelineBars({
-  labels,
-  locale,
-  runs,
-}: {
-  labels: RadarProbeTooltipLabels;
-  locale: string;
-  runs: RecentRun[];
-}) {
-  const chronologicalRuns = [...runs].reverse();
-  const bars = [
-    ...Array(Math.max(60 - chronologicalRuns.length, 0)).fill(null),
-    ...chronologicalRuns.slice(-60),
-  ];
-
-  return (
-    <div className="flex h-8 min-w-0 items-center gap-0.5">
-      {bars.map((run, index) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed-width historical slots.
-          key={index}
-          data-radar-probe
-          data-probe-error={run?.errorType ?? "-"}
-          data-probe-first-token={
-            run ? formatMs(run.firstTokenMs) : labels.noSample
-          }
-          data-probe-http={run?.httpStatus ?? "-"}
-          data-probe-result={
-            run ? getProbeResultLabel(run, labels) : labels.noSample
-          }
-          data-probe-time={
-            run ? formatDateTime(run.startedAt, locale) : labels.noSample
-          }
-          className={`h-5 min-w-0 flex-1 rounded-sm transition-[height,filter,opacity] hover:h-6 hover:opacity-90 hover:brightness-110 ${runTone(run)}`}
-        />
-      ))}
-    </div>
-  );
-}
-
 function getProbeResultLabel(run: RecentRun, labels: RadarProbeTooltipLabels) {
   if (!run.success) return run.errorType || labels.probeFailed;
   if (run.firstTokenMs != null && run.firstTokenMs > 15_000)
@@ -374,59 +350,6 @@ function latencyHint(
   return t("latencyHigh");
 }
 
-function RadarMetric({
-  label,
-  value,
-  hint,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="bg-muted/20 flex h-24 min-w-0 flex-col justify-between rounded-lg border p-2">
-      <div className="text-muted-foreground truncate text-[11px] whitespace-nowrap">
-        {label}
-      </div>
-      <div>
-        <RadarMetricValue value={value} valueClassName={valueClassName} />
-        <div className="text-muted-foreground mt-2 truncate text-[11px] leading-tight">
-          {hint}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RadarMetricValue({
-  value,
-  valueClassName,
-}: {
-  value: string;
-  valueClassName?: string;
-}) {
-  const percentValue = value.endsWith("%");
-
-  return (
-    <div
-      className={`leading-none font-semibold tracking-normal whitespace-nowrap tabular-nums ${
-        valueClassName ?? ""
-      }`}
-    >
-      {percentValue ? (
-        <>
-          <span className="text-xl">{value.slice(0, -1)}</span>
-          <span className="text-xs">%</span>
-        </>
-      ) : (
-        <span className="text-xl">{value}</span>
-      )}
-    </div>
-  );
-}
-
 export function Client() {
   const params = useParams<{ slug: string }>();
   const t = useTranslations("radar");
@@ -448,10 +371,6 @@ export function Client() {
         toast.error(error.message);
       },
     }),
-  );
-  const publicHref = useMemo(
-    () => (pool ? getPublicStatusHref(pool.slug, locale) : "#"),
-    [pool, locale],
   );
   const probeTooltipLabels = {
     errorType: t("tooltipErrorType"),
@@ -504,20 +423,12 @@ export function Client() {
   return (
     <SectionGroup>
       <Section>
-        <SectionHeaderRow>
-          <SectionHeader>
-            <SectionTitle>{pool.name}</SectionTitle>
-            <SectionDescription>
-              {pool.description || t("privateMonitoringPool")}
-            </SectionDescription>
-          </SectionHeader>
-          <Button size="sm" variant="outline" asChild>
-            <Link href={publicHref} target="_blank">
-              {t("previewPublicPath")}
-              <ExternalLink className="size-3.5" />
-            </Link>
-          </Button>
-        </SectionHeaderRow>
+        <SectionHeader>
+          <SectionTitle>{pool.name}</SectionTitle>
+          <SectionDescription>
+            {pool.description || t("privateMonitoringPool")}
+          </SectionDescription>
+        </SectionHeader>
         <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
           <MetricCard>
             <MetricCardHeader>
@@ -569,7 +480,7 @@ export function Client() {
             </Button>
           </EmptyStateContainer>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
             {cards.map(({ credential, target, status, models }) => {
               const stats = target?.stats7d;
               const health = healthTone(
@@ -577,49 +488,22 @@ export function Client() {
                 stats?.successRate ?? null,
                 stats?.p95FirstTokenMs ?? null,
               );
-              const visibleModels = models.slice(0, 5);
-              const hiddenModelCount = Math.max(
-                models.length - visibleModels.length,
-                0,
-              );
               const lastCheckAt =
                 target?.status?.lastCheckAt ?? target?.lastCheckStartedAt;
               const providerName = defaultProvider?.displayName ?? pool.name;
+              const modelGroup = credential.modelGroup || t("generalFamily");
+              const interval = formatInterval(target?.intervalSeconds, t);
 
               return (
-                <div
+                <RadarServiceCard
                   key={credential.id}
-                  className="bg-background rounded-lg border p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <h3 className="truncate text-xl font-bold">
-                          {credential.name}
-                        </h3>
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 ${modelFamilyTone(
-                            credential.modelGroup || t("generalFamily"),
-                          )}`}
-                        >
-                          {credential.modelGroup || t("generalFamily")}
-                        </Badge>
-                      </div>
-                      <p className="text-muted-foreground min-w-0 truncate text-xs">
-                        {providerName} · {t("probeModel")}{" "}
-                        <span
-                          className="font-mono whitespace-nowrap"
-                          title={target?.modelName ?? "-"}
-                        >
-                          {target?.modelName ?? "-"}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Badge variant="outline" className={health.className}>
-                        {t(health.labelKey)}
-                      </Badge>
+                  title={credential.name}
+                  status={{
+                    className: health.className,
+                    label: t(health.labelKey),
+                  }}
+                  actions={
+                    <>
                       <Button
                         size="icon-sm"
                         variant="ghost"
@@ -673,103 +557,82 @@ export function Client() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <RadarMetric
-                      label={t("availability7d")}
-                      value={formatAvailability(stats?.successRate)}
-                      hint={availabilityHint(
+                    </>
+                  }
+                  meta={
+                    <>
+                      <span className="truncate">{providerName}</span>
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 ${modelFamilyTone(modelGroup)}`}
+                      >
+                        {modelGroup}
+                      </Badge>
+                      {target?.modelName ? (
+                        <Badge
+                          variant="outline"
+                          title={target.modelName}
+                          className="max-w-44 shrink-0 overflow-hidden border-slate-200 bg-slate-50 font-mono text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                        >
+                          <span className="min-w-0 truncate">
+                            {target.modelName}
+                          </span>
+                        </Badge>
+                      ) : null}
+                    </>
+                  }
+                  metrics={[
+                    {
+                      label: t("availability7d"),
+                      value: formatAvailability(stats?.successRate),
+                      hint: availabilityHint(
                         stats?.successRate,
                         stats?.sampleCount,
                         t,
-                      )}
-                      valueClassName={availabilityClass(stats?.successRate)}
-                    />
-                    <RadarMetric
-                      label={t("p50Ttft")}
-                      value={formatMs(stats?.p50FirstTokenMs)}
-                      hint={latencyHint(stats?.p50FirstTokenMs, t)}
-                      valueClassName={latencyClass(stats?.p50FirstTokenMs)}
-                    />
-                    <RadarMetric
-                      label={t("p95Ttft")}
-                      value={formatMs(stats?.p95FirstTokenMs)}
-                      hint={latencyHint(stats?.p95FirstTokenMs, t)}
-                      valueClassName={latencyClass(stats?.p95FirstTokenMs)}
-                    />
-                  </div>
-
-                  <div className="mt-5 border-t pt-4">
-                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                      <span className="text-muted-foreground">
-                        {t("recentRuns", { count: 60 })}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {t("samples7d", { count: stats?.sampleCount ?? 0 })}
-                      </span>
-                    </div>
-                    <TimelineBars
-                      labels={probeTooltipLabels}
-                      locale={locale}
-                      runs={target?.recentRuns ?? []}
-                    />
-                    <div className="text-muted-foreground mt-1 flex justify-between text-[10px] tracking-normal uppercase">
-                      <span>{t("past")}</span>
-                      <span>{t("now")}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 border-t pt-4">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-muted-foreground text-xs">
-                        {t("modelCatalog")}
-                      </div>
-                      <div className="text-muted-foreground text-xs">
-                        {t("modelsCount", { count: models.length })}
-                      </div>
-                    </div>
-                    {visibleModels.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {visibleModels.map((model) => (
-                          <Badge
-                            key={model}
-                            variant="outline"
-                            className="max-w-full font-mono"
-                          >
-                            <span className="min-w-0 truncate">{model}</span>
-                          </Badge>
-                        ))}
-                        {hiddenModelCount > 0 ? (
-                          <Badge variant="secondary">
-                            {t("moreModels", { count: hiddenModelCount })}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-sm">
-                        {t("noModelCatalog")}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-muted-foreground mt-4 flex items-center justify-between gap-4 border-t pt-3 text-xs">
-                    <span
-                      className="text-foreground inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap"
-                      title={`${t("interval")}: ${formatInterval(
-                        target?.intervalSeconds,
-                        t,
-                      )}`}
-                    >
-                      <Clock className="text-muted-foreground size-3.5" />
-                      {formatInterval(target?.intervalSeconds, t)}
-                    </span>
-                    <span className="min-w-0 truncate text-right">
-                      {t("lastCheck")}: {formatDateTime(lastCheckAt, locale)}
-                    </span>
-                  </div>
-                </div>
+                      ),
+                      valueClassName: availabilityClass(stats?.successRate),
+                    },
+                    {
+                      label: t("p50Ttft"),
+                      value: formatMs(stats?.p50FirstTokenMs),
+                      hint: latencyHint(stats?.p50FirstTokenMs, t),
+                      valueClassName: latencyClass(stats?.p50FirstTokenMs),
+                    },
+                    {
+                      label: t("p95Ttft"),
+                      value: formatMs(stats?.p95FirstTokenMs),
+                      hint: latencyHint(stats?.p95FirstTokenMs, t),
+                      valueClassName: latencyClass(stats?.p95FirstTokenMs),
+                    },
+                  ]}
+                  timeline={{
+                    recentLabel: t("recentRuns", { count: 60 }),
+                    samplesLabel: t("samples7d", {
+                      count: stats?.sampleCount ?? 0,
+                    }),
+                    runs: buildTimelineRuns(
+                      target?.recentRuns ?? [],
+                      probeTooltipLabels,
+                      locale,
+                    ),
+                    pastLabel: t("past"),
+                    nowLabel: t("now"),
+                  }}
+                  models={{
+                    label: t("modelCatalog"),
+                    countLabel: t("modelsCount", { count: models.length }),
+                    emptyLabel: t("noModelCatalog"),
+                    values: models,
+                  }}
+                  footer={{
+                    interval,
+                    intervalTitle: `${t("interval")}: ${interval}`,
+                    lastCheck: `${t("lastCheck")}: ${formatDateTime(
+                      lastCheckAt,
+                      locale,
+                    )}`,
+                  }}
+                />
               );
             })}
           </div>

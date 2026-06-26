@@ -19,6 +19,7 @@ node_modules
 .env
 .env.*
 !.env.docker.example
+!.env.radar.example
 
 # Development files
 **/.vscode

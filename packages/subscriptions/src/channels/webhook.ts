@@ -2,6 +2,7 @@ import { COLORS, COLOR_DECIMALS } from "@openstatus/notification-base";
 import { assertSafeUrl } from "@openstatus/utils";
 import { z } from "zod";
 
+import { getPublicStatusPageUrl } from "../status-page-url";
 import type { PageUpdate, Subscription } from "../types";
 
 export type WebhookFlavor = "slack" | "discord" | "wecom" | "generic";
@@ -30,9 +31,10 @@ function redactWebhookUrl(url: string): string {
 }
 
 function resolveStatusPageOrigin(subscription: Subscription): string {
-  return subscription.customDomain
-    ? `https://${subscription.customDomain}`
-    : `https://${subscription.pageSlug}.openstatus.dev`;
+  return getPublicStatusPageUrl({
+    customDomain: subscription.customDomain,
+    slug: subscription.pageSlug,
+  });
 }
 
 function buildManagementLinks(subscription: Subscription) {
@@ -174,9 +176,7 @@ async function assertWebhookResponse(
   message: string,
 ) {
   if (!response.ok) {
-    throw new Error(
-      `${message}: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`${message}: ${response.status} ${response.statusText}`);
   }
 
   if (flavor !== "wecom") return;
@@ -555,7 +555,8 @@ export function buildTestPayload(flavor: WebhookFlavor) {
       return {
         msgtype: "markdown",
         markdown: {
-          content: "**Test Notification**\n> Your LLMHub Radar webhook is configured correctly.",
+          content:
+            "**Test Notification**\n> Your LLMHub Radar webhook is configured correctly.",
         },
       };
     case "generic":

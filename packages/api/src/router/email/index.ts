@@ -1,8 +1,5 @@
 import { and, eq } from "@openstatus/db";
-import {
-  invitation,
-  pageSubscriber,
-} from "@openstatus/db/src/schema";
+import { invitation, pageSubscriber } from "@openstatus/db/src/schema";
 import { EmailClient } from "@openstatus/emails";
 import { notifyMaintenance } from "@openstatus/services/maintenance";
 import { notifyStatusReport } from "@openstatus/services/status-report";
@@ -17,6 +14,7 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "../../trpc";
+import { getPublicStatusPageUrl } from "../statusPage.links";
 
 const emailClient = new EmailClient({ apiKey: env.RESEND_API_KEY });
 
@@ -30,6 +28,7 @@ export const emailRouter = createTRPCRouter({
       z.object({
         id: z.number().int().positive(),
         token: z.uuid(),
+        locale: z.string().optional(),
       }),
     )
     .mutation(async (opts) => {
@@ -75,9 +74,10 @@ export const emailRouter = createTRPCRouter({
         });
       }
 
-      const verifyUrl = subscriber.page.customDomain
-        ? `https://${subscriber.page.customDomain}/verify/${subscriber.token}`
-        : `https://${subscriber.page.slug}.openstatus.dev/verify/${subscriber.token}`;
+      const verifyUrl = `${getPublicStatusPageUrl({
+        customDomain: subscriber.page.customDomain,
+        slug: subscriber.page.slug,
+      })}/verify/${subscriber.token}`;
 
       const channel = getChannel("email");
       if (!channel) {
@@ -99,6 +99,7 @@ export const emailRouter = createTRPCRouter({
           email: subscriber.email,
           token: subscriber.token,
           acceptedAt: subscriber.acceptedAt ?? undefined,
+          locale: opts.input.locale,
         },
         verifyUrl,
       );
@@ -141,27 +142,30 @@ export const emailRouter = createTRPCRouter({
     }),
 
   sendTeamInvitation: protectedProcedure
-    .input(z.object({ id: z.number(), baseUrl: z.string().optional() }))
+    .input(
+      z.object({
+        id: z.number(),
+        baseUrl: z.string().optional(),
+        locale: z.string().optional(),
+      }),
+    )
     .mutation(async (opts) => {
-      const limits = opts.ctx.workspace.limits;
+      const _invitation = await opts.ctx.db.query.invitation.findFirst({
+        where: and(
+          eq(invitation.id, opts.input.id),
+          eq(invitation.workspaceId, opts.ctx.workspace.id),
+        ),
+      });
 
-      if (limits.members === "Unlimited" || limits.members > 1) {
-        const _invitation = await opts.ctx.db.query.invitation.findFirst({
-          where: and(
-            eq(invitation.id, opts.input.id),
-            eq(invitation.workspaceId, opts.ctx.workspace.id),
-          ),
-        });
+      if (!_invitation) return;
 
-        if (!_invitation) return;
-
-        await emailClient.sendTeamInvitation({
-          to: _invitation.email,
-          token: _invitation.token,
-          invitedBy: `${opts.ctx.user.email}`,
-          workspaceName: opts.ctx.workspace.name || "OpenStatus",
-          baseUrl: opts.input.baseUrl,
-        });
-      }
+      await emailClient.sendTeamInvitation({
+        to: _invitation.email,
+        token: _invitation.token,
+        invitedBy: `${opts.ctx.user.email}`,
+        workspaceName: opts.ctx.workspace.name || undefined,
+        baseUrl: opts.input.baseUrl,
+        locale: opts.input.locale,
+      });
     }),
 });

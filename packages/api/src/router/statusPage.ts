@@ -11,6 +11,7 @@ import {
   radarProbeRun,
   radarProbeTarget,
   radarProvider,
+  radarTargetOpenStatusBinding,
   radarTargetStatus,
   selectMaintenancePageSchema,
   selectPageComponentWithMonitorRelation,
@@ -24,18 +25,21 @@ import {
 } from "@openstatus/db/src/schema";
 import {
   getSubscriberByToken,
-  hasPendingSubscriber,
   unsubscribeSubscriber,
   updateSubscriberScope,
   upsertSelfSignupSubscriber,
   verifySelfSignupSubscriber,
 } from "@openstatus/services/page-subscriber";
-import { sendWebhookVerification } from "@openstatus/subscriptions";
+import {
+  sendEmailVerification,
+  sendWebhookVerification,
+} from "@openstatus/subscriptions";
 import { TRPCError } from "@trpc/server";
 import { endOfDay, startOfDay, subDays } from "date-fns";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "../trpc";
+import { getPublicStatusPageUrl } from "./statusPage.links";
 import {
   type StatusData,
   activeReportStatus,
@@ -93,37 +97,18 @@ function worseStatusVariant(
   return statusVariantRank[next] > statusVariantRank[current] ? next : current;
 }
 
-function radarStatusToVariant(status: RadarTargetStatus): StatusVariant {
-  switch (status) {
-    case "operational":
-      return "success";
-    case "degraded":
-      return "degraded";
-    case "down":
-    case "configuration_error":
-      return "error";
-    case "paused":
-    case "unknown":
-      return "info";
-  }
-}
-
 function aggregateRadarStatus(statuses: RadarTargetStatus[]): StatusVariant {
   const activeStatuses = statuses.filter((status) => status !== "paused");
-  if (activeStatuses.length === 0) return "info";
+  if (activeStatuses.length === 0) return "degraded";
 
   const allActiveTargetsDown = activeStatuses.every(
-    (status) => radarStatusToVariant(status) === "error",
+    (status) => status === "down" || status === "configuration_error",
   );
   if (allActiveTargetsDown) return "error";
 
-  return activeStatuses.reduce<StatusVariant>((current, targetStatus) => {
-    const variant = radarStatusToVariant(targetStatus);
-    return worseStatusVariant(
-      current,
-      variant === "error" ? "degraded" : variant,
-    );
-  }, "success");
+  return activeStatuses.some((status) => status !== "operational")
+    ? "degraded"
+    : "success";
 }
 
 function percentile(values: number[], percentileValue: number) {
@@ -328,7 +313,318 @@ const gateFieldsSchema = selectPageSchema.pick({
   contactUrl: true,
 });
 
+const publicRadarDirectoryInputSchema = z.object({
+  limit: z.number().int().min(1).max(24).default(12),
+  offset: z.number().int().min(0).default(0),
+});
+
+const publicRadarDirectoryItemSchema = z.object({
+  page: z.object({
+    title: z.string(),
+    description: z.string(),
+    slug: z.string(),
+    defaultLocale: z.string(),
+    icon: z.string().nullable(),
+    updatedAt: z.date().nullable(),
+  }),
+  pool: z.object({
+    name: z.string(),
+    slug: z.string(),
+    description: z.string(),
+  }),
+  status: z.enum(["success", "degraded", "error", "info"]),
+  providerCount: z.number(),
+  credentialCount: z.number(),
+  targetCount: z.number(),
+  modelFamilies: z.array(z.string()),
+  sampleCount7d: z.number(),
+  availability7d: z.number().nullable(),
+  p50FirstTokenMs: z.number().nullable(),
+  p95FirstTokenMs: z.number().nullable(),
+  lastCheckAt: z.date().nullable(),
+  dailyStatus7d: z.array(
+    z.object({
+      date: z.string(),
+      ok: z.number(),
+      degraded: z.number(),
+      error: z.number(),
+    }),
+  ),
+});
+
+function dayKey(date: Date) {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized.toISOString().slice(0, 10);
+}
+
+function buildEmptyDailyStatus(days: number) {
+  return Array.from({ length: days }).map((_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (days - 1 - index));
+    return { date: dayKey(date), ok: 0, degraded: 0, error: 0 };
+  });
+}
+
 export const statusPageRouter = createTRPCRouter({
+  listPublicRadar: publicProcedure
+    .input(publicRadarDirectoryInputSchema.optional())
+    .output(
+      z.object({
+        items: z.array(publicRadarDirectoryItemSchema),
+        totalSize: z.number(),
+        limit: z.number(),
+        offset: z.number(),
+      }),
+    )
+    .query(async (opts) => {
+      const input = publicRadarDirectoryInputSchema.parse(opts.input ?? {});
+      const where = and(
+        eq(page.published, true),
+        eq(page.accessType, "public"),
+      );
+
+      const [countRow, rows] = await Promise.all([
+        opts.ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(page)
+          .innerJoin(radarPool, eq(radarPool.pageId, page.id))
+          .where(where)
+          .get(),
+        opts.ctx.db
+          .select({
+            pageId: page.id,
+            pageTitle: page.title,
+            pageDescription: page.description,
+            pageIcon: page.icon,
+            pageSlug: page.slug,
+            pageDefaultLocale: page.defaultLocale,
+            pageUpdatedAt: page.updatedAt,
+            poolId: radarPool.id,
+            poolName: radarPool.name,
+            poolSlug: radarPool.slug,
+            poolDescription: radarPool.description,
+          })
+          .from(page)
+          .innerJoin(radarPool, eq(radarPool.pageId, page.id))
+          .where(where)
+          .orderBy(desc(page.updatedAt), desc(page.id))
+          .limit(input.limit)
+          .offset(input.offset)
+          .all(),
+      ]);
+
+      if (rows.length === 0) {
+        return {
+          items: [],
+          totalSize: countRow?.count ?? 0,
+          limit: input.limit,
+          offset: input.offset,
+        };
+      }
+
+      const poolIds = rows.map((row) => row.poolId);
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const [providers, credentials, targets, recentRuns] = await Promise.all([
+        opts.ctx.db
+          .select({
+            poolId: radarProvider.poolId,
+            id: radarProvider.id,
+            displayName: radarProvider.displayName,
+            providerType: radarProvider.providerType,
+          })
+          .from(radarProvider)
+          .where(
+            and(
+              inArray(radarProvider.poolId, poolIds),
+              eq(radarProvider.enabled, true),
+            ),
+          )
+          .all(),
+        opts.ctx.db
+          .select({
+            poolId: radarProvider.poolId,
+            credentialId: radarCredential.id,
+            modelGroup: radarCredential.modelGroup,
+            modelCatalog: radarCredential.modelCatalog,
+          })
+          .from(radarCredential)
+          .innerJoin(
+            radarProvider,
+            eq(radarProvider.id, radarCredential.providerId),
+          )
+          .where(
+            and(
+              inArray(radarProvider.poolId, poolIds),
+              eq(radarCredential.enabled, true),
+            ),
+          )
+          .all(),
+        opts.ctx.db
+          .select({
+            poolId: radarProbeTarget.poolId,
+            targetId: radarProbeTarget.id,
+            credentialId: radarProbeTarget.credentialId,
+            modelName: radarProbeTarget.modelName,
+            targetStatus: radarProbeTarget.currentStatus,
+            lastCheckStartedAt: radarProbeTarget.lastCheckStartedAt,
+            status: radarTargetStatus.currentStatus,
+            lastCheckAt: radarTargetStatus.lastCheckAt,
+            p50FirstTokenMs: radarTargetStatus.p50FirstTokenMs,
+            p95FirstTokenMs: radarTargetStatus.p95FirstTokenMs,
+          })
+          .from(radarProbeTarget)
+          .leftJoin(
+            radarTargetStatus,
+            eq(radarTargetStatus.targetId, radarProbeTarget.id),
+          )
+          .where(
+            and(
+              inArray(radarProbeTarget.poolId, poolIds),
+              eq(radarProbeTarget.enabled, true),
+            ),
+          )
+          .all(),
+        opts.ctx.db
+          .select({
+            poolId: radarProbeRun.poolId,
+            startedAt: radarProbeRun.startedAt,
+            success: radarProbeRun.success,
+            errorType: radarProbeRun.errorType,
+            firstTokenMs: radarProbeRun.firstTokenMs,
+          })
+          .from(radarProbeRun)
+          .where(
+            and(
+              inArray(radarProbeRun.poolId, poolIds),
+              gte(radarProbeRun.startedAt, sevenDaysAgo),
+            ),
+          )
+          .orderBy(desc(radarProbeRun.startedAt))
+          .limit(50_000)
+          .all(),
+      ]);
+
+      const providersByPool = new Map<number, typeof providers>();
+      const credentialsByPool = new Map<number, typeof credentials>();
+      const targetsByPool = new Map<number, typeof targets>();
+      const runsByPool = new Map<number, typeof recentRuns>();
+
+      for (const provider of providers) {
+        const list = providersByPool.get(provider.poolId) ?? [];
+        list.push(provider);
+        providersByPool.set(provider.poolId, list);
+      }
+      for (const credential of credentials) {
+        const list = credentialsByPool.get(credential.poolId) ?? [];
+        list.push(credential);
+        credentialsByPool.set(credential.poolId, list);
+      }
+      for (const target of targets) {
+        const list = targetsByPool.get(target.poolId) ?? [];
+        list.push(target);
+        targetsByPool.set(target.poolId, list);
+      }
+      for (const run of recentRuns) {
+        const list = runsByPool.get(run.poolId) ?? [];
+        list.push(run);
+        runsByPool.set(run.poolId, list);
+      }
+
+      const items = rows.map((row) => {
+        const poolProviders = providersByPool.get(row.poolId) ?? [];
+        const poolCredentials = credentialsByPool.get(row.poolId) ?? [];
+        const poolTargets = targetsByPool.get(row.poolId) ?? [];
+        const poolRuns = runsByPool.get(row.poolId) ?? [];
+        const statuses = poolTargets.map(
+          (target) => target.status ?? target.targetStatus ?? "unknown",
+        );
+        const firstTokenValues = poolRuns
+          .map((run) => run.firstTokenMs)
+          .filter((value): value is number => typeof value === "number");
+        const successCount = poolRuns.filter((run) => run.success).length;
+        const modelFamilies = Array.from(
+          new Set(
+            poolCredentials
+              .flatMap((credential) => [
+                credential.modelGroup,
+                ...(credential.modelCatalog ?? []).slice(0, 2),
+              ])
+              .filter((value): value is string => Boolean(value)),
+          ),
+        ).slice(0, 6);
+        const lastCheckAt = poolTargets.reduce<Date | null>(
+          (latest, target) => {
+            const candidate = target.lastCheckAt ?? target.lastCheckStartedAt;
+            if (!candidate) return latest;
+            if (!latest || candidate > latest) return candidate;
+            return latest;
+          },
+          null,
+        );
+        const dailyStatus7d = buildEmptyDailyStatus(7);
+        const dailyStatusByDate = new Map(
+          dailyStatus7d.map((day) => [day.date, day]),
+        );
+        for (const run of poolRuns) {
+          const bucket = dailyStatusByDate.get(dayKey(run.startedAt));
+          if (!bucket) continue;
+          if (run.success) {
+            bucket.ok += 1;
+          } else if (
+            run.errorType === "timeout" ||
+            run.errorType === "server_error"
+          ) {
+            bucket.degraded += 1;
+          } else {
+            bucket.error += 1;
+          }
+        }
+
+        return {
+          page: {
+            title: row.pageTitle,
+            description: row.pageDescription,
+            slug: row.pageSlug,
+            defaultLocale: row.pageDefaultLocale,
+            icon: row.pageIcon || null,
+            updatedAt: row.pageUpdatedAt ?? null,
+          },
+          pool: {
+            name: row.poolName,
+            slug: row.poolSlug,
+            description: row.poolDescription,
+          },
+          status: statuses.length > 0 ? aggregateRadarStatus(statuses) : "info",
+          providerCount: new Set(poolProviders.map((provider) => provider.id))
+            .size,
+          credentialCount: new Set(
+            poolCredentials.map((credential) => credential.credentialId),
+          ).size,
+          targetCount: poolTargets.length,
+          modelFamilies,
+          sampleCount7d: poolRuns.length,
+          availability7d:
+            poolRuns.length === 0
+              ? null
+              : Math.round((successCount / poolRuns.length) * 10_000),
+          p50FirstTokenMs: percentile(firstTokenValues, 50),
+          p95FirstTokenMs: percentile(firstTokenValues, 95),
+          lastCheckAt,
+          dailyStatus7d,
+        };
+      });
+
+      return {
+        items,
+        totalSize: countRow?.count ?? 0,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    }),
+
   get: publicProcedure
     .input(
       z.object({
@@ -895,6 +1191,7 @@ export const statusPageRouter = createTRPCRouter({
       if (pageComponents.length === 0) return [];
 
       const monitors = pageComponents.filter(isMonitorComponent);
+      const componentIds = pageComponents.map((component) => component.id);
 
       const monitorsByType = {
         http: monitors.filter((c) => c.monitor.jobType === "http"),
@@ -942,6 +1239,83 @@ export const statusPageRouter = createTRPCRouter({
       const lookbackPeriod = WORKSPACES.includes(_page.workspaceId ?? 0)
         ? 30
         : 45;
+      const radarBindingRows = await opts.ctx.db
+        .select({
+          pageComponentId: radarTargetOpenStatusBinding.pageComponentId,
+          targetId: radarTargetOpenStatusBinding.targetId,
+        })
+        .from(radarTargetOpenStatusBinding)
+        .where(eq(radarTargetOpenStatusBinding.pageId, _page.id))
+        .all();
+      const radarTargetIdByComponentId = new Map<number, number>();
+      for (const row of radarBindingRows) {
+        if (
+          row.pageComponentId == null ||
+          !componentIds.includes(row.pageComponentId)
+        ) {
+          continue;
+        }
+        radarTargetIdByComponentId.set(row.pageComponentId, row.targetId);
+      }
+      const radarTargetIds = [...radarTargetIdByComponentId.values()];
+      const radarRuns =
+        radarTargetIds.length === 0
+          ? []
+          : await opts.ctx.db
+              .select({
+                targetId: radarProbeRun.targetId,
+                startedAt: radarProbeRun.startedAt,
+                success: radarProbeRun.success,
+              })
+              .from(radarProbeRun)
+              .where(
+                and(
+                  inArray(radarProbeRun.targetId, radarTargetIds),
+                  gte(
+                    radarProbeRun.startedAt,
+                    subDays(new Date(), lookbackPeriod),
+                  ),
+                ),
+              )
+              .all();
+      const radarRunsByTargetId = new Map<number, typeof radarRuns>();
+      for (const run of radarRuns) {
+        const runs = radarRunsByTargetId.get(run.targetId) ?? [];
+        runs.push(run);
+        radarRunsByTargetId.set(run.targetId, runs);
+      }
+
+      function buildRadarStatusData(targetId: number): StatusData[] {
+        const byDay = new Map<
+          string,
+          { count: number; error: number; ok: number }
+        >();
+
+        for (const run of radarRunsByTargetId.get(targetId) ?? []) {
+          const day = new Date(run.startedAt).toISOString().split("T")[0];
+          const current = byDay.get(day) ?? { count: 0, error: 0, ok: 0 };
+          current.count += 1;
+          if (run.success) {
+            current.ok += 1;
+          } else {
+            current.error += 1;
+          }
+          byDay.set(day, current);
+        }
+
+        return fillStatusDataFor45Days(
+          Array.from(byDay.entries()).map(([day, value]) => ({
+            day,
+            count: value.count,
+            ok: value.ok,
+            degraded: 0,
+            error: value.error,
+            monitorId: `radar-${targetId}`,
+          })),
+          `radar-${targetId}`,
+          lookbackPeriod,
+        );
+      }
 
       return pageComponents.map((c) => {
         const events = getEvents({
@@ -961,7 +1335,11 @@ export const statusPageRouter = createTRPCRouter({
           process.env.NOOP_UPTIME !== "true";
 
         let filledData: StatusData[];
-        if (shouldUseRealData) {
+        const radarTargetId = radarTargetIdByComponentId.get(c.id);
+        const isRadarComponent = radarTargetId !== undefined;
+        if (isRadarComponent) {
+          filledData = buildRadarStatusData(radarTargetId);
+        } else if (shouldUseRealData) {
           // Monitor components with real data: use Tinybird data
           const monitorId = c.monitor?.id.toString() || "";
           const rawData = statusDataByMonitorId.get(monitorId) || [];
@@ -971,18 +1349,26 @@ export const statusPageRouter = createTRPCRouter({
             lookbackPeriod,
           );
         } else {
-          // Static components, manual mode, or NOOP mode: use synthetic data
-          filledData = fillStatusDataFor45DaysNoop({
-            errorDays: [],
-            degradedDays: [],
+          // Static components, manual mode, or NOOP mode do not have probe
+          // samples. Keep the 45d grid empty so it renders as "no data"
+          // instead of pretending every missing day is operational.
+          filledData = fillStatusDataFor45Days(
+            [],
+            c.id.toString(),
             lookbackPeriod,
-          });
+          );
         }
 
-        // Static components always use manual mode since they don't have real monitoring data
-        const effectiveBarType = c.type === "static" ? "manual" : input.barType;
-        const effectiveCardType =
-          c.type === "static" ? "manual" : input.cardType;
+        const effectiveBarType = isRadarComponent
+          ? "absolute"
+          : c.type === "static"
+            ? "manual"
+            : input.barType;
+        const effectiveCardType = isRadarComponent
+          ? "requests"
+          : c.type === "static"
+            ? "manual"
+            : input.cardType;
 
         const processedData = setDataByType({
           events,
@@ -990,12 +1376,18 @@ export const statusPageRouter = createTRPCRouter({
           cardType: effectiveCardType,
           barType: effectiveBarType,
         });
-        const uptime = getUptime({
-          data: filledData,
-          events,
-          barType: effectiveBarType,
-          cardType: effectiveCardType,
-        });
+        const hasSamples = filledData.some(
+          (day) => day.ok + day.degraded + day.error > 0,
+        );
+        const uptime =
+          isRadarComponent && !hasSamples
+            ? "N/A"
+            : getUptime({
+                data: filledData,
+                events,
+                barType: effectiveBarType,
+                cardType: effectiveCardType,
+              });
 
         return {
           id: c.id,
@@ -1353,6 +1745,7 @@ export const statusPageRouter = createTRPCRouter({
           email: z.email(),
           subscribeComponents: z.boolean(),
           pageComponents: z.array(z.number().int().positive()),
+          locale: z.string().optional(),
         }),
         z.object({
           channelType: z.literal("webhook"),
@@ -1380,9 +1773,10 @@ export const statusPageRouter = createTRPCRouter({
         });
       }
 
-      const statusPageBaseUrl = _page.customDomain
-        ? `https://${_page.customDomain}`
-        : `https://${_page.slug}.openstatus.dev`;
+      const statusPageBaseUrl = getPublicStatusPageUrl({
+        customDomain: _page.customDomain,
+        slug: _page.slug,
+      });
 
       if (opts.input.channelType === "webhook") {
         const subscription = await upsertSelfSignupSubscriber({
@@ -1458,22 +1852,11 @@ export const statusPageRouter = createTRPCRouter({
         }
       }
 
-      // Guard against email spam: reject if a pending (unverified, unexpired) subscription exists
-      const isPending = await hasPendingSubscriber({
-        input: { email: opts.input.email, pageId: _page.id },
-      });
-      if (isPending) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "A confirmation link was already sent. Please check your email or wait until it expires to request a new one.",
-        });
-      }
-
       const subscription = await upsertSelfSignupSubscriber({
         input: {
           email: opts.input.email,
           pageId: _page.id,
+          locale: opts.input.locale,
           componentIds: opts.input.subscribeComponents
             ? opts.input.pageComponents
             : [],
@@ -1486,6 +1869,50 @@ export const statusPageRouter = createTRPCRouter({
           code: "BAD_REQUEST",
           message: "Email already subscribed",
         });
+      }
+
+      if (!subscription.token) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Subscription has no verification token",
+        });
+      }
+
+      try {
+        await sendEmailVerification(
+          {
+            id: subscription.id,
+            pageId: subscription.pageId,
+            pageName: subscription.pageName,
+            pageSlug: subscription.pageSlug,
+            customDomain: subscription.customDomain,
+            componentIds: subscription.componentIds,
+            channelType: "email",
+            email: subscription.email ?? opts.input.email,
+            token: subscription.token,
+            acceptedAt: subscription.acceptedAt ?? undefined,
+            locale: opts.input.locale,
+          },
+          `${statusPageBaseUrl}/verify/${subscription.token}`,
+        );
+      } catch (error) {
+        await opts.ctx.db
+          .delete(pageSubscriber)
+          .where(
+            and(
+              eq(pageSubscriber.id, subscription.id),
+              isNull(pageSubscriber.acceptedAt),
+            ),
+          )
+          .run();
+
+        if (error instanceof Error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+        throw error;
       }
 
       return {

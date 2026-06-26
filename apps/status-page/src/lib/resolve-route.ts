@@ -1,6 +1,6 @@
 import { type Locale, defaultLocale, locales } from "@/i18n/config";
 
-import { getValidSubdomain } from "./domain";
+import { getValidSubdomain, isLocalhostLikeHost, stripHostPort } from "./domain";
 
 export type RouteType = "hostname" | "pathname";
 
@@ -30,7 +30,10 @@ export function resolveRoute({
   /** req.nextUrl.pathname */
   pathname: string;
 }): ResolvedRoute | null {
-  const hostnames = host?.split(/[.:]/) ?? urlHost.split(/[.:]/);
+  const normalizedForwardedHost = stripHostPort(host);
+  const normalizedUrlHost = stripHostPort(urlHost) ?? urlHost;
+  const effectiveHost = normalizedForwardedHost ?? normalizedUrlHost;
+  const hostnames = effectiveHost.split(".");
   const pathnames = pathname.split("/");
 
   // Prefer x-forwarded-host for custom-domain detection (behind reverse proxy/CDN,
@@ -41,9 +44,10 @@ export function resolveRoute({
   let type: RouteType;
 
   if (
+    !isLocalhostLikeHost(effectiveHost) &&
     hostnames.length > 2 &&
     hostnames[0] !== "www" &&
-    !urlHost.endsWith(".vercel.app")
+    !normalizedUrlHost.endsWith(".vercel.app")
   ) {
     prefix = hostnames[0].toLowerCase();
     type = "hostname";

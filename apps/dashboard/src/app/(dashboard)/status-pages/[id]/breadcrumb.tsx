@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { PanelTop } from "lucide-react";
+import { Radar } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useParams, usePathname } from "next/navigation";
 
@@ -12,15 +12,20 @@ import { STATUS_PAGE_TABS } from "./constants";
 
 export function Breadcrumb() {
   const t = useTranslations("statusPages");
+  const radarT = useTranslations("radar");
   const { id } = useParams<{ id: string }>();
   const pathname = usePathname();
   const trpc = useTRPC();
   const { data: statusPage } = useQuery(
     trpc.page.get.queryOptions({ id: Number.parseInt(id) }),
   );
+  const { data: radarPools } = useQuery(trpc.radar.listPools.queryOptions({}));
 
   if (!statusPage) return null;
 
+  const radarPool = radarPools?.items.find(
+    (pool) => pool.pageId === statusPage.id,
+  );
   const segments = pathname.split("/");
   const currentTab = STATUS_PAGE_TABS.find((tab) =>
     segments.includes(tab.value),
@@ -38,14 +43,14 @@ export function Breadcrumb() {
       items={[
         {
           type: "link",
-          label: t("list.title"),
-          href: "/status-pages",
-          icon: PanelTop,
+          label: radarT("title"),
+          href: "/radar",
+          icon: Radar,
         },
         {
           type: "link",
           label: statusPage.title,
-          href: `/status-pages/${id}/status-reports`,
+          href: `/radar/${radarPool?.slug ?? statusPage.slug}`,
         },
         ...(currentTab
           ? [

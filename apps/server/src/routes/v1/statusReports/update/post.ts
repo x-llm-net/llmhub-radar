@@ -114,7 +114,9 @@ export function registerStatusReportUpdateRoutes(api: typeof statusReportsApi) {
         .all();
 
       const validSubscribers = subscribers.filter(
-        (s): s is typeof s & { token: string } =>
+        (s): s is typeof s & { email: string; token: string } =>
+          s.channelType === "email" &&
+          s.email !== null &&
           s.token !== null &&
           s.acceptedAt !== null &&
           s.unsubscribedAt === null,
@@ -124,6 +126,7 @@ export function registerStatusReportUpdateRoutes(api: typeof statusReportsApi) {
           subscribers: validSubscribers.map((subscriber) => ({
             email: subscriber.email,
             token: subscriber.token,
+            locale: subscriber.locale,
           })),
           pageTitle: _statusReportWithRelations.page.title,
           pageSlug: _statusReportWithRelations.page.slug,

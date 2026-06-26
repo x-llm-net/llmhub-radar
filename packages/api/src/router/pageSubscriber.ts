@@ -56,6 +56,7 @@ export const pageSubscriberRouter = createTRPCRouter({
         email: z.email(),
         pageId: z.number().int().positive(),
         componentIds: z.array(z.number().int().positive()).max(500).optional(),
+        locale: z.string().max(16).optional(),
       }),
     )
     .mutation(async (opts) => {
@@ -76,6 +77,7 @@ export const pageSubscriberRouter = createTRPCRouter({
             email: opts.input.email,
             pageId: opts.input.pageId,
             componentIds: opts.input.componentIds,
+            locale: opts.input.locale,
           },
         });
 
@@ -255,6 +257,7 @@ export const pageSubscriberRouter = createTRPCRouter({
           channelType: z.literal("email"),
           email: z.email(),
           name: z.string().max(255).nullish(),
+          locale: z.string().max(16).optional(),
           componentIds: z
             .array(z.number().int().positive())
             .max(500)

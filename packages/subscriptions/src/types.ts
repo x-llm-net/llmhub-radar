@@ -17,6 +17,7 @@ export interface Subscription {
   token?: string;
   acceptedAt?: Date;
   unsubscribedAt?: Date;
+  locale?: string;
 }
 
 /**

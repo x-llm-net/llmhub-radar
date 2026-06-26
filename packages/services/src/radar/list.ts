@@ -34,6 +34,7 @@ export type RadarPoolListItem = ReturnType<
 };
 
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
+  pageId: number | null;
   providers: Array<
     Omit<ReturnType<typeof selectRadarProviderSchema.parse>, "baseUrlEncrypted">
   >;

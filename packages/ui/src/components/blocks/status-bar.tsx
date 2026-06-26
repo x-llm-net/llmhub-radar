@@ -566,8 +566,6 @@ const StatusBarItem = forwardRef<HTMLDivElement, StatusBarItemProps>(
         >
           <StatusBarCard
             item={item}
-            isPinned={isPinned}
-            isTouch={isTouch}
             renderCard={renderCard}
             renderEvent={renderEvent}
           />
@@ -580,8 +578,6 @@ StatusBarItem.displayName = "StatusBarItem";
 
 export interface StatusBarCardProps {
   item: StatusBarData;
-  isPinned?: boolean;
-  isTouch?: boolean;
   renderCard?: StatusBarProps["renderCard"];
   renderEvent?: StatusBarProps["renderEvent"];
 }
@@ -593,21 +589,16 @@ export interface StatusBarCardProps {
  * - Date header
  * - Status breakdown percentages
  * - Events/incidents for that day
- * - Pin/unpin instructions (when pinned on desktop)
  *
  * The card automatically formats the date and renders status items and events
  * using either custom renderers or default implementations.
  *
  * @param item - The status bar data for this day
- * @param isPinned - Whether the card is currently pinned open
- * @param isTouch - Whether the device supports touch
  * @param renderCard - Optional custom renderer for status items
  * @param renderEvent - Optional custom renderer for events
  */
 export function StatusBarCard({
   item,
-  isPinned = false,
-  isTouch = false,
   renderCard,
   renderEvent,
 }: StatusBarCardProps) {
@@ -657,17 +648,6 @@ export function StatusBarCard({
                 />
               );
             })}
-          </div>
-        </>
-      )}
-      {isPinned && !isTouch && (
-        <>
-          <Separator />
-          <div className="text-muted-foreground flex cursor-pointer items-center p-2 text-xs">
-            <span>{labels.clickAgainToUnpin}</span>
-            <kbd className="border-input bg-background text-muted-foreground ml-auto inline-flex h-5 max-h-5 min-w-5 items-center justify-center rounded border px-1.5 font-mono text-[10px] font-medium">
-              Esc
-            </kbd>
           </div>
         </>
       )}

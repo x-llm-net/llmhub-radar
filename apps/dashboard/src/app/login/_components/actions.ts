@@ -16,15 +16,39 @@ import { z } from "zod";
 import { signIn } from "@/lib/auth";
 import { createUser } from "@/lib/auth/helpers";
 
-const devEmailSchema = z.email().transform((value) => value.toLowerCase());
+const emailSchema = z.email().transform((value) => value.toLowerCase());
+const localeSchema = z.enum(["en", "fr", "de", "tr", "hi", "zh"]);
 
 export async function signInWithResendAction(formData: FormData) {
   try {
-    await signIn("resend", formData);
+    const email = emailSchema.parse(formData.get("email"));
+    const redirectTo = getSafeRedirectTo(formData.get("redirectTo"));
+    const locale = getSafeLocale(formData.get("locale"));
+
+    await signIn("resend", {
+      email,
+      redirect: false,
+      redirectTo: appendLocaleToRedirectTo(redirectTo, locale),
+    });
+
+    return { ok: true };
   } catch (e) {
     if (isRedirectError(e)) throw e;
     console.error(e);
+    throw e;
   }
+}
+
+function getSafeLocale(value: FormDataEntryValue | null): string {
+  if (typeof value !== "string") return "en";
+  const parsed = localeSchema.safeParse(value);
+  return parsed.success ? parsed.data : "en";
+}
+
+function appendLocaleToRedirectTo(redirectTo: string, locale: string): string {
+  const target = new URL(redirectTo, "http://localhost");
+  target.searchParams.set("llmhub_locale", locale);
+  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 function getSafeRedirectTo(value: FormDataEntryValue | null): string {
@@ -63,7 +87,7 @@ export async function signInWithDevEmailAction(formData: FormData) {
     throw new Error("Development email sign-in is only available in dev mode.");
   }
 
-  const email = devEmailSchema.parse(formData.get("email"));
+  const email = emailSchema.parse(formData.get("email"));
   const redirectTo = getSafeRedirectTo(formData.get("redirectTo"));
 
   const existingUser = await db

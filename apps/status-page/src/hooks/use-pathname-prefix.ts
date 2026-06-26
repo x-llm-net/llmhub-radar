@@ -21,17 +21,25 @@ export function usePathnamePrefix() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const pathname = window.location.pathname;
+      const firstSegment = pathname.split("/").filter(Boolean)[0];
+
+      if (domain && firstSegment === domain) {
+        setPrefix(`${domain}/${locale}`);
+        return;
+      }
+
       setPrefix(
         resolvePathnamePrefix({
           hostname: window.location.hostname,
-          pathname: window.location.pathname,
+          pathname,
           customDomain: page?.customDomain,
           locale,
           defaultLocale,
         }),
       );
     }
-  }, [page?.customDomain, locale, defaultLocale]);
+  }, [page?.customDomain, locale, defaultLocale, domain]);
 
   return prefix;
 }

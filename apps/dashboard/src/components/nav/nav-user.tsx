@@ -56,6 +56,7 @@ export function NavUser() {
   const trpc = useTRPC();
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
   const { data: user } = useQuery(trpc.user.get.queryOptions());
+  const showBillingEntries = false;
 
   if (!user || !workspace) return null;
 
@@ -120,7 +121,7 @@ export function NavUser() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {workspace.plan === "free" ? (
+            {showBillingEntries && workspace.plan === "free" ? (
               <>
                 <DropdownMenuItem asChild>
                   <Link
@@ -194,15 +195,17 @@ export function NavUser() {
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
-              <DropdownMenuItem asChild>
-                <Link
-                  href="/settings/billing"
-                  onClick={() => setOpenMobile(false)}
-                >
-                  <CreditCard />
-                  {t("billing")}
-                </Link>
-              </DropdownMenuItem>
+              {showBillingEntries ? (
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/settings/billing"
+                    onClick={() => setOpenMobile(false)}
+                  >
+                    <CreditCard />
+                    {t("billing")}
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem

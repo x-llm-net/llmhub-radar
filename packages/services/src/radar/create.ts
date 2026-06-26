@@ -1,10 +1,12 @@
-import { and, eq } from "@openstatus/db";
+import { and, eq, inArray } from "@openstatus/db";
 import {
   page,
+  pageComponent,
   radarCredential,
   radarPool,
   radarProbeTarget,
   radarProvider,
+  radarTargetOpenStatusBinding,
   radarTargetStatus,
   selectRadarCredentialSchema,
   selectRadarPoolSchema,
@@ -13,7 +15,7 @@ import {
 } from "@openstatus/db/src/schema";
 
 import { requireScope } from "../auth";
-import { type ServiceContext, withTransaction } from "../context";
+import { type DB, type ServiceContext, withTransaction } from "../context";
 import {
   ConflictError,
   LimitExceededError,
@@ -60,6 +62,102 @@ function getDefaultTargetDisplayName(input: {
     input.credential.name ||
     "Default group"
   );
+}
+
+function getPageComponentDescription(input: {
+  modelType?: string | null;
+  probeModel?: string | null;
+}) {
+  const parts = [
+    input.modelType ? `Type: ${input.modelType}` : null,
+    input.probeModel ? `Probe model: ${input.probeModel}` : null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" | ") : null;
+}
+
+async function ensurePageComponentForTarget(
+  tx: DB,
+  input: {
+    workspaceId: number;
+    poolId: number;
+    pageId: number | null;
+    targetId: number;
+    name: string;
+    description?: string | null;
+  },
+) {
+  if (input.pageId == null) return null;
+
+  const existingBinding = await tx
+    .select({
+      id: radarTargetOpenStatusBinding.id,
+      pageComponentId: radarTargetOpenStatusBinding.pageComponentId,
+    })
+    .from(radarTargetOpenStatusBinding)
+    .where(eq(radarTargetOpenStatusBinding.targetId, input.targetId))
+    .get();
+
+  if (existingBinding?.pageComponentId) {
+    await tx
+      .update(pageComponent)
+      .set({
+        name: input.name,
+        description: input.description ?? null,
+        order: input.targetId,
+        updatedAt: new Date(),
+      })
+      .where(eq(pageComponent.id, existingBinding.pageComponentId));
+
+    await tx
+      .update(radarTargetOpenStatusBinding)
+      .set({
+        pageId: input.pageId,
+        updatedAt: new Date(),
+      })
+      .where(eq(radarTargetOpenStatusBinding.id, existingBinding.id));
+
+    return existingBinding.pageComponentId;
+  }
+
+  const component = await tx
+    .insert(pageComponent)
+    .values({
+      workspaceId: input.workspaceId,
+      pageId: input.pageId,
+      type: "static",
+      monitorId: null,
+      name: input.name,
+      description: input.description ?? null,
+      order: input.targetId,
+      updatedAt: new Date(),
+    })
+    .returning({ id: pageComponent.id })
+    .get();
+
+  if (existingBinding) {
+    await tx
+      .update(radarTargetOpenStatusBinding)
+      .set({
+        workspaceId: input.workspaceId,
+        poolId: input.poolId,
+        pageId: input.pageId,
+        pageComponentId: component.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(radarTargetOpenStatusBinding.id, existingBinding.id));
+  } else {
+    await tx.insert(radarTargetOpenStatusBinding).values({
+      workspaceId: input.workspaceId,
+      poolId: input.poolId,
+      targetId: input.targetId,
+      pageId: input.pageId,
+      pageComponentId: component.id,
+      updatedAt: new Date(),
+    });
+  }
+
+  return component.id;
 }
 
 function safeProvider(row: typeof radarProvider.$inferSelect) {
@@ -223,6 +321,18 @@ export async function createRadarPool(args: {
         currentStatus: "unknown",
         updatedAt: new Date(),
       });
+
+      await ensurePageComponentForTarget(tx, {
+        workspaceId: ctx.workspace.id,
+        poolId: pool.id,
+        pageId: publicPage.id,
+        targetId: target.id,
+        name: target.displayName,
+        description: getPageComponentDescription({
+          modelType: input.credential.modelGroup,
+          probeModel,
+        }),
+      });
     }
 
     return selectRadarPoolSchema.parse(pool);
@@ -239,7 +349,7 @@ export async function createRadarProvider(args: {
 
   return withTransaction(ctx, async (tx) => {
     const pool = await tx
-      .select({ id: radarPool.id })
+      .select({ id: radarPool.id, pageId: radarPool.pageId })
       .from(radarPool)
       .where(
         and(
@@ -354,7 +464,7 @@ export async function addRadarTokenProbe(args: {
 
   return withTransaction(ctx, async (tx) => {
     const pool = await tx
-      .select({ id: radarPool.id })
+      .select({ id: radarPool.id, pageId: radarPool.pageId })
       .from(radarPool)
       .where(
         and(
@@ -444,6 +554,18 @@ export async function addRadarTokenProbe(args: {
       targetId: target.id,
       currentStatus: "unknown",
       updatedAt: now,
+    });
+
+    await ensurePageComponentForTarget(tx, {
+      workspaceId: ctx.workspace.id,
+      poolId: pool.id,
+      pageId: pool.pageId,
+      targetId: target.id,
+      name: target.displayName,
+      description: getPageComponentDescription({
+        modelType: input.modelType,
+        probeModel: input.probeModel,
+      }),
     });
 
     return selectRadarProbeTargetSchema.parse(target);
@@ -552,6 +674,18 @@ export async function updateRadarTokenProbe(args: {
           updatedAt: now,
         })
         .where(eq(radarProbeTarget.id, target.id));
+
+      await ensurePageComponentForTarget(tx, {
+        workspaceId: ctx.workspace.id,
+        poolId: row.pool.id,
+        pageId: row.pool.pageId,
+        targetId: target.id,
+        name: input.apiKeyName,
+        description: getPageComponentDescription({
+          modelType: input.modelType,
+          probeModel: input.probeModel,
+        }),
+      });
     } else {
       const createdTarget = await tx
         .insert(radarProbeTarget)
@@ -574,6 +708,18 @@ export async function updateRadarTokenProbe(args: {
         targetId: createdTarget.id,
         currentStatus: "unknown",
         updatedAt: now,
+      });
+
+      await ensurePageComponentForTarget(tx, {
+        workspaceId: ctx.workspace.id,
+        poolId: row.pool.id,
+        pageId: row.pool.pageId,
+        targetId: createdTarget.id,
+        name: createdTarget.displayName,
+        description: getPageComponentDescription({
+          modelType: input.modelType,
+          probeModel: input.probeModel,
+        }),
       });
     }
 
@@ -614,6 +760,27 @@ export async function deleteRadarCredential(args: {
       throw new NotFoundError("radar_credential", input.credentialId);
     }
 
+    const targetBindings = await tx
+      .select({
+        targetId: radarProbeTarget.id,
+        pageComponentId: radarTargetOpenStatusBinding.pageComponentId,
+      })
+      .from(radarProbeTarget)
+      .leftJoin(
+        radarTargetOpenStatusBinding,
+        eq(radarTargetOpenStatusBinding.targetId, radarProbeTarget.id),
+      )
+      .where(
+        and(
+          eq(radarProbeTarget.poolId, row.pool.id),
+          eq(radarProbeTarget.credentialId, row.credential.id),
+        ),
+      )
+      .all();
+    const pageComponentIds = targetBindings
+      .map((binding) => binding.pageComponentId)
+      .filter((id): id is number => typeof id === "number");
+
     await tx
       .delete(radarProbeTarget)
       .where(
@@ -625,6 +792,12 @@ export async function deleteRadarCredential(args: {
     await tx
       .delete(radarCredential)
       .where(eq(radarCredential.id, row.credential.id));
+
+    if (pageComponentIds.length > 0) {
+      await tx
+        .delete(pageComponent)
+        .where(inArray(pageComponent.id, pageComponentIds));
+    }
 
     return { id: input.credentialId };
   });
@@ -655,7 +828,7 @@ export async function createRadarTarget(args: {
     }
 
     const pool = await tx
-      .select({ id: radarPool.id })
+      .select({ id: radarPool.id, pageId: radarPool.pageId })
       .from(radarPool)
       .where(
         and(
@@ -714,6 +887,18 @@ export async function createRadarTarget(args: {
       targetId: target.id,
       currentStatus: "unknown",
       updatedAt: new Date(),
+    });
+
+    await ensurePageComponentForTarget(tx, {
+      workspaceId: ctx.workspace.id,
+      poolId: pool.id,
+      pageId: pool.pageId,
+      targetId: target.id,
+      name: target.displayName,
+      description: getPageComponentDescription({
+        modelType: input.endpointType,
+        probeModel: input.modelName,
+      }),
     });
 
     return selectRadarProbeTargetSchema.parse(target);

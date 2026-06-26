@@ -1,0 +1,12 @@
+# LLMHub Radar production reverse proxy.
+# Copy to /etc/caddy/Caddyfile on the server after DNS points to the server.
+
+llm-hub.store {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+app.llm-hub.store {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}

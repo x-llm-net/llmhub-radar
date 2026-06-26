@@ -134,9 +134,17 @@ describe("createInvitation", () => {
     });
   });
 
-  test("enforces the members plan cap on free workspace", async () => {
+  test("enforces the v0 members cap on free workspace", async () => {
     await withTestTransaction(async (tx) => {
-      // Free plan has `members: 1` — the owner already occupies that slot.
+      // Free plan metadata still says `members: 1`, but LLMHub Radar v0
+      // allows small-team collaboration with an effective cap of 10 seats.
+      for (let i = 0; i < 9; i++) {
+        await createInvitation({
+          ctx: { ...freeCtx, db: tx },
+          input: { email: `${TEST_PREFIX}-free-${i}@example.com` },
+        });
+      }
+
       await expect(
         createInvitation({
           ctx: { ...freeCtx, db: tx },

@@ -1,9 +1,8 @@
-import { Cog, Eye, Plus, Trash2 } from "lucide-react";
+import { Cog, Plus, Trash2 } from "lucide-react";
 
 export type StatusReportActionLabels = {
   settings: string;
   createUpdate: string;
-  viewReport: string;
   delete: string;
 };
 
@@ -18,12 +17,6 @@ export const actions = [
     id: "create-update",
     label: "Create Update",
     icon: Plus,
-    variant: "default" as const,
-  },
-  {
-    id: "view-report",
-    label: "View Report",
-    icon: Eye,
     variant: "default" as const,
   },
   {
@@ -52,7 +45,6 @@ export const getActions = (
   const labelById = {
     edit: labels?.settings,
     "create-update": labels?.createUpdate,
-    "view-report": labels?.viewReport,
     delete: labels?.delete,
   } satisfies Record<StatusReportUpdateAction["id"], string | undefined>;
 

@@ -1,3 +1,8 @@
 export { getUser, type UserRecord } from "./get";
 export { deleteAccount } from "./delete";
-export { DeleteAccountInput, GetUserInput } from "./schemas";
+export { updateUserProfile } from "./update";
+export {
+  DeleteAccountInput,
+  GetUserInput,
+  UpdateUserProfileInput,
+} from "./schemas";

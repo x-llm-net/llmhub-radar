@@ -1,119 +1,47 @@
 "use client";
 
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@openstatus/ui/components/ui/dropdown-menu";
-import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@openstatus/ui/components/ui/sidebar";
 import { cn } from "@openstatus/ui/lib/utils";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronsUpDown, Plus } from "lucide-react";
-import { useTranslations } from "next-intl";
-
-import { Link } from "@/components/common/link";
-import { useTRPC } from "@/lib/trpc/client";
 
 interface WorkspaceSwitcherProps {
   className?: string;
-  side?: React.ComponentProps<typeof DropdownMenuContent>["side"];
 }
 
-export function WorkspaceSwitcher({ className, side }: WorkspaceSwitcherProps) {
-  const t = useTranslations("workspaceSwitcher");
-  const { isMobile, setOpenMobile } = useSidebar();
-  const trpc = useTRPC();
-  const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
-  const { data: workspaces } = useQuery(trpc.workspace.list.queryOptions());
-
-  if (!workspace) return null;
-
-  function handleClick(slug: string) {
-    document.cookie = `workspace-slug=${slug}; path=/;`;
-    window.location.href = "/overview";
-  }
-
+export function WorkspaceSwitcher({ className }: WorkspaceSwitcherProps) {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className={cn(
-                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground h-14 rounded-none px-4 ring-inset group-data-[collapsible=icon]:mx-2! group-data-[collapsible=icon]:rounded-lg! group-data-[collapsible=icon]:px-0!",
-                className,
-              )}
-            >
-              <div className="bg-sidebar-primary flex aspect-square size-8 items-center justify-center rounded-lg">
-                <div className="size-8 overflow-hidden rounded-lg">
-                  <img
-                    src={`https://api.dicebear.com/9.x/glass/svg?seed=${workspace.slug}`}
-                    alt={t("avatarAlt")}
-                  />
-                </div>
+        <SidebarMenuButton
+          asChild
+          size="lg"
+          className={cn(
+            "h-14 rounded-none px-4 ring-inset group-data-[collapsible=icon]:mx-2! group-data-[collapsible=icon]:rounded-lg! group-data-[collapsible=icon]:px-0!",
+            className,
+          )}
+        >
+          <a href="/overview" aria-label="LLMHub Radar">
+            <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
+              <img
+                src="/llmhub-radar-logo.png"
+                alt=""
+                className="size-8 object-contain"
+                aria-hidden="true"
+              />
+            </div>
+            <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+              <div className="text-foreground truncate font-medium">
+                LLMHub Radar
               </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <div className="truncate font-medium">
-                  {workspace.name || t("untitled")}
-                </div>
-                <div className="truncate text-xs">
-                  <span className="font-commit-mono tracking-tight">
-                    {workspace.slug}
-                  </span>{" "}
-                  <span className="text-muted-foreground">
-                    {workspace.plan === "team" ? t("pro") : workspace.plan}
-                  </span>
-                </div>
+              <div className="text-muted-foreground truncate text-xs">
+                Provider status monitor
               </div>
-              <ChevronsUpDown className="ml-auto" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            align="start"
-            side={side ?? (isMobile ? "bottom" : "right")}
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="text-muted-foreground text-xs">
-              {t("workspaces")}
-            </DropdownMenuLabel>
-            {workspaces?.map((workspace) => (
-              <DropdownMenuItem
-                key={workspace.id}
-                onClick={() => {
-                  handleClick(workspace.slug);
-                  setOpenMobile(false);
-                }}
-                className="gap-2 p-2"
-              >
-                <span className="truncate">
-                  {workspace.name || t("untitled")}
-                </span>
-                <span className="text-muted-foreground truncate font-mono text-xs">
-                  {workspace.slug}
-                </span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 p-2" asChild>
-              <Link href="/settings/general">
-                <Plus />
-                <div className="font-commit-mono text-muted-foreground tracking-tight">
-                  {t("addTeamMember")}
-                </div>
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </div>
+          </a>
+        </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>
   );

@@ -27,10 +27,7 @@ export default async function NotFound() {
               {t("notFoundDescription")}
             </p>
           </div>
-          <WorkspaceSwitcher
-            className="border-border bg-background rounded-md border"
-            side="bottom"
-          />
+          <WorkspaceSwitcher className="border-border bg-background rounded-md border" />
           <div className="grid gap-2 sm:grid-cols-2">
             {quickLinks.map((link) => (
               <Link

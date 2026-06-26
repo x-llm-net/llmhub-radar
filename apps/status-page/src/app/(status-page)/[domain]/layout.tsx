@@ -40,6 +40,7 @@ export default async function Layout({
   const cfg = cfgResult.success
     ? cfgResult.data
     : pageConfigurationSchema.parse({});
+  const themeMode = page?.forceTheme === "dark" ? "dark" : "light";
 
   return (
     <HydrateClient>
@@ -52,8 +53,10 @@ export default async function Layout({
       />
       <ThemeProvider
         attribute="class"
-        defaultTheme={page?.forceTheme ?? "system"}
-        enableSystem
+        defaultTheme={themeMode}
+        enableSystem={false}
+        forcedTheme={themeMode}
+        storageKey="status-page-theme"
         disableTransitionOnChange
       >
         <StatusPageProvider

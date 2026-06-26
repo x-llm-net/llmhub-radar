@@ -48,6 +48,7 @@ export async function sendEmailVerification(
     to: subscription.email,
     link: verifyUrl,
     page: subscription.pageName,
+    locale: subscription.locale,
   });
 }
 
@@ -67,6 +68,7 @@ export async function sendEmailNotifications(
     subscribers: validSubscriptions.map((sub) => ({
       email: sub.email,
       token: sub.token,
+      locale: sub.locale,
     })),
     pageTitle: firstSub.pageName,
     pageSlug: firstSub.pageSlug,

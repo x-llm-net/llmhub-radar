@@ -16,27 +16,18 @@ import {
   TooltipTrigger,
 } from "@openstatus/ui/components/ui/tooltip";
 import {
-  Activity,
   Bell,
-  Bot,
   Cog,
   LayoutGrid,
-  MessageSquare,
-  PanelTop,
   Radar,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import * as React from "react";
 
 import { Kbd } from "@/components/common/kbd";
-import { NavMonitors } from "@/components/nav/nav-monitors";
 import { NavOverview } from "@/components/nav/nav-overview";
-import { NavStatusPages } from "@/components/nav/nav-status-pages";
 import { NavUser } from "@/components/nav/nav-user";
 import { WorkspaceSwitcher } from "@/components/nav/workspace-switcher";
-
-import { NavBanner } from "./nav-banner";
-import { NavHelp } from "./nav-help";
 
 const SIDEBAR_KEYBOARD_SHORTCUT = "[";
 
@@ -44,13 +35,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const t = useTranslations("nav");
   const overview = [
     { name: t("overview"), url: "/overview", icon: LayoutGrid },
-    { name: t("statusPages"), url: "/status-pages", icon: PanelTop },
-    { name: t("monitors"), url: "/monitors", icon: Activity },
     { name: t("radar"), url: "/radar", icon: Radar },
     { name: t("notifications"), url: "/notifications", icon: Bell },
     { name: t("settings"), url: "/settings/general", icon: Cog },
-    { name: t("assistant"), url: "/chat", icon: MessageSquare },
-    { name: t("slackAgent"), url: "/agents", icon: Bot },
   ];
 
   return (
@@ -60,12 +47,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavOverview items={overview} />
-        <NavStatusPages />
-        <NavMonitors />
-        <div className="mt-auto px-2">
-          <NavBanner />
-        </div>
-        <NavHelp />
       </SidebarContent>
       <SidebarFooter className="flex h-14 flex-col justify-center gap-0 border-t p-0">
         <NavUser />

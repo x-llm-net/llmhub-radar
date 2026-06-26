@@ -1,6 +1,7 @@
 "use client";
 
 import type { RouterOutputs } from "@openstatus/api";
+import type { StatusReportStatus } from "@openstatus/db/src/schema";
 import {
   type PageComponentImpact,
   worstImpact,
@@ -9,16 +10,18 @@ import { Button } from "@openstatus/ui/components/ui/button";
 import { cn } from "@openstatus/ui/lib/utils";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import Link from "next/link";
 
-import { TableCellBadge } from "@/components/data-table/table-cell-badge";
 import { TableCellDate } from "@/components/data-table/table-cell-date";
 import { TableCellLink } from "@/components/data-table/table-cell-link";
 import { TableCellNumber } from "@/components/data-table/table-cell-number";
 import { DataTableColumnHeader } from "@/components/ui/data-table/data-table-column-header";
 import {
   colors,
+  getStatusReportImpactLabel,
+  getStatusReportStatusLabel,
   impactConfig,
+  type StatusReportImpactLabels,
+  type StatusReportStatusLabels,
   untriagedImpact,
 } from "@/data/status-report-updates.client";
 
@@ -33,6 +36,8 @@ export type StatusReportColumnLabels = {
   updates: string;
   affected: string;
   startedAt: string;
+  statuses?: StatusReportStatusLabels;
+  impacts?: StatusReportImpactLabels;
   expand: (title: string) => string;
   collapse: (title: string) => string;
 };
@@ -122,15 +127,15 @@ export function getColumns(
     accessorKey: "status",
     header: labels.currentStatus,
     cell: ({ row }) => {
-      const value = String(row.getValue("status"));
+      const value = row.getValue("status") as StatusReportStatus;
       return (
         <div
           className={cn(
-            "font-mono capitalize",
+            "font-medium",
             colors[value as keyof typeof colors],
           )}
         >
-          {value}
+          {getStatusReportStatusLabel(value, labels.statuses)}
         </div>
       );
     },
@@ -145,7 +150,9 @@ export function getColumns(
       const impact = row.getValue<PageComponentImpact | null>("impact");
       const config = impact ? impactConfig[impact] : untriagedImpact;
       return (
-        <div className={cn("font-mono", config.color)}>{config.label}</div>
+        <div className={cn("font-medium", config.color)}>
+          {getStatusReportImpactLabel(impact ?? "untriaged", labels.impacts)}
+        </div>
       );
     },
     enableSorting: false,
@@ -166,21 +173,21 @@ export function getColumns(
     cell: ({ row }) => {
       const value = row.getValue("pageComponents");
       if (Array.isArray(value) && value.length > 0 && "name" in value[0]) {
+        const names = value.map((m) => m.name).join(", ");
         return (
-          <div className="flex flex-wrap gap-1">
-            {value.map((m) =>
-              m.monitorId ? (
-                <Link href={`/monitors/${m.monitorId}/overview`} key={m.id}>
-                  <TableCellBadge value={m.name} />
-                </Link>
-              ) : (
-                <TableCellBadge value={m.name} key={m.id} />
-              ),
-            )}
+          <div
+            className="max-w-[380px] truncate whitespace-nowrap text-sm leading-5"
+            title={names}
+          >
+            {names}
           </div>
         );
       }
       return <div className="text-muted-foreground">-</div>;
+    },
+    meta: {
+      headerClassName: "min-w-[260px] whitespace-nowrap",
+      cellClassName: "min-w-[260px] max-w-[380px]",
     },
   },
   {

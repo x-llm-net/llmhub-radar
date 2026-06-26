@@ -18,14 +18,17 @@ export function decideRadarNotificationEvent(args: {
   previousStatus?: RadarTargetStatus | null;
   currentStatus: RadarTargetStatus;
   latestEventType?: RadarNotificationEventType | null;
+  recoveryConfirmed?: boolean;
 }): RadarNotificationEventType | null {
-  const { previousStatus, currentStatus, latestEventType } = args;
+  const { previousStatus, currentStatus, latestEventType, recoveryConfirmed } =
+    args;
 
   if (
     currentStatus === "operational" &&
     previousStatus &&
     ["degraded", "down", "configuration_error"].includes(previousStatus)
   ) {
+    if (!recoveryConfirmed) return null;
     return latestEventType === "recovered" ? null : "recovered";
   }
 

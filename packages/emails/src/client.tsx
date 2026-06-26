@@ -7,17 +7,30 @@ import { Resend } from "resend";
 import FollowUpEmail from "../emails/followup";
 import type { MonitorAlertProps } from "../emails/monitor-alert";
 import PageSubscriptionEmail from "../emails/page-subscription";
-import type { PageSubscriptionProps } from "../emails/page-subscription";
+import {
+  getPageSubscriptionSubject,
+  type PageSubscriptionProps,
+} from "../emails/page-subscription";
 import SlackFeedbackEmail from "../emails/slack-feedback";
 import StatusPageMagicLinkEmail from "../emails/status-page-magic-link";
-import type { StatusPageMagicLinkProps } from "../emails/status-page-magic-link";
+import {
+  getStatusPageMagicLinkSubject,
+  type StatusPageMagicLinkProps,
+} from "../emails/status-page-magic-link";
 import StatusReportEmail from "../emails/status-report";
-import type { StatusReportProps } from "../emails/status-report";
+import {
+  getMaintenanceNotificationSubject,
+  type StatusReportProps,
+} from "../emails/status-report";
 import TeamInvitationEmail from "../emails/team-invitation";
-import type { TeamInvitationProps } from "../emails/team-invitation";
+import {
+  getTeamInvitationSubject,
+  type TeamInvitationProps,
+} from "../emails/team-invitation";
 import { monitorAlertEmail } from "../hotfix/monitor-alert";
 import { logSkippedEmail, shouldSendEmail } from "./delivery";
 import { getEmailFrom } from "./from";
+import { getPublicStatusPageUrl } from "./status-page-url";
 
 // split an array into chunks of a given size.
 function chunk<T>(array: T[], size: number): T[][] {
@@ -151,14 +164,15 @@ export class EmailClient {
 
   public async sendStatusReportUpdate(
     req: Omit<StatusReportProps, "unsubscribeUrl" | "manageUrl"> & {
-      subscribers: Array<{ email: string; token: string }>;
+      subscribers: Array<{ email: string; token: string; locale?: string | null }>;
       pageSlug: string;
       customDomain?: string | null;
     },
   ) {
-    const statusPageBaseUrl = req.customDomain
-      ? `https://${req.customDomain}`
-      : `https://${req.pageSlug}.openstatus.dev`;
+    const statusPageBaseUrl = getPublicStatusPageUrl({
+      customDomain: req.customDomain,
+      slug: req.pageSlug,
+    });
 
     if (!shouldSendEmail()) {
       logSkippedEmail(
@@ -183,6 +197,7 @@ export class EmailClient {
                 react: (
                   <StatusReportEmail
                     {...req}
+                    locale={subscriber.locale ?? req.locale}
                     unsubscribeUrl={unsubscribeUrl}
                     manageUrl={manageUrl}
                   />
@@ -223,9 +238,7 @@ export class EmailClient {
       const html = await render(<TeamInvitationEmail {...req} />);
       const result = await this.client.emails.send({
         from: getEmailFrom(req.workspaceName ?? "LLMHub Radar"),
-        subject: `You've been invited to join ${
-          req.workspaceName ?? "LLMHub Radar"
-        }`,
+        subject: getTeamInvitationSubject(req),
         to: req.to,
         html,
       });
@@ -280,8 +293,8 @@ export class EmailClient {
     try {
       const html = await render(<PageSubscriptionEmail {...req} />);
       const result = await this.client.emails.send({
-        from: getEmailFrom("服务状态"),
-        subject: `Confirm your subscription to ${req.page}`,
+        from: getEmailFrom(req.page),
+        subject: getPageSubscriptionSubject(req),
         to: req.to,
         html,
       });
@@ -309,8 +322,8 @@ export class EmailClient {
     try {
       const html = await render(<StatusPageMagicLinkEmail {...req} />);
       const result = await this.client.emails.send({
-        from: getEmailFrom("服务状态"),
-        subject: `Authenticate to ${req.page}`,
+        from: getEmailFrom(req.page),
+        subject: getStatusPageMagicLinkSubject(req),
         to: req.to,
         html,
       });
@@ -327,7 +340,7 @@ export class EmailClient {
   }
 
   public async sendMaintenanceNotification(req: {
-    subscribers: Array<{ email: string; token: string }>;
+    subscribers: Array<{ email: string; token: string; locale?: string | null }>;
     pageTitle: string;
     pageSlug: string;
     customDomain?: string | null;
@@ -337,9 +350,10 @@ export class EmailClient {
     to: string;
     pageComponents: string[];
   }) {
-    const statusPageBaseUrl = req.customDomain
-      ? `https://${req.customDomain}`
-      : `https://${req.pageSlug}.openstatus.dev`;
+    const statusPageBaseUrl = getPublicStatusPageUrl({
+      customDomain: req.customDomain,
+      slug: req.pageSlug,
+    });
 
     if (!shouldSendEmail()) {
       logSkippedEmail(
@@ -359,7 +373,10 @@ export class EmailClient {
               const manageUrl = `${statusPageBaseUrl}/manage/${subscriber.token}`;
               return {
                 from: getEmailFrom(req.pageTitle),
-                subject: `Scheduled Maintenance: ${req.maintenanceTitle}`,
+                subject: getMaintenanceNotificationSubject({
+                  title: req.maintenanceTitle,
+                  locale: subscriber.locale,
+                }),
                 to: subscriber.email,
                 react: (
                   <StatusReportEmail
@@ -369,6 +386,7 @@ export class EmailClient {
                     date={`${req.from} - ${req.to}`}
                     message={req.message}
                     pageComponents={req.pageComponents}
+                    locale={subscriber.locale ?? undefined}
                     unsubscribeUrl={unsubscribeUrl}
                     manageUrl={manageUrl}
                   />

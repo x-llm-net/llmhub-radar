@@ -3,9 +3,11 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { Input } from "@openstatus/ui/components/ui/input";
 import { Label } from "@openstatus/ui/components/ui/label";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { signOut } from "next-auth/react";
 import { useTranslations } from "next-intl";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Link } from "@/components/common/link";
 import {
@@ -20,19 +22,19 @@ import {
   FormCardFooterInfo,
   FormCardHeader,
   FormCardTitle,
-  FormCardUpgrade,
 } from "@/components/forms/form-card";
 import {
   FormCard,
   FormCardContent,
   FormCardFooter,
 } from "@/components/forms/form-card";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
   const t = useTranslations("settings.account");
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
   const { data: user } = useQuery(trpc.user.get.queryOptions());
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
   const { data: members } = useQuery(trpc.member.list.queryOptions());
@@ -40,6 +42,23 @@ export default function Page() {
   const deleteAccountMutation = useMutation(
     trpc.user.deleteAccount.mutationOptions(),
   );
+  const updateProfileMutation = useMutation(
+    trpc.user.updateProfile.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: trpc.user.get.queryKey(),
+        });
+        toast.success(t("profileSaved"));
+      },
+      onError: () => {
+        toast.error(t("failedToSaveProfile"));
+      },
+    }),
+  );
+
+  useEffect(() => {
+    if (user) setName(user.name ?? "");
+  }, [user]);
 
   if (!user || !workspace || !members) return null;
 
@@ -54,7 +73,6 @@ export default function Page() {
           <SectionTitle>{t("title")}</SectionTitle>
         </SectionHeader>
         <FormCard>
-          <FormCardUpgrade />
           <FormCardHeader>
             <FormCardTitle>{t("personalInformation")}</FormCardTitle>
             <FormCardDescription>
@@ -62,14 +80,43 @@ export default function Page() {
             </FormCardDescription>
           </FormCardHeader>
           <FormCardContent>
-            <form className="grid gap-4">
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const nextName = name.trim();
+                if (!nextName) {
+                  toast.error(t("nameRequired"));
+                  return;
+                }
+                updateProfileMutation.mutate({ name: nextName });
+              }}
+            >
               <div className="grid gap-1.5">
                 <Label>{t("name")}</Label>
-                <Input defaultValue={user?.name ?? undefined} />
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={80}
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label>{t("email")}</Label>
-                <Input defaultValue={user?.email ?? undefined} />
+                <Input value={user?.email ?? ""} readOnly />
+              </div>
+              <div>
+                <Button
+                  size="sm"
+                  type="submit"
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    name.trim() === (user.name ?? "")
+                  }
+                >
+                  {updateProfileMutation.isPending
+                    ? t("savingProfile")
+                    : t("saveProfile")}
+                </Button>
               </div>
             </form>
           </FormCardContent>
@@ -78,17 +125,6 @@ export default function Page() {
               {t("contactToChange")}
             </FormCardFooterInfo>
           </FormCardFooter>
-        </FormCard>
-        <FormCard>
-          <FormCardHeader>
-            <FormCardTitle>{t("appearance")}</FormCardTitle>
-            <FormCardDescription>
-              {t("appearanceDescription")}
-            </FormCardDescription>
-          </FormCardHeader>
-          <FormCardContent className="pb-4">
-            <ThemeToggle />
-          </FormCardContent>
         </FormCard>
         <FormCard variant="destructive">
           <FormCardHeader>
@@ -100,21 +136,16 @@ export default function Page() {
           {isDeleteDisabled ? (
             <FormCardContent>
               <p className="text-destructive text-sm">
-                {t("cancelSubscriptionFirst")} {t("goTo")}{" "}
-                <a
-                  href="/settings/billing"
-                  className="font-medium underline underline-offset-4"
-                >
-                  {t("billing")}
-                </a>{" "}
-                {t("manageSubscription")}
+                {t("cancelSubscriptionFirst")}
               </p>
             </FormCardContent>
           ) : null}
           <FormCardFooter variant="destructive">
             <FormCardFooterInfo>
               {t("needHelpPrefix")}{" "}
-              <Link href="mailto:ping@openstatus.dev">ping@openstatus.dev</Link>
+              <Link href="mailto:support@llm-hub.store">
+                support@llm-hub.store
+              </Link>
               .
             </FormCardFooterInfo>
             <FormAlertDialog

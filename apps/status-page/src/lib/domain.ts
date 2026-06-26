@@ -5,6 +5,14 @@ import type { NextRequest } from "next/server";
 export const stripHostPort = (host?: string | null) =>
   host ? host.replace(/:\d+$/, "") : (host ?? null);
 
+export const isLocalhostLikeHost = (host?: string | null) => {
+  const normalized = stripHostPort(host)?.replace(/^\[|\]$/g, "").toLowerCase();
+
+  if (!normalized) return false;
+  if (normalized === "localhost" || normalized === "::1") return true;
+  return /^\d+\.\d+\.\d+\.\d+$/.test(normalized);
+};
+
 export const getValidSubdomain = (host?: string | null) => {
   let subdomain: string | null = null;
   if (!host && typeof window !== "undefined") {
@@ -12,22 +20,22 @@ export const getValidSubdomain = (host?: string | null) => {
     host = window.location.host;
   }
 
+  const normalizedHost = stripHostPort(host);
+
   // Exclude localhost and IP addresses from being treated as subdomains
-  if (
-    host?.match(/^(localhost|127\\.0\\.0\\.1|::1|\\d+\\.\\d+\\.\\d+\\.\\d+)/)
-  ) {
+  if (isLocalhostLikeHost(normalizedHost)) {
     return null;
   }
 
   // Handle subdomains of localhost (e.g., hello.localhost:3000)
-  if (host?.match(/^([^.]+)\.localhost(:\d+)?$/)) {
-    const match = host.match(/^([^.]+)\.localhost(:\d+)?$/);
+  if (normalizedHost?.match(/^([^.]+)\.localhost$/)) {
+    const match = normalizedHost.match(/^([^.]+)\.localhost$/);
     return match?.[1] || null;
   }
 
   // we should improve here for custom vercel deploy page
-  if (host?.includes(".") && !host.includes(".vercel.app")) {
-    const candidate = host.split(".")[0];
+  if (normalizedHost?.includes(".") && !normalizedHost.includes(".vercel.app")) {
+    const candidate = normalizedHost.split(".")[0];
     if (candidate && !candidate.includes("www")) {
       // Valid candidate
       subdomain = candidate;
@@ -36,14 +44,14 @@ export const getValidSubdomain = (host?: string | null) => {
 
   // In case the host is a custom domain
   if (
-    host &&
+    normalizedHost &&
     !(
-      host?.includes("stpg.dev") ||
-      host?.includes("openstatus.dev") ||
-      host?.endsWith(".vercel.app")
+      normalizedHost.includes("stpg.dev") ||
+      normalizedHost.includes("openstatus.dev") ||
+      normalizedHost.endsWith(".vercel.app")
     )
   ) {
-    subdomain = host;
+    subdomain = normalizedHost;
   }
   return subdomain;
 };

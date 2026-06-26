@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  RadarServiceCard,
+  type RadarServiceCardRunSlot,
+} from "@openstatus/ui/components/blocks/radar-service-card";
+import {
   StatusComponent,
   StatusComponentBody,
   StatusComponentDescription,
@@ -22,10 +26,8 @@ import {
   StatusTitle,
 } from "@openstatus/ui/components/blocks/status-layout";
 import { Badge } from "@openstatus/ui/components/ui/badge";
-import { Separator } from "@openstatus/ui/components/ui/separator";
 import { cn } from "@openstatus/ui/lib/utils";
 import { skipToken, useQuery } from "@tanstack/react-query";
-import { Clock } from "lucide-react";
 import { useLocale } from "next-intl";
 import { notFound, useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -52,10 +54,8 @@ import {
   StatusEventTimelineMaintenance,
   StatusEventTimelineReportUpdate,
 } from "@/components/status-page/status-events";
-import { StatusFeed } from "@/components/status-page/status-feed";
 import { useEmbed } from "@/hooks/use-embed";
 import { usePathnamePrefix } from "@/hooks/use-pathname-prefix";
-import { updatesWithImpactChanges } from "@/lib/report-impacts";
 import { getStatusPageDescription } from "@/lib/status-page-copy";
 import { useTRPC } from "@/lib/trpc/client";
 
@@ -290,6 +290,12 @@ export function Client() {
         {/* NOTE: check what gap feels right */}
         {page.trackers.length > 0 ? (
           <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
+            {page.radar ? (
+              <RadarSectionHeader
+                title={radarCopyForLocale.stabilityOverviewTitle}
+                description={radarCopyForLocale.stabilityOverviewDescription}
+              />
+            ) : null}
             {page.trackers.map((tracker) => {
               if (tracker.type === "component") {
                 const component = tracker.component;
@@ -345,8 +351,11 @@ export function Client() {
         {page.radar && page.radar.targets.length > 0 ? (
           <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
             <RadarProbeTooltip copy={radarCopyForLocale} />
-            <RadarCriteria copy={radarCopyForLocale} />
-            <div className="grid gap-4 md:grid-cols-2">
+            <RadarSectionHeader
+              title={radarCopyForLocale.apiKeyDetailsTitle}
+              description={radarCopyForLocale.apiKeyDetailsDescription}
+            />
+            <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
               {radarCards.map((target) => (
                 <RadarTargetCard
                   key={target.id}
@@ -355,43 +364,27 @@ export function Client() {
                 />
               ))}
             </div>
+            <RadarCriteria copy={radarCopyForLocale} />
           </StatusContent>
         ) : null}
-        <Separator className="group-data-[hide-components=true]/embed:hidden group-data-[hide-feed=true]/embed:hidden" />
-        <StatusContent className="group-data-[hide-feed=true]/embed:hidden">
-          <StatusFeed
-            statusReports={page.statusReports
-              .filter(
-                (report) =>
-                  report.statusReportUpdates.length > 0 &&
-                  page.lastEvents.some(
-                    (event) =>
-                      event.id === report.id && event.type === "report",
-                  ),
-              )
-              .map((report) => ({
-                ...report,
-                affected: report.statusReportsToPageComponents.map(
-                  (component) => component.pageComponent.name,
-                ),
-                updates: updatesWithImpactChanges(report),
-              }))}
-            maintenances={page.maintenances
-              .filter((maintenance) =>
-                page.lastEvents.some(
-                  (event) =>
-                    event.id === maintenance.id && event.type === "maintenance",
-                ),
-              )
-              .map((maintenance) => ({
-                ...maintenance,
-                affected: maintenance.maintenancesToPageComponents.map(
-                  (component) => component.pageComponent.name,
-                ),
-              }))}
-          />
-        </StatusContent>
       </Status>
+    </div>
+  );
+}
+
+function RadarSectionHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <h2 className="text-base font-semibold tracking-normal">{title}</h2>
+      <p className="text-muted-foreground text-sm leading-relaxed">
+        {description}
+      </p>
     </div>
   );
 }
@@ -548,8 +541,8 @@ function RadarCriteria({
   copy: (typeof radarCopy)["en"] | (typeof radarCopy)["zh"];
 }) {
   return (
-    <details className="text-muted-foreground bg-muted/20 rounded-lg border px-3 py-2 text-xs">
-      <summary className="text-foreground cursor-pointer font-medium">
+    <details className="text-muted-foreground border-t pt-3 text-xs">
+      <summary className="hover:text-foreground cursor-pointer font-medium">
         {copy.criteriaTitle}
       </summary>
       <div className="mt-2 grid gap-1.5 leading-relaxed">
@@ -558,6 +551,41 @@ function RadarCriteria({
         <p>{copy.criteriaLatency}</p>
       </div>
     </details>
+  );
+}
+
+function runTone(run: RadarTarget["recentRuns"][number] | null) {
+  if (!run) return "bg-muted";
+  if (!run.success) return "bg-red-500";
+  if (run.firstTokenMs != null && run.firstTokenMs > 5_000) {
+    return "bg-amber-500";
+  }
+  return "bg-emerald-500";
+}
+
+function buildTimelineRuns(
+  runs: RadarTarget["recentRuns"],
+  copy: (typeof radarCopy)["en"] | (typeof radarCopy)["zh"],
+  locale: string,
+): RadarServiceCardRunSlot[] {
+  const chronologicalRuns = [...runs].reverse();
+  const slots = [
+    ...Array(Math.max(60 - chronologicalRuns.length, 0)).fill(null),
+    ...chronologicalRuns.slice(-60),
+  ] as Array<RadarTarget["recentRuns"][number] | null>;
+
+  return slots.map((run) =>
+    run
+      ? {
+          key: run.id,
+          errorType: run.errorType ?? "-",
+          firstToken: formatMs(run.firstTokenMs),
+          httpStatus: run.httpStatus ?? "N/A",
+          result: getProbeResultLabel(run, copy),
+          time: formatDateTime(run.startedAt, locale),
+          toneClassName: runTone(run),
+        }
+      : null,
   );
 }
 
@@ -575,210 +603,87 @@ function RadarTargetCard({
     target.stats7d.p95FirstTokenMs,
     copy,
   );
-  const recentRuns = [...target.recentRuns].reverse().slice(-60);
   const models = uniqueModels([target.modelName, ...target.modelCatalog]);
-  const visibleModels = models.slice(0, 6);
-  const hiddenModelCount = Math.max(models.length - visibleModels.length, 0);
   const availabilityHint = getAvailabilityHint(
     target.stats7d.successRate,
     target.stats7d.sampleCount,
     copy,
   );
+  const modelFamily = target.modelFamily || copy.otherFamily;
+  const interval = formatInterval(target.intervalSeconds, copy);
 
   return (
-    <div className="bg-background rounded-lg border p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-xl font-bold">
-              {target.serviceGroupName || target.displayName}
-            </h3>
+    <RadarServiceCard
+      title={target.serviceGroupName || target.displayName}
+      status={{ className: health.className, label: health.label }}
+      meta={
+        <>
+          <span className="truncate">{target.providerName}</span>
+          <Badge
+            variant="outline"
+            className={cn("shrink-0", modelFamilyTone(modelFamily))}
+          >
+            {modelFamily}
+          </Badge>
+          {target.modelName ? (
             <Badge
               variant="outline"
-              className={cn(
-                "shrink-0",
-                modelFamilyTone(target.modelFamily || copy.otherFamily),
-              )}
+              title={target.modelName}
+              className="max-w-44 shrink-0 overflow-hidden border-slate-200 bg-slate-50 font-mono text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
             >
-              {target.modelFamily || copy.otherFamily}
+              <span className="min-w-0 truncate">{target.modelName}</span>
             </Badge>
-          </div>
-          <p className="text-muted-foreground min-w-0 truncate text-xs">
-            {target.providerName} · {copy.probeModel}{" "}
-            <span className="font-mono whitespace-nowrap">
-              {target.modelName}
-            </span>
-          </p>
-        </div>
-        <Badge variant="outline" className={cn("shrink-0", health.className)}>
-          {health.label}
-        </Badge>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <RadarMetric
-          label={copy.availability7d}
-          value={formatAvailability(
+          ) : null}
+        </>
+      }
+      metrics={[
+        {
+          label: copy.availability7d,
+          value: formatAvailability(
             target.stats7d.successRate,
             target.stats7d.sampleCount,
-          )}
-          hint={availabilityHint}
-          valueClassName={availabilityClass(target.stats7d.successRate)}
-        />
-        <RadarMetric
-          label={copy.firstTokenP50}
-          value={formatMs(target.stats7d.p50FirstTokenMs)}
-          hint={getLatencyHint(target.stats7d.p50FirstTokenMs, copy)}
-          valueClassName={latencyClass(target.stats7d.p50FirstTokenMs)}
-        />
-        <RadarMetric
-          label={copy.firstTokenP95}
-          value={formatMs(target.stats7d.p95FirstTokenMs)}
-          hint={getLatencyHint(target.stats7d.p95FirstTokenMs, copy)}
-          valueClassName={latencyClass(target.stats7d.p95FirstTokenMs)}
-        />
-      </div>
-
-      <div className="mt-4 border-t pt-4">
-        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-          <span className="text-muted-foreground">
-            {copy.recentRuns.replace("{count}", "60")}
-          </span>
-          <span className="text-muted-foreground">
-            {copy.samples7d.replace(
-              "{count}",
-              String(target.stats7d.sampleCount),
-            )}
-          </span>
-        </div>
-        <div className="flex h-8 min-w-0 items-center gap-0.5">
-          {recentRuns.length > 0 ? (
-            recentRuns.map((run) => (
-              <span
-                key={run.id}
-                data-radar-probe
-                data-probe-time={formatDateTime(run.startedAt, locale)}
-                data-probe-result={getProbeResultLabel(run, copy)}
-                data-probe-first-token={formatMs(run.firstTokenMs)}
-                data-probe-http={run.httpStatus ?? "N/A"}
-                data-probe-error={run.errorType ?? "-"}
-                className={cn(
-                  "h-5 min-w-0 flex-1 rounded-sm transition-[height,filter,opacity] hover:h-6 hover:opacity-90 hover:brightness-110",
-                  run.success
-                    ? run.firstTokenMs != null && run.firstTokenMs > 5_000
-                      ? "bg-amber-500"
-                      : "bg-emerald-500"
-                    : "bg-red-500",
-                )}
-              />
-            ))
-          ) : (
-            <span className="text-muted-foreground text-sm">{copy.noRuns}</span>
-          )}
-        </div>
-        <div className="text-muted-foreground mt-1 flex justify-between text-[10px] tracking-normal uppercase">
-          <span>{copy.past}</span>
-          <span>{copy.now}</span>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-2 border-t pt-4">
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <span className="text-muted-foreground">{copy.modelCatalog}</span>
-          <span className="text-muted-foreground">
-            {copy.modelsCount.replace("{count}", String(models.length))}
-          </span>
-        </div>
-        {visibleModels.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {visibleModels.map((model) => (
-              <Badge key={model} variant="outline" className="max-w-full">
-                <span className="min-w-0 truncate font-mono">{model}</span>
-              </Badge>
-            ))}
-            {hiddenModelCount > 0 ? (
-              <Badge variant="secondary">
-                {copy.moreModels.replace("{count}", String(hiddenModelCount))}
-              </Badge>
-            ) : null}
-          </div>
-        ) : (
-          <span className="text-muted-foreground text-sm">
-            {copy.noModelCatalog}
-          </span>
-        )}
-      </div>
-
-      <div className="text-muted-foreground mt-4 flex items-center justify-between gap-4 border-t pt-3 text-xs">
-        <span
-          className="text-foreground inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap"
-          title={`${copy.interval}: ${formatInterval(
-            target.intervalSeconds,
-            copy,
-          )}`}
-        >
-          <Clock className="text-muted-foreground size-3.5" />
-          {formatInterval(target.intervalSeconds, copy)}
-        </span>
-        <span className="min-w-0 truncate text-right">
-          {copy.lastCheck}: {formatDateTime(target.lastCheckAt, locale)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function RadarMetric({
-  label,
-  value,
-  hint,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="bg-background/60 flex h-24 min-w-0 flex-col justify-between rounded-lg border p-2">
-      <div className="text-muted-foreground truncate text-[11px] whitespace-nowrap">
-        {label}
-      </div>
-      <div>
-        <RadarMetricValue value={value} valueClassName={valueClassName} />
-        <div className="text-muted-foreground mt-2 truncate text-[11px] leading-tight">
-          {hint}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RadarMetricValue({
-  value,
-  valueClassName,
-}: {
-  value: string;
-  valueClassName?: string;
-}) {
-  const percentValue = value.endsWith("%");
-
-  return (
-    <div
-      className={cn(
-        "leading-none font-semibold tracking-normal whitespace-nowrap tabular-nums",
-        valueClassName,
-      )}
-    >
-      {percentValue ? (
-        <>
-          <span className="text-xl">{value.slice(0, -1)}</span>
-          <span className="text-xs">%</span>
-        </>
-      ) : (
-        <span className="text-xl">{value}</span>
-      )}
-    </div>
+          ),
+          hint: availabilityHint,
+          valueClassName: availabilityClass(target.stats7d.successRate),
+        },
+        {
+          label: copy.firstTokenP50,
+          value: formatMs(target.stats7d.p50FirstTokenMs),
+          hint: getLatencyHint(target.stats7d.p50FirstTokenMs, copy),
+          valueClassName: latencyClass(target.stats7d.p50FirstTokenMs),
+        },
+        {
+          label: copy.firstTokenP95,
+          value: formatMs(target.stats7d.p95FirstTokenMs),
+          hint: getLatencyHint(target.stats7d.p95FirstTokenMs, copy),
+          valueClassName: latencyClass(target.stats7d.p95FirstTokenMs),
+        },
+      ]}
+      timeline={{
+        recentLabel: copy.recentRuns.replace("{count}", "60"),
+        samplesLabel: copy.samples7d.replace(
+          "{count}",
+          String(target.stats7d.sampleCount),
+        ),
+        runs: buildTimelineRuns(target.recentRuns, copy, locale),
+        pastLabel: copy.past,
+        nowLabel: copy.now,
+      }}
+      models={{
+        label: copy.modelCatalog,
+        countLabel: copy.modelsCount.replace("{count}", String(models.length)),
+        emptyLabel: copy.noModelCatalog,
+        values: models,
+      }}
+      footer={{
+        interval,
+        intervalTitle: `${copy.interval}: ${interval}`,
+        lastCheck: `${copy.lastCheck}: ${formatDateTime(
+          target.lastCheckAt,
+          locale,
+        )}`,
+      }}
+    />
   );
 }
 
@@ -837,7 +742,9 @@ function uniqueModels(models: Array<string | null | undefined>) {
 
 function formatAvailability(value: number | null, samples: number) {
   if (samples === 0 || value == null) return "N/A";
-  return `${(value / 100).toFixed(2)}%`;
+  const percent = Math.round((value / 100) * 100) / 100;
+  if (percent >= 100) return "100%";
+  return `${percent.toFixed(2)}%`;
 }
 
 function getAvailabilityHint(
@@ -978,7 +885,9 @@ function formatInterval(
 
 function formatMs(value: number | null) {
   if (value == null) return "N/A";
-  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}s`;
+  }
   return `${value}ms`;
 }
 
@@ -994,6 +903,12 @@ function formatDateTime(value: Date | null, locale: string) {
 
 const radarCopy = {
   en: {
+    stabilityOverviewTitle: "45-day stability overview",
+    stabilityOverviewDescription:
+      "Recent 45-day probe results grouped by API key. Gray means no samples for that day.",
+    apiKeyDetailsTitle: "API key details",
+    apiKeyDetailsDescription:
+      "Current status, probe model, first-token latency, and 7-day availability for each API key.",
     lastCheck: "Last check",
     otherFamily: "Other",
     probeModel: "Probe model",
@@ -1057,6 +972,12 @@ const radarCopy = {
     },
   },
   zh: {
+    stabilityOverviewTitle: "45 \u5929\u7a33\u5b9a\u6027\u6982\u89c8",
+    stabilityOverviewDescription:
+      "\u6309 API \u5bc6\u94a5\u6c47\u603b\u6700\u8fd1 45 \u5929\u63a2\u6d4b\u7ed3\u679c\uff0c\u7070\u8272\u8868\u793a\u5f53\u5929\u6682\u65e0\u6837\u672c",
+    apiKeyDetailsTitle: "API \u5bc6\u94a5\u8be6\u60c5",
+    apiKeyDetailsDescription:
+      "\u5c55\u793a\u6bcf\u4e2a API \u5bc6\u94a5\u7684\u5f53\u524d\u72b6\u6001\u3001\u63a2\u6d4b\u6a21\u578b\u3001\u9996 token \u65f6\u95f4\u548c\u8fd1 7 \u5929\u53ef\u7528\u6027",
     lastCheck: "最后检查",
     otherFamily: "其他",
     probeModel: "探测模型",

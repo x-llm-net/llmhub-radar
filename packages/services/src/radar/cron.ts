@@ -10,10 +10,6 @@ import {
 import type { ServiceContext } from "../context";
 import { withBusyRetry } from "../retry";
 import { decryptSecret } from "./crypto";
-import {
-  dispatchPendingRadarNotifications,
-  type DispatchRadarNotificationsResult,
-} from "./notifications";
 import { runOpenAICompatibleProbe } from "./probe";
 import type { RadarProbeResult } from "./probe";
 import { recordRadarProbeRun } from "./probe-run";
@@ -31,7 +27,6 @@ export type RunRadarCronResult = {
   failed: number;
   skipped: number;
   errors: Array<{ targetId: number; message: string }>;
-  notifications: DispatchRadarNotificationsResult;
 };
 
 export async function runRadarCron(input?: {
@@ -50,7 +45,7 @@ export async function runRadarCron(input?: {
     (target) => runDueRadarTarget(target, now),
   );
 
-  const summary = results.reduce<Omit<RunRadarCronResult, "notifications">>(
+  const summary = results.reduce<RunRadarCronResult>(
     (summary, result) => {
       summary.selected += 1;
 
@@ -83,11 +78,7 @@ export async function runRadarCron(input?: {
     },
   );
 
-  const notifications = await dispatchPendingRadarNotifications({
-    limit: batchSize,
-  });
-
-  return { ...summary, notifications };
+  return summary;
 }
 
 async function listDueRadarTargets(args: { now: Date; limit: number }) {

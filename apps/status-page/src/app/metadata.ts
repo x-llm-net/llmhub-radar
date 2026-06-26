@@ -1,23 +1,28 @@
 import type { Metadata } from "next";
 
-export const TITLE = "Status Page";
+export const TITLE = "LLMHub Radar";
 export const DESCRIPTION =
-  "Status page customization with built-in themes. Explore all themes and contribute your own theme.";
+  "Public LLM provider status pages powered by real API probes.";
 
-const OG_TITLE = "Theme Explorer";
+const OG_TITLE = "LLMHub Radar";
 const OG_DESCRIPTION =
-  "Explore all themes for your status page and contribute new ones to the community.";
-const FOOTER = "themes.openstatus.dev";
-const IMAGE = "assets/og/theme-explorer.png";
+  "Track LLM API provider availability, first-token latency, incidents, and subscriber updates.";
+const FOOTER = "llm-hub.store";
+const IMAGE = "assets/og/dashboard-v2.png";
+const METADATA_BASE =
+  process.env.NEXT_PUBLIC_STATUS_PAGE_URL ||
+  (process.env.NODE_ENV === "development"
+    ? "http://localhost:3001"
+    : "https://llm-hub.store");
 
 export const defaultMetadata: Metadata = {
   title: {
     template: `%s | ${TITLE}`,
     default: TITLE,
   },
-  icons: "https://www.openstatus.dev/favicon.ico",
+  icons: "/llmhub-radar-logo.png",
   description: DESCRIPTION,
-  metadataBase: new URL("https://www.openstatus.dev"),
+  metadataBase: new URL(METADATA_BASE),
 };
 
 export const twitterMetadata: Metadata["twitter"] = {

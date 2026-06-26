@@ -43,6 +43,10 @@ export const pageSubscriber = sqliteTable(
     // When set, rendered in place of the raw destination in UI.
     name: text("name"),
 
+    // Locale captured from the public status page when the subscriber opts in.
+    // Used for later status update and maintenance emails.
+    locale: text("locale"),
+
     token: text("token"),
     acceptedAt: integer("accepted_at", { mode: "timestamp" }),
     expiresAt: integer("expires_at", { mode: "timestamp" }),

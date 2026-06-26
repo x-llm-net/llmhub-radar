@@ -59,7 +59,9 @@ export default function Page() {
       </TabsList>
       <TabsContent value="reports">
         <StatusEventGroup
-          aria-label={locale === "zh" ? "状态事件与更新" : "Status events and updates"}
+          aria-label={
+            locale === "zh" ? "状态事件与更新" : "Status events and updates"
+          }
         >
           {statusReports.length > 0 ? (
             statusReports.map((report) => {
@@ -119,7 +121,9 @@ export default function Page() {
       </TabsContent>
       <TabsContent value="maintenances">
         <StatusEventGroup
-          aria-label={locale === "zh" ? "状态事件与更新" : "Status events and updates"}
+          aria-label={
+            locale === "zh" ? "状态事件与更新" : "Status events and updates"
+          }
         >
           {maintenances.length > 0 ? (
             maintenances.map((maintenance) => {

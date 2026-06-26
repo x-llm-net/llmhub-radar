@@ -568,6 +568,20 @@
       "when": 1782271200000,
       "tag": "0080_radar_notification_events",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1782272400000,
+      "tag": "0081_page_subscriber_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1782273600000,
+      "tag": "0082_radar_page_component_binding",
+      "breakpoints": true
     }
   ]
 }

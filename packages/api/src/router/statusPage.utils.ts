@@ -409,6 +409,7 @@ export function setDataByType({
 
     const total = dayData.ok + dayData.degraded + dayData.error;
     const dataStatus = getHighestPriorityStatus(dayData);
+    const hasSamples = total > 0;
 
     switch (barType) {
       case "absolute":
@@ -448,7 +449,7 @@ export function setDataByType({
       case "dominant":
         barData = [
           {
-            status: eventStatus ?? dataStatus,
+            status: eventStatus ?? (hasSamples ? dataStatus : "empty"),
             height: 100,
           },
         ];
@@ -458,7 +459,7 @@ export function setDataByType({
           activeReportsDayStatus ?? (hasMaintenances ? "info" : undefined);
         barData = [
           {
-            status: manualEventStatus || "success",
+            status: manualEventStatus || (hasSamples ? "success" : "empty"),
             height: 100,
           },
         ];
@@ -521,7 +522,7 @@ export function setDataByType({
       case "dominant":
         cardData = [
           {
-            status: eventStatus ?? dataStatus,
+            status: eventStatus ?? (hasSamples ? dataStatus : "empty"),
             value: "",
           },
         ];
@@ -537,7 +538,7 @@ export function setDataByType({
           dayImpacts.length > 0 ? worstImpact(dayImpacts) : null;
         cardData = [
           {
-            status: manualCardStatus || "success",
+            status: manualCardStatus || (hasSamples ? "success" : "empty"),
             value: "",
             // only when the impact agrees with the day color — a mixed
             // legacy+impact day where legacy dominates keeps the generic label

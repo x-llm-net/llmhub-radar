@@ -1,6 +1,6 @@
 "use client";
 
-import { Blocks, Cog, CreditCard, Globe, ScanEye, User } from "lucide-react";
+import { Cog, KeyRound, User, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { NavTabs } from "@/components/nav/nav-tabs";
@@ -18,34 +18,22 @@ export function Tabs() {
           href: "/settings/general",
         },
         {
+          value: "members",
+          label: t("members"),
+          icon: Users,
+          href: "/settings/members",
+        },
+        {
           value: "account",
           label: t("account"),
           icon: User,
           href: "/settings/account",
         },
         {
-          value: "billing",
-          label: t("billing"),
-          icon: CreditCard,
-          href: "/settings/billing",
-        },
-        {
-          value: "integrations",
-          label: t("integrations"),
-          icon: Blocks,
-          href: "/settings/integrations",
-        },
-        {
-          value: "private-locations",
-          label: t("privateLocations"),
-          icon: Globe,
-          href: "/settings/private-locations",
-        },
-        {
-          value: "audit-logs",
-          label: t("auditLogs"),
-          icon: ScanEye,
-          href: "/settings/audit-logs",
+          value: "security",
+          label: t("security"),
+          icon: KeyRound,
+          href: "/settings/security",
         },
       ]}
     />

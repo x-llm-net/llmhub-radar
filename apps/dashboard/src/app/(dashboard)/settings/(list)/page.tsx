@@ -24,9 +24,9 @@ export default async function Page() {
       href: "/settings/general",
     },
     {
-      title: t("billing"),
-      description: t("billingDescription"),
-      href: "/settings/billing",
+      title: t("members"),
+      description: t("membersDescription"),
+      href: "/settings/members",
     },
     {
       title: t("account"),
@@ -34,9 +34,9 @@ export default async function Page() {
       href: "/settings/account",
     },
     {
-      title: t("integrations"),
-      description: t("integrationsDescription"),
-      href: "/settings/integrations",
+      title: t("security"),
+      description: t("securityDescription"),
+      href: "/settings/security",
     },
   ];
 

@@ -32,7 +32,7 @@ export function NavOverview({
   const currentTop = topSegment(pathname);
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>{t("workspace")}</SidebarGroupLabel>
+      <SidebarGroupLabel>{t("mainMenu")}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>

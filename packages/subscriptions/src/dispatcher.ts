@@ -150,6 +150,7 @@ export async function dispatchPageUpdate(pageUpdate: PageUpdate) {
       email: sub.email ?? undefined,
       webhookUrl: sub.webhookUrl ?? undefined,
       channelConfig: sub.channelConfig ?? undefined,
+      locale: sub.locale ?? undefined,
       token: sub.token ?? undefined,
       acceptedAt: sub.acceptedAt ?? undefined,
       componentIds: sub.components.map((c) => c.pageComponentId),

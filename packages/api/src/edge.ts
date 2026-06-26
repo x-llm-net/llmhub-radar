@@ -23,8 +23,7 @@ import { userRouter } from "./router/user";
 import { workspaceRouter } from "./router/workspace";
 import { createTRPCRouter } from "./trpc";
 
-// Deployed to /trpc/edge/**
-export const edgeRouter = createTRPCRouter({
+export const edgeRouterEntries = {
   workspace: workspaceRouter,
   monitor: monitorRouter,
   page: pageRouter,
@@ -48,4 +47,7 @@ export const edgeRouter = createTRPCRouter({
   import: importRouter,
   auditLog: auditLogRouter,
   chatSession: chatSessionRouter,
-});
+};
+
+// Deployed to /trpc/edge/**
+export const edgeRouter = createTRPCRouter(edgeRouterEntries);

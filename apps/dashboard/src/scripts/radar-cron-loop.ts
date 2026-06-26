@@ -1,7 +1,15 @@
-import { runRadarCron } from "@openstatus/services/radar";
+import {
+  defaultIntervalMs,
+  loadLocalEnv,
+  parseBooleanEnv,
+} from "./script-env";
 
-const intervalMs = Number(process.env.RADAR_CRON_INTERVAL_MS ?? 60_000);
-const runOnce = process.env.RADAR_CRON_ONCE === "true";
+loadLocalEnv();
+
+const { runRadarCron } = await import("@openstatus/services/radar");
+
+const intervalMs = defaultIntervalMs("RADAR_CRON_INTERVAL_MS", 60_000);
+const runOnce = parseBooleanEnv("RADAR_CRON_ONCE");
 
 let running = false;
 

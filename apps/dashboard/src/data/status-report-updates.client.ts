@@ -2,6 +2,15 @@ import type { StatusReportStatus } from "@openstatus/db/src/schema";
 import type { PageComponentImpact } from "@openstatus/db/src/schema/page_components/constants";
 import { Cog, Trash2 } from "lucide-react";
 
+export const statusReportStatusLabels = {
+  investigating: "Investigating",
+  identified: "Identified",
+  monitoring: "Monitoring",
+  resolved: "Resolved",
+} as const satisfies Record<StatusReportStatus, string>;
+
+export type StatusReportStatusLabels = Record<StatusReportStatus, string>;
+
 export const impactConfig = {
   operational: {
     label: "Operational",
@@ -28,6 +37,45 @@ export const impactConfig = {
   { label: string; color: string }
 >;
 
+export const pageComponentImpactLabels = {
+  operational: impactConfig.operational.label,
+  degraded_performance: impactConfig.degraded_performance.label,
+  partial_outage: impactConfig.partial_outage.label,
+  major_outage: impactConfig.major_outage.label,
+} as const satisfies Record<PageComponentImpact, string>;
+
+export const statusReportImpactLabels = {
+  ...pageComponentImpactLabels,
+  untriaged: "Untriaged",
+} as const satisfies Record<PageComponentImpact | "untriaged", string>;
+
+export type PageComponentImpactLabels = Record<PageComponentImpact, string>;
+export type StatusReportImpactLabels = Record<
+  PageComponentImpact | "untriaged",
+  string
+>;
+
+export function getStatusReportStatusLabel(
+  status: StatusReportStatus,
+  labels: StatusReportStatusLabels = statusReportStatusLabels,
+) {
+  return labels[status] ?? status;
+}
+
+export function getPageComponentImpactLabel(
+  impact: PageComponentImpact,
+  labels: PageComponentImpactLabels = pageComponentImpactLabels,
+) {
+  return labels[impact] ?? impactConfig[impact].label;
+}
+
+export function getStatusReportImpactLabel(
+  impact: PageComponentImpact | "untriaged",
+  labels: StatusReportImpactLabels = statusReportImpactLabels,
+) {
+  return labels[impact] ?? impact;
+}
+
 /** Set equality regardless of order — used to skip no-op impact writes. */
 export function impactsEqual(
   a: { pageComponentId: number; impact: string }[],
@@ -43,7 +91,7 @@ export function impactsEqual(
 
 // legacy report (created before impact tracking): no impact rows
 export const untriagedImpact = {
-  label: "Untriaged",
+  label: statusReportImpactLabels.untriaged,
   color: "text-muted-foreground/80",
 } as const;
 

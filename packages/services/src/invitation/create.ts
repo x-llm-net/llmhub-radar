@@ -18,6 +18,7 @@ import { CreateInvitationInput } from "./schemas";
  * never brush against it in practice.
  */
 const UNLIMITED_MEMBERS_EFFECTIVE_CAP = 420;
+const LLMHUB_RADAR_MIN_TEAM_MEMBERS_CAP = 10;
 
 /**
  * Invite a user to the caller's workspace.
@@ -40,7 +41,7 @@ export async function createInvitation(args: {
     const effectiveLimit =
       membersLimit === "Unlimited"
         ? UNLIMITED_MEMBERS_EFFECTIVE_CAP
-        : membersLimit;
+        : Math.max(membersLimit, LLMHUB_RADAR_MIN_TEAM_MEMBERS_CAP);
 
     const [memberRows, openInviteRows] = await Promise.all([
       tx.query.usersToWorkspaces.findMany({

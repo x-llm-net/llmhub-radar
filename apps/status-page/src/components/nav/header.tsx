@@ -7,7 +7,6 @@ import {
   StatusPageHeaderActions,
   StatusPageHeaderBrand,
   StatusPageHeaderBrandButton,
-  StatusPageHeaderBrandFallback,
   StatusPageHeaderContent,
   StatusPageHeaderNav,
   StatusPageHeaderNavItem,
@@ -22,13 +21,11 @@ import {
 } from "@openstatus/ui/components/ui/sheet";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { isTRPCClientError } from "@trpc/client";
 import { Menu, MessageCircleMore } from "lucide-react";
 import { useExtracted, useLocale } from "next-intl";
 import NextLink from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { Link } from "@/components/common/link";
 import {
@@ -42,6 +39,7 @@ type Page = RouterOutputs["statusPage"]["get"];
 
 function useNav() {
   const t = useExtracted();
+  const locale = useLocale();
   const pathname = usePathname();
   const prefix = usePathnamePrefix();
 
@@ -54,15 +52,9 @@ function useNav() {
     },
     {
       key: "events",
-      label: t("Events"),
+      label: locale === "zh" ? "事件公告" : t("Events"),
       href: `${prefix ? `/${prefix}` : ""}/events`,
       isActive: pathname.startsWith(`${prefix ? `/${prefix}` : ""}/events`),
-    },
-    {
-      key: "monitors",
-      label: t("Monitors"),
-      href: `${prefix ? `/${prefix}` : ""}/monitors`,
-      isActive: pathname.startsWith(`${prefix ? `/${prefix}` : ""}/monitors`),
     },
   ];
 }
@@ -76,7 +68,7 @@ function getStatusUpdateTypes(page: Page): StatusUpdateType[] {
   }
 
   // LLMHub Radar treats public subscriber updates as a core v0 feature.
-  return ["email", "webhook", "slack", "rss", "json"] as const;
+  return ["email", "webhook", "rss", "json"] as const;
 }
 
 export function Header({
@@ -92,28 +84,8 @@ export function Header({
   });
   const prefix = usePathnamePrefix();
 
-  const sendPageSubscriptionMutation = useMutation(
-    trpc.emailRouter.sendPageSubscriptionVerification.mutationOptions({}),
-  );
-
   const subscribeMutation = useMutation(
-    trpc.statusPage.subscribe.mutationOptions({
-      onSuccess: (data) => {
-        if (!data?.id || !data?.token || data.channelType !== "email") return;
-        sendPageSubscriptionMutation.mutate(
-          { id: data.id, token: data.token },
-          {
-            onError: (error) => {
-              if (isTRPCClientError(error)) {
-                toast.error(error.message);
-              } else {
-                toast.error(t("Failed to subscribe"));
-              }
-            },
-          },
-        );
-      },
-    }),
+    trpc.statusPage.subscribe.mutationOptions({}),
   );
 
   return (
@@ -142,8 +114,12 @@ export function Header({
                     className="size-8"
                   />
                 ) : (
-                  // NOTE: show the first two letters of the title and if its multiple words, show the first letter of the first two words
-                  <StatusPageHeaderBrandFallback title={page?.title} />
+                  <span
+                    aria-hidden="true"
+                    className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-md border text-xs font-semibold tracking-normal"
+                  >
+                    LH
+                  </span>
                 )}
               </Link>
             </StatusPageHeaderBrandButton>
@@ -162,7 +138,19 @@ export function Header({
           <StatusUpdates
             types={getStatusUpdateTypes(page)}
             onSubscribe={async (values) => {
-              await subscribeMutation.mutateAsync({ slug: domain, ...values });
+              if (values.channelType === "webhook") {
+                await subscribeMutation.mutateAsync({
+                  slug: domain,
+                  ...values,
+                });
+                return;
+              }
+
+              await subscribeMutation.mutateAsync({
+                slug: domain,
+                locale,
+                ...values,
+              });
             }}
             page={page}
           />

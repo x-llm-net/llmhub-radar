@@ -3,6 +3,7 @@ import { page, selectPageSchema } from "@openstatus/db/src/schema";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
+import { isLocalhostLikeHost } from "@/lib/domain";
 import { resolveClientIp } from "@/lib/http/client-ip";
 
 import { createProtectedCookieKey } from "./lib/protected";
@@ -21,6 +22,14 @@ export default auth(async (req) => {
   // caches to key on it so a markdown variant is never served to a browser.
   passthroughResponse.headers.set("Vary", "Accept");
   const host = req.headers.get("x-forwarded-host");
+
+  // Local Codex/dev acceptance uses path-based routes like
+  // /skyhope-model-status/zh. The proxy runs on the edge runtime, which
+  // cannot read our local file-based SQLite dev database. In that case we
+  // let Next resolve the pathname directly and skip the proxy DB lookup.
+  if (isLocalhostLikeHost(host ?? url.host)) {
+    return passthroughResponse;
+  }
 
   // Strip a `.md` suffix before route resolution so path-based markdown
   // (`/foo/en/monitors/123.md`) parses slug/locale correctly.

@@ -1,4 +1,4 @@
-import { and, asc, db, eq, lt, or } from "@openstatus/db";
+import { and, asc, count, db, eq, gt, lt, lte, or } from "@openstatus/db";
 import {
   radarNotificationEvent,
   radarProbeTarget,
@@ -9,20 +9,50 @@ import type { RadarNotificationEventType } from "./notification-policy";
 
 const DEFAULT_LIMIT = 50;
 const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_MAX_EVENT_AGE_MS = 15 * 60 * 1000;
+const DEFAULT_REPLAY_GUARD_STARTED_AT = new Date();
 
 export type DispatchRadarNotificationsResult = {
   selected: number;
   sent: number;
   failed: number;
   skipped: number;
+  ignoredOlderThanCutoff: number;
+  dispatchCutoff: Date | null;
 };
 
 export async function dispatchPendingRadarNotifications(input?: {
   limit?: number;
   maxAttempts?: number;
+  maxEventAgeMs?: number;
+  now?: Date;
+  replayGuardStartedAt?: Date | null;
 }): Promise<DispatchRadarNotificationsResult> {
   const limit = input?.limit ?? DEFAULT_LIMIT;
   const maxAttempts = input?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const maxEventAgeMs = input?.maxEventAgeMs ?? DEFAULT_MAX_EVENT_AGE_MS;
+  const now = input?.now ?? new Date();
+  const ageCutoff =
+    maxEventAgeMs > 0 ? new Date(now.getTime() - maxEventAgeMs) : null;
+  const replayGuardStartedAt =
+    input?.replayGuardStartedAt === undefined
+      ? DEFAULT_REPLAY_GUARD_STARTED_AT
+      : input.replayGuardStartedAt;
+  const dispatchCutoff = maxDate(ageCutoff, replayGuardStartedAt);
+  const dispatchableCondition = getDispatchableCondition(maxAttempts);
+
+  const [ignoredSummary] = dispatchCutoff
+    ? await db
+        .select({ count: count() })
+        .from(radarNotificationEvent)
+        .where(
+          and(
+            lte(radarNotificationEvent.createdAt, dispatchCutoff),
+            dispatchableCondition,
+          ),
+        )
+        .all()
+    : [{ count: 0 }];
 
   const rows = await db
     .select({
@@ -35,12 +65,11 @@ export async function dispatchPendingRadarNotifications(input?: {
       eq(radarProbeTarget.id, radarNotificationEvent.targetId),
     )
     .where(
-      or(
-        eq(radarNotificationEvent.status, "pending"),
-        and(
-          eq(radarNotificationEvent.status, "failed"),
-          lt(radarNotificationEvent.attempts, maxAttempts),
-        ),
+      and(
+        dispatchCutoff
+          ? gt(radarNotificationEvent.createdAt, dispatchCutoff)
+          : undefined,
+        dispatchableCondition,
       ),
     )
     .orderBy(
@@ -55,6 +84,8 @@ export async function dispatchPendingRadarNotifications(input?: {
     sent: 0,
     failed: 0,
     skipped: 0,
+    ignoredOlderThanCutoff: ignoredSummary?.count ?? 0,
+    dispatchCutoff,
   };
 
   for (const row of rows) {
@@ -104,6 +135,25 @@ export async function dispatchPendingRadarNotifications(input?: {
   }
 
   return result;
+}
+
+function getDispatchableCondition(maxAttempts: number) {
+  return or(
+    eq(radarNotificationEvent.status, "pending"),
+    and(
+      eq(radarNotificationEvent.status, "failed"),
+      lt(radarNotificationEvent.attempts, maxAttempts),
+    ),
+  );
+}
+
+function maxDate(...dates: (Date | null)[]) {
+  const validDates = dates.filter((date): date is Date => Boolean(date));
+  if (validDates.length === 0) return null;
+
+  return validDates.reduce((latest, date) =>
+    date.getTime() > latest.getTime() ? date : latest,
+  );
 }
 
 function toPageUpdateStatus(

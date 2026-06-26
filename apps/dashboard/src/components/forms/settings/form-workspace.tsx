@@ -41,10 +41,13 @@ export function FormWorkspace({
   onSubmit: (values: FormValues) => Promise<void>;
 }) {
   const t = useTranslations("settings.forms");
+  const defaultName = defaultValues?.name?.trim()
+    ? defaultValues.name
+    : t("defaultWorkspaceName");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: defaultValues ?? {
-      name: "",
+    defaultValues: {
+      name: defaultName,
     },
   });
   const [isPending, startTransition] = useTransition();

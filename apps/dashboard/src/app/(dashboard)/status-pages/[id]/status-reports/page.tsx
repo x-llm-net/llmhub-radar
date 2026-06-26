@@ -4,11 +4,10 @@ import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Gauge, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import NextLink from "next/link";
 import { useParams } from "next/navigation";
 
 import { Link } from "@/components/common/link";
-import { Note, NoteButton } from "@/components/common/note";
+import { Note } from "@/components/common/note";
 import {
   Section,
   SectionDescription,
@@ -22,11 +21,13 @@ import { getColumns } from "@/components/data-table/status-reports/columns";
 import { FormSheetStatusReport } from "@/components/forms/status-report/sheet";
 import { toCheckboxTreeItems } from "@/components/ui/checkbox-tree";
 import { DataTable } from "@/components/ui/data-table/data-table";
+import { useStatusReportLabels } from "@/hooks/use-status-report-labels";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function Page() {
   const t = useTranslations("statusPages.reports");
   const tableT = useTranslations("statusPages.reports.table");
+  const { statusLabels, impactLabels } = useStatusReportLabels();
   const { id } = useParams<{ id: string }>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -68,14 +69,6 @@ export default function Page() {
       <Note>
         <Gauge />
         {t("impactNote")}
-        <NoteButton variant="default" asChild>
-          <NextLink
-            href="https://www.openstatus.dev/changelog/status-page-components-impact"
-            target="_blank"
-          >
-            {t("learnMore")}
-          </NextLink>
-        </NoteButton>
       </Note>
       <Section>
         <SectionHeaderRow>
@@ -144,6 +137,8 @@ export default function Page() {
             updates: tableT("updates"),
             affected: tableT("affected"),
             startedAt: tableT("startedAt"),
+            statuses: statusLabels,
+            impacts: impactLabels,
             expand: (title) => tableT("expand", { title }),
             collapse: (title) => tableT("collapse", { title }),
           })}

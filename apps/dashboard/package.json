@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "radar:cron": "bun src/scripts/radar-cron-loop.ts",
+    "radar:notifications": "bun src/scripts/radar-notification-loop.ts",
+    "radar:notifications:preflight": "bun src/scripts/radar-notification-preflight.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

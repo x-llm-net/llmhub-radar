@@ -61,6 +61,7 @@ import {
   type CheckboxTreeItem,
 } from "@/components/ui/checkbox-tree";
 import { colors } from "@/data/status-report-updates.client";
+import { useStatusReportLabels } from "@/hooks/use-status-report-labels";
 import { useTRPC } from "@/lib/trpc/client";
 
 function getSchema(t: (key: string) => string) {
@@ -108,6 +109,7 @@ export function FormStatusReport({
   items: CheckboxTreeItem[];
 }) {
   const t = useTranslations("statusPages.reports.form");
+  const { statusLabel, componentImpactLabels } = useStatusReportLabels();
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
     trpc.workspace.getWorkspace.queryOptions(),
@@ -122,7 +124,7 @@ export function FormStatusReport({
       message: "",
       date: new Date(),
       pageComponents: [],
-      notifySubscribers: true,
+      notifySubscribers: false,
     },
   });
   const watchMessage = form.watch("message");
@@ -202,7 +204,7 @@ export function FormStatusReport({
                       size="sm"
                       className={cn(
                         colors[field.value],
-                        "font-mono capitalize",
+                        "font-medium",
                       )}
                     >
                       <SelectValue placeholder={t("selectStatus")} />
@@ -212,9 +214,9 @@ export function FormStatusReport({
                         <SelectItem
                           key={status}
                           value={status}
-                          className={cn("font-mono capitalize", colors[status])}
+                          className={cn("font-medium", colors[status])}
                         >
-                          {status}
+                          {statusLabel(status)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -419,6 +421,7 @@ export function FormStatusReport({
                         value={field.value ?? []}
                         onValueChange={field.onChange}
                         defaultImpact="degraded_performance"
+                        impactLabels={componentImpactLabels}
                       />
                     </FormControl>
                     <FormMessage />

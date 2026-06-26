@@ -1,0 +1,167 @@
+name: llmhub-radar
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+networks:
+  llmhub-radar:
+    driver: bridge
+
+volumes:
+  libsql-data:
+    name: llmhub-radar-libsql-data
+
+services:
+  libsql:
+    container_name: llmhub-radar-libsql
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:15001:5001"
+    volumes:
+      - libsql-data:/var/lib/sqld
+    environment:
+      - SQLD_NODE=primary
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "perl -e 'use IO::Socket::INET; exit(IO::Socket::INET->new(PeerAddr=>\"127.0.0.1:8080\",Timeout=>1) ? 0 : 1);'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  db-migrate:
+    container_name: llmhub-radar-db-migrate
+    build:
+      context: .
+      dockerfile: apps/radar-worker/Dockerfile
+    image: llmhub-radar/radar-worker:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    working_dir: /app/packages/db
+    env_file:
+      - .env.radar
+    environment:
+      - DATABASE_URL=http://libsql:8080
+    command: ["bun", "src/migrate.mts"]
+    depends_on:
+      libsql:
+        condition: service_healthy
+    restart: "no"
+
+  dashboard:
+    container_name: llmhub-radar-dashboard
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    image: llmhub-radar/dashboard:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env.radar
+    environment:
+      - DATABASE_URL=http://libsql:8080
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - AUTH_TRUST_HOST=true
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      libsql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+
+  status-page:
+    container_name: llmhub-radar-status-page
+    build:
+      context: .
+      dockerfile: apps/status-page/Dockerfile
+    image: llmhub-radar/status-page:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    ports:
+      - "127.0.0.1:3001:3000"
+    env_file:
+      - .env.radar
+    environment:
+      - DATABASE_URL=http://libsql:8080
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - AUTH_TRUST_HOST=true
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      libsql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+
+  radar-probe-worker:
+    container_name: llmhub-radar-probe-worker
+    build:
+      context: .
+      dockerfile: apps/radar-worker/Dockerfile
+    image: llmhub-radar/radar-worker:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    env_file:
+      - .env.radar
+    environment:
+      - DATABASE_URL=http://libsql:8080
+    command: ["bun", "src/scripts/radar-cron-loop.ts"]
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      libsql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  radar-notification-worker:
+    container_name: llmhub-radar-notification-worker
+    profiles:
+      - notifications
+    build:
+      context: .
+      dockerfile: apps/radar-worker/Dockerfile
+    image: llmhub-radar/radar-worker:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    env_file:
+      - .env.radar
+    environment:
+      - DATABASE_URL=http://libsql:8080
+    command: ["bun", "src/scripts/radar-notification-loop.ts"]
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      libsql:
+        condition: service_healthy
+    restart: unless-stopped

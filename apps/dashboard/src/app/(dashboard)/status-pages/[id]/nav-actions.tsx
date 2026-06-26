@@ -14,7 +14,6 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { QuickActions } from "@/components/dropdowns/quick-actions";
-import { NavFeedback } from "@/components/nav/nav-feedback";
 import { getActions } from "@/data/status-pages.client";
 import { useTRPC } from "@/lib/trpc/client";
 
@@ -59,7 +58,6 @@ export function NavActions() {
 
   return (
     <div className="flex items-center gap-2 text-sm">
-      <NavFeedback />
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

@@ -308,9 +308,9 @@ describe("sendWebhookNotifications (flavor detection)", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     const stringified = init?.body as string;
-    expect(stringified).toContain("https://demo.openstatus.dev/manage/tok-123");
+    expect(stringified).toContain("https://llm-hub.store/demo/manage/tok-123");
     expect(stringified).toContain(
-      "https://demo.openstatus.dev/unsubscribe/tok-123",
+      "https://llm-hub.store/demo/unsubscribe/tok-123",
     );
   });
 

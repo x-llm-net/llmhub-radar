@@ -51,11 +51,39 @@ This repository was initialized from OpenStatus. The remote named `upstream` poi
 git remote -v
 ```
 
+## Deployment
+
+Radar has a dedicated Docker compose file. Do not use the original upstream
+OpenStatus compose as the production deployment line.
+
+```sh
+cp .env.radar.example .env.radar
+docker compose -f docker-compose.radar.yaml up -d --build \
+  libsql db-migrate dashboard status-page radar-probe-worker
+```
+
+Subscriber notifications are intentionally not started by the default command.
+Run the preflight check first:
+
+```sh
+docker compose -f docker-compose.radar.yaml run --rm \
+  radar-probe-worker bun src/scripts/radar-notification-preflight.ts
+```
+
+Then explicitly enable the notification worker:
+
+```sh
+docker compose -f docker-compose.radar.yaml --profile notifications up -d \
+  radar-notification-worker
+```
+
+See `docs/LLMHUB_RADAR_DEPLOYMENT.md` for the full deploy checklist.
+
 ## Development
 
 OpenStatus uses pnpm workspaces, Next.js, Hono, Go checker services, Turso/libSQL, Drizzle, Tinybird, and Tailwind.
 
-Original OpenStatus quick start:
+Original OpenStatus quick start, kept only for upstream reference:
 
 ```sh
 cp .env.docker.example .env.docker

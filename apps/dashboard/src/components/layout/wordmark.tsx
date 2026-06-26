@@ -1,14 +1,12 @@
-import Image from "next/image";
-
 import { cn } from "@/lib/utils";
 
 export function Wordmark({
   size = 24,
   showText = false,
   className,
-  href = "https://openstatus.dev",
-  target = "_blank",
-  rel = "noreferrer",
+  href = "/",
+  target,
+  rel,
   ...props
 }: Omit<React.ComponentProps<"a">, "children"> & {
   size?: 24 | 32;
@@ -22,15 +20,13 @@ export function Wordmark({
       className={cn("flex items-center gap-2", className)}
       {...props}
     >
-      <span className="relative block" style={{ height: size, width: size }}>
-        <Image
-          src="https://openstatus.dev/icon.png"
-          alt="openstatus"
-          height={size}
-          width={size}
-          className="border-border rounded-full border"
-        />
-      </span>
+      <img
+        src="/llmhub-radar-logo.png"
+        alt=""
+        className="object-contain"
+        style={{ height: size, width: size }}
+        aria-hidden="true"
+      />
       {showText ? (
         <span
           className={cn(
@@ -38,7 +34,7 @@ export function Wordmark({
             size === 32 ? "text-base" : "text-sm",
           )}
         >
-          openstatus
+          LLMHub Radar
         </span>
       ) : null}
     </a>

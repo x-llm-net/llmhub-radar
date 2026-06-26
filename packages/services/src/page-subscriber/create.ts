@@ -143,6 +143,7 @@ export async function createPageSubscriber(args: {
         pageId: input.pageId,
         source: "vendor",
         name: input.name ?? null,
+        locale: input.channelType === "email" ? input.locale : null,
         token: crypto.randomUUID(),
         acceptedAt: new Date(),
         expiresAt: null,

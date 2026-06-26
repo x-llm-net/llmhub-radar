@@ -3,7 +3,9 @@
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { isTRPCClientError } from "@trpc/client";
-import { useQueryStates } from "nuqs";
+import { signOut } from "next-auth/react";
+import { useTranslations } from "next-intl";
+import { useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -16,14 +18,20 @@ import {
 } from "@/components/content/section";
 import { useTRPC } from "@/lib/trpc/client";
 
-import { searchParamsParsers } from "./search-params";
-
 export function Client() {
+  const t = useTranslations("invite");
   const trpc = useTRPC();
   const [isPending, startTransition] = useTransition();
-  const [{ token }] = useQueryStates(searchParamsParsers);
-  const { data: invitation, error } = useQuery({
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+  const { data: user } = useQuery(trpc.user.get.queryOptions());
+  const {
+    data: invitation,
+    error,
+    isPending: isLoadingInvitation,
+  } = useQuery({
     ...trpc.invitation.get.queryOptions({ token }),
+    enabled: Boolean(token),
     retry: false,
   });
   const acceptInvitationMutation = useMutation(
@@ -36,38 +44,76 @@ export function Client() {
     }),
   );
 
-  // TODO: check if we can have a high level wrapper for isTRPCClientError errors
-  if (isTRPCClientError(error)) {
+  const switchAccount = () => {
+    const redirectTo = `${window.location.pathname}${window.location.search}`;
+    void signOut({
+      redirectTo: `/login?redirectTo=${encodeURIComponent(redirectTo)}`,
+    });
+  };
+
+  if (!token) {
     return (
-      <SectionGroup>
-        <Section>
-          <SectionHeader>
-            <SectionTitle className="text-destructive">Error</SectionTitle>
-            <SectionDescription className="font-mono">
-              {error.message}
-            </SectionDescription>
-          </SectionHeader>
-        </Section>
-      </SectionGroup>
+      <InviteMessage
+        title={t("missingTokenTitle")}
+        description={t("missingTokenDescription")}
+      />
     );
   }
 
-  if (!invitation) return null;
-  if (invitation.acceptedAt) return null;
+  if (error) {
+    const description = isTRPCClientError(error)
+      ? t("invalidDescription")
+      : t("failedToLoadDescription");
+
+    return (
+      <InviteMessage
+        title={t("invalidTitle")}
+        description={description}
+        currentEmail={user?.email ?? undefined}
+        action={
+          <Button size="sm" variant="outline" onClick={switchAccount}>
+            {t("switchAccount")}
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (isLoadingInvitation) return null;
+  if (!invitation) {
+    return (
+      <InviteMessage
+        title={t("invalidTitle")}
+        description={t("invalidDescription")}
+        currentEmail={user?.email ?? undefined}
+        action={
+          <Button size="sm" variant="outline" onClick={switchAccount}>
+            {t("switchAccount")}
+          </Button>
+        }
+      />
+    );
+  }
+  if (invitation.acceptedAt) {
+    return (
+      <InviteMessage
+        title={t("alreadyAcceptedTitle")}
+        description={t("alreadyAcceptedDescription")}
+      />
+    );
+  }
 
   return (
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>Invitation</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>
-            You&apos;ve been invited to join the workspace{" "}
-            {invitation.workspace.name ? (
-              <span className="font-semibold">{invitation.workspace.name}</span>
-            ) : (
-              <span className="font-mono">{invitation.workspace.slug}</span>
-            )}
-            .
+            {t("descriptionPrefix")}{" "}
+            <span className="font-semibold">
+              {invitation.workspace.name || t("defaultWorkspaceName")}
+            </span>
+            {t("descriptionSuffix")}
           </SectionDescription>
         </SectionHeader>
         <Button
@@ -79,13 +125,13 @@ export function Client() {
                   id: invitation.id,
                 });
                 toast.promise(promise, {
-                  loading: "Accepting invitation...",
-                  success: "Invitation accepted",
+                  loading: t("accepting"),
+                  success: t("accepted"),
                   error: (error) => {
                     if (isTRPCClientError(error)) {
                       return error.message;
                     }
-                    return "Failed to accept invitation";
+                    return t("failedToAccept");
                   },
                 });
                 await promise;
@@ -95,8 +141,39 @@ export function Client() {
             });
           }}
         >
-          {isPending ? "Accepting..." : "Accept Invitation"}
+          {isPending ? t("acceptingShort") : t("accept")}
         </Button>
+      </Section>
+    </SectionGroup>
+  );
+}
+
+function InviteMessage({
+  title,
+  description,
+  currentEmail,
+  action,
+}: {
+  title: string;
+  description: string;
+  currentEmail?: string;
+  action?: React.ReactNode;
+}) {
+  const t = useTranslations("invite");
+
+  return (
+    <SectionGroup>
+      <Section>
+        <SectionHeader>
+          <SectionTitle>{title}</SectionTitle>
+          <SectionDescription>{description}</SectionDescription>
+          {currentEmail ? (
+            <SectionDescription>
+              {t("signedInAs", { email: currentEmail })}
+            </SectionDescription>
+          ) : null}
+        </SectionHeader>
+        {action}
       </Section>
     </SectionGroup>
   );

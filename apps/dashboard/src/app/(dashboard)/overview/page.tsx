@@ -1,25 +1,42 @@
 "use client";
 
+import { Badge } from "@openstatus/ui/components/ui/badge";
+import { Button } from "@openstatus/ui/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { formatDistanceToNowStrict } from "date-fns";
-import { Bot, List, Search } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  ExternalLink,
+  KeyRound,
+  Plus,
+  RadioTower,
+  Settings,
+  TriangleAlert,
+} from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { useMemo } from "react";
 
-import { Note, NoteButton } from "@/components/common/note";
+import {
+  ActionCard,
+  ActionCardDescription,
+  ActionCardHeader,
+  ActionCardTitle,
+} from "@/components/content/action-card";
+import { ActionCardGroup } from "@/components/content/action-card";
 import {
   EmptyStateContainer,
+  EmptyStateDescription,
   EmptyStateTitle,
 } from "@/components/content/empty-state";
 import {
+  Section,
   SectionDescription,
   SectionGroup,
   SectionHeader,
+  SectionHeaderRow,
   SectionTitle,
 } from "@/components/content/section";
-import { Section } from "@/components/content/section";
-import { useIncidentColumns } from "@/components/data-table/incidents/columns";
-import { useMaintenanceColumns } from "@/components/data-table/maintenances/columns";
 import {
   MetricCard,
   MetricCardGroup,
@@ -27,191 +44,245 @@ import {
   MetricCardTitle,
   MetricCardValue,
 } from "@/components/metric/metric-card";
-import { DataTable } from "@/components/ui/data-table/data-table";
 import { useTRPC } from "@/lib/trpc/client";
-import { cn } from "@/lib/utils";
 
-import { DataTableStatusReports } from "./data-table-status-reports";
+type Status =
+  | "unknown"
+  | "operational"
+  | "degraded"
+  | "down"
+  | "paused"
+  | "configuration_error";
 
-// FIXME: the page is server side
-// whenever I change the maintenances, the page is not updated
-// we need to move the queryClient to the layout and prefetch the data there
+const statusKey: Record<Status, string> = {
+  unknown: "unknown",
+  operational: "operational",
+  degraded: "degraded",
+  down: "down",
+  paused: "paused",
+  configuration_error: "configurationError",
+};
+
+function statusVariant(
+  status: Status,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "down" || status === "configuration_error") {
+    return "destructive";
+  }
+  if (status === "operational") return "default";
+  if (status === "degraded") return "secondary";
+  return "outline";
+}
+
+function isUnhealthy(status: Status) {
+  return (
+    status === "down" ||
+    status === "degraded" ||
+    status === "configuration_error"
+  );
+}
 
 export default function Page() {
-  const trpc = useTRPC();
   const t = useTranslations("overview");
-  const incidentsColumns = useIncidentColumns();
-  const maintenancesColumns = useMaintenanceColumns();
+  const radarT = useTranslations("radar");
+  const statusT = useTranslations("status");
+  const commonT = useTranslations("common");
+  const trpc = useTRPC();
+  const { data, isLoading } = useQuery(trpc.radar.listPools.queryOptions({}));
 
-  const { data: monitors } = useQuery(trpc.monitor.list.queryOptions());
-  const { data: pages } = useQuery(trpc.page.list.queryOptions());
-  const { data: incidents } = useQuery(
-    trpc.incident.list.queryOptions({
-      period: "7d",
-    }),
-  );
-  const { data: statusReports } = useQuery(
-    trpc.statusReport.list.queryOptions({
-      period: "7d",
-    }),
-  );
-  const { data: maintenances } = useQuery(
-    trpc.maintenance.list.queryOptions({
-      period: "7d",
-    }),
-  );
+  const pools = data?.items ?? [];
+  const summary = useMemo(() => {
+    const targetCount = pools.reduce((sum, pool) => sum + pool.targetCount, 0);
+    const providerCount = pools.reduce(
+      (sum, pool) => sum + pool.providerCount,
+      0,
+    );
+    const publicCount = pools.filter(
+      (pool) => pool.visibility !== "private",
+    ).length;
+    const unhealthyCount = pools.filter((pool) =>
+      isUnhealthy(pool.worstStatus),
+    ).length;
 
-  if (!monitors || !pages || !incidents || !statusReports || !maintenances)
-    return null;
-
-  const lastIncident = incidents.length > 0 ? incidents[0] : null;
-  const lastStatusReport = statusReports.length > 0 ? statusReports[0] : null;
-  const lastMaintenance = maintenances.length > 0 ? maintenances[0] : null;
-
-  const incidentDistance = lastIncident
-    ? formatDistanceToNowStrict(lastIncident.startedAt, {
-        addSuffix: true,
-      })
-    : t("none");
-
-  const statusReportDistance = lastStatusReport?.createdAt
-    ? formatDistanceToNowStrict(lastStatusReport.createdAt, {
-        addSuffix: true,
-      })
-    : t("none");
-
-  const maintenanceDistance = lastMaintenance?.createdAt
-    ? formatDistanceToNowStrict(lastMaintenance.createdAt, {
-        addSuffix: true,
-      })
-    : t("none");
+    return {
+      targetCount,
+      providerCount,
+      publicCount,
+      unhealthyCount,
+    };
+  }, [pools]);
 
   const metrics = [
     {
-      title: t("monitors"),
-      value: monitors.length,
-      href: "/monitors",
+      title: t("providerPages"),
+      value: pools.length,
+      description: t("providerPagesDescription"),
+      icon: RadioTower,
       variant: "default" as const,
-      icon: List,
     },
     {
-      title: t("statusPages"),
-      value: pages.length,
-      href: "/status-pages",
+      title: t("apiKeys"),
+      value: summary.targetCount,
+      description: t("apiKeysDescription", {
+        providers: summary.providerCount,
+      }),
+      icon: KeyRound,
       variant: "default" as const,
-      icon: List,
     },
     {
-      title:
-        lastIncident?.resolvedAt === undefined && lastIncident
-          ? t("activeIncident")
-          : t("recentIncident"),
-      value: incidentDistance,
-      disabled: !lastIncident?.monitorId,
-      href: `/monitors/${lastIncident?.monitorId}/incidents`,
+      title: t("unhealthy"),
+      value: summary.unhealthyCount,
+      description: t("unhealthyDescription"),
+      icon: summary.unhealthyCount > 0 ? TriangleAlert : CheckCircle2,
       variant:
-        lastIncident?.resolvedAt === undefined && lastIncident
-          ? ("warning" as const)
-          : ("default" as const),
-      icon: Search,
+        summary.unhealthyCount > 0 ? ("warning" as const) : ("success" as const),
     },
     {
-      title: t("lastReport"),
-      value: statusReportDistance,
-      disabled: !lastStatusReport?.pageId,
-      href: `/status-pages/${lastStatusReport?.pageId}/status-reports`,
+      title: t("publicPages"),
+      value: summary.publicCount,
+      description: t("publicPagesDescription"),
+      icon: ExternalLink,
       variant: "default" as const,
-      icon: Search,
-    },
-    {
-      title: t("lastMaintenance"),
-      value: maintenanceDistance,
-      disabled: !lastMaintenance?.pageId,
-      href: `/status-pages/${lastMaintenance?.pageId}/maintenances`,
-      variant: "default" as const,
-      icon: Search,
     },
   ];
 
+  const recentPools = pools.slice(0, 5);
+
   return (
     <SectionGroup>
-      <Note>
-        <Bot />
-        {t("slackAgentNote")}
-        <NoteButton variant="default" asChild>
-          <Link href="/agents">{t("learnMore")}</Link>
-        </NoteButton>
-      </Note>
       <Section>
-        <SectionHeader>
-          <SectionTitle>{t("title")}</SectionTitle>
-          <SectionDescription>
-            {t("description")}
-          </SectionDescription>
-        </SectionHeader>
-        <MetricCardGroup>
+        <SectionHeaderRow>
+          <SectionHeader>
+            <SectionTitle>{t("title")}</SectionTitle>
+            <SectionDescription>{t("description")}</SectionDescription>
+          </SectionHeader>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/notifications">
+                <Bell className="size-3.5" />
+                {t("subscriptionCta")}
+              </Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link href="/radar/create">
+                <Plus className="size-3.5" />
+                {radarT("createPool")}
+              </Link>
+            </Button>
+          </div>
+        </SectionHeaderRow>
+
+        <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
           {metrics.map((metric) => (
-            <Link
-              href={metric.href}
-              key={metric.title}
-              className={cn(metric.disabled && "pointer-events-none")}
-              aria-disabled={metric.disabled}
-            >
-              <MetricCard variant={metric.variant}>
-                <MetricCardHeader className="flex items-center justify-between gap-2">
-                  <MetricCardTitle className="truncate">
-                    {metric.title}
-                  </MetricCardTitle>
-                  <metric.icon className="size-4" />
-                </MetricCardHeader>
-                <MetricCardValue>{metric.value}</MetricCardValue>
-              </MetricCard>
-            </Link>
+            <MetricCard key={metric.title} variant={metric.variant}>
+              <MetricCardHeader className="flex items-center justify-between gap-2">
+                <MetricCardTitle>{metric.title}</MetricCardTitle>
+                <metric.icon className="size-4" />
+              </MetricCardHeader>
+              <MetricCardValue className="text-2xl">
+                {metric.value}
+              </MetricCardValue>
+              <p className="text-muted-foreground font-commit-mono text-xs tracking-tight">
+                {metric.description}
+              </p>
+            </MetricCard>
           ))}
         </MetricCardGroup>
       </Section>
+
       <Section>
         <SectionHeader>
-          <SectionTitle>{t("incidents")}</SectionTitle>
-          <SectionDescription>
-            {t("incidentsDescription")}
-          </SectionDescription>
+          <SectionTitle>{t("recentProviders")}</SectionTitle>
+          <SectionDescription>{t("recentProvidersDescription")}</SectionDescription>
         </SectionHeader>
-        {incidents.length > 0 ? (
-          <DataTable columns={incidentsColumns} data={incidents} />
-        ) : (
-          <EmptyStateContainer>
-            <EmptyStateTitle>{t("noIncidents")}</EmptyStateTitle>
+
+        {isLoading ? (
+          <EmptyStateContainer className="min-h-32">
+            <EmptyStateTitle>{commonT("loading")}</EmptyStateTitle>
           </EmptyStateContainer>
+        ) : recentPools.length === 0 ? (
+          <EmptyStateContainer className="min-h-40">
+            <div className="border-border bg-muted flex size-8 items-center justify-center rounded-md border">
+              <RadioTower className="size-4" />
+            </div>
+            <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
+            <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
+            <Button size="sm" asChild>
+              <Link href="/radar/create">{radarT("createPool")}</Link>
+            </Button>
+          </EmptyStateContainer>
+        ) : (
+          <div className="divide-border overflow-hidden rounded-md border">
+            {recentPools.map((pool) => (
+              <Link
+                key={pool.id}
+                href={`/radar/${pool.slug}`}
+                className="hover:bg-muted/50 flex items-center justify-between gap-4 border-b px-4 py-3 last:border-b-0"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="truncate font-medium">{pool.name}</div>
+                  <div className="text-muted-foreground font-commit-mono truncate text-xs tracking-tight">
+                    /{pool.slug} - {pool.targetCount} {t("apiKeyUnit")}
+                  </div>
+                </div>
+                <Badge
+                  variant={statusVariant(pool.worstStatus)}
+                  className="shrink-0"
+                >
+                  {statusT(statusKey[pool.worstStatus])}
+                </Badge>
+              </Link>
+            ))}
+          </div>
         )}
       </Section>
+
       <Section>
         <SectionHeader>
-          <SectionTitle>{t("reports")}</SectionTitle>
-          <SectionDescription>{t("reportsDescription")}</SectionDescription>
+          <SectionTitle>{t("nextSteps")}</SectionTitle>
+          <SectionDescription>{t("nextStepsDescription")}</SectionDescription>
         </SectionHeader>
-        {statusReports.length > 0 ? (
-          <DataTableStatusReports statusReports={statusReports} />
-        ) : (
-          <EmptyStateContainer>
-            <EmptyStateTitle>{t("noReports")}</EmptyStateTitle>
-          </EmptyStateContainer>
-        )}
-      </Section>
-      <Section>
-        <SectionHeader>
-          <SectionTitle>{t("maintenance")}</SectionTitle>
-          <SectionDescription>
-            {t("maintenanceDescription")}
-          </SectionDescription>
-        </SectionHeader>
-        {maintenances.length > 0 ? (
-          <DataTable columns={maintenancesColumns} data={maintenances} />
-        ) : (
-          <EmptyStateContainer>
-            <EmptyStateTitle>{t("noMaintenances")}</EmptyStateTitle>
-          </EmptyStateContainer>
-        )}
+        <ActionCardGroup className="md:grid-cols-3">
+          <Link href="/radar/create">
+            <ActionCard className="h-full">
+              <ActionCardHeader>
+                <div className="flex items-center gap-2">
+                  <RadioTower className="size-4" />
+                  <ActionCardTitle>{t("createProviderTitle")}</ActionCardTitle>
+                </div>
+                <ActionCardDescription>
+                  {t("createProviderDescription")}
+                </ActionCardDescription>
+              </ActionCardHeader>
+            </ActionCard>
+          </Link>
+          <Link href="/radar">
+            <ActionCard className="h-full">
+              <ActionCardHeader>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="size-4" />
+                  <ActionCardTitle>{t("manageApiKeysTitle")}</ActionCardTitle>
+                </div>
+                <ActionCardDescription>
+                  {t("manageApiKeysDescription")}
+                </ActionCardDescription>
+              </ActionCardHeader>
+            </ActionCard>
+          </Link>
+          <Link href="/notifications">
+            <ActionCard className="h-full">
+              <ActionCardHeader>
+                <div className="flex items-center gap-2">
+                  <Settings className="size-4" />
+                  <ActionCardTitle>{t("notificationTitle")}</ActionCardTitle>
+                </div>
+                <ActionCardDescription>
+                  {t("notificationDescription")}
+                </ActionCardDescription>
+              </ActionCardHeader>
+            </ActionCard>
+          </Link>
+        </ActionCardGroup>
       </Section>
     </SectionGroup>
   );

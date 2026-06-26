@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { Layout } from "./_components/layout";
 import { colors, styles } from "./_components/styles";
+import { normalizeEmailLocale } from "../src/locale";
 
 export const StatusReportSchema = z.object({
   pageTitle: z.string(),
@@ -34,6 +35,7 @@ export const StatusReportSchema = z.object({
   pageComponents: z.array(z.string()),
   unsubscribeUrl: z.url(),
   manageUrl: z.url(),
+  locale: z.string().optional(),
 });
 
 export type StatusReportProps = z.infer<typeof StatusReportSchema>;
@@ -55,6 +57,60 @@ function getStatusColor(status: string) {
   }
 }
 
+function getCopy(locale?: string | null) {
+  if (normalizeEmailLocale(locale) === "zh") {
+    return {
+      preview: (pageTitle: string) => `「${pageTitle}」状态页有新更新`,
+      labels: {
+        title: "标题",
+        date: "时间",
+        affected: "影响范围",
+        unavailable: "无",
+        unsubscribe: "取消订阅",
+        manage: "管理通知",
+      },
+      status: {
+        investigating: "调查中",
+        identified: "已定位",
+        monitoring: "监控中",
+        resolved: "已恢复",
+        maintenance: "维护",
+      },
+      maintenanceSubject: (title: string) => `计划维护：${title}`,
+    };
+  }
+
+  return {
+    preview: (pageTitle: string) => `There are new updates on "${pageTitle}"`,
+    labels: {
+      title: "Title",
+      date: "Date",
+      affected: "Affected",
+      unavailable: "N/A",
+      unsubscribe: "Unsubscribe",
+      manage: "Manage notifications",
+    },
+    status: {
+      investigating: "Investigating",
+      identified: "Identified",
+      monitoring: "Monitoring",
+      resolved: "Resolved",
+      maintenance: "Maintenance",
+    },
+    maintenanceSubject: (title: string) => `Scheduled Maintenance: ${title}`,
+  };
+}
+
+export function getMaintenanceNotificationSubject({
+  locale,
+  title,
+}: {
+  locale?: string | null;
+  title: string;
+}) {
+  return getCopy(locale).maintenanceSubject(title);
+}
+
 function StatusReportEmail({
   status,
   date,
@@ -64,11 +120,14 @@ function StatusReportEmail({
   pageComponents,
   unsubscribeUrl,
   manageUrl,
+  locale,
 }: StatusReportProps) {
+  const copy = getCopy(locale);
+
   return (
     <Html>
       <Head />
-      <Preview>There are new updates on "{pageTitle}" page</Preview>
+      <Preview>{copy.preview(pageTitle)}</Preview>
       <Body style={styles.main}>
         <Layout>
           <Row>
@@ -82,13 +141,13 @@ function StatusReportEmail({
                   textTransform: "uppercase",
                 }}
               >
-                {status}
+                {copy.status[status]}
               </Text>
             </Column>
           </Row>
           <Row style={styles.row}>
             <Column>
-              <Text style={styles.bold}>Title</Text>
+              <Text style={styles.bold}>{copy.labels.title}</Text>
             </Column>
             <Column style={{ textAlign: "right" }}>
               <Text>{reportTitle}</Text>
@@ -96,7 +155,7 @@ function StatusReportEmail({
           </Row>
           <Row style={styles.row}>
             <Column>
-              <Text style={styles.bold}>Date</Text>
+              <Text style={styles.bold}>{copy.labels.date}</Text>
             </Column>
             <Column style={{ textAlign: "right" }}>
               <Text>{date}</Text>
@@ -104,11 +163,13 @@ function StatusReportEmail({
           </Row>
           <Row style={styles.row}>
             <Column>
-              <Text style={styles.bold}>Affected</Text>
+              <Text style={styles.bold}>{copy.labels.affected}</Text>
             </Column>
             <Column style={{ textAlign: "right" }}>
               <Text style={{ flexWrap: "wrap", wordWrap: "break-word" }}>
-                {pageComponents.length > 0 ? pageComponents.join(", ") : "N/A"}
+                {pageComponents.length > 0
+                  ? pageComponents.join(", ")
+                  : copy.labels.unavailable}
               </Text>
             </Column>
           </Row>
@@ -124,14 +185,14 @@ function StatusReportEmail({
                   href={unsubscribeUrl}
                   style={{ color: "#6b7280", textDecoration: "underline" }}
                 >
-                  Unsubscribe
+                  {copy.labels.unsubscribe}
                 </Link>{" "}
                 ・{" "}
                 <Link
                   href={manageUrl}
                   style={{ color: "#6b7280", textDecoration: "underline" }}
                 >
-                  Manage notifications
+                  {copy.labels.manage}
                 </Link>
               </Text>
             </Section>
@@ -174,6 +235,7 @@ We'll post another update by **19:00 UTC** today or sooner if critical developme
     "https://status.openstatus.dev/unsubscribe/550e8400-e29b-41d4-a716-446655440000",
   manageUrl:
     "https://status.openstatus.dev/manage/550e8400-e29b-41d4-a716-446655440000",
+  locale: "en",
 };
 
 export default StatusReportEmail;

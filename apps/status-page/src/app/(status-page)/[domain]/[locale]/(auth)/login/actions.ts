@@ -4,9 +4,12 @@ import { TRPCClientError } from "@trpc/client";
 import { AuthError } from "next-auth";
 import { getExtracted } from "next-intl/server";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { z } from "zod";
 
 import { signIn } from "@/lib/auth";
 import { getQueryClient, trpc } from "@/lib/trpc/server";
+
+const localeSchema = z.enum(["en", "fr", "de", "tr", "hi", "zh"]);
 
 export async function signInWithResendAction(formData: FormData) {
   const t = await getExtracted();
@@ -14,6 +17,7 @@ export async function signInWithResendAction(formData: FormData) {
     const email = formData.get("email") as string;
     const redirectTo = formData.get("redirectTo") as string;
     const domain = formData.get("domain") as string;
+    const locale = getSafeLocale(formData.get("locale"));
 
     if (!email || !redirectTo) {
       return {
@@ -47,7 +51,7 @@ export async function signInWithResendAction(formData: FormData) {
 
     await signIn("resend", {
       email,
-      redirectTo,
+      redirectTo: appendLocaleToRedirectTo(redirectTo, locale),
     });
 
     return { success: true };
@@ -69,4 +73,16 @@ export async function signInWithResendAction(formData: FormData) {
       error: t("An unexpected error occurred during sign in"),
     };
   }
+}
+
+function getSafeLocale(value: FormDataEntryValue | null): string {
+  if (typeof value !== "string") return "en";
+  const parsed = localeSchema.safeParse(value);
+  return parsed.success ? parsed.data : "en";
+}
+
+function appendLocaleToRedirectTo(redirectTo: string, locale: string): string {
+  const target = new URL(redirectTo);
+  target.searchParams.set("llmhub_locale", locale);
+  return target.toString();
 }

@@ -1,5 +1,11 @@
 import { Button } from "@openstatus/ui/components/ui/button";
-import { BookOpen } from "lucide-react";
+import {
+  Activity,
+  Bell,
+  BookOpen,
+  FileChartColumn,
+  ShieldCheck,
+} from "lucide-react";
 
 import {
   SHELL_CONTENT_COLUMN,
@@ -14,10 +20,11 @@ type AuthLayoutProps = {
     docs: string;
     heroTitle: string;
     heroDescription: string;
-    migrationPrefix: string;
-    migrationFirstSeparator: string;
-    migrationLastSeparator: string;
-    migrationSuffix: string;
+    featureAvailability: string;
+    featureStatusPages: string;
+    featureNotifications: string;
+    trustTitle: string;
+    trustDescription: string;
   };
 };
 
@@ -34,7 +41,7 @@ export function AuthLayout({ children, labels }: AuthLayoutProps) {
         asChild
       >
         <a
-          href="https://www.openstatus.dev/docs"
+          href="https://github.com/x-llm-net/llmhub-radar"
           target="_blank"
           rel="noreferrer"
         >
@@ -63,47 +70,53 @@ export function AuthLayout({ children, labels }: AuthLayoutProps) {
         )}
       >
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-8 text-center md:text-left">
-          <div className="mx-auto grid gap-3">
-            <h1 className="font-cal text-foreground text-3xl">
-              {labels.heroTitle}
-            </h1>
-            <p className="font-commit-mono text-muted-foreground">
-              {labels.heroDescription}
-            </p>
-            <p className="font-commit-mono text-muted-foreground">
-              {labels.migrationPrefix}{" "}
-              <a
-                href="https://openstatus.dev/guides/migrate-from-atlassian-statuspage"
-                target="_blank"
-                rel="noreferrer"
-                className="text-foreground underline underline-offset-4 hover:no-underline"
-              >
-                Atlassian Statuspage
-              </a>
-              {labels.migrationFirstSeparator}
-              <a
-                href="https://openstatus.dev/guides/migrate-from-betterstack"
-                target="_blank"
-                rel="noreferrer"
-                className="text-foreground underline underline-offset-4 hover:no-underline"
-              >
-                Betterstack
-              </a>
-              {labels.migrationLastSeparator}
-              <a
-                href="https://openstatus.dev/guides/migrate-from-instatus"
-                target="_blank"
-                rel="noreferrer"
-                className="text-foreground underline underline-offset-4 hover:no-underline"
-              >
-                Instatus
-              </a>
-              {labels.migrationSuffix}
-            </p>
+          <div className="mx-auto grid gap-6">
+            <div className="grid gap-3">
+              <h1 className="font-cal text-foreground text-3xl">
+                {labels.heroTitle}
+              </h1>
+              <p className="font-commit-mono text-muted-foreground">
+                {labels.heroDescription}
+              </p>
+            </div>
+            <div className="grid gap-3">
+              <AuthFeature icon={Activity} label={labels.featureAvailability} />
+              <AuthFeature
+                icon={FileChartColumn}
+                label={labels.featureStatusPages}
+              />
+              <AuthFeature icon={Bell} label={labels.featureNotifications} />
+            </div>
+            <div className="border-border/70 bg-background/50 grid gap-2 rounded-lg border p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="size-4" />
+                <p className="text-sm font-medium">{labels.trustTitle}</p>
+              </div>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {labels.trustDescription}
+              </p>
+            </div>
           </div>
         </div>
         <div className="md:h-8" />
       </aside>
+    </div>
+  );
+}
+
+function AuthFeature({
+  icon: Icon,
+  label,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <div className="text-muted-foreground flex items-center gap-3 font-commit-mono text-sm">
+      <span className="border-border bg-background flex size-8 shrink-0 items-center justify-center rounded-md border">
+        <Icon className="size-4" />
+      </span>
+      <span>{label}</span>
     </div>
   );
 }

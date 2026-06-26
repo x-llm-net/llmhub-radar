@@ -214,6 +214,9 @@ describe("Confirmation page displays correct information", () => {
 
     const email = subscriber.email;
     expect(email).toBe("confirm-page-test@example.com");
+    if (!email) {
+      throw new Error("Subscriber email not found");
+    }
 
     // Apply the same masking logic as in the API
     const [localPart, domain] = email.split("@");

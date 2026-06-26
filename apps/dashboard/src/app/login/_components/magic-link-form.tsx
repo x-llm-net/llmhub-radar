@@ -2,19 +2,27 @@
 
 import { Input } from "@openstatus/ui/components/ui/input";
 import { Label } from "@openstatus/ui/components/ui/label";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
 
 import { signInWithResendAction } from "./actions";
 import { LoginButton } from "./login-button";
 
-/**
- * @deprecated - only to be used in development mode
- */
-export default function MagicLinkForm() {
+function SubmitButton() {
   const { pending } = useFormStatus();
   const t = useTranslations("auth");
+
+  return (
+    <LoginButton provider="email" type="submit" disabled={pending}>
+      {pending ? t("magicLinkLoading") : t("magicLink")}
+    </LoginButton>
+  );
+}
+
+export default function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
+  const t = useTranslations("auth");
+  const locale = useLocale();
 
   return (
     <form
@@ -27,15 +35,25 @@ export default function MagicLinkForm() {
           toast.error(t("magicLinkError"));
         }
       }}
-      className="grid gap-2"
+      className="grid gap-3"
     >
+      <input type="hidden" name="redirectTo" value={redirectTo ?? "/radar"} />
+      <input type="hidden" name="locale" value={locale} />
       <div className="grid gap-1.5">
         <Label htmlFor="email">{t("email")}</Label>
-        <Input id="email" name="email" type="email" required />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder={t("emailPlaceholder")}
+          required
+        />
       </div>
-      <LoginButton provider="email">
-        {pending ? t("magicLinkLoading") : t("magicLink")}
-      </LoginButton>
+      <SubmitButton />
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        {t("magicLinkHelp")}
+      </p>
     </form>
   );
 }

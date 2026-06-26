@@ -1,7 +1,6 @@
 import { Events, setupAnalytics } from "@openstatus/analytics";
 import { db, eq } from "@openstatus/db";
 import { user } from "@openstatus/db/src/schema";
-import { WelcomeEmail, sendEmail } from "@openstatus/emails";
 import type { DefaultSession } from "next-auth";
 import NextAuth from "next-auth";
 import { headers } from "next/headers";
@@ -14,10 +13,7 @@ export type { DefaultSession };
 export const { handlers, signIn, signOut, auth } = NextAuth({
   // debug: true,
   adapter,
-  providers:
-    process.env.NODE_ENV === "development" || process.env.SELF_HOST === "true"
-      ? [GitHubProvider, GoogleProvider, ResendProvider]
-      : [GitHubProvider, GoogleProvider],
+  providers: [GitHubProvider, GoogleProvider, ResendProvider],
   callbacks: {
     async redirect({ url, baseUrl }) {
       // Allow relative URLs, but not protocol-relative `//evil.com` which the
@@ -99,13 +95,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       // this means the user has already been created with clerk
       if (params.user.tenantId) return;
-
-      await sendEmail({
-        from: "Thibault from OpenStatus <thibault@openstatus.dev>",
-        subject: "Welcome to OpenStatus.",
-        to: [params.user.email],
-        react: WelcomeEmail(),
-      });
 
       const analytics = await setupAnalytics({
         userId: `usr_${params.user.id}`,

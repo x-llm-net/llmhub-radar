@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 import { monitor } from "../monitors";
+import { pageComponent } from "../page_components";
 import { page } from "../pages";
 import { workspace } from "../workspaces";
 import {
@@ -290,6 +291,12 @@ export const radarTargetOpenStatusBinding = sqliteTable(
     pageId: integer("page_id").references(() => page.id, {
       onDelete: "set null",
     }),
+    pageComponentId: integer("page_component_id").references(
+      () => pageComponent.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     monitorId: integer("monitor_id").references(() => monitor.id, {
       onDelete: "set null",
     }),
@@ -304,6 +311,7 @@ export const radarTargetOpenStatusBinding = sqliteTable(
     uniqueIndex("radar_binding_target_id_idx").on(t.targetId),
     index("radar_binding_workspace_id_idx").on(t.workspaceId),
     index("radar_binding_page_id_idx").on(t.pageId),
+    index("radar_binding_page_component_id_idx").on(t.pageComponentId),
   ],
 );
 
@@ -491,6 +499,10 @@ export const radarTargetOpenStatusBindingRelations = relations(
     page: one(page, {
       fields: [radarTargetOpenStatusBinding.pageId],
       references: [page.id],
+    }),
+    pageComponent: one(pageComponent, {
+      fields: [radarTargetOpenStatusBinding.pageComponentId],
+      references: [pageComponent.id],
     }),
     monitor: one(monitor, {
       fields: [radarTargetOpenStatusBinding.monitorId],

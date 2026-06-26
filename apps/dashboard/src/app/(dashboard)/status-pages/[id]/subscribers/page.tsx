@@ -4,7 +4,7 @@ import type { RouterOutputs } from "@openstatus/api";
 import { Button } from "@openstatus/ui/components/ui/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lock, Plus } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { notFound, useParams } from "next/navigation";
 import { useState } from "react";
 
@@ -74,6 +74,7 @@ const EXAMPLES = [
 
 export default function Page() {
   const t = useTranslations("statusPages.subscribers");
+  const locale = useLocale();
   const { id } = useParams<{ id: string }>();
   const pageId = Number(id);
   if (!Number.isInteger(pageId) || pageId <= 0) notFound();
@@ -146,6 +147,7 @@ export default function Page() {
                     channelType: "email",
                     email: values.email,
                     name: values.name || null,
+                    locale,
                     componentIds: values.componentIds,
                   });
                 } else {

@@ -19,10 +19,11 @@ export default async function Layout({
         docs: t("docs"),
         heroTitle: t("heroTitle"),
         heroDescription: t("heroDescription"),
-        migrationPrefix: t("migrationPrefix"),
-        migrationFirstSeparator: t("migrationFirstSeparator"),
-        migrationLastSeparator: t("migrationLastSeparator"),
-        migrationSuffix: t("migrationSuffix"),
+        featureAvailability: t("featureAvailability"),
+        featureStatusPages: t("featureStatusPages"),
+        featureNotifications: t("featureNotifications"),
+        trustTitle: t("trustTitle"),
+        trustDescription: t("trustDescription"),
       }}
     >
       {children}

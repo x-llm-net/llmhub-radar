@@ -40,12 +40,24 @@ describe("decideRadarNotificationEvent", () => {
     ).toBe("down");
   });
 
-  test("notifies on recovery from a problem state", () => {
+  test("does not notify on recovery until it is confirmed", () => {
     expect(
       decideRadarNotificationEvent({
         previousStatus: "down",
         currentStatus: "operational",
         latestEventType: "down",
+        recoveryConfirmed: false,
+      }),
+    ).toBeNull();
+  });
+
+  test("notifies on confirmed recovery from a problem state", () => {
+    expect(
+      decideRadarNotificationEvent({
+        previousStatus: "down",
+        currentStatus: "operational",
+        latestEventType: "down",
+        recoveryConfirmed: true,
       }),
     ).toBe("recovered");
   });

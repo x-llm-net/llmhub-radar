@@ -44,15 +44,16 @@ const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
   // Status-page has its own tRPC API routes. In local dev NEXT_PUBLIC_URL is
   // used by the dashboard app, so do not use it as a server-side fallback here.
+  if (process.env.STATUS_PAGE_URL) return process.env.STATUS_PAGE_URL;
   if (process.env.NEXT_PUBLIC_STATUS_PAGE_URL)
     return process.env.NEXT_PUBLIC_STATUS_PAGE_URL;
-  if (process.env.STATUS_PAGE_URL) return process.env.STATUS_PAGE_URL;
   if (process.env.VERCEL_URL)
     return `https://${stripScheme(process.env.VERCEL_URL)}`;
   return "http://localhost:3001"; // Local dev fallback
 };
 
 const lambdas = ["stripeRouter", "emailRouter"];
+const localDevLambdas = ["statusPage"];
 
 export const endingLink = (opts?: {
   fetch?: typeof fetch;
@@ -77,7 +78,11 @@ export const endingLink = (opts?: {
 
     return (ctx) => {
       const path = ctx.op.path.split(".") as [string, ...string[]];
-      const endpoint = lambdas.includes(path[0]) ? "lambda" : "edge";
+      const useLocalLambda =
+        process.env.NODE_ENV === "development" &&
+        localDevLambdas.includes(path[0]);
+      const endpoint =
+        lambdas.includes(path[0]) || useLocalLambda ? "lambda" : "edge";
 
       const newCtx = {
         ...ctx,

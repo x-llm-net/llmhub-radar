@@ -53,6 +53,7 @@ import {
 import { useFormSheetDirty } from "@/components/forms/form-sheet";
 import { ComponentImpactList } from "@/components/forms/status-report/component-impact-field";
 import { colors } from "@/data/status-report-updates.client";
+import { useStatusReportLabels } from "@/hooks/use-status-report-labels";
 import { useTRPC } from "@/lib/trpc/client";
 
 const schema = z.object({
@@ -88,6 +89,7 @@ export function FormStatusReportUpdate({
   allowUnsetImpacts?: boolean;
 }) {
   const t = useTranslations("statusPages.reports.form");
+  const { statusLabel, componentImpactLabels } = useStatusReportLabels();
   const trpc = useTRPC();
   const { data: workspace } = useQuery(
     trpc.workspace.getWorkspace.queryOptions(),
@@ -172,7 +174,7 @@ export function FormStatusReportUpdate({
                       size="sm"
                       className={cn(
                         colors[field.value],
-                        "font-mono capitalize",
+                        "font-medium",
                       )}
                     >
                       <SelectValue placeholder={t("selectStatus")} />
@@ -182,9 +184,9 @@ export function FormStatusReportUpdate({
                         <SelectItem
                           key={status}
                           value={status}
-                          className={cn(colors[status], "font-mono capitalize")}
+                          className={cn(colors[status], "font-medium")}
                         >
-                          {status}
+                          {statusLabel(status)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -318,6 +320,8 @@ export function FormStatusReportUpdate({
                         value={field.value ?? []}
                         onValueChange={field.onChange}
                         allowUnset={allowUnsetImpacts}
+                        placeholder={t("noImpactChange")}
+                        impactLabels={componentImpactLabels}
                       />
                     </FormControl>
                     <FormMessage />

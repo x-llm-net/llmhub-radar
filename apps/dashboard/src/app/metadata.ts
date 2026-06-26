@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 
-export const TITLE = "openstatus";
+export const TITLE = "LLMHub Radar";
 export const DESCRIPTION =
-  "Open-source platform to monitor your services and keep your users informed.";
+  "Monitor LLM provider APIs and publish trustworthy status pages.";
 
-const OG_TITLE = "openstatus";
-const OG_DESCRIPTION = "Monitor your services and keep your users informed.";
-const FOOTER = "app.openstatus.dev";
+const OG_TITLE = "LLMHub Radar";
+const OG_DESCRIPTION =
+  "Monitor LLM provider APIs and publish trustworthy status pages.";
+const FOOTER = "llm-hub.store";
 const IMAGE = "assets/og/dashboard-v2.png";
 
 export const defaultMetadata: Metadata = {
@@ -15,7 +16,7 @@ export const defaultMetadata: Metadata = {
     default: TITLE,
   },
   description: DESCRIPTION,
-  metadataBase: new URL("https://www.openstatus.dev"),
+  metadataBase: new URL("https://llm-hub.store"),
   robots: {
     index: false,
     follow: false,

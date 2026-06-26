@@ -191,73 +191,75 @@ export function Client() {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="radar-token-probe-model">
-                  {t("probeModel")}
-                </Label>
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <CircleHelp className="size-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-72">
-                      {t("probeModelHelp")}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              <Select
-                value={selectedProbeModel}
-                disabled={discoveredModelOptions.length === 0}
-                onValueChange={(value) => {
-                  setProbeModel(value);
-                  setProbeModelTouched(true);
-                  if (!modelTypeTouched) {
-                    setModelType(inferRadarModelType(value));
-                  }
+              <Label htmlFor="radar-token-api-key">
+                {t("monitoringApiKey")}
+              </Label>
+              <Input
+                id="radar-token-api-key"
+                value={apiKey}
+                onChange={(event) => {
+                  setApiKey(event.target.value);
+                  setProbeModelTouched(false);
                 }}
-              >
-                <SelectTrigger
-                  id="radar-token-probe-model"
-                  className="w-full font-mono"
-                >
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {selectedProbeModel || t("probeModel")}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  {discoveredModelOptions.map((model) => (
-                    <SelectItem key={model} value={model} className="font-mono">
-                      {model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {discoveryMessage ? (
-                <p className="text-muted-foreground text-xs">
-                  {discoveryMessage}
-                </p>
-              ) : null}
+                placeholder={t("apiKeyPlaceholder")}
+                type="password"
+                required
+              />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="radar-token-api-key">{t("monitoringApiKey")}</Label>
-            <Input
-              id="radar-token-api-key"
-              value={apiKey}
-              onChange={(event) => {
-                setApiKey(event.target.value);
-                setProbeModelTouched(false);
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="radar-token-probe-model">
+                {t("probeModel")}
+              </Label>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <CircleHelp className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-72">
+                    {t("probeModelHelp")}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Select
+              value={selectedProbeModel}
+              disabled={discoveredModelOptions.length === 0}
+              onValueChange={(value) => {
+                setProbeModel(value);
+                setProbeModelTouched(true);
+                if (!modelTypeTouched) {
+                  setModelType(inferRadarModelType(value));
+                }
               }}
-              placeholder={t("apiKeyPlaceholder")}
-              type="password"
-              required
-            />
+            >
+              <SelectTrigger
+                id="radar-token-probe-model"
+                className="w-full font-mono"
+              >
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {selectedProbeModel || t("probeModel")}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {discoveredModelOptions.map((model) => (
+                  <SelectItem key={model} value={model} className="font-mono">
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {discoveryMessage ? (
+              <p className="text-muted-foreground text-xs">
+                {discoveryMessage}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" asChild>

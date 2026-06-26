@@ -76,6 +76,17 @@ function countLeading<T>(items: T[], predicate: (item: T) => boolean) {
   return count;
 }
 
+export function hasConfirmedRecovery(
+  recentResults: Array<{ success: boolean }>,
+  requiredSuccesses = 3,
+) {
+  if (recentResults.length < requiredSuccesses) return false;
+
+  return recentResults
+    .slice(0, requiredSuccesses)
+    .every((item) => item.success);
+}
+
 function percentile(values: number[], pct: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -238,6 +249,7 @@ export async function recordRadarProbeRun(args: {
       latestEventType: latestNotificationEvent?.eventType as
         | RadarNotificationEventType
         | undefined,
+      recoveryConfirmed: hasConfirmedRecovery(recent),
     });
 
     if (eventType) {

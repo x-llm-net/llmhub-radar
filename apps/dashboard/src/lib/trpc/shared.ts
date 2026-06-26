@@ -66,7 +66,10 @@ export const endingLink = (opts?: {
 
     return (ctx) => {
       const path = ctx.op.path.split(".") as [string, ...string[]];
-      const endpoint = lambdas.includes(path[0]) ? "lambda" : "edge";
+      const endpoint =
+        process.env.NODE_ENV === "development" || lambdas.includes(path[0])
+          ? "lambda"
+          : "edge";
 
       const newCtx = {
         ...ctx,

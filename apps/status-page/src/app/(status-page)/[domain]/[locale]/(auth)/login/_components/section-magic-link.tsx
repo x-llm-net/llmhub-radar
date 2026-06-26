@@ -2,7 +2,7 @@
 
 import { Button } from "@openstatus/ui/components/ui/button";
 import { Inbox } from "lucide-react";
-import { useExtracted } from "next-intl";
+import { useExtracted, useLocale } from "next-intl";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { flushSync } from "react-dom";
@@ -25,6 +25,7 @@ import { signInWithResendAction } from "../actions";
 
 export function SectionMagicLink() {
   const t = useExtracted();
+  const locale = useLocale();
   const { domain } = useParams<{ domain: string }>();
   const [state, setState] = useState<"idle" | "pending" | "success">("idle");
 
@@ -41,6 +42,7 @@ export function SectionMagicLink() {
     formData.append("redirectTo", redirectTo);
     formData.append("email", values.email);
     formData.append("domain", domain);
+    formData.append("locale", locale);
 
     // we need this because submitAction is called  in a startTransition and we need to update the state immediately
     flushSync(() => setState("pending"));

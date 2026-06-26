@@ -1,19 +1,23 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
-import { useQueryStates } from "nuqs";
-
-import { Link } from "@/components/common/link";
+import { Badge } from "@openstatus/ui/components/ui/badge";
+import { Button } from "@openstatus/ui/components/ui/button";
 import {
-  ActionCard,
-  ActionCardDescription,
-  ActionCardHeader,
-  ActionCardTitle,
-} from "@/components/content/action-card";
-import { ActionCardGroup } from "@/components/content/action-card";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@openstatus/ui/components/ui/table";
+import { useQuery } from "@tanstack/react-query";
+import { Bell, ExternalLink, RadioTower } from "lucide-react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+
 import {
   EmptyStateContainer,
+  EmptyStateDescription,
   EmptyStateTitle,
 } from "@/components/content/empty-state";
 import {
@@ -23,163 +27,157 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
-import { useNotificationColumns } from "@/components/data-table/notifications/columns";
-import { FormSheetNotifier } from "@/components/forms/notifications/sheet";
-import { DataTable } from "@/components/ui/data-table/data-table";
-import { config } from "@/data/notifications.client";
 import { useTRPC } from "@/lib/trpc/client";
 
-import { searchParamsParsers } from "./search-params";
+type Status =
+  | "unknown"
+  | "operational"
+  | "degraded"
+  | "down"
+  | "paused"
+  | "configuration_error";
 
-// FIXME: WARNING we are using the `web` api url here
-const BASE_URL =
-  process.env.NODE_ENV === "development"
-    ? "http://localhost:3000"
-    : "https://www.openstatus.dev";
+const statusKey: Record<Status, string> = {
+  unknown: "unknown",
+  operational: "operational",
+  degraded: "degraded",
+  down: "down",
+  paused: "paused",
+  configuration_error: "configurationError",
+};
+
+function statusVariant(
+  status: Status,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "down" || status === "configuration_error") {
+    return "destructive";
+  }
+  if (status === "operational") return "default";
+  if (status === "degraded") return "secondary";
+  return "outline";
+}
 
 export function Client() {
   const t = useTranslations("notifications");
-  const columns = useNotificationColumns();
+  const radarT = useTranslations("radar");
+  const statusT = useTranslations("status");
+  const commonT = useTranslations("common");
   const trpc = useTRPC();
-  const { data: notifications, refetch } = useQuery(
-    trpc.notification.list.queryOptions(),
-  );
-  const [searchParams] = useQueryStates(searchParamsParsers);
-  const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
-  const { data: monitors } = useQuery(trpc.monitor.list.queryOptions());
-  const createNotifierMutation = useMutation(
-    trpc.notification.new.mutationOptions({
-      onSuccess: () => refetch(),
-    }),
-  );
+  const { data, isLoading } = useQuery(trpc.radar.listPools.queryOptions({}));
 
-  if (!notifications || !monitors || !workspace) return null;
-
-  const limitReached =
-    notifications.length >= workspace.limits["notification-channels"];
+  const pools = data?.items ?? [];
 
   return (
     <SectionGroup>
-      <SectionHeader>
-        <SectionTitle>{t("title")}</SectionTitle>
-        <SectionDescription>
-          {t("description")}
-        </SectionDescription>
-      </SectionHeader>
-      <Section>
-        {notifications.length === 0 ? (
-          <EmptyStateContainer>
-            <EmptyStateTitle>{t("empty")}</EmptyStateTitle>
-          </EmptyStateContainer>
-        ) : (
-          <DataTable columns={columns} data={notifications} />
-        )}
-      </Section>
       <Section>
         <SectionHeader>
-          <SectionTitle>{t("createTitle")}</SectionTitle>
+          <SectionTitle>{t("title")}</SectionTitle>
+          <SectionDescription>{t("description")}</SectionDescription>
+        </SectionHeader>
+      </Section>
+
+      <Section>
+        <SectionHeader>
+          <SectionTitle>{t("providerSubscriptions")}</SectionTitle>
           <SectionDescription>
-            {t("createDescription")}{" "}
-            <Link
-              href="https://www.openstatus.dev/docs/reference/notification/"
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t("learnMore")}
-            </Link>
-            .
+            {t("providerSubscriptionsDescription")}
           </SectionDescription>
         </SectionHeader>
-        <ActionCardGroup className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          {Object.keys(config).map((notifier) => {
-            const key = notifier as keyof typeof config;
-            const Icon = config[key].icon;
-            let enabled = true;
 
-            if (key in workspace.limits) {
-              enabled =
-                workspace.limits[
-                  key as "opsgenie" | "sms" | "opsgenie" | "whatsapp"
-                ];
-            }
-
-            if (limitReached) {
-              enabled = false;
-            }
-
-            if (!searchParams.channel && key === "pagerduty") {
-              const PAGERDUTY_URL = `https://app.pagerduty.com/install/integration?app_id=${process.env.NEXT_PUBLIC_PAGERDUTY_APP_ID}&redirect_url=${BASE_URL}/api/callback/pagerduty?workspace=${workspace.slug}&version=2`;
-              return (
-                <a
-                  key={key}
-                  href={PAGERDUTY_URL}
-                  data-disabled={!enabled}
-                  className="data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50"
-                >
-                  <ActionCard className="h-full w-full">
-                    <ActionCardHeader>
-                      <div className="flex items-center gap-2">
-                        <div className="border-border bg-muted flex size-6 items-center justify-center rounded-md border">
-                          <Icon className="size-3" />
+        {isLoading ? (
+          <EmptyStateContainer className="min-h-32">
+            <EmptyStateTitle>{commonT("loading")}</EmptyStateTitle>
+          </EmptyStateContainer>
+        ) : pools.length === 0 ? (
+          <EmptyStateContainer className="min-h-40">
+            <div className="border-border bg-muted flex size-8 items-center justify-center rounded-md border">
+              <Bell className="size-4" />
+            </div>
+            <EmptyStateTitle>{t("empty")}</EmptyStateTitle>
+            <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
+            <Button size="sm" asChild>
+              <Link href="/radar/create">{radarT("createPool")}</Link>
+            </Button>
+          </EmptyStateContainer>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("table.provider")}</TableHead>
+                  <TableHead>{commonT("status")}</TableHead>
+                  <TableHead>{t("table.apiKeys")}</TableHead>
+                  <TableHead>{t("table.publicPage")}</TableHead>
+                  <TableHead className="text-right">
+                    {commonT("action")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pools.map((pool) => (
+                  <TableRow key={pool.id}>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="font-medium">{pool.name}</div>
+                        <div className="text-muted-foreground font-commit-mono text-xs tracking-tight">
+                          /{pool.slug}
                         </div>
-                        <ActionCardTitle>{config[key].label}</ActionCardTitle>
                       </div>
-                      <ActionCardDescription>
-                        {t("sendTo", { provider: config[key].label })}
-                      </ActionCardDescription>
-                    </ActionCardHeader>
-                  </ActionCard>
-                </a>
-              );
-            }
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(pool.worstStatus)}>
+                        {statusT(statusKey[pool.worstStatus])}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{pool.targetCount}</TableCell>
+                    <TableCell>
+                      {pool.pageId ? (
+                        <Badge variant="outline">{t("table.ready")}</Badge>
+                      ) : (
+                        <Badge variant="secondary">
+                          {t("table.notReady")}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/radar/${pool.slug}`}>
+                            <RadioTower className="size-3.5" />
+                            {commonT("open")}
+                          </Link>
+                        </Button>
+                        {pool.pageId ? (
+                          <Button size="sm" asChild>
+                            <Link href={`/status-pages/${pool.pageId}/subscribers`}>
+                              <ExternalLink className="size-3.5" />
+                              {t("manageSubscribers")}
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button size="sm" disabled>
+                            {t("manageSubscribers")}
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Section>
 
-            return (
-              <FormSheetNotifier
-                key={notifier}
-                provider={key}
-                monitors={monitors}
-                defaultOpen={searchParams.channel === key}
-                onSubmit={async (values) => {
-                  await createNotifierMutation.mutateAsync({
-                    provider: key,
-                    name: values.name,
-                    data: { [key]: values.data },
-                    monitors: values.monitors,
-                  });
-                }}
-                disabled={!enabled}
-              >
-                <ActionCard className="h-full w-full">
-                  <ActionCardHeader>
-                    <div className="flex items-center gap-2">
-                      <div className="border-border bg-muted flex size-6 items-center justify-center rounded-md border">
-                        <Icon className="size-3" />
-                      </div>
-                      <ActionCardTitle>{config[key].label}</ActionCardTitle>
-                    </div>
-                    <ActionCardDescription>
-                      {t("sendTo", { provider: config[key].label })}
-                    </ActionCardDescription>
-                  </ActionCardHeader>
-                </ActionCard>
-              </FormSheetNotifier>
-            );
-          })}
-          <ActionCard className="border-dashed">
-            <ActionCardHeader>
-              <div className="flex items-center gap-2">
-                <div className="border-border bg-muted flex size-6 items-center justify-center rounded-md border" />
-                <ActionCardTitle className="text-muted-foreground">
-                  {t("customTitle")}
-                </ActionCardTitle>
-              </div>
-              <ActionCardDescription>
-                {t("customDescription")}{" "}
-                <Link href="mailto:ping@openstatus.dev">{t("contactUs")}</Link>
-              </ActionCardDescription>
-            </ActionCardHeader>
-          </ActionCard>
-        </ActionCardGroup>
+      <Section>
+        <div className="border-border bg-muted/40 rounded-md border p-4">
+          <div className="space-y-1">
+            <p className="font-medium">{t("scopeTitle")}</p>
+            <p className="text-muted-foreground font-commit-mono text-sm tracking-tight">
+              {t("scopeDescription")}
+            </p>
+          </div>
+        </div>
       </Section>
     </SectionGroup>
   );
