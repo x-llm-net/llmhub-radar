@@ -13,8 +13,8 @@ import {
   Settings,
   TriangleAlert,
 } from "lucide-react";
-import Link from "next/link";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { useMemo } from "react";
 
 import {
@@ -97,9 +97,7 @@ export default function Page() {
       (sum, pool) => sum + pool.providerCount,
       0,
     );
-    const publicCount = pools.filter(
-      (pool) => pool.visibility !== "private",
-    ).length;
+    const publicCount = pools.filter((pool) => pool.publicPoolOptIn).length;
     const unhealthyCount = pools.filter((pool) =>
       isUnhealthy(pool.worstStatus),
     ).length;
@@ -135,7 +133,9 @@ export default function Page() {
       description: t("unhealthyDescription"),
       icon: summary.unhealthyCount > 0 ? TriangleAlert : CheckCircle2,
       variant:
-        summary.unhealthyCount > 0 ? ("warning" as const) : ("success" as const),
+        summary.unhealthyCount > 0
+          ? ("warning" as const)
+          : ("success" as const),
     },
     {
       title: t("publicPages"),
@@ -193,7 +193,9 @@ export default function Page() {
       <Section>
         <SectionHeader>
           <SectionTitle>{t("recentProviders")}</SectionTitle>
-          <SectionDescription>{t("recentProvidersDescription")}</SectionDescription>
+          <SectionDescription>
+            {t("recentProvidersDescription")}
+          </SectionDescription>
         </SectionHeader>
 
         {isLoading ? (
@@ -206,7 +208,9 @@ export default function Page() {
               <RadioTower className="size-4" />
             </div>
             <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
-            <EmptyStateDescription>{t("emptyDescription")}</EmptyStateDescription>
+            <EmptyStateDescription>
+              {t("emptyDescription")}
+            </EmptyStateDescription>
             <Button size="sm" asChild>
               <Link href="/radar/create">{radarT("createPool")}</Link>
             </Button>

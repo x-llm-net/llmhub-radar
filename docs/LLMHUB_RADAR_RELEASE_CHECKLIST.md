@@ -107,12 +107,13 @@ pages.
 - [ ] Select one probe model for the API key.
 - [ ] Save API key and confirm one probe run is scheduled automatically.
 - [ ] Public page opens with the configured slug.
-- [ ] Public page shows `45 天稳定性概览` / `45-day stability overview`.
+- [ ] Public page shows `近 7 天稳定性概览` / `7-day stability overview`
+  with 3-hour buckets.
 - [ ] Public page shows `API 密钥详情` / `API key details`.
 - [ ] API key card shows status, model family, probe model, 7-day
   availability, P50 first token, P95 first token, recent runs, model catalog,
   interval, and last check.
-- [ ] 45-day component bar tooltip opens on hover and does not show misleading
+- [ ] 7-day stability bucket tooltip opens on hover and does not show misleading
   pin/unpin instructions.
 - [ ] Subscribe modal shows email, webhook, RSS, and JSON only.
 - [ ] Radar-specific subscription copy says API key, not component.
@@ -137,8 +138,15 @@ pages.
 - [ ] No visible `openstatus.dev` branding remains on Radar public pages.
 - [ ] Judgment criteria are shown at the bottom and do not interrupt the main
   reading flow.
-- [ ] 45-day empty/no-data days render gray and do not reduce calculated
-  availability for days with data.
+- [ ] 7-day empty/no-data buckets render gray and do not reduce calculated
+  availability for windows with data.
+- [ ] Service-specific iframe embed page exists under `/radar/{slug}/embed`,
+  generates the current provider iframe, and does not mix platform API docs into
+  the provider page.
+- [ ] Public developer API docs exist under `/developers/api`.
+- [ ] `POST /api/radar/providers/query` returns only public-pool providers,
+  sends `Cache-Control: public, max-age=600`, supports ETag/304, and enforces
+  the slug limit.
 - [ ] Overall public state uses only healthy, degraded, and outage semantics.
 - [ ] Unknown/paused/configuration details are not exposed as a fourth public
   provider health level.

@@ -7,6 +7,7 @@ import {
   GetRadarPoolInput,
   ListRadarPoolsInput,
   RecordRadarProbeRunInput,
+  UpdateRadarPoolInput,
   UpdateRadarTokenProbeInput,
   addRadarTokenProbe,
   createRadarPool,
@@ -16,6 +17,7 @@ import {
   getRadarPool,
   listRadarPools,
   recordRadarProbeRun,
+  updateRadarPool,
   updateRadarTokenProbe,
 } from "@openstatus/services/radar";
 
@@ -54,6 +56,19 @@ export const radarRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       try {
         return await createRadarPool({
+          ctx: toServiceCtx(ctx),
+          input,
+        });
+      } catch (err) {
+        toTRPCError(err);
+      }
+    }),
+
+  updatePool: protectedProcedure
+    .input(UpdateRadarPoolInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await updateRadarPool({
           ctx: toServiceCtx(ctx),
           input,
         });

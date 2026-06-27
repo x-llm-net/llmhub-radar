@@ -32,6 +32,7 @@ import {
   CreateRadarTargetInput,
   DeleteRadarCredentialInput,
   UpdateRadarTokenProbeInput,
+  UpdateRadarPoolInput,
 } from "./schemas";
 
 const DEFAULT_POOL_LIMIT = 5;
@@ -339,6 +340,159 @@ export async function createRadarPool(args: {
   });
 }
 
+export async function updateRadarPool(args: {
+  ctx: ServiceContext;
+  input: UpdateRadarPoolInput;
+}) {
+  const { ctx } = args;
+  requireScope(ctx, "write");
+  const input = UpdateRadarPoolInput.parse(args.input);
+
+  return withTransaction(ctx, async (tx) => {
+    const pool = await tx
+      .select({
+        id: radarPool.id,
+        pageId: radarPool.pageId,
+        slug: radarPool.slug,
+      })
+      .from(radarPool)
+      .where(
+        and(
+          eq(radarPool.workspaceId, ctx.workspace.id),
+          eq(radarPool.slug, input.currentSlug),
+        ),
+      )
+      .get();
+
+    if (!pool) throw new NotFoundError("radar_pool", input.currentSlug);
+
+    const provider = await tx
+      .select({
+        id: radarProvider.id,
+      })
+      .from(radarProvider)
+      .where(
+        and(
+          eq(radarProvider.poolId, pool.id),
+          eq(radarProvider.workspaceId, ctx.workspace.id),
+        ),
+      )
+      .get();
+
+    if (!provider) throw new NotFoundError("radar_provider", input.currentSlug);
+
+    if (input.slug !== pool.slug) {
+      const [existingPool, existingPage] = await Promise.all([
+        tx
+          .select({ id: radarPool.id })
+          .from(radarPool)
+          .where(
+            and(
+              eq(radarPool.workspaceId, ctx.workspace.id),
+              eq(radarPool.slug, input.slug),
+            ),
+          )
+          .get(),
+        tx
+          .select({ id: page.id })
+          .from(page)
+          .where(eq(page.slug, input.slug))
+          .get(),
+      ]);
+
+      if (existingPool && existingPool.id !== pool.id) {
+        throw new ConflictError("Radar status page slug already exists.");
+      }
+      if (existingPage && existingPage.id !== pool.pageId) {
+        throw new ConflictError("Status page slug already exists.");
+      }
+    }
+
+    const updatedAt = new Date();
+    const baseUrl = normalizeRadarBaseUrl(input.baseUrl);
+    const updatedPool = await tx
+      .update(radarPool)
+      .set({
+        name: input.name,
+        slug: input.slug,
+        description: input.description,
+        visibility: "unlisted",
+        publicPoolOptIn: input.publicPoolOptIn,
+        updatedAt,
+      })
+      .where(
+        and(
+          eq(radarPool.id, pool.id),
+          eq(radarPool.workspaceId, ctx.workspace.id),
+        ),
+      )
+      .returning()
+      .get();
+
+    await tx
+      .update(radarProvider)
+      .set({
+        name: input.name,
+        displayName: input.name,
+        baseUrlEncrypted: await encryptSecret(baseUrl),
+        baseUrlHostHash: await getBaseUrlHostHash(baseUrl),
+        updatedAt,
+      })
+      .where(eq(radarProvider.id, provider.id));
+
+    const targets = await tx
+      .select({
+        targetId: radarProbeTarget.id,
+        credentialName: radarCredential.name,
+        modelGroup: radarCredential.modelGroup,
+        displayName: radarProbeTarget.displayName,
+        modelName: radarProbeTarget.modelName,
+      })
+      .from(radarProbeTarget)
+      .leftJoin(
+        radarCredential,
+        eq(radarCredential.id, radarProbeTarget.credentialId),
+      )
+      .where(
+        and(
+          eq(radarProbeTarget.providerId, provider.id),
+          eq(radarProbeTarget.workspaceId, ctx.workspace.id),
+        ),
+      )
+      .all();
+
+    for (const target of targets) {
+      const label =
+        target.displayName || target.credentialName || target.modelName;
+      const parts = [input.name, target.modelGroup, label].filter(Boolean);
+      await tx
+        .update(radarProbeTarget)
+        .set({
+          name: parts.join(" / "),
+          updatedAt,
+        })
+        .where(eq(radarProbeTarget.id, target.targetId));
+    }
+
+    if (pool.pageId != null) {
+      await tx
+        .update(page)
+        .set({
+          title: input.name,
+          description:
+            input.description || "Model availability and first-token latency.",
+          slug: input.slug,
+          updatedAt,
+        })
+        .where(
+          and(eq(page.id, pool.pageId), eq(page.workspaceId, ctx.workspace.id)),
+        );
+    }
+
+    return selectRadarPoolSchema.parse(updatedPool);
+  });
+}
+
 export async function createRadarProvider(args: {
   ctx: ServiceContext;
   input: CreateRadarProviderInput;
@@ -413,21 +567,6 @@ export async function createRadarCredential(args: {
       .get();
     if (!provider) throw new NotFoundError("radar_provider", input.providerId);
 
-    const keyFingerprint = await hashSecret(input.apiKey);
-    const existing = await tx
-      .select({ id: radarCredential.id })
-      .from(radarCredential)
-      .where(
-        and(
-          eq(radarCredential.providerId, input.providerId),
-          eq(radarCredential.keyFingerprint, keyFingerprint),
-        ),
-      )
-      .get();
-    if (existing) {
-      throw new ConflictError("Radar credential already exists for provider.");
-    }
-
     const row = await tx
       .insert(radarCredential)
       .values({
@@ -436,7 +575,7 @@ export async function createRadarCredential(args: {
         name: input.name,
         description: input.description,
         encryptedApiKey: await encryptSecret(input.apiKey),
-        keyFingerprint,
+        keyFingerprint: await hashSecret(input.apiKey),
         lastFour: getSecretLastFour(input.apiKey),
         billingGroup: input.billingGroup,
         modelGroup: input.modelGroup,
@@ -493,22 +632,8 @@ export async function addRadarTokenProbe(args: {
     const provider = providers[0];
     if (!provider) throw new NotFoundError("radar_provider", input.poolSlug);
 
-    const keyFingerprint = await hashSecret(input.apiKey);
-    const existing = await tx
-      .select({ id: radarCredential.id })
-      .from(radarCredential)
-      .where(
-        and(
-          eq(radarCredential.providerId, provider.id),
-          eq(radarCredential.keyFingerprint, keyFingerprint),
-        ),
-      )
-      .get();
-    if (existing) {
-      throw new ConflictError("Radar credential already exists for provider.");
-    }
-
     const now = new Date();
+    const keyFingerprint = await hashSecret(input.apiKey);
     const credential = await tx
       .insert(radarCredential)
       .values({
@@ -621,25 +746,6 @@ export async function updateRadarTokenProbe(args: {
 
     if (input.apiKey) {
       const keyFingerprint = await hashSecret(input.apiKey);
-      if (keyFingerprint !== row.credential.keyFingerprint) {
-        const existing = await tx
-          .select({ id: radarCredential.id })
-          .from(radarCredential)
-          .where(
-            and(
-              eq(radarCredential.providerId, row.provider.id),
-              eq(radarCredential.keyFingerprint, keyFingerprint),
-            ),
-          )
-          .get();
-
-        if (existing && existing.id !== row.credential.id) {
-          throw new ConflictError(
-            "Radar credential already exists for provider.",
-          );
-        }
-      }
-
       credentialUpdate.encryptedApiKey = await encryptSecret(input.apiKey);
       credentialUpdate.keyFingerprint = keyFingerprint;
       credentialUpdate.lastFour = getSecretLastFour(input.apiKey);

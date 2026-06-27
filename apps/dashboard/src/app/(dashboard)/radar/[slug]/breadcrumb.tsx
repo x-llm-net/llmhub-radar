@@ -22,19 +22,26 @@ export function Breadcrumb() {
     (item) => item.id === Number(params.credentialId),
   );
   const isAnnouncementsPage = pathname.includes("/announcements");
+  const isEmbedPage = pathname.endsWith("/embed");
+  const isPoolEditPage =
+    pathname.endsWith("/edit") && !pathname.includes("/api-keys/");
   const isApiKeyCreatePage = pathname.endsWith("/api-keys/create");
   const isApiKeyEditPage =
     pathname.includes("/api-keys/") && pathname.endsWith("/edit");
   const isSubscribersPage = pathname.endsWith("/subscribers");
   const childLabel = isAnnouncementsPage
     ? t("announcements")
-    : isApiKeyCreatePage
-      ? t("addTokenProbe")
-      : isApiKeyEditPage
-        ? (credential?.name ?? t("editApiKey"))
-        : isSubscribersPage
-          ? notificationsT("manageSubscribers")
-          : null;
+    : isEmbedPage
+      ? t("embed")
+      : isPoolEditPage
+        ? t("editPool")
+        : isApiKeyCreatePage
+          ? t("addTokenProbe")
+          : isApiKeyEditPage
+            ? (credential?.name ?? t("editApiKey"))
+            : isSubscribersPage
+              ? notificationsT("manageSubscribers")
+              : null;
 
   return (
     <NavBreadcrumb

@@ -21,7 +21,7 @@ export const CreateRadarPoolInput = z
     name: z.string().trim().min(1).max(120),
     slug: radarSlugSchema,
     description: z.string().trim().max(500).optional().default(""),
-    visibility: z.enum(radarPoolVisibility).optional().default("private"),
+    visibility: z.enum(radarPoolVisibility).optional().default("unlisted"),
     publicPoolOptIn: z.boolean().optional().default(false),
     provider: z
       .object({
@@ -94,6 +94,16 @@ export const GetRadarPoolInput = z.object({
   slug: radarSlugSchema,
 });
 export type GetRadarPoolInput = z.infer<typeof GetRadarPoolInput>;
+
+export const UpdateRadarPoolInput = z.object({
+  currentSlug: radarSlugSchema,
+  name: z.string().trim().min(1).max(120),
+  slug: radarSlugSchema,
+  description: z.string().trim().max(500).optional().default(""),
+  baseUrl: z.string().trim().url(),
+  publicPoolOptIn: z.boolean().optional().default(false),
+});
+export type UpdateRadarPoolInput = z.infer<typeof UpdateRadarPoolInput>;
 
 export const DiscoverRadarModelsInput = z.object({
   baseUrl: z.string().trim().url(),

@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
 import {
@@ -11,9 +10,10 @@ import {
   TableHeader,
   TableRow,
 } from "@openstatus/ui/components/ui/table";
-import { RadioTower } from "lucide-react";
-import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { Pencil, RadioTower } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import Link from "next/link";
 import { useMemo } from "react";
 
 import {
@@ -38,7 +38,13 @@ import {
 } from "@/components/metric/metric-card";
 import { useTRPC } from "@/lib/trpc/client";
 
-type Status = "unknown" | "operational" | "degraded" | "down" | "paused" | "configuration_error";
+type Status =
+  | "unknown"
+  | "operational"
+  | "degraded"
+  | "down"
+  | "paused"
+  | "configuration_error";
 
 const statusKey: Record<Status, string> = {
   unknown: "unknown",
@@ -49,8 +55,11 @@ const statusKey: Record<Status, string> = {
   configuration_error: "configurationError",
 };
 
-function statusVariant(status: Status): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "down" || status === "configuration_error") return "destructive";
+function statusVariant(
+  status: Status,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "down" || status === "configuration_error")
+    return "destructive";
   if (status === "operational") return "default";
   if (status === "degraded") return "secondary";
   return "outline";
@@ -81,15 +90,34 @@ export function Client() {
   const metrics = useMemo(() => {
     const pools = data?.items ?? [];
     const targets = pools.reduce((sum, pool) => sum + pool.targetCount, 0);
-    const publicPages = pools.filter((pool) => pool.visibility !== "private").length;
+    const publicPages = pools.filter((pool) => pool.publicPoolOptIn).length;
     const unhealthy = pools.filter(
-      (pool) => pool.worstStatus === "down" || pool.worstStatus === "degraded" || pool.worstStatus === "configuration_error",
+      (pool) =>
+        pool.worstStatus === "down" ||
+        pool.worstStatus === "degraded" ||
+        pool.worstStatus === "configuration_error",
     ).length;
     return [
-      { title: t("monitorPools"), value: String(pools.length), description: t("privatePools") },
-      { title: t("probeTargets"), value: String(targets), description: t("providerModelChecks") },
-      { title: t("unhealthy"), value: String(unhealthy), description: t("needsAttention") },
-      { title: t("publicPages"), value: String(publicPages), description: t("publishedOrUnlisted") },
+      {
+        title: t("monitorPools"),
+        value: String(pools.length),
+        description: t("privatePools"),
+      },
+      {
+        title: t("probeTargets"),
+        value: String(targets),
+        description: t("providerModelChecks"),
+      },
+      {
+        title: t("unhealthy"),
+        value: String(unhealthy),
+        description: t("needsAttention"),
+      },
+      {
+        title: t("publicPages"),
+        value: String(publicPages),
+        description: t("publishedOrUnlisted"),
+      },
     ];
   }, [data?.items, t]);
   const pools = data?.items ?? [];
@@ -100,9 +128,7 @@ export function Client() {
         <SectionHeaderRow>
           <SectionHeader>
             <SectionTitle>{t("title")}</SectionTitle>
-            <SectionDescription>
-              {t("description")}
-            </SectionDescription>
+            <SectionDescription>{t("description")}</SectionDescription>
           </SectionHeader>
         </SectionHeaderRow>
         <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
@@ -123,9 +149,7 @@ export function Client() {
       <Section>
         <SectionHeader>
           <SectionTitle>{t("monitorPools")}</SectionTitle>
-          <SectionDescription>
-            {t("poolListDescription")}
-          </SectionDescription>
+          <SectionDescription>{t("poolListDescription")}</SectionDescription>
         </SectionHeader>
         {isLoading ? (
           <EmptyStateContainer className="min-h-32">
@@ -151,7 +175,9 @@ export function Client() {
                   <TableHead>{t("providers")}</TableHead>
                   <TableHead>{t("targets")}</TableHead>
                   <TableHead>{t("lastCheck")}</TableHead>
-                  <TableHead className="text-right">{commonT("action")}</TableHead>
+                  <TableHead className="text-right">
+                    {commonT("action")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -176,9 +202,19 @@ export function Client() {
                       {formatDate(pool.lastCheckAt, locale, commonT("never"))}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" asChild>
-                        <Link href={`/radar/${pool.slug}`}>{commonT("open")}</Link>
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/radar/${pool.slug}/edit`}>
+                            <Pencil className="size-3.5" />
+                            {t("editPoolShort")}
+                          </Link>
+                        </Button>
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/radar/${pool.slug}`}>
+                            {commonT("open")}
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -187,7 +223,6 @@ export function Client() {
           </div>
         )}
       </Section>
-
     </SectionGroup>
   );
 }

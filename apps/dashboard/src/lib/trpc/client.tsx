@@ -11,6 +11,25 @@ import { endingLink } from "@/lib/trpc/shared";
 export const { TRPCProvider, useTRPC, useTRPCClient } =
   createTRPCContext<AppRouter>();
 
+const SENSITIVE_TRPC_PATHS = new Set([
+  "radar.addTokenProbe",
+  "radar.updateTokenProbe",
+  "radar.discoverModels",
+  "radar.discoverModelsForPool",
+]);
+
+function getLoggerPath(opts: unknown) {
+  if (
+    typeof opts === "object" &&
+    opts !== null &&
+    "path" in opts &&
+    typeof opts.path === "string"
+  ) {
+    return opts.path;
+  }
+  return null;
+}
+
 function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -42,9 +61,14 @@ export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
     createTRPCClient<AppRouter>({
       links: [
         loggerLink({
-          enabled: (opts) =>
-            process.env.NODE_ENV === "development" ||
-            (opts.direction === "down" && opts.result instanceof Error),
+          enabled: (opts) => {
+            const path = getLoggerPath(opts);
+            if (path && SENSITIVE_TRPC_PATHS.has(path)) return false;
+            return (
+              process.env.NODE_ENV === "development" ||
+              (opts.direction === "down" && opts.result instanceof Error)
+            );
+          },
         }),
         endingLink({
           headers: {

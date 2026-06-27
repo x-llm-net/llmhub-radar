@@ -219,11 +219,16 @@ export function Client({
               <div className="text-muted-foreground text-xs">服务商雷达</div>
             </div>
           </Link>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={dashboardUrl} target="_blank" rel="noreferrer">
-              进入控制台
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/developers/api">开发者 API</Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={dashboardUrl} target="_blank" rel="noreferrer">
+                进入控制台
+              </Link>
+            </Button>
+          </div>
         </header>
 
         <div className="space-y-8 py-12">

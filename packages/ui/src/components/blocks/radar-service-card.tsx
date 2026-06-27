@@ -72,27 +72,27 @@ export function RadarServiceCard({
       )}
     >
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2">
           <h3
-            className="min-w-0 flex-1 truncate text-xl leading-7 font-semibold"
+            className="min-w-0 flex-1 truncate text-lg leading-7 font-semibold"
             title={title}
           >
             {title}
           </h3>
-          <div className="grid min-h-7 shrink-0 items-center justify-items-end">
+          <div className="relative grid min-h-7 shrink-0 items-center justify-items-end">
             <Badge
               variant="outline"
               className={cn(
                 "col-start-1 row-start-1 shrink-0 transition-opacity",
                 actions &&
-                  "group-focus-within/card:opacity-0 group-hover/card:opacity-0",
+                  "group-focus-within/card:pointer-events-none group-focus-within/card:opacity-0 group-hover/card:pointer-events-none group-hover/card:opacity-0",
                 status.className,
               )}
             >
               {status.label}
             </Badge>
             {actions ? (
-              <div className="pointer-events-none col-start-1 row-start-1 flex items-center gap-1 opacity-0 transition-opacity group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
+              <div className="pointer-events-none absolute top-1/2 right-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
                 {actions}
               </div>
             ) : null}

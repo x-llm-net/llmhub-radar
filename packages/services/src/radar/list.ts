@@ -16,6 +16,7 @@ import {
 
 import { getReadDb, type ServiceContext } from "../context";
 import { NotFoundError } from "../errors";
+import { decryptSecret } from "./crypto";
 import { GetRadarPoolInput, ListRadarPoolsInput } from "./schemas";
 
 export type RadarPoolListItem = ReturnType<
@@ -36,7 +37,12 @@ export type RadarPoolListItem = ReturnType<
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
   pageId: number | null;
   providers: Array<
-    Omit<ReturnType<typeof selectRadarProviderSchema.parse>, "baseUrlEncrypted">
+    Omit<
+      ReturnType<typeof selectRadarProviderSchema.parse>,
+      "baseUrlEncrypted"
+    > & {
+      baseUrl: string;
+    }
   >;
   credentials: Array<
     Omit<
@@ -318,7 +324,12 @@ export async function getRadarPool(args: {
 
   return {
     ...selectRadarPoolSchema.parse(row),
-    providers: providers.map((provider) => safeProvider(provider)),
+    providers: await Promise.all(
+      providers.map(async (provider) => ({
+        ...safeProvider(provider),
+        baseUrl: await decryptSecret(provider.baseUrlEncrypted),
+      })),
+    ),
     credentials: credentials.map((row) => {
       const { encryptedApiKey: _encryptedApiKey, ...safe } =
         selectRadarCredentialSchema.parse(row.radar_credential);

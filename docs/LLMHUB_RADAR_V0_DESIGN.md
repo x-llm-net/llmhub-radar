@@ -853,3 +853,154 @@ Verification:
 - `pnpm --filter @openstatus/workflows exec bun test src/radar/radar.test.ts` passes.
 - `pnpm --filter @openstatus/services tsc` is blocked by an existing `packages/db/src/db.ts` declaration issue for `../env.mjs`.
 - Full workflows typecheck is blocked by existing non-Radar issues in `apps/workflows/src/cron/external-status.ts` and the same `db/env.mjs` declaration issue.
+
+## 21. Embedded Status Page MVP
+
+Goal: let relay operators embed a lightweight provider status view into their own website without building a separate widget system in v0.
+
+Existing embed parameters should remain supported:
+
+- `embed=all`
+- `embed=title,banner,components,feed`
+- `theme=light|dark`
+
+Radar-specific extensions:
+
+- `overview`: the 7-day stability overview.
+- `cards`: API key detail cards.
+- `criteria`: status criteria and scoring explanation.
+
+Backward compatibility:
+
+- `components` should map to Radar public status content: `overview,cards,criteria`.
+- `all` should keep the full embedded page.
+
+Example:
+
+```html
+<iframe
+  src="https://llm-hub.store/skyhope/zh?embed=banner,overview&theme=light"
+  style="width:100%;height:420px;border:0;"
+  loading="lazy"
+></iframe>
+```
+
+v0 exclusions:
+
+- No auto-height handshake.
+- No domain whitelist.
+- No deep style configuration.
+- No per-block data API beyond the public page URL.
+
+This keeps the first embed version easy to explain, safe to share, and cheap to maintain. More advanced iframe resizing, signed embeds, or custom colors should wait until real users embed the page.
+
+## 22. Public Provider Observation API MVP
+
+Goal: let relay aggregator websites fetch lightweight stability snapshots for selected providers without scraping public pages or reading private Radar internals.
+
+This API serves a different user than iframe embed:
+
+- iframe embed: relay operators embed their own public status page into their own site.
+- public observation API: aggregator sites fetch normalized public snapshots for several providers and render their own list.
+
+Endpoint:
+
+```text
+POST /api/radar/providers/query
+```
+
+Request:
+
+```json
+{
+  "slugs": ["skyhope", "another-provider"]
+}
+```
+
+v0 guardrails:
+
+- Maximum 20 slugs per request.
+- Maximum request body size is 8 KB.
+- Slugs use the public status page slug, not the workspace-local Radar pool slug.
+- Only returns providers that are published, public, and opted into the public pool.
+- Does not expose API keys, credential IDs, key suffixes, fingerprints, Base URLs, raw probe runs, raw errors, trace IDs, headers, response bodies, costs, quota, or internal notes.
+- Uses `radar_target_status` 24h materialized metrics instead of scanning `radar_probe_run`.
+- Adds public HTTP cache headers and ETag support: `Cache-Control: public, max-age=600, stale-while-revalidate=300`.
+
+Response shape:
+
+```json
+{
+  "apiVersion": "v1",
+  "schemaVersion": "2026-06-28",
+  "generatedAt": "2026-06-28T00:00:00.000Z",
+  "window": {
+    "label": "24h",
+    "from": "2026-06-27T00:00:00.000Z",
+    "to": "2026-06-28T00:00:00.000Z"
+  },
+  "units": {
+    "availability": "basis_points",
+    "latency": "milliseconds",
+    "score": "0_to_100"
+  },
+  "limit": 20,
+  "items": [
+    {
+      "slug": "skyhope",
+      "name": "Skyhope",
+      "description": "",
+      "icon": null,
+      "statusPageUrl": "https://llm-hub.store/skyhope",
+      "status": "operational",
+      "observedHealthScore": 98,
+      "grade": "A",
+      "confidenceLevel": "medium",
+      "qualityFlags": [],
+      "targetCount": 3,
+      "sampleCount24h": 288,
+      "availability24hBasisPoints": 9900,
+      "p95FirstTokenSummaryMs": 4200,
+      "lastCheckAt": "2026-06-28T00:00:00.000Z",
+      "updatedAt": "2026-06-28T00:00:00.000Z",
+      "scoreVersion": "radar-public-health-v1",
+      "scoreInputs": {
+        "minSampleCount24h": 10,
+        "availabilityWeight": 1,
+        "statusPenalty": 0,
+        "latencyPenalty": 0
+      }
+    }
+  ],
+  "missing": [],
+  "disclaimer": "Observed health is based only on LLMHub Radar active probe samples. It is not an official SLA, model quality score, price ranking, or purchase recommendation."
+}
+```
+
+Score policy:
+
+- `observedHealthScore` is intentionally named as an observation, not a ranking or recommendation.
+- If 24h sample count is below 10, score and grade are `null` / `unknown`.
+- Base score is the weighted 24h availability percentage.
+- Current degraded/down/unknown state applies a penalty.
+- High p95 first-token latency summary applies a penalty.
+- `confidenceLevel` and `qualityFlags` must be shown by serious third-party integrations so a tiny-sample 100% provider is not over-trusted.
+
+Latency note:
+
+- `p95FirstTokenSummaryMs` is a sample-weighted summary of each enabled target's materialized 24h p95 first-token value.
+- It is not a raw global p95 across every probe run; v0 avoids raw-run aggregation for this public endpoint.
+
+Why v0 uses 24h summary:
+
+- It avoids a public endpoint scanning 7d raw probe history for every batch request.
+- It reuses the existing `radar_target_status` materialized metrics already maintained by probe execution.
+- It is enough for a lightweight provider directory and early aggregator integrations.
+
+Scale path:
+
+- Add IP/API-key rate limits once external integrations appear.
+- Add a `radar_pool.page_id` index or a public summary table before high-frequency public-pool querying.
+- Add `GET /api/radar/providers?limit=100&cursor=...` for paged public-pool discovery.
+- Add `radar_pool_public_summary` when we need 7d/30d scoring, historical score charts, or public sorting across hundreds/thousands of providers.
+- Keep public summary generation asynchronous so public API traffic never depends on raw probe-run aggregation.

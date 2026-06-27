@@ -3,6 +3,9 @@ import { createParser, parseAsStringLiteral } from "nuqs/server";
 export const ALL_EMBED_SECTIONS = [
   "title",
   "banner",
+  "overview",
+  "cards",
+  "criteria",
   "components",
   "feed",
 ] as const;
@@ -16,7 +19,7 @@ export const embedParser = createParser<EmbedState>({
     if (raw === "" || raw.toLowerCase() === "all") {
       return { mode: true, sections: [...ALL_EMBED_SECTIONS] };
     }
-    const sections = Array.from(
+    const parsedSections = Array.from(
       new Set(
         raw
           .split(",")
@@ -26,6 +29,16 @@ export const embedParser = createParser<EmbedState>({
           ),
       ),
     );
+    const sections = parsedSections.includes("components")
+      ? Array.from(
+          new Set<EmbedSection>([
+            ...parsedSections,
+            "overview",
+            "cards",
+            "criteria",
+          ]),
+        )
+      : parsedSections;
     // If nothing valid was parsed (e.g. `?embed=,` or `?embed=unknown`),
     // fall back to showing everything rather than a blank embed.
     if (sections.length === 0) {

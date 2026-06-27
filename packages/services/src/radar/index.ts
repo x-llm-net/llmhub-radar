@@ -2,6 +2,7 @@ export {
   addRadarTokenProbe,
   createRadarPool,
   deleteRadarCredential,
+  updateRadarPool,
   updateRadarTokenProbe,
 } from "./create";
 export { runRadarCron, type RunRadarCronResult } from "./cron";
@@ -31,6 +32,7 @@ export {
   ListRadarPoolsInput,
   RadarProbeTargetInput,
   RecordRadarProbeRunInput,
+  UpdateRadarPoolInput,
   UpdateRadarTokenProbeInput,
   radarSlugSchema,
   type CreateRadarPoolInput as CreateRadarPoolInputType,
@@ -42,5 +44,6 @@ export {
   type ListRadarPoolsInput as ListRadarPoolsInputType,
   type RadarProbeTargetInput as RadarProbeTargetInputType,
   type RecordRadarProbeRunInput as RecordRadarProbeRunInputType,
+  type UpdateRadarPoolInput as UpdateRadarPoolInputType,
   type UpdateRadarTokenProbeInput as UpdateRadarTokenProbeInputType,
 } from "./schemas";

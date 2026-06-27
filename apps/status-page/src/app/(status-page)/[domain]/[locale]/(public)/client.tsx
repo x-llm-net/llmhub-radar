@@ -85,8 +85,19 @@ export function Client() {
     notFound();
   }
 
-  const componentsVisible =
-    !embed.mode || embed.sections.includes("components");
+  const overviewVisible =
+    !embed.mode ||
+    embed.sections.includes("overview") ||
+    embed.sections.includes("components");
+  const cardsVisible =
+    !embed.mode ||
+    embed.sections.includes("cards") ||
+    embed.sections.includes("components");
+  const criteriaVisible =
+    !embed.mode ||
+    embed.sections.includes("criteria") ||
+    embed.sections.includes("components");
+  const componentsVisible = overviewVisible || cardsVisible || criteriaVisible;
 
   const hasCustomConfig = pageInitial?.configuration
     ? pageInitial.configuration.type !== barType ||
@@ -291,8 +302,8 @@ export function Client() {
           />
         )}
         {/* NOTE: check what gap feels right */}
-        {page.radar && radarCards.length > 0 ? (
-          <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
+        {page.radar && radarCards.length > 0 && overviewVisible ? (
+          <StatusContent className="gap-5">
             <RadarSectionHeader
               title={radarCopyForLocale.stabilityOverviewTitle}
               description={radarCopyForLocale.stabilityOverviewDescription}
@@ -304,7 +315,7 @@ export function Client() {
             />
           </StatusContent>
         ) : page.trackers.length > 0 ? (
-          <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
+          <StatusContent className="gap-5">
             {page.trackers.map((tracker) => {
               if (tracker.type === "component") {
                 const component = tracker.component;
@@ -357,23 +368,31 @@ export function Client() {
             })}
           </StatusContent>
         ) : null}
-        {page.radar && page.radar.targets.length > 0 ? (
+        {page.radar &&
+        page.radar.targets.length > 0 &&
+        (cardsVisible || criteriaVisible) ? (
           <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
-            <RadarProbeTooltip copy={radarCopyForLocale} />
-            <RadarSectionHeader
-              title={radarCopyForLocale.apiKeyDetailsTitle}
-              description={radarCopyForLocale.apiKeyDetailsDescription}
-            />
-            <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
-              {radarCards.map((target) => (
-                <RadarTargetCard
-                  key={target.id}
-                  target={target}
-                  locale={locale}
+            {cardsVisible ? (
+              <>
+                <RadarProbeTooltip copy={radarCopyForLocale} />
+                <RadarSectionHeader
+                  title={radarCopyForLocale.apiKeyDetailsTitle}
+                  description={radarCopyForLocale.apiKeyDetailsDescription}
                 />
-              ))}
-            </div>
-            <RadarCriteria copy={radarCopyForLocale} />
+                <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
+                  {radarCards.map((target) => (
+                    <RadarTargetCard
+                      key={target.id}
+                      target={target}
+                      locale={locale}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
+            {criteriaVisible ? (
+              <RadarCriteria copy={radarCopyForLocale} />
+            ) : null}
           </StatusContent>
         ) : null}
       </Status>

@@ -446,6 +446,7 @@ export const statusPageRouter = createTRPCRouter({
       const where = and(
         eq(page.published, true),
         eq(page.accessType, "public"),
+        eq(radarPool.publicPoolOptIn, true),
       );
 
       const [countRow, rows] = await Promise.all([
