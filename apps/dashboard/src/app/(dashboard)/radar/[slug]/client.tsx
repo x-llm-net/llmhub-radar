@@ -412,12 +412,8 @@ export function Client() {
     const status = (target?.status?.currentStatus ??
       target?.currentStatus ??
       (credential.enabled ? "unknown" : "paused")) as Status;
-    const models = uniqueModels([
-      target?.modelName,
-      ...(credential.modelCatalog ?? []),
-    ]);
 
-    return { credential, target, status, models };
+    return { credential, target, status };
   });
 
   return (
@@ -481,7 +477,7 @@ export function Client() {
           </EmptyStateContainer>
         ) : (
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {cards.map(({ credential, target, status, models }) => {
+            {cards.map(({ credential, target, status }) => {
               const stats = target?.stats7d;
               const health = healthTone(
                 status,
@@ -490,7 +486,6 @@ export function Client() {
               );
               const lastCheckAt =
                 target?.status?.lastCheckAt ?? target?.lastCheckStartedAt;
-              const providerName = defaultProvider?.displayName ?? pool.name;
               const modelGroup = credential.modelGroup || t("generalFamily");
               const interval = formatInterval(target?.intervalSeconds, t);
 
@@ -561,7 +556,6 @@ export function Client() {
                   }
                   meta={
                     <>
-                      <span className="truncate">{providerName}</span>
                       <Badge
                         variant="outline"
                         className={`shrink-0 ${modelFamilyTone(modelGroup)}`}
@@ -569,15 +563,12 @@ export function Client() {
                         {modelGroup}
                       </Badge>
                       {target?.modelName ? (
-                        <Badge
-                          variant="outline"
+                        <span
                           title={target.modelName}
-                          className="max-w-44 shrink-0 overflow-hidden border-slate-200 bg-slate-50 font-mono text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                          className="min-w-0 truncate font-mono text-slate-700 dark:text-slate-300"
                         >
-                          <span className="min-w-0 truncate">
-                            {target.modelName}
-                          </span>
-                        </Badge>
+                          {target.modelName}
+                        </span>
                       ) : null}
                     </>
                   }
@@ -617,12 +608,6 @@ export function Client() {
                     ),
                     pastLabel: t("past"),
                     nowLabel: t("now"),
-                  }}
-                  models={{
-                    label: t("modelCatalog"),
-                    countLabel: t("modelsCount", { count: models.length }),
-                    emptyLabel: t("noModelCatalog"),
-                    values: models,
                   }}
                   footer={{
                     interval,

@@ -97,9 +97,13 @@ function statusPath(item: DirectoryItem) {
 function dayTone(day: DirectoryItem["dailyStatus7d"][number]) {
   const total = day.ok + day.degraded + day.error;
   if (total === 0) return "bg-muted";
-  if (day.error > 0 && day.error >= day.ok + day.degraded) return "bg-red-500";
-  if (day.degraded > 0 || day.error > 0) return "bg-amber-500";
-  return "bg-emerald-500";
+
+  const availability = day.ok / total;
+  if (availability >= 0.98) return "bg-emerald-500";
+  if (availability >= 0.95) return "bg-lime-400";
+  if (availability >= 0.9) return "bg-amber-400";
+  if (availability >= 0.85) return "bg-orange-400";
+  return "bg-red-500";
 }
 
 function DirectoryCard({ item }: { item: DirectoryItem }) {

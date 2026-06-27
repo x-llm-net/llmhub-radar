@@ -108,7 +108,10 @@ export function Client() {
   // NOTE: using skipToken instead of enabled:false to prevent tRPC from including this in a batch request with undefined input
   const { data: uptimeData, isLoading } = useQuery(
     trpc.statusPage.getUptime.queryOptions(
-      componentsVisible && pageInitial && pageInitial.pageComponents.length > 0
+      componentsVisible &&
+        pageInitial &&
+        !pageInitial.radar &&
+        pageInitial.pageComponents.length > 0
         ? {
             slug: domain,
             pageComponentIds: pageInitial.pageComponents.map((c) =>
@@ -288,14 +291,20 @@ export function Client() {
           />
         )}
         {/* NOTE: check what gap feels right */}
-        {page.trackers.length > 0 ? (
+        {page.radar && radarCards.length > 0 ? (
           <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
-            {page.radar ? (
-              <RadarSectionHeader
-                title={radarCopyForLocale.stabilityOverviewTitle}
-                description={radarCopyForLocale.stabilityOverviewDescription}
-              />
-            ) : null}
+            <RadarSectionHeader
+              title={radarCopyForLocale.stabilityOverviewTitle}
+              description={radarCopyForLocale.stabilityOverviewDescription}
+            />
+            <RadarStabilityOverview
+              targets={radarCards}
+              copy={radarCopyForLocale}
+              locale={locale}
+            />
+          </StatusContent>
+        ) : page.trackers.length > 0 ? (
+          <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
             {page.trackers.map((tracker) => {
               if (tracker.type === "component") {
                 const component = tracker.component;
@@ -417,6 +426,14 @@ type RadarTarget = {
     p50FirstTokenMs: number | null;
     p95FirstTokenMs: number | null;
   };
+  stabilityBuckets7d: Array<{
+    from: Date;
+    to: Date;
+    ok: number;
+    degraded: number;
+    error: number;
+    availability: number | null;
+  }>;
   sampleCount1h: number;
   sampleCount24h: number;
   successRate1h: number;
@@ -439,7 +456,9 @@ type RadarProbeTooltipState = {
   firstToken: string;
   httpStatus: string;
   result: string;
+  samples?: string;
   time: string;
+  type: "bucket" | "info" | "probe";
   x: number;
   y: number;
 };
@@ -456,6 +475,27 @@ function RadarProbeTooltip({
       const target = event.target;
       if (!(target instanceof Element)) {
         setTooltip(null);
+        return;
+      }
+
+      const info = target.closest<HTMLElement>("[data-radar-info]");
+      if (info) {
+        const rect = info.getBoundingClientRect();
+        const x = Math.min(
+          Math.max(rect.left + rect.width / 2, 160),
+          window.innerWidth - 160,
+        );
+
+        setTooltip({
+          errorType: "-",
+          firstToken: "N/A",
+          httpStatus: "N/A",
+          result: info.dataset.infoText || "-",
+          time: "-",
+          type: "info",
+          x,
+          y: rect.top - 10,
+        });
         return;
       }
 
@@ -476,7 +516,9 @@ function RadarProbeTooltip({
         firstToken: bar.dataset.probeFirstToken || "N/A",
         httpStatus: bar.dataset.probeHttp || "N/A",
         result: bar.dataset.probeResult || "-",
+        samples: bar.dataset.probeSamples,
         time: bar.dataset.probeTime || "-",
+        type: bar.dataset.probeKind === "bucket" ? "bucket" : "probe",
         x,
         y: rect.top - 10,
       });
@@ -497,29 +539,68 @@ function RadarProbeTooltip({
 
   return (
     <div
-      className="bg-popover text-popover-foreground pointer-events-none fixed z-50 w-56 rounded-lg border p-3 text-xs shadow-md"
+      className={cn(
+        "pointer-events-none fixed z-50 text-xs shadow-md",
+        tooltip.type === "info"
+          ? "w-max max-w-[320px] rounded-sm bg-slate-950 px-3 py-2 font-mono font-semibold whitespace-nowrap text-white"
+          : "bg-popover text-popover-foreground w-56 rounded-lg border p-3",
+      )}
       style={{
         left: tooltip.x,
         top: Math.max(8, tooltip.y),
         transform: "translate(-50%, -100%)",
       }}
     >
-      <div className="grid gap-2">
-        <ProbeTooltipRow label={copy.tooltipTimestamp} value={tooltip.time} />
-        <ProbeTooltipRow label={copy.tooltipResult} value={tooltip.result} />
-        <ProbeTooltipRow
-          label={copy.tooltipFirstToken}
-          value={tooltip.firstToken}
-        />
-        <ProbeTooltipRow
-          label={copy.tooltipHttpStatus}
-          value={tooltip.httpStatus}
-        />
-        <ProbeTooltipRow
-          label={copy.tooltipErrorType}
-          value={tooltip.errorType}
-        />
-      </div>
+      {tooltip.type === "info" ? (
+        <div className="relative">
+          {tooltip.result}
+          <span className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-slate-950" />
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {tooltip.type === "bucket" ? (
+            <>
+              <ProbeTooltipRow
+                label={copy.tooltipWindow}
+                value={tooltip.time}
+              />
+              <ProbeTooltipRow
+                label={copy.tooltipWindowAvailability}
+                value={tooltip.result}
+              />
+              {tooltip.samples ? (
+                <ProbeTooltipRow
+                  label={copy.tooltipSamples}
+                  value={tooltip.samples}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              <ProbeTooltipRow
+                label={copy.tooltipTimestamp}
+                value={tooltip.time}
+              />
+              <ProbeTooltipRow
+                label={copy.tooltipResult}
+                value={tooltip.result}
+              />
+              <ProbeTooltipRow
+                label={copy.tooltipFirstToken}
+                value={tooltip.firstToken}
+              />
+              <ProbeTooltipRow
+                label={copy.tooltipHttpStatus}
+                value={tooltip.httpStatus}
+              />
+              <ProbeTooltipRow
+                label={copy.tooltipErrorType}
+                value={tooltip.errorType}
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -551,6 +632,140 @@ function RadarCriteria({
         <p>{copy.criteriaLatency}</p>
       </div>
     </details>
+  );
+}
+
+function stabilityBucketTone(
+  bucket: RadarTarget["stabilityBuckets7d"][number],
+) {
+  if (bucket.availability == null) return "bg-muted";
+  if (bucket.availability >= 9_800) return "bg-emerald-500";
+  if (bucket.availability >= 9_500) return "bg-emerald-400";
+  if (bucket.availability >= 9_000) return "bg-lime-400";
+  if (bucket.availability >= 8_500) return "bg-amber-400";
+  return "bg-red-500";
+}
+
+function formatStabilityBucketSamples({
+  bucket,
+  copy,
+}: {
+  bucket: RadarTarget["stabilityBuckets7d"][number];
+  copy: (typeof radarCopy)["en"] | (typeof radarCopy)["zh"];
+}) {
+  return `${copy.bucketOk} ${bucket.ok} / ${copy.bucketDegraded} ${bucket.degraded} / ${copy.bucketError} ${bucket.error}`;
+}
+
+function RadarStabilityOverview({
+  targets,
+  copy,
+  locale,
+}: {
+  targets: RadarTarget[];
+  copy: (typeof radarCopy)["en"] | (typeof radarCopy)["zh"];
+  locale: string;
+}) {
+  return (
+    <div className="space-y-5">
+      {targets.map((target, index) => (
+        <div key={target.id} className={cn(index > 0 && "pt-1")}>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <div
+                  className="truncate font-mono text-sm font-semibold"
+                  title={target.serviceGroupName || target.displayName}
+                >
+                  {target.serviceGroupName || target.displayName}
+                </div>
+                <span
+                  aria-label={copy.apiKeyInfo}
+                  className="text-muted-foreground flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none font-semibold"
+                  data-info-text={`${copy.typeLabel}: ${
+                    target.modelFamily || copy.otherFamily
+                  } | ${copy.probeModel}: ${target.modelName || "N/A"}`}
+                  data-radar-info=""
+                >
+                  i
+                </span>
+              </div>
+              {target.modelName ? (
+                <div
+                  className="text-muted-foreground mt-0.5 truncate font-mono text-xs"
+                  title={target.modelName}
+                >
+                  {target.modelName}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className={cn(
+                  "font-mono text-sm font-semibold",
+                  availabilityClass(target.stats7d.successRate),
+                )}
+              >
+                {formatAvailability(
+                  target.stats7d.successRate,
+                  target.stats7d.sampleCount,
+                )}
+              </span>
+              <span
+                className={cn(
+                  "size-4 rounded-sm",
+                  target.stats7d.successRate == null
+                    ? "bg-muted"
+                    : stabilityBucketTone({
+                        availability: target.stats7d.successRate,
+                        degraded: 0,
+                        error: 0,
+                        from: new Date(),
+                        ok: 0,
+                        to: new Date(),
+                      }),
+                )}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div
+              className="grid h-12 gap-px"
+              style={{
+                gridTemplateColumns: `repeat(${target.stabilityBuckets7d.length}, minmax(0, 1fr))`,
+              }}
+            >
+              {target.stabilityBuckets7d.map((bucket) => (
+                <div
+                  key={bucket.from.toISOString()}
+                  data-probe-kind="bucket"
+                  data-radar-probe=""
+                  data-probe-result={formatAvailability(
+                    bucket.availability,
+                    bucket.ok + bucket.degraded + bucket.error,
+                  )}
+                  data-probe-samples={formatStabilityBucketSamples({
+                    bucket,
+                    copy,
+                  })}
+                  data-probe-time={`${formatDateTime(
+                    bucket.from,
+                    locale,
+                  )} - ${formatDateTime(bucket.to, locale)}`}
+                  className={cn(
+                    "min-w-0 rounded-[2px]",
+                    stabilityBucketTone(bucket),
+                  )}
+                />
+              ))}
+            </div>
+            <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs">
+              <span>{copy.sevenDaysAgo}</span>
+              <span>{copy.now}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -603,7 +818,6 @@ function RadarTargetCard({
     target.stats7d.p95FirstTokenMs,
     copy,
   );
-  const models = uniqueModels([target.modelName, ...target.modelCatalog]);
   const availabilityHint = getAvailabilityHint(
     target.stats7d.successRate,
     target.stats7d.sampleCount,
@@ -618,7 +832,6 @@ function RadarTargetCard({
       status={{ className: health.className, label: health.label }}
       meta={
         <>
-          <span className="truncate">{target.providerName}</span>
           <Badge
             variant="outline"
             className={cn("shrink-0", modelFamilyTone(modelFamily))}
@@ -626,13 +839,12 @@ function RadarTargetCard({
             {modelFamily}
           </Badge>
           {target.modelName ? (
-            <Badge
-              variant="outline"
+            <span
               title={target.modelName}
-              className="max-w-44 shrink-0 overflow-hidden border-slate-200 bg-slate-50 font-mono text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+              className="min-w-0 truncate font-mono text-slate-700 dark:text-slate-300"
             >
-              <span className="min-w-0 truncate">{target.modelName}</span>
-            </Badge>
+              {target.modelName}
+            </span>
           ) : null}
         </>
       }
@@ -668,12 +880,6 @@ function RadarTargetCard({
         runs: buildTimelineRuns(target.recentRuns, copy, locale),
         pastLabel: copy.past,
         nowLabel: copy.now,
-      }}
-      models={{
-        label: copy.modelCatalog,
-        countLabel: copy.modelsCount.replace("{count}", String(models.length)),
-        emptyLabel: copy.noModelCatalog,
-        values: models,
       }}
       footer={{
         interval,
@@ -731,12 +937,6 @@ function ComponentCard({
         <StatusComponentFooter data={data ?? []} isLoading={isLoading} />
       </StatusComponentBody>
     </StatusComponent>
-  );
-}
-
-function uniqueModels(models: Array<string | null | undefined>) {
-  return Array.from(
-    new Set(models.filter((model): model is string => Boolean(model))),
   );
 }
 
@@ -903,14 +1103,16 @@ function formatDateTime(value: Date | null, locale: string) {
 
 const radarCopy = {
   en: {
-    stabilityOverviewTitle: "45-day stability overview",
+    stabilityOverviewTitle: "7-day stability overview",
     stabilityOverviewDescription:
-      "Recent 45-day probe results grouped by API key. Gray means no samples for that day.",
+      "Probe results grouped into 3-hour windows by API key. Gray means no samples in that window.",
     apiKeyDetailsTitle: "API key details",
     apiKeyDetailsDescription:
       "Current status, probe model, first-token latency, and 7-day availability for each API key.",
     lastCheck: "Last check",
     otherFamily: "Other",
+    apiKeyInfo: "API key info",
+    typeLabel: "Type",
     probeModel: "Probe model",
     success1h: "1h success",
     success24h: "24h success",
@@ -930,6 +1132,9 @@ const radarCopy = {
     tooltipFirstToken: "First token",
     tooltipHttpStatus: "HTTP status",
     tooltipErrorType: "Error type",
+    tooltipWindow: "Window",
+    tooltipWindowAvailability: "Window availability",
+    tooltipSamples: "Samples",
     noRuns: "No probe runs yet",
     availability7d: "7d availability",
     availabilityStable: "Stable",
@@ -946,6 +1151,10 @@ const radarCopy = {
     noSamples: "No samples",
     recentRuns: "Last {count} probes",
     samples7d: "{count} valid samples",
+    sevenDaysAgo: "7 days ago",
+    bucketOk: "Normal",
+    bucketDegraded: "Degraded",
+    bucketError: "Failed",
     past: "Past",
     now: "Now",
     modelCatalog: "Available models",
@@ -972,14 +1181,16 @@ const radarCopy = {
     },
   },
   zh: {
-    stabilityOverviewTitle: "45 \u5929\u7a33\u5b9a\u6027\u6982\u89c8",
+    stabilityOverviewTitle: "\u8fd1 7 \u5929\u7a33\u5b9a\u6027\u6982\u89c8",
     stabilityOverviewDescription:
-      "\u6309 API \u5bc6\u94a5\u6c47\u603b\u6700\u8fd1 45 \u5929\u63a2\u6d4b\u7ed3\u679c\uff0c\u7070\u8272\u8868\u793a\u5f53\u5929\u6682\u65e0\u6837\u672c",
+      "\u6309 API \u5bc6\u94a5\u6c47\u603b\u6700\u8fd1 7 \u5929\u6bcf 3 \u5c0f\u65f6\u7684\u63a2\u6d4b\u7ed3\u679c\uff0c\u7070\u8272\u8868\u793a\u8be5\u65f6\u6bb5\u6682\u65e0\u6837\u672c",
     apiKeyDetailsTitle: "API \u5bc6\u94a5\u8be6\u60c5",
     apiKeyDetailsDescription:
       "\u5c55\u793a\u6bcf\u4e2a API \u5bc6\u94a5\u7684\u5f53\u524d\u72b6\u6001\u3001\u63a2\u6d4b\u6a21\u578b\u3001\u9996 token \u65f6\u95f4\u548c\u8fd1 7 \u5929\u53ef\u7528\u6027",
     lastCheck: "最后检查",
     otherFamily: "其他",
+    apiKeyInfo: "API 密钥信息",
+    typeLabel: "类型",
     probeModel: "探测模型",
     success1h: "1小时成功率",
     success24h: "24小时成功率",
@@ -989,8 +1200,8 @@ const radarCopy = {
     criteriaAvailability:
       "7 天可用性：≥98% 稳定；95-98% 轻微波动；90-95% 波动；85-90% 明显波动；<85% 不稳定。",
     criteriaLatency: "首 token：≤2s 极速；2-5s 正常；5-15s 偏慢；>15s 高延时。",
-    firstTokenP50: "首 token P50",
-    firstTokenP95: "首 token P95",
+    firstTokenP50: "首T P50",
+    firstTokenP95: "首T P95",
     probeSuccess: "检测成功",
     probeFailed: "检测失败",
     tooltipTimestamp: "检测时间",
@@ -998,6 +1209,9 @@ const radarCopy = {
     tooltipFirstToken: "首 token",
     tooltipHttpStatus: "HTTP 状态",
     tooltipErrorType: "错误类型",
+    tooltipWindow: "\u65f6\u95f4\u7a97\u53e3",
+    tooltipWindowAvailability: "\u7a97\u53e3\u53ef\u7528\u6027",
+    tooltipSamples: "\u6837\u672c",
     noRuns: "暂无检测记录",
     availability7d: "7 天可用性",
     availabilityStable: "稳定",
@@ -1014,6 +1228,10 @@ const radarCopy = {
     noSamples: "暂无样本",
     recentRuns: "近 {count} 次探测",
     samples7d: "{count} 个有效样本",
+    sevenDaysAgo: "7 \u5929\u524d",
+    bucketOk: "\u6b63\u5e38",
+    bucketDegraded: "\u964d\u7ea7",
+    bucketError: "\u5931\u8d25",
     past: "过去",
     now: "现在",
     modelCatalog: "可用模型",

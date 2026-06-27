@@ -128,6 +128,64 @@ function uniqueModels(models: Array<string | null | undefined>) {
   );
 }
 
+const RADAR_STABILITY_BUCKET_HOURS = 3;
+const RADAR_STABILITY_BUCKET_COUNT = 56;
+const RADAR_STABILITY_BUCKET_MS = RADAR_STABILITY_BUCKET_HOURS * 60 * 60 * 1000;
+
+function buildRadarStabilityBuckets(
+  runs: Array<{
+    startedAt: Date;
+    success: boolean;
+    errorType: string | null;
+  }>,
+) {
+  const currentBucketStart =
+    Math.floor(Date.now() / RADAR_STABILITY_BUCKET_MS) *
+    RADAR_STABILITY_BUCKET_MS;
+  const firstBucketStart =
+    currentBucketStart -
+    (RADAR_STABILITY_BUCKET_COUNT - 1) * RADAR_STABILITY_BUCKET_MS;
+
+  const buckets = Array.from({ length: RADAR_STABILITY_BUCKET_COUNT }).map(
+    (_, index) => ({
+      from: new Date(firstBucketStart + index * RADAR_STABILITY_BUCKET_MS),
+      to: new Date(firstBucketStart + (index + 1) * RADAR_STABILITY_BUCKET_MS),
+      ok: 0,
+      degraded: 0,
+      error: 0,
+      availability: null as number | null,
+    }),
+  );
+
+  for (const run of runs) {
+    const index = Math.floor(
+      (run.startedAt.getTime() - firstBucketStart) / RADAR_STABILITY_BUCKET_MS,
+    );
+    const bucket = buckets[index];
+    if (!bucket) continue;
+
+    if (run.success) {
+      bucket.ok += 1;
+    } else if (
+      run.errorType === "timeout" ||
+      run.errorType === "server_error"
+    ) {
+      bucket.degraded += 1;
+    } else {
+      bucket.error += 1;
+    }
+  }
+
+  return buckets.map((bucket) => {
+    const total = bucket.ok + bucket.degraded + bucket.error;
+    return {
+      ...bucket,
+      availability:
+        total === 0 ? null : Math.round((bucket.ok / total) * 10_000),
+    };
+  });
+}
+
 async function getPublicRadarByPageId(args: {
   db: typeof import("@openstatus/db").db;
   pageId: number;
@@ -262,6 +320,7 @@ async function getPublicRadarByPageId(args: {
         p50FirstTokenMs: percentile(firstTokenValues, 50),
         p95FirstTokenMs: percentile(firstTokenValues, 95),
       },
+      stabilityBuckets7d: buildRadarStabilityBuckets(runs),
       sampleCount1h: row.status?.sampleCount1h ?? 0,
       sampleCount24h: row.status?.sampleCount24h ?? 0,
       successRate1h: row.status?.successRate1h ?? 0,
@@ -2023,7 +2082,8 @@ export const statusPageRouter = createTRPCRouter({
         return { success: true };
       }
 
-      const locale = opts.input.locale ?? subscriber.locale ?? _page.defaultLocale;
+      const locale =
+        opts.input.locale ?? subscriber.locale ?? _page.defaultLocale;
       const statusPageBaseUrl = getPublicStatusPageUrl({
         customDomain: _page.customDomain,
         slug: _page.slug,

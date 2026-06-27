@@ -3,6 +3,7 @@ import { resolveDefaultRewrite } from "./resolve-default-rewrite";
 import { resolveEmailDomainAction } from "./resolve-email-domain-action";
 import { resolveIpRestrictionAction } from "./resolve-ip-restriction-action";
 import { resolveLocaleAction } from "./resolve-locale-action";
+import { resolveMissingLocaleAction } from "./resolve-missing-locale-action";
 import { resolvePasswordAction } from "./resolve-password-action";
 import { type Action, type ComposeInput, passthrough } from "./types";
 
@@ -13,12 +14,13 @@ export type { ComposeInput };
  * Action. If every stage passes, returns a `passthrough` action.
  *
  * Priority ordering (top wins):
- *   1. locale-mismatch redirect
- *   2. password gate (in/out)
- *   3. email-domain gate (in/out)
- *   4. ip-restriction gate (in/out)
- *   5. custom-domain rewrite (stpg.dev hosted)
- *   6. default rewrite (openstatus.dev OR rewritePath differs)
+ *   1. missing-locale redirect
+ *   2. locale-mismatch redirect
+ *   3. password gate (in/out)
+ *   4. email-domain gate (in/out)
+ *   5. ip-restriction gate (in/out)
+ *   6. custom-domain rewrite (stpg.dev hosted)
+ *   7. default rewrite (openstatus.dev OR rewritePath differs)
  *
  * Note on locale-first: a user on a mis-localed URL for a gated page gets
  * two redirects (locale → gate) instead of one. We accept the extra hop so
@@ -29,6 +31,7 @@ export type { ComposeInput };
  */
 export function composePageAction(input: ComposeInput): Action {
   return (
+    resolveMissingLocaleAction(input) ??
     resolveLocaleAction(input) ??
     resolvePasswordAction(input) ??
     resolveEmailDomainAction(input) ??

@@ -14,17 +14,25 @@ const baseRoute: ResolvedRoute = {
 describe("applyPageLocaleOverride", () => {
   test("localeExplicit: returns input unchanged", () => {
     const route = { ...baseRoute, localeExplicit: true };
-    expect(applyPageLocaleOverride(route, { defaultLocale: "fr" })).toBe(route);
+    expect(
+      applyPageLocaleOverride(route, { defaultLocale: "fr", locales: null }),
+    ).toBe(route);
   });
 
   test("page default equals current locale: returns input unchanged", () => {
-    expect(applyPageLocaleOverride(baseRoute, { defaultLocale: "en" })).toBe(
-      baseRoute,
-    );
+    expect(
+      applyPageLocaleOverride(baseRoute, {
+        defaultLocale: "en",
+        locales: null,
+      }),
+    ).toBe(baseRoute);
   });
 
   test("page default differs: returns new route with swapped locale and rewritePath", () => {
-    const result = applyPageLocaleOverride(baseRoute, { defaultLocale: "fr" });
+    const result = applyPageLocaleOverride(baseRoute, {
+      defaultLocale: "fr",
+      locales: null,
+    });
     expect(result).not.toBe(baseRoute);
     expect(result).toEqual({
       type: "pathname",
@@ -40,7 +48,10 @@ describe("applyPageLocaleOverride", () => {
       ...baseRoute,
       rewritePath: "/acme/en/events",
     };
-    const result = applyPageLocaleOverride(route, { defaultLocale: "fr" });
+    const result = applyPageLocaleOverride(route, {
+      defaultLocale: "fr",
+      locales: null,
+    });
     expect(result.rewritePath).toBe("/acme/fr/events");
   });
 
@@ -52,7 +63,10 @@ describe("applyPageLocaleOverride", () => {
       localeExplicit: false,
       rewritePath: "/acme/en/monitors/1",
     };
-    const result = applyPageLocaleOverride(route, { defaultLocale: "fr" });
+    const result = applyPageLocaleOverride(route, {
+      defaultLocale: "fr",
+      locales: null,
+    });
     expect(result).toEqual({
       type: "hostname",
       prefix: "acme",
@@ -64,7 +78,29 @@ describe("applyPageLocaleOverride", () => {
 
   test("does not mutate input", () => {
     const route = { ...baseRoute };
-    applyPageLocaleOverride(route, { defaultLocale: "fr" });
+    applyPageLocaleOverride(route, { defaultLocale: "fr", locales: null });
     expect(route).toEqual(baseRoute);
+  });
+
+  test("prefers browser language when URL has no explicit locale", () => {
+    const result = applyPageLocaleOverride(
+      baseRoute,
+      { defaultLocale: "en", locales: ["en", "zh"] },
+      "zh-CN,zh;q=0.9,en;q=0.8",
+    );
+
+    expect(result.locale).toBe("zh");
+    expect(result.rewritePath).toBe("/acme/zh");
+  });
+
+  test("falls back to page default when browser language is unsupported", () => {
+    const result = applyPageLocaleOverride(
+      baseRoute,
+      { defaultLocale: "de", locales: ["en", "de"] },
+      "zh-CN,zh;q=0.9",
+    );
+
+    expect(result.locale).toBe("de");
+    expect(result.rewritePath).toBe("/acme/de");
   });
 });

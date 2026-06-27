@@ -126,7 +126,8 @@
     "featureNotifications": "Let subscribers receive email and webhook updates when service changes.",
     "trustTitle": "Key usage commitment",
     "trustDescription": "API keys are encrypted and used only for scheduled health probes. LLMHub Radar does not forward user traffic or impersonate your service.",
-    "footerTrust": "API keys are used only for health probes. Source code and deployment notes are available on",
+    "footerTrust": "API keys are encrypted and used only for scheduled health probes. We never proxy user requests.",
+    "footerCommunity": "Join the QQ community: 1039792913",
     "footerGithub": "GitHub"
   },
   "status": {

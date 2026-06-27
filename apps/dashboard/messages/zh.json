@@ -126,7 +126,8 @@
     "featureNotifications": "服务变化时，订阅者可通过邮件和 Webhook 接收通知。",
     "trustTitle": "密钥使用承诺",
     "trustDescription": "API 密钥加密保存，只用于定时健康探测。LLMHub Radar 不转发用户流量，也不会冒用你的服务。",
-    "footerTrust": "API 密钥仅用于健康探测，源码和部署说明见",
+    "footerTrust": "API 密钥加密保存，仅用于定时健康探测，不转发用户请求。",
+    "footerCommunity": "加入 QQ 交流群：1039792913",
     "footerGithub": "GitHub"
   },
   "status": {
@@ -258,8 +259,8 @@
     "availabilityDegraded": "波动",
     "availabilityBelowThreshold": "明显波动",
     "availabilityUnstable": "不稳定",
-    "p50Ttft": "首 token P50",
-    "p95Ttft": "首 token P95",
+    "p50Ttft": "首T P50",
+    "p95Ttft": "首T P95",
     "probeSuccess": "检测成功",
     "probeFailed": "检测失败",
     "tooltipTimestamp": "检测时间",

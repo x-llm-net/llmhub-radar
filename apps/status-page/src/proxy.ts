@@ -77,7 +77,11 @@ export default auth(async (req) => {
   }
 
   const _page = validation.data;
-  const route = applyPageLocaleOverride(initialRoute, _page);
+  const route = applyPageLocaleOverride(
+    initialRoute,
+    _page,
+    req.headers.get("accept-language"),
+  );
 
   const clientIp = resolveClientIp(req.headers);
 

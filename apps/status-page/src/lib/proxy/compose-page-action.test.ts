@@ -69,6 +69,53 @@ describe("composePageAction — priority ordering", () => {
     expect(action.url).toBeUndefined();
   });
 
+  test("missing locale redirects to explicit locale before gates", () => {
+    const action = composePageAction(
+      buildInput({
+        route: {
+          ...route,
+          locale: "zh",
+          localeExplicit: false,
+          rewritePath: "/acme/zh",
+        },
+        pathname: "/acme",
+        requestUrl: "http://localhost:3000/acme?foo=bar",
+        search: "?foo=bar",
+        page: {
+          ...basePage,
+          accessType: "password",
+          password: "secret",
+        } as Page,
+      }),
+    );
+
+    expect(action.type).toBe("redirect");
+    if (action.type !== "redirect") throw new Error("expected redirect");
+    expect(action.reason).toBe("missing-locale-redirect");
+    expect(action.url.toString()).toBe("http://localhost:3000/acme/zh?foo=bar");
+  });
+
+  test("missing locale on hostname routing strips internal page prefix", () => {
+    const action = composePageAction(
+      buildInput({
+        route: {
+          type: "hostname",
+          prefix: "acme",
+          locale: "zh",
+          localeExplicit: false,
+          rewritePath: "/acme/zh",
+        },
+        pathname: "/",
+        requestUrl: "https://status.acme.com/",
+      }),
+    );
+
+    expect(action.type).toBe("redirect");
+    if (action.type !== "redirect") throw new Error("expected redirect");
+    expect(action.reason).toBe("missing-locale-redirect");
+    expect(action.url.pathname).toBe("/zh");
+  });
+
   test("locale rejection fires before password gate", () => {
     const action = composePageAction(
       buildInput({

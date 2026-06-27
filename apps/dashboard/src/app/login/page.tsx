@@ -3,7 +3,6 @@ import { GoogleIcon } from "@openstatus/icons";
 import { Separator } from "@openstatus/ui/components/ui/separator";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
-import Link from "next/link";
 import type { SearchParams } from "nuqs/server";
 
 import { LanguageSwitcher } from "@/components/i18n/language-switcher";
@@ -104,16 +103,9 @@ export default async function Page(props: {
         </form>
       </div>
       <p className="text-muted-foreground mx-auto max-w-md px-8 text-center text-xs text-pretty">
-        {t("footerTrust")}{" "}
-        <Link
-          href="https://github.com/x-llm-net/llmhub-radar"
-          target="_blank"
-          rel="noreferrer"
-          className="hover:text-primary underline underline-offset-4 hover:no-underline"
-        >
-          {t("footerGithub")}
-        </Link>
-        .
+        {t("footerTrust")}
+        <br />
+        {t("footerCommunity")}
       </p>
     </div>
   );

@@ -196,6 +196,16 @@ export const selectPublicRadarSchema = z
           p50FirstTokenMs: z.number().nullable(),
           p95FirstTokenMs: z.number().nullable(),
         }),
+        stabilityBuckets7d: z.array(
+          z.object({
+            from: z.date(),
+            to: z.date(),
+            ok: z.number(),
+            degraded: z.number(),
+            error: z.number(),
+            availability: z.number().nullable(),
+          }),
+        ),
         sampleCount1h: z.number(),
         sampleCount24h: z.number(),
         successRate1h: z.number(),

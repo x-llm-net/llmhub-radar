@@ -1,5 +1,6 @@
 import type { Page } from "@openstatus/db/src/schema";
 
+import { pickPreferredLocale } from "../locale-negotiation";
 import type { ResolvedRoute } from "../resolve-route";
 
 /**
@@ -12,18 +13,23 @@ import type { ResolvedRoute } from "../resolve-route";
  */
 export function applyPageLocaleOverride(
   route: ResolvedRoute,
-  page: Pick<Page, "defaultLocale">,
+  page: Pick<Page, "defaultLocale" | "locales">,
+  acceptLanguage?: string | null,
 ): ResolvedRoute {
   if (route.localeExplicit) return route;
-  if (!page.defaultLocale) return route;
-  if (page.defaultLocale === route.locale) return route;
+  const preferredLocale = pickPreferredLocale({
+    acceptLanguage,
+    enabledLocales: page.locales,
+    fallbackLocale: page.defaultLocale,
+  });
+  if (preferredLocale === route.locale) return route;
 
   return {
     ...route,
-    locale: page.defaultLocale,
+    locale: preferredLocale,
     rewritePath: route.rewritePath.replace(
       `/${route.prefix}/${route.locale}`,
-      `/${route.prefix}/${page.defaultLocale}`,
+      `/${route.prefix}/${preferredLocale}`,
     ),
   };
 }

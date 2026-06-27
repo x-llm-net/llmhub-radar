@@ -12,17 +12,15 @@ export type RadarServiceCardMetric = {
   valueClassName?: string;
 };
 
-export type RadarServiceCardRunSlot =
-  | {
-      key: string | number;
-      toneClassName: string;
-      errorType: string;
-      firstToken: string;
-      httpStatus: string | number;
-      result: string;
-      time: string;
-    }
-  | null;
+export type RadarServiceCardRunSlot = {
+  key: string | number;
+  toneClassName: string;
+  errorType: string;
+  firstToken: string;
+  httpStatus: string | number;
+  result: string;
+  time: string;
+} | null;
 
 export type RadarServiceCardProps = {
   actions?: React.ReactNode;
@@ -34,7 +32,7 @@ export type RadarServiceCardProps = {
   };
   meta?: React.ReactNode;
   metrics: RadarServiceCardMetric[];
-  models: {
+  models?: {
     countLabel: string;
     emptyLabel: string;
     label: string;
@@ -87,38 +85,38 @@ export function RadarServiceCard({
               className={cn(
                 "col-start-1 row-start-1 shrink-0 transition-opacity",
                 actions &&
-                  "group-hover/card:opacity-0 group-focus-within/card:opacity-0",
+                  "group-focus-within/card:opacity-0 group-hover/card:opacity-0",
                 status.className,
               )}
             >
               {status.label}
             </Badge>
             {actions ? (
-              <div className="pointer-events-none col-start-1 row-start-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/card:pointer-events-auto group-hover/card:opacity-100 group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100">
+              <div className="pointer-events-none col-start-1 row-start-1 flex items-center gap-1 opacity-0 transition-opacity group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
                 {actions}
               </div>
             ) : null}
           </div>
         </div>
         {meta ? (
-          <div className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <div className="text-muted-foreground flex min-w-0 items-center gap-2 overflow-hidden text-xs">
             {meta}
           </div>
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-[1.12fr_1fr_1fr] gap-2">
         {metrics.map((metric) => (
           <RadarMetric key={metric.label} {...metric} />
         ))}
       </div>
 
-      <div className="mt-4 border-t pt-4">
+      <div className="mt-4 border-t pt-4 pb-2">
         <div className="mb-2 flex items-center justify-between gap-3 text-xs">
           <span className="text-muted-foreground">{timeline.recentLabel}</span>
           <span className="text-muted-foreground">{timeline.samplesLabel}</span>
         </div>
-        <div className="flex h-8 min-w-0 items-center gap-0.5">
+        <div className="flex h-8 min-w-0 items-center gap-px">
           {timeline.runs.map((run, index) => (
             <span
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed historical slots can be empty.
@@ -130,7 +128,7 @@ export function RadarServiceCard({
               data-probe-result={run?.result}
               data-probe-time={run?.time}
               className={cn(
-                "h-5 min-w-0 flex-1 rounded-sm transition-[height,filter,opacity] hover:h-6 hover:opacity-90 hover:brightness-110",
+                "h-5 min-w-0 flex-1 rounded-[2px] transition-[height,filter,opacity] hover:h-6 hover:opacity-90 hover:brightness-110",
                 run?.toneClassName ?? "bg-muted",
               )}
             />
@@ -142,38 +140,40 @@ export function RadarServiceCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-1.5 border-t pt-4">
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <span className="text-muted-foreground">{models.label}</span>
-          <span className="text-muted-foreground">{models.countLabel}</span>
+      {models ? (
+        <div className="mt-4 grid gap-1.5 border-t pt-4">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-muted-foreground">{models.label}</span>
+            <span className="text-muted-foreground">{models.countLabel}</span>
+          </div>
+          <div
+            data-radar-card-models
+            className="max-h-[calc(3*1.5rem+2*0.375rem+0.5rem)] overflow-y-auto pr-1 pb-2"
+          >
+            {models.values.length > 0 ? (
+              <div className="flex flex-wrap content-start gap-1.5">
+                {models.values.map((model) => (
+                  <Badge
+                    key={model}
+                    variant="outline"
+                    className="h-6 max-w-full font-mono whitespace-nowrap"
+                  >
+                    <span className="min-w-0 truncate">{model}</span>
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-sm">
+                {models.emptyLabel}
+              </span>
+            )}
+          </div>
         </div>
-        <div
-          data-radar-card-models
-          className="max-h-[calc(3*1.5rem+2*0.375rem+0.5rem)] overflow-y-auto pr-1 pb-2"
-        >
-          {models.values.length > 0 ? (
-            <div className="flex flex-wrap content-start gap-1.5">
-              {models.values.map((model) => (
-                <Badge
-                  key={model}
-                  variant="outline"
-                  className="h-6 max-w-full font-mono whitespace-nowrap"
-                >
-                  <span className="min-w-0 truncate">{model}</span>
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <span className="text-muted-foreground text-sm">
-              {models.emptyLabel}
-            </span>
-          )}
-        </div>
-      </div>
+      ) : null}
 
       <div
         data-radar-card-footer
-        className="text-muted-foreground mt-auto flex items-center justify-between gap-4 border-t pt-3 text-xs"
+        className="text-muted-foreground mt-auto flex items-center justify-between gap-4 border-t pt-3.5 text-xs"
       >
         <span
           className="text-foreground inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap"
@@ -195,13 +195,13 @@ function RadarMetric({
   valueClassName,
 }: RadarServiceCardMetric) {
   return (
-    <div className="bg-background/60 flex h-[5.25rem] min-w-0 flex-col gap-1 rounded-lg border p-2">
+    <div className="bg-background/60 flex h-[5.25rem] min-w-0 flex-col justify-center gap-1.5 rounded-lg border px-2 py-2">
       <div className="text-muted-foreground truncate text-[11px] leading-none whitespace-nowrap">
         {label}
       </div>
-      <div>
+      <div className="space-y-1">
         <RadarMetricValue value={value} valueClassName={valueClassName} />
-        <div className="text-muted-foreground mt-0.5 truncate text-[11px] leading-tight">
+        <div className="text-muted-foreground truncate text-[11px] leading-tight">
           {hint}
         </div>
       </div>
@@ -217,6 +217,7 @@ function RadarMetricValue({
   valueClassName?: string;
 }) {
   const percentValue = value.endsWith("%");
+  const secondValue = value.endsWith("s") && !value.endsWith("ms");
 
   return (
     <div
@@ -229,6 +230,11 @@ function RadarMetricValue({
         <>
           <span className="text-xl">{value.slice(0, -1)}</span>
           <span className="text-xs">%</span>
+        </>
+      ) : secondValue ? (
+        <>
+          <span className="text-xl">{value.slice(0, -1)}</span>
+          <span className="text-xs">s</span>
         </>
       ) : (
         <span className="text-xl">{value}</span>
