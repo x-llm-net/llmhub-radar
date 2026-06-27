@@ -7,9 +7,15 @@ function host({
   slug: string;
   customDomain?: string | null;
 }) {
-  return customDomain
-    ? `https://${customDomain}`
-    : `https://${slug}.openstatus.dev`;
+  if (customDomain) return `https://${customDomain}`;
+
+  const publicOrigin =
+    process.env.NEXT_PUBLIC_STATUS_PAGE_URL ||
+    (process.env.NODE_ENV === "development"
+      ? "http://localhost:3001"
+      : "https://llm-hub.store");
+
+  return `${publicOrigin.replace(/\/+$/, "")}/${slug}`;
 }
 
 // Next.js merges `alternates` shallowly, so a deeper segment that sets it

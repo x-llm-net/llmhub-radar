@@ -150,6 +150,7 @@ export async function upsertSelfSignupSubscriber(args: {
             expiresAt: newExpiresAt,
             name: input.name ?? existing.name,
             channelConfig,
+            locale: input.locale ?? existing.locale,
             updatedAt: new Date(),
           })
           .where(eq(pageSubscriber.id, existing.id))
@@ -186,6 +187,7 @@ export async function upsertSelfSignupSubscriber(args: {
           channelType: "webhook" as const,
           email: null,
           webhookUrl: existing.webhookUrl,
+          locale: updatedRow?.locale ?? existing.locale ?? null,
           token: existing.token,
           acceptedAt: null,
           componentIds: mergedIds,
@@ -204,6 +206,7 @@ export async function upsertSelfSignupSubscriber(args: {
           pageId: input.pageId,
           source: "self_signup",
           name: input.name ?? null,
+          locale: input.locale,
           token,
           expiresAt,
         })
@@ -245,6 +248,7 @@ export async function upsertSelfSignupSubscriber(args: {
         channelType: "webhook" as const,
         email: null,
         webhookUrl: inserted.webhookUrl,
+        locale: inserted.locale ?? null,
         token: inserted.token,
         acceptedAt: inserted.acceptedAt ?? null,
         unsubscribedAt: inserted.unsubscribedAt ?? null,

@@ -20,7 +20,10 @@ export const defaultMetadata: Metadata = {
     template: `%s | ${TITLE}`,
     default: TITLE,
   },
-  icons: "/llmhub-radar-logo.png",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
   description: DESCRIPTION,
   metadataBase: new URL(METADATA_BASE),
 };

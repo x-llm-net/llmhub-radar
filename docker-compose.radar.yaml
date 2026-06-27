@@ -54,6 +54,10 @@ services:
       - .env.radar
     environment:
       - DATABASE_URL=http://libsql:8080
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
+      - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
     command: ["bun", "src/migrate.mts"]
     depends_on:
       libsql:
@@ -65,6 +69,9 @@ services:
     build:
       context: .
       dockerfile: apps/dashboard/Dockerfile
+      args:
+        NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+        NEXT_PUBLIC_STATUS_PAGE_URL: ${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
     image: llmhub-radar/dashboard:latest
     logging: *default-logging
     networks:
@@ -75,6 +82,10 @@ services:
       - .env.radar
     environment:
       - DATABASE_URL=http://libsql:8080
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
+      - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
       - PORT=3000
       - HOSTNAME=0.0.0.0
       - AUTH_TRUST_HOST=true
@@ -96,6 +107,9 @@ services:
     build:
       context: .
       dockerfile: apps/status-page/Dockerfile
+      args:
+        NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+        NEXT_PUBLIC_STATUS_PAGE_URL: ${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
     image: llmhub-radar/status-page:latest
     logging: *default-logging
     networks:
@@ -106,6 +120,10 @@ services:
       - .env.radar
     environment:
       - DATABASE_URL=http://libsql:8080
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
+      - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
       - PORT=3000
       - HOSTNAME=0.0.0.0
       - AUTH_TRUST_HOST=true
@@ -135,6 +153,10 @@ services:
       - .env.radar
     environment:
       - DATABASE_URL=http://libsql:8080
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
+      - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
     command: ["bun", "src/scripts/radar-cron-loop.ts"]
     depends_on:
       db-migrate:
@@ -158,6 +180,10 @@ services:
       - .env.radar
     environment:
       - DATABASE_URL=http://libsql:8080
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
+      - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
     command: ["bun", "src/scripts/radar-notification-loop.ts"]
     depends_on:
       db-migrate:

@@ -141,6 +141,7 @@ export function Header({
               if (values.channelType === "webhook") {
                 await subscribeMutation.mutateAsync({
                   slug: domain,
+                  locale,
                   ...values,
                 });
                 return;

@@ -1,4 +1,6 @@
 import { Events } from "@openstatus/analytics";
+import { and, eq, isNull, sql } from "@openstatus/db";
+import { pageSubscriber } from "@openstatus/db/src/schema";
 import {
   SAFE_SUBSCRIPTION_MESSAGES,
   createPageSubscriber,
@@ -217,6 +219,94 @@ export const pageSubscriberRouter = createTRPCRouter({
       try {
         await unsubscribeSubscriber({
           input: { token: opts.input.token, domain: opts.input.domain },
+        });
+        return { success: true };
+      } catch (error) {
+        throwFromException(error, "Failed to unsubscribe");
+      }
+    }),
+
+  /**
+   * PROTECTED: List current user's own email subscriptions.
+   */
+  listMine: protectedProcedure.query(async ({ ctx }) => {
+    const email = ctx.user.email?.toLowerCase();
+    if (!email) return [];
+
+    const subscribers = await ctx.db.query.pageSubscriber.findMany({
+      where: and(
+        eq(pageSubscriber.channelType, "email"),
+        sql`LOWER(${pageSubscriber.email}) = ${email}`,
+        isNull(pageSubscriber.unsubscribedAt),
+      ),
+      with: {
+        page: {
+          with: {
+            pageComponents: true,
+          },
+        },
+        components: {
+          with: {
+            pageComponent: true,
+          },
+        },
+      },
+      orderBy: (subscribers, { desc }) => [desc(subscribers.createdAt)],
+    });
+
+    return subscribers.map((subscriber) => ({
+      id: subscriber.id,
+      pageId: subscriber.pageId,
+      pageTitle: subscriber.page.title,
+      pageSlug: subscriber.page.slug,
+      customDomain: subscriber.page.customDomain,
+      acceptedAt: subscriber.acceptedAt,
+      components: subscriber.components.map((component) => ({
+        id: component.pageComponent.id,
+        name: component.pageComponent.name,
+      })),
+      componentCount: subscriber.components.length,
+      allComponentsCount: subscriber.page.pageComponents.length,
+      createdAt: subscriber.createdAt,
+    }));
+  }),
+
+  unsubscribeMine: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const email = ctx.user.email?.toLowerCase();
+      if (!email) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Current user has no email",
+        });
+      }
+
+      const subscriber = await ctx.db.query.pageSubscriber.findFirst({
+        where: and(
+          eq(pageSubscriber.id, input.id),
+          eq(pageSubscriber.channelType, "email"),
+          sql`LOWER(${pageSubscriber.email}) = ${email}`,
+          isNull(pageSubscriber.unsubscribedAt),
+        ),
+        with: {
+          page: true,
+        },
+      });
+
+      if (!subscriber?.token) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Subscription not found",
+        });
+      }
+
+      try {
+        await unsubscribeSubscriber({
+          input: {
+            token: subscriber.token,
+            domain: subscriber.page.slug,
+          },
         });
         return { success: true };
       } catch (error) {

@@ -136,6 +136,6 @@
   "cVqFq/": "Get email notifications whenever a report has been created or resolved",
   "gczcC5": "Subscribe",
   "QhKc0s": "Send status updates to a webhook URL after a successful verification request.",
-  "45YlLU": "Validate your email to receive updates and you are all set.",
-  "oq4BKz": "A verification request was accepted by your webhook URL."
+  "oq4BKz": "A verification request was accepted by your webhook URL.",
+  "45YlLU": "Validate your email to receive updates and you are all set."
 }

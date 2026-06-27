@@ -23,6 +23,7 @@ import {
   selectWorkspaceSchema,
   statusReport,
 } from "@openstatus/db/src/schema";
+import { EmailClient } from "@openstatus/emails";
 import {
   getSubscriberByToken,
   unsubscribeSubscriber,
@@ -38,6 +39,7 @@ import { TRPCError } from "@trpc/server";
 import { endOfDay, startOfDay, subDays } from "date-fns";
 import { z } from "zod";
 
+import { env } from "../env";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { getPublicStatusPageUrl } from "./statusPage.links";
 import {
@@ -73,6 +75,8 @@ import {
  */
 const WORKSPACES =
   process.env.WORKSPACES_LOOKBACK_30?.split(",").map(Number) || [];
+
+const emailClient = new EmailClient({ apiKey: env.RESEND_API_KEY });
 
 type StatusVariant = "success" | "degraded" | "error" | "info";
 type RadarTargetStatus =
@@ -1753,6 +1757,7 @@ export const statusPageRouter = createTRPCRouter({
           webhookUrl: z.url(),
           subscribeComponents: z.boolean(),
           pageComponents: z.array(z.number().int().positive()),
+          locale: z.string().optional(),
         }),
       ]),
     )
@@ -1773,17 +1778,18 @@ export const statusPageRouter = createTRPCRouter({
         });
       }
 
-      const statusPageBaseUrl = getPublicStatusPageUrl({
-        customDomain: _page.customDomain,
-        slug: _page.slug,
-      });
-
       if (opts.input.channelType === "webhook") {
+        const statusPageBaseUrl = getPublicStatusPageUrl({
+          customDomain: _page.customDomain,
+          slug: _page.slug,
+          locale: _page.defaultLocale,
+        });
         const subscription = await upsertSelfSignupSubscriber({
           input: {
             channelType: "webhook",
             webhookUrl: opts.input.webhookUrl,
             pageId: _page.id,
+            locale: opts.input.locale ?? _page.defaultLocale,
             componentIds: opts.input.subscribeComponents
               ? opts.input.pageComponents
               : [],
@@ -1817,6 +1823,7 @@ export const statusPageRouter = createTRPCRouter({
               webhookUrl: subscription.webhookUrl ?? opts.input.webhookUrl,
               token: subscription.token,
               acceptedAt: subscription.acceptedAt ?? undefined,
+              locale: subscription.locale ?? _page.defaultLocale,
             },
             `${statusPageBaseUrl}/manage/${subscription.token}`,
           );
@@ -1852,6 +1859,11 @@ export const statusPageRouter = createTRPCRouter({
         }
       }
 
+      const statusPageBaseUrl = getPublicStatusPageUrl({
+        customDomain: _page.customDomain,
+        slug: _page.slug,
+        locale: opts.input.locale ?? _page.defaultLocale,
+      });
       const subscription = await upsertSelfSignupSubscriber({
         input: {
           email: opts.input.email,
@@ -1972,6 +1984,58 @@ export const statusPageRouter = createTRPCRouter({
         }
         throw error;
       }
+
+      return { success: true };
+    }),
+
+  sendSubscriptionManagementLink: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().toLowerCase(),
+        email: z.email(),
+        locale: z.string().optional(),
+      }),
+    )
+    .mutation(async (opts) => {
+      if (!opts.input.slug) return { success: true };
+
+      const _page = await opts.ctx.db.query.page.findFirst({
+        where: sql`lower(${page.slug}) = ${opts.input.slug} OR lower(${page.customDomain}) = ${opts.input.slug}`,
+      });
+
+      if (!_page) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Page not found",
+        });
+      }
+
+      const subscriber = await opts.ctx.db.query.pageSubscriber.findFirst({
+        where: and(
+          eq(pageSubscriber.pageId, _page.id),
+          eq(pageSubscriber.channelType, "email"),
+          eq(pageSubscriber.email, opts.input.email.toLowerCase()),
+          isNull(pageSubscriber.unsubscribedAt),
+        ),
+      });
+
+      if (!subscriber?.token || !subscriber.acceptedAt) {
+        return { success: true };
+      }
+
+      const locale = opts.input.locale ?? subscriber.locale ?? _page.defaultLocale;
+      const statusPageBaseUrl = getPublicStatusPageUrl({
+        customDomain: _page.customDomain,
+        slug: _page.slug,
+        locale,
+      });
+
+      await emailClient.sendSubscriptionManagementLink({
+        to: opts.input.email,
+        page: _page.title,
+        link: `${statusPageBaseUrl}/manage/${subscriber.token}`,
+        locale,
+      });
 
       return { success: true };
     }),

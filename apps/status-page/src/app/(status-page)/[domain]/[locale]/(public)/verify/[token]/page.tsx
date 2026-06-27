@@ -12,12 +12,16 @@ import {
   StatusBlankLink,
   StatusBlankTitle,
 } from "@/components/status-page/status-blank";
+import { usePathnamePrefix } from "@/hooks/use-pathname-prefix";
 import { useTRPC } from "@/lib/trpc/client";
 
 export default function VerifyPage() {
   const t = useExtracted();
   const trpc = useTRPC();
   const { token, domain } = useParams<{ token: string; domain: string }>();
+  const prefix = usePathnamePrefix();
+  const pageHref = prefix ? `/${prefix}` : "/";
+  const manageHref = prefix ? `/${prefix}/manage/${token}` : `/manage/${token}`;
   const verifyEmailMutation = useMutation(
     trpc.statusPage.verifyEmail.mutationOptions({}),
   );
@@ -47,7 +51,7 @@ export default function VerifyPage() {
         </StatusBlankTitle>
         <div className="flex justify-center gap-2">
           <StatusBlankLink
-            href="/"
+            href={pageHref}
             disabled={
               verifyEmailMutation.isPending || !verifyEmailMutation.data
             }
@@ -56,7 +60,7 @@ export default function VerifyPage() {
           </StatusBlankLink>
           {verifyEmailMutation.isSuccess && (
             <StatusBlankLink
-              href={`/manage/${token}`}
+              href={manageHref}
               disabled={
                 verifyEmailMutation.isPending || !verifyEmailMutation.data
               }

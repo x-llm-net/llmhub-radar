@@ -77,6 +77,8 @@ export const emailRouter = createTRPCRouter({
       const verifyUrl = `${getPublicStatusPageUrl({
         customDomain: subscriber.page.customDomain,
         slug: subscriber.page.slug,
+        locale:
+          opts.input.locale ?? subscriber.locale ?? subscriber.page.defaultLocale,
       })}/verify/${subscriber.token}`;
 
       const channel = getChannel("email");

@@ -4,6 +4,8 @@
 # builder
 FROM node@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG NEXT_PUBLIC_DASHBOARD_URL=https://app.llm-hub.store
+ARG NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store
 LABEL \
     org.opencontainers.image.base.digest="sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2" \
     org.opencontainers.image.base.name="docker.io/node:24-slim"
@@ -15,6 +17,8 @@ ENV \
     PROJECT_ID_VERCEL="test" \
     RESEND_API_KEY="test" \
     PNPM_HOME="/pnpm" \
+    NEXT_PUBLIC_DASHBOARD_URL="$NEXT_PUBLIC_DASHBOARD_URL" \
+    NEXT_PUBLIC_STATUS_PAGE_URL="$NEXT_PUBLIC_STATUS_PAGE_URL" \
     NODE_ENV="production" \
     DATABASE_URL="http://libsql:8080" \
     SELF_HOST="true" \
@@ -25,7 +29,7 @@ ENV \
     PATH="$PNPM_HOME:$PATH" \
     UNKEY_TOKEN="test" \
     UPSTASH_REDIS_REST_TOKEN="test" \
-    NEXT_PUBLIC_URL="http://localhost:3002" \
+    NEXT_PUBLIC_URL="$NEXT_PUBLIC_DASHBOARD_URL" \
     TINY_BIRD_API_KEY="test" \
     VERCEL_AUTH_BEARER_TOKEN="test"
 WORKDIR /app

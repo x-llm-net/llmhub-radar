@@ -179,6 +179,7 @@ DATABASE_URL
 DATABASE_AUTH_TOKEN
 AUTH_SECRET
 NEXTAUTH_SECRET
+NEXT_PUBLIC_DASHBOARD_URL
 NEXT_PUBLIC_URL
 NEXT_PUBLIC_STATUS_PAGE_URL
 STATUS_PAGE_URL
@@ -193,14 +194,18 @@ AUTH_GOOGLE_SECRET
 
 URL rules:
 
+- `NEXT_PUBLIC_DASHBOARD_URL` is the public dashboard URL used by public pages.
 - `NEXT_PUBLIC_URL` is the public dashboard URL.
 - `NEXT_PUBLIC_STATUS_PAGE_URL` is the public status-page URL used in links and emails.
 - `STATUS_PAGE_URL` is the server-side status-page URL. In Docker it should use the internal service URL, for example `http://status-page:3000`.
+- `NEXT_PUBLIC_*` values are also used at Docker build time. If they are wrong
+  during image build, client-side links can stay wrong until the image is rebuilt.
 - `RADAR_CREDENTIAL_SECRET` must be generated once for a production database and must stay stable across deployments. Changing it makes stored provider Base URLs and API keys undecryptable.
 
 For the recommended production topology:
 
 ```text
+NEXT_PUBLIC_DASHBOARD_URL=https://app.llm-hub.store
 NEXT_PUBLIC_URL=https://app.llm-hub.store
 AUTH_URL=https://app.llm-hub.store
 NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store

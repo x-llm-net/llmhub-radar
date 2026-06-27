@@ -34,6 +34,7 @@ function resolveStatusPageOrigin(subscription: Subscription): string {
   return getPublicStatusPageUrl({
     customDomain: subscription.customDomain,
     slug: subscription.pageSlug,
+    locale: subscription.locale,
   });
 }
 

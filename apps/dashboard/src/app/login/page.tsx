@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
       follow: true,
     },
     alternates: {
-      canonical: "https://app.openstatus.dev/login",
+      canonical: "https://app.llm-hub.store/login",
     },
   };
 }

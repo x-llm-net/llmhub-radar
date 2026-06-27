@@ -35,6 +35,8 @@ pages.
 - [ ] `.env.radar` and `.env.local` are ignored by Git and are not committed.
 - [ ] `DATABASE_URL` and `DATABASE_AUTH_TOKEN` point to the intended database.
 - [ ] `AUTH_SECRET` and `NEXTAUTH_SECRET` are set and stable.
+- [ ] `NEXT_PUBLIC_DASHBOARD_URL` points to the dashboard public URL:
+  `https://app.llm-hub.store`.
 - [ ] `NEXT_PUBLIC_URL` points to the dashboard public URL:
   `https://app.llm-hub.store`.
 - [ ] `AUTH_URL` points to the dashboard public URL:
@@ -43,6 +45,8 @@ pages.
   `https://llm-hub.store`.
 - [ ] `STATUS_PAGE_URL` points to the internal status-page service URL in
   Docker, for example `http://status-page:3000`.
+- [ ] Docker build args for `dashboard` and `status-page` use the same
+  production public URLs, not localhost placeholders.
 - [ ] `CRON_SECRET` is set to a random production value.
 - [ ] `RADAR_CREDENTIAL_SECRET` is generated once, stored securely, and will
   not be regenerated during redeploys.

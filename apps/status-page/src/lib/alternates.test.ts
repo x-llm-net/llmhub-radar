@@ -5,11 +5,11 @@ import { statusPageAlternates } from "./alternates";
 describe("statusPageAlternates", () => {
   test("subdomain, default markdown path → overview", () => {
     expect(statusPageAlternates({ slug: "acme" })).toEqual({
-      canonical: "https://acme.openstatus.dev",
+      canonical: "https://llm-hub.store/acme",
       types: {
-        "text/markdown": "https://acme.openstatus.dev/.md",
+        "text/markdown": "https://llm-hub.store/acme/.md",
         "application/json":
-          "https://acme.openstatus.dev/api/status/summary.json",
+          "https://llm-hub.store/acme/api/status/summary.json",
       },
     });
   });
@@ -28,11 +28,11 @@ describe("statusPageAlternates", () => {
 
   test("null customDomain falls back to subdomain", () => {
     expect(statusPageAlternates({ slug: "acme", customDomain: null })).toEqual({
-      canonical: "https://acme.openstatus.dev",
+      canonical: "https://llm-hub.store/acme",
       types: {
-        "text/markdown": "https://acme.openstatus.dev/.md",
+        "text/markdown": "https://llm-hub.store/acme/.md",
         "application/json":
-          "https://acme.openstatus.dev/api/status/summary.json",
+          "https://llm-hub.store/acme/api/status/summary.json",
       },
     });
   });
@@ -43,12 +43,12 @@ describe("statusPageAlternates", () => {
       markdownPath: "/monitors/123.md",
     });
     expect(result?.types?.["text/markdown"]).toBe(
-      "https://acme.openstatus.dev/monitors/123.md",
+      "https://llm-hub.store/acme/monitors/123.md",
     );
     // canonical and json alternate stay at the page root regardless of md path
-    expect(result?.canonical).toBe("https://acme.openstatus.dev");
+    expect(result?.canonical).toBe("https://llm-hub.store/acme");
     expect(result?.types?.["application/json"]).toBe(
-      "https://acme.openstatus.dev/api/status/summary.json",
+      "https://llm-hub.store/acme/api/status/summary.json",
     );
   });
 

@@ -16,6 +16,7 @@ Local development runs:
 The local web apps read `.env.radar`, then override Docker-only values:
 
 - `DATABASE_URL=http://localhost:18080`
+- `NEXT_PUBLIC_DASHBOARD_URL=http://localhost:3000`
 - `NEXT_PUBLIC_URL=http://localhost:3000`
 - `NEXT_PUBLIC_STATUS_PAGE_URL=http://localhost:3001`
 - `STATUS_PAGE_URL=http://localhost:3001`

@@ -21,10 +21,11 @@ type Directory = RouterOutputs["statusPage"]["listPublicRadar"];
 type DirectoryItem = Directory["items"][number];
 
 const dashboardUrl =
+  process.env.NEXT_PUBLIC_DASHBOARD_URL ||
   process.env.NEXT_PUBLIC_URL ||
   (process.env.NODE_ENV === "development"
     ? "http://localhost:3000"
-    : "https://llm-hub.store");
+    : "https://app.llm-hub.store");
 
 const statusCopy = {
   success: {

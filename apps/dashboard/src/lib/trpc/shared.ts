@@ -30,7 +30,7 @@ export function guardTRPCSource(req: Request): Response | null {
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
   // Note: dashboard has its own tRPC API routes
-  if (process.env.VERCEL_URL) return "https://app.openstatus.dev"; // Vercel
+  if (process.env.VERCEL_URL) return "https://app.llm-hub.store"; // Vercel
   return "http://localhost:3000"; // Local dev and Docker (internal calls)
 };
 

@@ -84,6 +84,7 @@ export const UpsertSelfSignupSubscriberInput = z.union([
     headers: webhookHeaders.optional(),
     pageId: z.number().int().positive(),
     componentIds: componentIdList.optional(),
+    locale: z.string().max(16).optional(),
   }),
 ]);
 export type UpsertSelfSignupSubscriberInput = z.infer<

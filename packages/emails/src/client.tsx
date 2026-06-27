@@ -12,6 +12,10 @@ import {
   type PageSubscriptionProps,
 } from "../emails/page-subscription";
 import SlackFeedbackEmail from "../emails/slack-feedback";
+import SubscriptionManagementLinkEmail, {
+  getSubscriptionManagementLinkSubject,
+  type SubscriptionManagementLinkProps,
+} from "../emails/subscription-management-link";
 import StatusPageMagicLinkEmail from "../emails/status-page-magic-link";
 import {
   getStatusPageMagicLinkSubject,
@@ -169,11 +173,6 @@ export class EmailClient {
       customDomain?: string | null;
     },
   ) {
-    const statusPageBaseUrl = getPublicStatusPageUrl({
-      customDomain: req.customDomain,
-      slug: req.pageSlug,
-    });
-
     if (!shouldSendEmail()) {
       logSkippedEmail(
         `Sending status report update emails to ${req.subscribers
@@ -188,6 +187,12 @@ export class EmailClient {
         try: () =>
           this.client.batch.send(
             recipients.map((subscriber) => {
+              const locale = subscriber.locale ?? req.locale;
+              const statusPageBaseUrl = getPublicStatusPageUrl({
+                customDomain: req.customDomain,
+                slug: req.pageSlug,
+                locale,
+              });
               const unsubscribeUrl = `${statusPageBaseUrl}/unsubscribe/${subscriber.token}`;
               const manageUrl = `${statusPageBaseUrl}/manage/${subscriber.token}`;
               return {
@@ -197,7 +202,7 @@ export class EmailClient {
                 react: (
                   <StatusReportEmail
                     {...req}
-                    locale={subscriber.locale ?? req.locale}
+                    locale={locale}
                     unsubscribeUrl={unsubscribeUrl}
                     manageUrl={manageUrl}
                   />
@@ -310,6 +315,38 @@ export class EmailClient {
     }
   }
 
+  public async sendSubscriptionManagementLink(
+    req: SubscriptionManagementLinkProps & { to: string },
+  ) {
+    if (!shouldSendEmail()) {
+      logSkippedEmail(`Sending subscription management link to ${req.to}`);
+      console.log(`>>> Subscription Management Link: ${req.link}`);
+      return;
+    }
+
+    try {
+      const html = await render(<SubscriptionManagementLinkEmail {...req} />);
+      const result = await this.client.emails.send({
+        from: getEmailFrom(req.page),
+        subject: getSubscriptionManagementLinkSubject(req),
+        to: req.to,
+        html,
+      });
+
+      if (!result.error) {
+        console.log(`Sent subscription management link to ${req.to}`);
+        return;
+      }
+
+      throw result.error;
+    } catch (err) {
+      console.error(
+        `Error sending subscription management link to ${req.to}`,
+        err,
+      );
+    }
+  }
+
   public async sendStatusPageMagicLink(
     req: StatusPageMagicLinkProps & { to: string },
   ) {
@@ -350,11 +387,6 @@ export class EmailClient {
     to: string;
     pageComponents: string[];
   }) {
-    const statusPageBaseUrl = getPublicStatusPageUrl({
-      customDomain: req.customDomain,
-      slug: req.pageSlug,
-    });
-
     if (!shouldSendEmail()) {
       logSkippedEmail(
         `Sending maintenance notification emails to ${req.subscribers
@@ -369,6 +401,11 @@ export class EmailClient {
         try: () =>
           this.client.batch.send(
             recipients.map((subscriber) => {
+              const statusPageBaseUrl = getPublicStatusPageUrl({
+                customDomain: req.customDomain,
+                slug: req.pageSlug,
+                locale: subscriber.locale,
+              });
               const unsubscribeUrl = `${statusPageBaseUrl}/unsubscribe/${subscriber.token}`;
               const manageUrl = `${statusPageBaseUrl}/manage/${subscriber.token}`;
               return {

@@ -10,10 +10,11 @@ import {
   TableHeader,
   TableRow,
 } from "@openstatus/ui/components/ui/table";
-import { useQuery } from "@tanstack/react-query";
-import { Bell, ExternalLink, RadioTower } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, ExternalLink, RadioTower, Rss } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
 
 import {
   EmptyStateContainer,
@@ -27,6 +28,7 @@ import {
   SectionHeader,
   SectionTitle,
 } from "@/components/content/section";
+import { getPublicStatusHref } from "@/lib/radar-public-url";
 import { useTRPC } from "@/lib/trpc/client";
 
 type Status =
@@ -62,10 +64,24 @@ export function Client() {
   const radarT = useTranslations("radar");
   const statusT = useTranslations("status");
   const commonT = useTranslations("common");
+  const locale = useLocale();
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery(trpc.radar.listPools.queryOptions({}));
+  const { data: mySubscriptions, isLoading: isLoadingMySubscriptions } =
+    useQuery(trpc.pageSubscriber.listMine.queryOptions());
+  const unsubscribeMine = useMutation(
+    trpc.pageSubscriber.unsubscribeMine.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: trpc.pageSubscriber.listMine.queryKey(),
+        });
+      },
+    }),
+  );
 
   const pools = data?.items ?? [];
+  const subscriptions = mySubscriptions ?? [];
 
   return (
     <SectionGroup>
@@ -74,6 +90,118 @@ export function Client() {
           <SectionTitle>{t("title")}</SectionTitle>
           <SectionDescription>{t("description")}</SectionDescription>
         </SectionHeader>
+      </Section>
+
+      <Section>
+        <SectionHeader>
+          <SectionTitle>{t("mySubscriptions")}</SectionTitle>
+          <SectionDescription>{t("mySubscriptionsDescription")}</SectionDescription>
+        </SectionHeader>
+
+        {isLoadingMySubscriptions ? (
+          <EmptyStateContainer className="min-h-32">
+            <EmptyStateTitle>{commonT("loading")}</EmptyStateTitle>
+          </EmptyStateContainer>
+        ) : subscriptions.length === 0 ? (
+          <EmptyStateContainer className="min-h-40">
+            <div className="border-border bg-muted flex size-8 items-center justify-center rounded-md border">
+              <Rss className="size-4" />
+            </div>
+            <EmptyStateTitle>{t("mySubscriptionsEmpty")}</EmptyStateTitle>
+            <EmptyStateDescription>
+              {t("mySubscriptionsEmptyDescription")}
+            </EmptyStateDescription>
+          </EmptyStateContainer>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("table.statusPage")}</TableHead>
+                  <TableHead>{t("table.scope")}</TableHead>
+                  <TableHead>{t("table.subscriptionStatus")}</TableHead>
+                  <TableHead>{t("table.subscribedAt")}</TableHead>
+                  <TableHead className="text-right">
+                    {commonT("action")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {subscriptions.map((subscription) => {
+                  const href = getSubscriptionHref(subscription, locale);
+                  return (
+                    <TableRow key={subscription.id}>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <div className="font-medium">
+                            {subscription.pageTitle}
+                          </div>
+                          <div className="text-muted-foreground font-commit-mono text-xs tracking-tight">
+                            /{subscription.pageSlug}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[240px]">
+                        <div className="truncate text-sm">
+                          {subscription.componentCount === 0
+                            ? t("table.allApiKeys")
+                            : subscription.components
+                                .map((component) => component.name)
+                                .join(", ")}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            subscription.acceptedAt ? "secondary" : "outline"
+                          }
+                        >
+                          {subscription.acceptedAt
+                            ? t("table.verified")
+                            : t("table.pending")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-muted-foreground text-sm">
+                          {formatDateTime(subscription.createdAt, locale)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={href} target="_blank">
+                              <ExternalLink className="size-3.5" />
+                              {t("openStatusPage")}
+                            </Link>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={unsubscribeMine.isPending}
+                            onClick={() => {
+                              const promise = unsubscribeMine.mutateAsync({
+                                id: subscription.id,
+                              });
+                              toast.promise(promise, {
+                                loading: t("unsubscribing"),
+                                success: t("unsubscribeSuccess"),
+                                error: t("unsubscribeFailed"),
+                              });
+                            }}
+                          >
+                            {unsubscribeMine.isPending
+                              ? t("unsubscribing")
+                              : t("unsubscribe")}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </Section>
 
       <Section>
@@ -149,7 +277,7 @@ export function Client() {
                         </Button>
                         {pool.pageId ? (
                           <Button size="sm" asChild>
-                            <Link href={`/status-pages/${pool.pageId}/subscribers`}>
+                            <Link href={`/radar/${pool.slug}/subscribers`}>
                               <ExternalLink className="size-3.5" />
                               {t("manageSubscribers")}
                             </Link>
@@ -181,4 +309,35 @@ export function Client() {
       </Section>
     </SectionGroup>
   );
+}
+
+function formatDateTime(value: Date | string | null, locale: string) {
+  const date = value instanceof Date ? value : value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function getSubscriptionHref(
+  subscription: {
+    pageSlug: string;
+    customDomain: string | null;
+  },
+  locale: string,
+) {
+  const publicLocale = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const customDomain = subscription.customDomain?.trim();
+
+  if (customDomain) {
+    const domain = customDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    return `https://${domain}/${publicLocale}`;
+  }
+
+  return getPublicStatusHref(subscription.pageSlug, publicLocale);
 }

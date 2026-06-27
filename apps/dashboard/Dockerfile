@@ -4,14 +4,18 @@
 # builder
 FROM node@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG NEXT_PUBLIC_DASHBOARD_URL=https://app.llm-hub.store
+ARG NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store
 LABEL \
     org.opencontainers.image.base.digest="sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2" \
     org.opencontainers.image.base.name="docker.io/node:24-slim"
 ENV \
     NODE_ENV="production" \
+    NEXT_PUBLIC_DASHBOARD_URL="$NEXT_PUBLIC_DASHBOARD_URL" \
+    NEXT_PUBLIC_STATUS_PAGE_URL="$NEXT_PUBLIC_STATUS_PAGE_URL" \
     TINY_BIRD_API_KEY="test" \
     OPENPANEL_CLIENT_SECRET="test" \
-    NEXT_PUBLIC_URL="http://localhost:3002" \
+    NEXT_PUBLIC_URL="$NEXT_PUBLIC_DASHBOARD_URL" \
     PROJECT_ID_VERCEL="test" \
     TEAM_ID_VERCEL="test" \
     PATH="$PNPM_HOME:$PATH" \

@@ -26,7 +26,9 @@ effective: |
         PATH: $PNPM_HOME:$PATH
         UNKEY_TOKEN: test
         UPSTASH_REDIS_REST_TOKEN: test
-        NEXT_PUBLIC_URL: http://localhost:3002
+        NEXT_PUBLIC_DASHBOARD_URL: https://app.llm-hub.store
+        NEXT_PUBLIC_STATUS_PAGE_URL: https://llm-hub.store
+        NEXT_PUBLIC_URL: https://app.llm-hub.store
         TINY_BIRD_API_KEY: test
         VERCEL_AUTH_BEARER_TOKEN: test
       copy:
@@ -107,7 +109,9 @@ resources:
             DATABASE_URL: http://libsql:8080
             DATABASE_AUTH_TOKEN: test
             NEXT_PUBLIC_OPENPANEL_CLIENT_ID: test
-            NEXT_PUBLIC_URL: http://localhost:3002
+            NEXT_PUBLIC_DASHBOARD_URL: https://app.llm-hub.store
+            NEXT_PUBLIC_STATUS_PAGE_URL: https://llm-hub.store
+            NEXT_PUBLIC_URL: https://app.llm-hub.store
             TEAM_ID_VERCEL: test
             PROJECT_ID_VERCEL: test
             VERCEL_AUTH_BEARER_TOKEN: test

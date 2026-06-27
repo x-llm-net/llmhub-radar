@@ -36,10 +36,10 @@ export function Client() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [name, setName] = useState(() => t("demo.poolName"));
-  const [slug, setSlug] = useState(() => t("demo.slug"));
-  const [description, setDescription] = useState(() => t("demo.description"));
-  const [providerName, setProviderName] = useState(() => t("demo.providerName"));
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [providerName, setProviderName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
 
   const createPool = useMutation(
@@ -87,6 +87,7 @@ export function Client() {
               <Input
                 id="radar-name"
                 value={name}
+                placeholder={t("poolNamePlaceholder")}
                 onChange={(event) => {
                   setName(event.target.value);
                   setSlug(toSlug(event.target.value));
@@ -99,6 +100,7 @@ export function Client() {
               <Input
                 id="radar-slug"
                 value={slug}
+                placeholder={t("publicSlugPlaceholder")}
                 onChange={(event) => setSlug(toSlug(event.target.value))}
                 required
               />
@@ -109,6 +111,7 @@ export function Client() {
             <Input
               id="radar-description"
               value={description}
+              placeholder={t("formDescriptionPlaceholder")}
               onChange={(event) => setDescription(event.target.value)}
             />
           </div>
@@ -118,6 +121,7 @@ export function Client() {
               <Input
                 id="radar-provider"
                 value={providerName}
+                placeholder={t("providerNamePlaceholder")}
                 onChange={(event) => setProviderName(event.target.value)}
                 required
               />

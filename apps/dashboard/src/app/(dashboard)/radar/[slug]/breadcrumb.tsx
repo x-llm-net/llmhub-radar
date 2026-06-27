@@ -9,30 +9,45 @@ import { NavBreadcrumb } from "@/components/nav/nav-breadcrumb";
 import { useTRPC } from "@/lib/trpc/client";
 
 export function Breadcrumb() {
-  const params = useParams<{ slug: string }>();
+  const params = useParams<{ slug: string; credentialId?: string }>();
   const pathname = usePathname();
   const t = useTranslations("radar");
+  const notificationsT = useTranslations("notifications");
   const trpc = useTRPC();
   const { data } = useQuery(
     trpc.radar.getPool.queryOptions({ slug: params.slug }),
   );
   const poolName = data?.name ?? t("pool");
+  const credential = data?.credentials.find(
+    (item) => item.id === Number(params.credentialId),
+  );
   const isAnnouncementsPage = pathname.includes("/announcements");
+  const isApiKeyCreatePage = pathname.endsWith("/api-keys/create");
+  const isApiKeyEditPage =
+    pathname.includes("/api-keys/") && pathname.endsWith("/edit");
+  const isSubscribersPage = pathname.endsWith("/subscribers");
+  const childLabel = isAnnouncementsPage
+    ? t("announcements")
+    : isApiKeyCreatePage
+      ? t("addTokenProbe")
+      : isApiKeyEditPage
+        ? (credential?.name ?? t("editApiKey"))
+        : isSubscribersPage
+          ? notificationsT("manageSubscribers")
+          : null;
 
   return (
     <NavBreadcrumb
       items={[
         { type: "link", label: t("title"), href: "/radar", icon: Radar },
-        isAnnouncementsPage
+        childLabel
           ? {
               type: "link",
               label: poolName,
               href: `/radar/${params.slug}`,
             }
           : { type: "page", label: poolName },
-        ...(isAnnouncementsPage
-          ? [{ type: "page" as const, label: t("announcements") }]
-          : []),
+        ...(childLabel ? [{ type: "page" as const, label: childLabel }] : []),
       ]}
     />
   );

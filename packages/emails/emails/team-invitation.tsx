@@ -7,7 +7,7 @@ import { Layout } from "./_components/layout";
 import { styles } from "./_components/styles";
 import { normalizeEmailLocale } from "../src/locale";
 
-const BASE_URL = "https://llm-hub.store/invite";
+const BASE_URL = "https://app.llm-hub.store/invite";
 
 export const TeamInvitationSchema = z.object({
   invitedBy: z.string(),

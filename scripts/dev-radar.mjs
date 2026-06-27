@@ -47,6 +47,7 @@ const childEnv = {
     envFromFile.RADAR_DEV_DATABASE_URL ??
     "http://localhost:18080",
   NEXT_PUBLIC_STATUS_PAGE_URL: `http://localhost:${statusPagePort}`,
+  NEXT_PUBLIC_DASHBOARD_URL: `http://localhost:${dashboardPort}`,
   NEXT_PUBLIC_URL: `http://localhost:${dashboardPort}`,
   NODE_ENV: "development",
   STATUS_PAGE_URL: `http://localhost:${statusPagePort}`,
