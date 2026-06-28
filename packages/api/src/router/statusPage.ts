@@ -144,9 +144,9 @@ function buildRadarStabilityBuckets(
     RADAR_STABILITY_BUCKET_MS;
   const firstBucketStart =
     currentBucketStart -
-    (RADAR_STABILITY_BUCKET_COUNT - 1) * RADAR_STABILITY_BUCKET_MS;
+    RADAR_STABILITY_BUCKET_COUNT * RADAR_STABILITY_BUCKET_MS;
 
-  const buckets = Array.from({ length: RADAR_STABILITY_BUCKET_COUNT }).map(
+  const buckets = Array.from({ length: RADAR_STABILITY_BUCKET_COUNT + 1 }).map(
     (_, index) => ({
       from: new Date(firstBucketStart + index * RADAR_STABILITY_BUCKET_MS),
       to: new Date(firstBucketStart + (index + 1) * RADAR_STABILITY_BUCKET_MS),
@@ -176,7 +176,14 @@ function buildRadarStabilityBuckets(
     }
   }
 
-  return buckets.map((bucket) => {
+  const currentBucket = buckets.at(-1);
+  const visibleBuckets =
+    currentBucket &&
+    currentBucket.ok + currentBucket.degraded + currentBucket.error === 0
+      ? buckets.slice(0, RADAR_STABILITY_BUCKET_COUNT)
+      : buckets.slice(1);
+
+  return visibleBuckets.map((bucket) => {
     const total = bucket.ok + bucket.degraded + bucket.error;
     return {
       ...bucket,
@@ -1771,17 +1778,17 @@ export const statusPageRouter = createTRPCRouter({
       const toDate = endOfDay(new Date()).toISOString();
 
       const [latency, regions, uptime] = await Promise.all([
-        await proceduresByType[type].latency({
+        proceduresByType[type].latency({
           monitorId: _monitor.id.toString(),
           fromDate,
           toDate,
         }),
-        await proceduresByType[type].regions({
+        proceduresByType[type].regions({
           monitorId: _monitor.id.toString(),
           fromDate,
           toDate,
         }),
-        await proceduresByType[type].uptime({
+        proceduresByType[type].uptime({
           monitorId: _monitor.id.toString(),
           interval: 240,
           fromDate,

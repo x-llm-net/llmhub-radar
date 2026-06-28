@@ -219,11 +219,13 @@ Do not make `provider + key + model` the public page object. It leaks internal g
 v0 should ship with one fixed profile and not expose it as a complex UI setting:
 
 - OpenAI-compatible `POST /v1/chat/completions`
-- Fixed prompt: `Reply with exactly: ok`
+- Fixed prompt: `hi`
 - `temperature: 0`
-- `max_tokens: 1-8`
+- `max_tokens: 1`
 - `stream: true` when measuring first token
+- `Cache-Control: no-store` / `Pragma: no-cache`
 - Request timeout: 15-30 seconds
+- Treat `200` plus any non-empty assistant text as success. Radar verifies token availability and latency, not model instruction-following quality.
 
 Later profiles:
 

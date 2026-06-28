@@ -72,9 +72,9 @@ function formatAvailability(value: number | null | undefined) {
 function availabilityClass(value: number | null | undefined) {
   if (value == null) return "text-muted-foreground";
   if (value >= 9_800) return "text-emerald-600";
-  if (value >= 9_500) return "text-lime-600";
-  if (value >= 9_000) return "text-amber-600";
-  if (value >= 8_500) return "text-orange-600";
+  if (value >= 9_000) return "text-emerald-500";
+  if (value >= 7_500) return "text-lime-600";
+  if (value >= 5_000) return "text-amber-600";
   return "text-red-600";
 }
 
@@ -150,19 +150,25 @@ function healthTone(
       labelKey: "healthUnknown",
     };
   }
-  if (successRate < 8_500) {
+  if (successRate < 5_000) {
     return {
       className: "border-red-200 bg-red-50 text-red-700",
       labelKey: "healthUnstable",
     };
   }
-  if (successRate < 9_800 || (p95 != null && p95 > 5_000)) {
+  if (successRate < 7_500) {
     return {
       className: "border-amber-200 bg-amber-50 text-amber-700",
+      labelKey: "healthAttention",
+    };
+  }
+  if (successRate < 9_000 || (p95 != null && p95 > 15_000)) {
+    return {
+      className: "border-lime-200 bg-lime-50 text-lime-700",
       labelKey: "healthDegraded",
     };
   }
-  if (p95 != null && p95 <= 2_000) {
+  if (successRate >= 9_800 && p95 != null && p95 <= 2_000) {
     return {
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
       labelKey: "healthFast",
@@ -177,8 +183,10 @@ function healthTone(
 function runTone(run: RecentRun | null) {
   if (!run) return "bg-muted";
   if (!run.success) return "bg-red-500";
-  if (run.firstTokenMs != null && run.firstTokenMs > 5_000)
+  if (run.firstTokenMs != null && run.firstTokenMs > 15_000)
     return "bg-amber-500";
+  if (run.firstTokenMs != null && run.firstTokenMs > 5_000)
+    return "bg-emerald-300";
   return "bg-emerald-500";
 }
 
@@ -325,16 +333,16 @@ function availabilityHint(
 ) {
   if (!sampleCount || value == null) return t("noSamples");
   if (value >= 9_800) return t("availabilityStable");
-  if (value >= 9_500) return t("availabilityVariable");
-  if (value >= 9_000) return t("availabilityDegraded");
-  if (value >= 8_500) return t("availabilityBelowThreshold");
+  if (value >= 9_000) return t("availabilityVariable");
+  if (value >= 7_500) return t("availabilityDegraded");
+  if (value >= 5_000) return t("availabilityBelowThreshold");
   return t("availabilityUnstable");
 }
 
 function latencyClass(value: number | null | undefined) {
   if (value == null) return "text-muted-foreground";
-  if (value > 15_000) return "text-red-600";
-  if (value > 5_000) return "text-amber-600";
+  if (value > 15_000) return "text-amber-600";
+  if (value > 5_000) return "text-emerald-500";
   if (value <= 2_000) return "text-emerald-600";
   return undefined;
 }

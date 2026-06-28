@@ -13,9 +13,17 @@
 @theme inline {
   --font-cal: var(--font-cal-sans);
   --font-commit-mono: var(--font-commit-mono);
-  --font-sans: var(--font-inter);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-commit-mono, var(--font-geist-mono));
+}
+
+:root {
+  --font-geist-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-geist-mono:
+    ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-inter: var(--font-geist-sans);
 }
 
 @layer base {

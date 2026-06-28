@@ -1,18 +1,6 @@
 name: Publish Docker Images
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/server/**"
-      - "apps/dashboard/**"
-      - "apps/workflows/**"
-      - "apps/private-location/**"
-      - "apps/status-page/**"
-      - "apps/checker/**"
-      - "packages/**"
-      - "docker-compose.yaml"
   workflow_dispatch:
     inputs:
       services:

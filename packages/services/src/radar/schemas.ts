@@ -172,7 +172,7 @@ export const CreateRadarTargetInput = z.object({
     .default("chat_completions"),
   intervalSeconds: z.number().int().min(60).max(86_400).optional().default(600),
   timeoutMs: z.number().int().min(1_000).max(60_000).optional().default(20_000),
-  maxTokens: z.number().int().min(1).max(64).optional().default(8),
+  maxTokens: z.number().int().min(1).max(64).optional().default(1),
   streamEnabled: z.boolean().optional().default(true),
   enabled: z.boolean().optional().default(true),
   statusPolicy: z.record(z.string(), z.unknown()).optional(),
@@ -193,7 +193,7 @@ export const AddRadarTokenProbeInput = z.object({
     .default([]),
   intervalSeconds: z.number().int().min(60).max(86_400).optional().default(600),
   timeoutMs: z.number().int().min(1_000).max(60_000).optional().default(20_000),
-  maxTokens: z.number().int().min(1).max(64).optional().default(8),
+  maxTokens: z.number().int().min(1).max(64).optional().default(1),
   streamEnabled: z.boolean().optional().default(true),
 });
 export type AddRadarTokenProbeInput = z.infer<typeof AddRadarTokenProbeInput>;

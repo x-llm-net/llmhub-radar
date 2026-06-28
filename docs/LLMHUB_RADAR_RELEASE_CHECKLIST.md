@@ -70,22 +70,46 @@ pages.
 - [ ] `docker-compose.radar.yaml` binds internal ports to `127.0.0.1`, not
   public interfaces.
 - [ ] Container logs have rotation limits configured.
+- [ ] `/opt/llmhub-radar/.env.radar` exists on the server.
+- [ ] Docker Compose is v2.24 or newer so `docker-compose.radar.images.yaml`
+  can use `!reset`.
 
-## 5. Docker Deployment
+## 5. GitHub Actions Deployment
 
-- [ ] Build/start the non-notification stack first:
-  `docker compose -f docker-compose.radar.yaml up -d --build libsql db-migrate dashboard status-page radar-probe-worker`
-- [ ] `docker compose -f docker-compose.radar.yaml ps` shows healthy/running
-  `dashboard`, `status-page`, `libsql`, and `radar-probe-worker`.
+- [ ] GitHub repository secrets are configured:
+  `LLMHUB_RADAR_SSH_HOST`, `LLMHUB_RADAR_SSH_USER`,
+  `LLMHUB_RADAR_SSH_KEY`, and optional `LLMHUB_RADAR_SSH_PORT`.
+- [ ] If GHCR packages are private, `LLMHUB_RADAR_GHCR_USERNAME` and
+  `LLMHUB_RADAR_GHCR_TOKEN` are configured. The token has `read:packages`.
+- [ ] GitHub repository variable `LLMHUB_RADAR_DEPLOY_PATH` is set if the
+  server path is not `/opt/llmhub-radar`.
+- [ ] The `production` environment exists in GitHub and requires manual review
+  if deploy approval is desired.
+- [ ] `LLMHub Radar CI` is green for the release commit.
+- [ ] `LLMHub Radar Build Images` has completed successfully.
+- [ ] The produced image tag is recorded from the workflow summary.
+- [ ] `LLMHub Radar Deploy` is run with the recorded image tag.
+- [ ] Normal deploy uses `restart_notifications=false`.
+- [ ] The deploy workflow summary shows the expected image tag.
+- [ ] The deploy workflow completed the smoke tests for dashboard and
+  status-page.
+
+## 6. Runtime Verification
+
+- [ ] `.env.images` exists on the server after deploy and contains only image
+  registry, owner, and tag values.
+- [ ] `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps`
+  shows healthy/running `dashboard`, `status-page`, `libsql`, and
+  `radar-probe-worker`.
 - [ ] `db-migrate` exits successfully.
 - [ ] `radar-probe-worker` logs show regular ticks and no credential decrypt
   failures.
 - [ ] `radar-notification-worker` is not started by default.
 
-## 6. Notification Safety
+## 7. Notification Safety
 
 - [ ] Run notification preflight before enabling notifications:
-  `docker compose -f docker-compose.radar.yaml run --rm radar-probe-worker bun src/scripts/radar-notification-preflight.ts`
+  `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm radar-probe-worker bun src/scripts/radar-notification-preflight.ts`
 - [ ] `pending`, `retryable failed`, `fresh dispatchable`, and
   `stale dispatchable` counts are reviewed.
 - [ ] If stale dispatchable events exist, they are reviewed manually instead of
@@ -93,10 +117,10 @@ pages.
 - [ ] Notification worker startup logs include `replayGuardStartedAt`,
   `dispatchCutoff`, and `ignoredOlderThanCutoff`.
 - [ ] Start notification worker only after preflight is understood:
-  `docker compose -f docker-compose.radar.yaml --profile notifications up -d radar-notification-worker`
+  `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build radar-notification-worker`
 - [ ] Email and webhook notifications are verified with a test subscriber.
 
-## 7. Product Smoke Test
+## 8. Product Smoke Test
 
 - [ ] Sign in with email magic link.
 - [ ] Sign in with GitHub OAuth.
@@ -129,7 +153,7 @@ pages.
 - [ ] Confirm event detail pages open from `/events`.
 - [ ] Confirm notification sending is opt-in when creating announcements.
 
-## 8. Public Page Review
+## 9. Public Page Review
 
 - [ ] Header logo and navigation link to the correct public paths.
 - [ ] `状态` / `Status` tab opens the status page.
@@ -151,7 +175,7 @@ pages.
 - [ ] Unknown/paused/configuration details are not exposed as a fourth public
   provider health level.
 
-## 9. Backup And Recovery
+## 10. Backup And Recovery
 
 - [ ] Database Docker volume `llmhub-radar-libsql-data` has a fresh backup.
 - [ ] Backup file is listed under `/opt/backups/llmhub-radar`.
@@ -159,7 +183,7 @@ pages.
 - [ ] At least the latest 7 daily backups are retained.
 - [ ] Once real users exist, backups are copied off-server.
 
-## 10. Post-Release Watch
+## 11. Post-Release Watch
 
 - [ ] Watch dashboard logs for auth callback errors.
 - [ ] Watch status-page logs for 404/500 on public slugs.

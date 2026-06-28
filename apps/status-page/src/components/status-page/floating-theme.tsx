@@ -22,6 +22,7 @@ import { useEffect } from "react";
 import { useState } from "react";
 
 import { ThemeSelect } from "@/components/themes/theme-select";
+import { useEmbed } from "@/hooks/use-embed";
 
 import { useStatusPage } from "./floating-button";
 
@@ -30,6 +31,7 @@ export type CommunityTheme = (typeof COMMUNITY_THEME)[number];
 
 export function FloatingTheme({ className }: { className?: string }) {
   const { communityTheme, setCommunityTheme } = useStatusPage();
+  const embed = useEmbed();
   const [display, setDisplay] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -48,7 +50,7 @@ export function FloatingTheme({ className }: { className?: string }) {
     }
   }, []);
 
-  if (!display) return null;
+  if (!display || embed.mode) return null;
 
   return (
     <div className={cn("fixed right-4 bottom-4 z-50", className)}>

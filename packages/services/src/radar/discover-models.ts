@@ -11,7 +11,7 @@ import {
   DiscoverRadarModelsInput,
 } from "./schemas";
 
-const DISCOVERY_TIMEOUT_MS = 5_000;
+const DISCOVERY_TIMEOUT_MS = 20_000;
 const MAX_MODELS = 200;
 
 export async function discoverRadarModels(args: {
@@ -57,9 +57,18 @@ export async function discoverRadarModels(args: {
   } catch (error) {
     if (error instanceof ValidationError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ValidationError("Model discovery timed out.");
+      throw new ValidationError(
+        "Model discovery timed out. You can enter the probe model manually and continue.",
+      );
     }
-    throw new ValidationError(`Model discovery failed: ${toErrorMessage(error)}`);
+    if (isNetworkFetchFailure(error)) {
+      throw new ValidationError(
+        `Model discovery failed: could not reach ${hostFromUrl(url)}. Please check the provider Base URL.`,
+      );
+    }
+    throw new ValidationError(
+      `Model discovery failed: ${toErrorMessage(error)}`,
+    );
   } finally {
     clearTimeout(timeout);
   }
@@ -137,7 +146,9 @@ function extractModelIds(value: unknown): string[] {
   }
 
   const ids = value.data
-    .map((item) => (isRecord(item) && typeof item.id === "string" ? item.id : ""))
+    .map((item) =>
+      isRecord(item) && typeof item.id === "string" ? item.id : "",
+    )
     .map((id) => id.trim())
     .filter(Boolean)
     .slice(0, MAX_MODELS);
@@ -163,6 +174,27 @@ async function readErrorSuffix(response: Response, apiKey: string) {
 function toErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function isNetworkFetchFailure(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("getaddrinfo") ||
+    message.includes("enotfound") ||
+    message.includes("econnrefused") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout")
+  );
+}
+
+function hostFromUrl(input: string) {
+  try {
+    return new URL(input).host;
+  } catch {
+    return "provider";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

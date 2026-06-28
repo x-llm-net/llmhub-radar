@@ -1,6 +1,7 @@
 import { and, db, eq, isNull, lte, or } from "@openstatus/db";
 import {
   radarCredential,
+  radarPool,
   radarProbeTarget,
   radarProvider,
   selectWorkspaceSchema,
@@ -10,7 +11,10 @@ import {
 import type { ServiceContext } from "../context";
 import { withBusyRetry } from "../retry";
 import { decryptSecret } from "./crypto";
-import { runOpenAICompatibleProbe } from "./probe";
+import {
+  getPriorityProbeConfig,
+  runProbeWithOptionalRetry,
+} from "./priority-probe";
 import type { RadarProbeResult } from "./probe";
 import { recordRadarProbeRun } from "./probe-run";
 
@@ -85,11 +89,13 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
   return db
     .select({
       target: radarProbeTarget,
+      pool: radarPool,
       provider: radarProvider,
       credential: radarCredential,
       workspace,
     })
     .from(radarProbeTarget)
+    .innerJoin(radarPool, eq(radarPool.id, radarProbeTarget.poolId))
     .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
     .innerJoin(
       radarCredential,
@@ -254,13 +260,17 @@ async function probeTarget(row: DueRadarTarget): Promise<RadarProbeResult> {
     decryptSecret(row.credential.encryptedApiKey),
   ]);
 
-  return runOpenAICompatibleProbe({
+  const config = getPriorityProbeConfig(row.pool.slug);
+
+  return runProbeWithOptionalRetry({
     baseUrl,
     apiKey,
     model: row.target.modelName,
     stream: row.target.streamEnabled,
     timeoutMs: row.target.timeoutMs,
     maxTokens: row.target.maxTokens,
+    retryAttempts: config.enabled ? config.retryAttempts : 0,
+    retryBackoffMs: config.retryBackoffMs,
   });
 }
 

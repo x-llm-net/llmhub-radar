@@ -7,7 +7,8 @@ import {
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_MAX_TOKENS = 3;
+const DEFAULT_MAX_TOKENS = 1;
+const MAX_PROBE_TOKENS = 1;
 
 export async function runOpenAICompatibleProbe(
   config: OpenAICompatibleProbeConfig,
@@ -35,7 +36,9 @@ export async function runOpenAICompatibleProbe(
       method: "POST",
       signal: controller.signal,
       headers: {
+        "cache-control": "no-store",
         "content-type": "application/json",
+        pragma: "no-cache",
         authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
@@ -94,7 +97,7 @@ function clampMaxTokens(value?: number) {
     return DEFAULT_MAX_TOKENS;
   }
 
-  return Math.min(8, Math.max(1, Math.floor(value)));
+  return Math.min(MAX_PROBE_TOKENS, Math.max(1, Math.floor(value)));
 }
 
 async function parseJsonProbeResponse(
@@ -120,7 +123,7 @@ async function parseJsonProbeResponse(
   const content = extractChatContent(json);
   const usage = extractUsage(json);
 
-  if (content.trim() !== "ok") {
+  if (!hasProbeOutput(content)) {
     return {
       success: false,
       httpStatus: response.status,
@@ -129,7 +132,7 @@ async function parseJsonProbeResponse(
       totalLatencyMs: elapsedMs(startedAt),
       tokensIn: usage.tokensIn,
       tokensOut: usage.tokensOut,
-      safeErrorSummary: "Probe response did not match expected content",
+      safeErrorSummary: "Probe response did not contain text",
     };
   }
 
@@ -230,20 +233,6 @@ async function parseStreamingProbeResponse(
       ttfbMs,
       totalLatencyMs: elapsedMs(startedAt),
       safeErrorSummary: "Streaming response completed without content",
-    };
-  }
-
-  if (content.trim() !== "ok") {
-    return {
-      success: false,
-      httpStatus: response.status,
-      errorType: "bad_response",
-      ttfbMs,
-      firstTokenMs,
-      totalLatencyMs: elapsedMs(startedAt),
-      tokensIn,
-      tokensOut,
-      safeErrorSummary: "Probe stream did not match expected content",
     };
   }
 
@@ -392,4 +381,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function elapsedMs(startedAt: number) {
   return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+function hasProbeOutput(value: string) {
+  return value.trim().length > 0;
 }

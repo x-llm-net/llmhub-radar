@@ -95,12 +95,23 @@ describe("Radar status policy", () => {
     ).toBe("configuration_error");
   });
 
-  test("marks slow successful probes as degraded", () => {
+  test("keeps acceptable successful probes operational", () => {
     expect(
       evaluateRadarTargetStatus({
         recentResults: [
           { success: true, firstTokenMs: 12_000, totalLatencyMs: 13_000 },
           { success: true, firstTokenMs: 11_000, totalLatencyMs: 12_000 },
+        ],
+      }),
+    ).toBe("operational");
+  });
+
+  test("marks very slow successful probes as degraded", () => {
+    expect(
+      evaluateRadarTargetStatus({
+        recentResults: [
+          { success: true, firstTokenMs: 16_000, totalLatencyMs: 17_000 },
+          { success: true, firstTokenMs: 16_500, totalLatencyMs: 17_500 },
         ],
       }),
     ).toBe("degraded");
@@ -137,14 +148,16 @@ describe("OpenAI-compatible probe skeleton", () => {
     expect(result.tokensIn).toBe(7);
     expect(result.tokensOut).toBe(1);
     expect(requestHeaders).toEqual({
+      "cache-control": "no-store",
       "content-type": "application/json",
+      pragma: "no-cache",
       authorization: "Bearer sk-test-secret",
     });
     expect(requestBody).toEqual({
       model: "gpt-test",
       messages: [{ role: "user", content: RADAR_PROBE_PROMPT }],
       temperature: 0,
-      max_tokens: 8,
+      max_tokens: 1,
       stream: false,
     });
   });

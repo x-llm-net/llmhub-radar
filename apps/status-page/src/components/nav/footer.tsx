@@ -39,9 +39,7 @@ export function Footer({
 
   if (!page) return null;
 
-  // Whitelabel pages: hide the footer entirely in embed mode.
-  // Non-whitelabel pages: keep the "powered by" attribution visible; right-side controls hidden via CSS.
-  if (embed.mode && page.whiteLabel) return null;
+  if (embed.mode) return null;
 
   return (
     <StatusPageFooter

@@ -267,32 +267,33 @@ export function Client() {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Select
+            <Input
+              id="radar-token-probe-model"
               value={selectedProbeModel}
-              onValueChange={(value) => {
+              onChange={(event) => {
+                const value = event.target.value;
                 setProbeModel(value);
                 setProbeModelTouched(true);
                 if (!modelTypeTouched) {
                   setModelType(inferRadarModelType(value));
                 }
               }}
-            >
-              <SelectTrigger
-                id="radar-token-probe-model"
-                className="w-full font-mono"
-              >
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {selectedProbeModel || t("probeModel")}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
+              placeholder={t("probeModel")}
+              className="font-mono"
+              list={
+                modelOptions.length > 0
+                  ? "radar-token-probe-model-options"
+                  : undefined
+              }
+              required
+            />
+            {modelOptions.length > 0 ? (
+              <datalist id="radar-token-probe-model-options">
                 {modelOptions.map((model) => (
-                  <SelectItem key={model} value={model} className="font-mono">
-                    {model}
-                  </SelectItem>
+                  <option key={model} value={model} />
                 ))}
-              </SelectContent>
-            </Select>
+              </datalist>
+            ) : null}
             {discoveryMessage ? (
               <p className="text-muted-foreground text-xs">
                 {discoveryMessage}

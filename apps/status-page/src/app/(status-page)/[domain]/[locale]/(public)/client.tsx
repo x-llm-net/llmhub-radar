@@ -371,7 +371,7 @@ export function Client() {
         {page.radar &&
         page.radar.targets.length > 0 &&
         (cardsVisible || criteriaVisible) ? (
-          <StatusContent className="gap-5 group-data-[hide-components=true]/embed:hidden">
+          <StatusContent className="gap-5">
             {cardsVisible ? (
               <>
                 <RadarProbeTooltip copy={radarCopyForLocale} />
@@ -379,13 +379,14 @@ export function Client() {
                   title={radarCopyForLocale.apiKeyDetailsTitle}
                   description={radarCopyForLocale.apiKeyDetailsDescription}
                 />
-                <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
+                <div className="grid auto-rows-fr gap-4 group-data-[embed=true]/embed:flex group-data-[embed=true]/embed:overflow-x-auto group-data-[embed=true]/embed:pb-2 md:grid-cols-2">
                   {radarCards.map((target) => (
-                    <RadarTargetCard
+                    <div
                       key={target.id}
-                      target={target}
-                      locale={locale}
-                    />
+                      className="group-data-[embed=true]/embed:max-w-[420px] group-data-[embed=true]/embed:min-w-[320px] group-data-[embed=true]/embed:flex-1"
+                    >
+                      <RadarTargetCard target={target} locale={locale} />
+                    </div>
                   ))}
                 </div>
               </>
@@ -659,9 +660,9 @@ function stabilityBucketTone(
 ) {
   if (bucket.availability == null) return "bg-muted";
   if (bucket.availability >= 9_800) return "bg-emerald-500";
-  if (bucket.availability >= 9_500) return "bg-emerald-400";
-  if (bucket.availability >= 9_000) return "bg-lime-400";
-  if (bucket.availability >= 8_500) return "bg-amber-400";
+  if (bucket.availability >= 9_000) return "bg-emerald-300";
+  if (bucket.availability >= 7_500) return "bg-lime-400";
+  if (bucket.availability >= 5_000) return "bg-amber-400";
   return "bg-red-500";
 }
 
@@ -708,14 +709,6 @@ function RadarStabilityOverview({
                   i
                 </span>
               </div>
-              {target.modelName ? (
-                <div
-                  className="text-muted-foreground mt-0.5 truncate font-mono text-xs"
-                  title={target.modelName}
-                >
-                  {target.modelName}
-                </div>
-              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <span
@@ -791,8 +784,11 @@ function RadarStabilityOverview({
 function runTone(run: RadarTarget["recentRuns"][number] | null) {
   if (!run) return "bg-muted";
   if (!run.success) return "bg-red-500";
-  if (run.firstTokenMs != null && run.firstTokenMs > 5_000) {
+  if (run.firstTokenMs != null && run.firstTokenMs > 15_000) {
     return "bg-amber-500";
+  }
+  if (run.firstTokenMs != null && run.firstTokenMs > 5_000) {
+    return "bg-emerald-300";
   }
   return "bg-emerald-500";
 }
@@ -980,25 +976,25 @@ function getAvailabilityHint(
 ) {
   if (samples === 0 || value == null) return copy.noSamples;
   if (value >= 9_800) return copy.availabilityStable;
-  if (value >= 9_500) return copy.availabilityVariable;
-  if (value >= 9_000) return copy.availabilityDegraded;
-  if (value >= 8_500) return copy.availabilityBelowThreshold;
+  if (value >= 9_000) return copy.availabilityVariable;
+  if (value >= 7_500) return copy.availabilityDegraded;
+  if (value >= 5_000) return copy.availabilityBelowThreshold;
   return copy.availabilityUnstable;
 }
 
 function availabilityClass(value: number | null) {
   if (value == null) return "text-muted-foreground";
   if (value >= 9_800) return "text-emerald-600";
-  if (value >= 9_500) return "text-lime-600";
-  if (value >= 9_000) return "text-amber-600";
-  if (value >= 8_500) return "text-orange-600";
+  if (value >= 9_000) return "text-emerald-500";
+  if (value >= 7_500) return "text-lime-600";
+  if (value >= 5_000) return "text-amber-600";
   return "text-red-600";
 }
 
 function latencyClass(value: number | null) {
   if (value == null) return "text-muted-foreground";
-  if (value > 15_000) return "text-red-600";
-  if (value > 5_000) return "text-amber-600";
+  if (value > 15_000) return "text-amber-600";
+  if (value > 5_000) return "text-emerald-500";
   if (value <= 2_000) return "text-emerald-600";
   return undefined;
 }
@@ -1070,15 +1066,21 @@ function radarHealthTone(
       label: copy.healthUnknown,
     };
   }
-  if (successRate < 8_500) {
+  if (successRate < 5_000) {
     return {
       className: "border-red-200 bg-red-50 text-red-700",
       label: copy.healthUnstable,
     };
   }
-  if (successRate < 9_800 || (p95 != null && p95 > 5_000)) {
+  if (successRate < 7_500) {
     return {
       className: "border-amber-200 bg-amber-50 text-amber-700",
+      label: copy.healthAttention,
+    };
+  }
+  if (successRate < 9_000 || (p95 != null && p95 > 15_000)) {
+    return {
+      className: "border-lime-200 bg-lime-50 text-lime-700",
       label: copy.healthDegraded,
     };
   }
@@ -1139,9 +1141,9 @@ const radarCopy = {
     criteriaOverall:
       "Overall status: degraded means at least one API key is degraded or unavailable; outage means all active API keys are unavailable.",
     criteriaAvailability:
-      "7d availability: >=98% stable; 95-98% slightly variable; 90-95% variable; 85-90% clearly variable; <85% unstable.",
+      "7d availability: >=98% stable; 90-98% slightly variable; 75-90% variable; 50-75% needs attention; <50% unstable.",
     criteriaLatency:
-      "First token: <=2s fast; 2-5s normal; 5-15s slow; >15s high latency.",
+      "First token: <=5s fast; 5-15s acceptable; >15s high latency. Successful probes never count as down because of latency alone.",
     firstTokenP50: "First token P50",
     firstTokenP95: "First token P95",
     probeSuccess: "Probe succeeded",
@@ -1159,13 +1161,13 @@ const radarCopy = {
     availabilityStable: "Stable",
     availabilityVariable: "Slightly variable",
     availabilityDegraded: "Variable",
-    availabilityBelowThreshold: "Clearly variable",
+    availabilityBelowThreshold: "Needs attention",
     availabilityUnstable: "Unstable",
     p50Hint: "Typical feel",
     p95Hint: "Tail risk",
     latencyFast: "Fast",
     latencyNormal: "Normal",
-    latencySlow: "Getting slow",
+    latencySlow: "Acceptable",
     latencyHigh: "High latency",
     noSamples: "No samples",
     recentRuns: "Last {count} probes",
@@ -1186,7 +1188,8 @@ const radarCopy = {
     healthUnknown: "Unknown",
     healthFast: "Fast",
     healthNormal: "Normal",
-    healthDegraded: "Degraded",
+    healthDegraded: "Variable",
+    healthAttention: "Needs attention",
     healthUnstable: "Unstable",
     healthDown: "Down",
     healthPaused: "Paused",
@@ -1217,8 +1220,9 @@ const radarCopy = {
     criteriaOverall:
       "整体状态：部分 API 密钥降级或不可用显示服务降级；全部活跃 API 密钥不可用显示服务中断。",
     criteriaAvailability:
-      "7 天可用性：≥98% 稳定；95-98% 轻微波动；90-95% 波动；85-90% 明显波动；<85% 不稳定。",
-    criteriaLatency: "首 token：≤2s 极速；2-5s 正常；5-15s 偏慢；>15s 高延时。",
+      "7 天可用性：≥98% 稳定；90-98% 轻微波动；75-90% 波动；50-75% 需要关注；<50% 不稳定。",
+    criteriaLatency:
+      "首 token：≤5s 快；5-15s 可接受；>15s 高延时。只要探测成功，不会因为延时被判定为不可用。",
     firstTokenP50: "首T P50",
     firstTokenP95: "首T P95",
     probeSuccess: "检测成功",
@@ -1236,13 +1240,13 @@ const radarCopy = {
     availabilityStable: "稳定",
     availabilityVariable: "轻微波动",
     availabilityDegraded: "波动",
-    availabilityBelowThreshold: "明显波动",
+    availabilityBelowThreshold: "需要关注",
     availabilityUnstable: "不稳定",
     p50Hint: "日常体感",
     p95Hint: "尾部风险",
     latencyFast: "极速",
     latencyNormal: "正常",
-    latencySlow: "偏慢",
+    latencySlow: "可接受",
     latencyHigh: "高延时",
     noSamples: "暂无样本",
     recentRuns: "近 {count} 次探测",
@@ -1264,6 +1268,7 @@ const radarCopy = {
     healthFast: "极速",
     healthNormal: "正常",
     healthDegraded: "波动",
+    healthAttention: "需要关注",
     healthUnstable: "不稳定",
     healthDown: "不可用",
     healthPaused: "暂停",

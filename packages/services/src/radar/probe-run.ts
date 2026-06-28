@@ -56,8 +56,8 @@ function classifyStatus(args: {
   }
 
   if (
-    (latest.firstTokenMs && latest.firstTokenMs > 8000) ||
-    (latest.totalLatencyMs && latest.totalLatencyMs > 15000)
+    (latest.firstTokenMs && latest.firstTokenMs > 15_000) ||
+    (latest.totalLatencyMs && latest.totalLatencyMs > 30_000)
   ) {
     return "degraded";
   }

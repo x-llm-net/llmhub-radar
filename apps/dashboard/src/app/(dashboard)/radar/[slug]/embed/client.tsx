@@ -38,7 +38,7 @@ const SECTION_OPTIONS: EmbedSection[] = [
   "criteria",
 ];
 
-const DEFAULT_SECTIONS: EmbedSection[] = ["banner", "overview", "cards"];
+const DEFAULT_SECTIONS: EmbedSection[] = ["overview", "cards"];
 const DEFAULT_HEIGHT = 680;
 
 function buildEmbedUrl({

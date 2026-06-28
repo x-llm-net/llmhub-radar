@@ -51,6 +51,14 @@ export function NavActions({ publicHref }: { publicHref: string }) {
       ) : null}
       {showDetailActions ? (
         <Button size="sm" variant="outline" asChild>
+          <Link href={`/radar/${params.slug}/embed`}>
+            <Code2 className="size-3.5" />
+            {t("embed")}
+          </Link>
+        </Button>
+      ) : null}
+      {showDetailActions ? (
+        <Button size="sm" variant="outline" asChild>
           <Link href={`/radar/${params.slug}/subscribers`}>
             <Users className="size-3.5" />
             {notificationsT("manageSubscribers")}
@@ -70,14 +78,6 @@ export function NavActions({ publicHref }: { publicHref: string }) {
           <Link href={publicHref} target="_blank">
             {t("statusPages")}
             <ExternalLink className="size-3.5" />
-          </Link>
-        </Button>
-      ) : null}
-      {showDetailActions ? (
-        <Button size="sm" variant="outline" asChild>
-          <Link href={`/radar/${params.slug}/embed`}>
-            <Code2 className="size-3.5" />
-            {t("embed")}
           </Link>
         </Button>
       ) : null}

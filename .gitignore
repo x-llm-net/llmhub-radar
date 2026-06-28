@@ -71,6 +71,7 @@ apps/alerting-engine/tmp/
 
 .env.docker
 .env.radar
+.env.images
 
 # UI Registry build output
 apps/web/public/r

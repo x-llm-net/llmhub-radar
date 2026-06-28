@@ -6,10 +6,21 @@ import {
 
 loadLocalEnv();
 
-const { runRadarCron } = await import("@openstatus/services/radar");
+const { getPriorityProbeRuntimeConfig, runRadarCron } = await import(
+  "@openstatus/services/radar"
+);
 
 const intervalMs = defaultIntervalMs("RADAR_CRON_INTERVAL_MS", 60_000);
 const runOnce = parseBooleanEnv("RADAR_CRON_ONCE");
+const priorityProbeConfig = getPriorityProbeRuntimeConfig();
+
+console.log("[radar-cron] starting", {
+  intervalMs,
+  runOnce,
+  priorityPoolSlugs: Array.from(priorityProbeConfig.poolSlugs),
+  priorityProbeRetries: priorityProbeConfig.retryAttempts,
+  priorityProbeRetryBackoffMs: priorityProbeConfig.retryBackoffMs,
+});
 
 let running = false;
 

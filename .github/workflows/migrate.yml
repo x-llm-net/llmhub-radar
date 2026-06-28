@@ -1,10 +1,6 @@
 name: Migrate DB
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "packages/db/drizzle/**"
+  workflow_dispatch:
 jobs:
   migrate:
     name: 🗃️ Migrate DB

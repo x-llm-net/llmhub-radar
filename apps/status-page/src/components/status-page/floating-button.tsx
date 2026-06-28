@@ -37,6 +37,7 @@ import type React from "react";
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { ThemeSelect } from "@/components/themes/theme-select";
+import { useEmbed } from "@/hooks/use-embed";
 
 export const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -148,6 +149,7 @@ export function FloatingButton({
     parseAsString,
   );
   const locale = typeof params.locale === "string" ? params.locale : "en";
+  const embed = useEmbed();
   const copy =
     locale === "zh"
       ? {
@@ -184,7 +186,7 @@ export function FloatingButton({
     if (configToken) setConfigToken(null);
   }, [token]);
 
-  if (!display) return null;
+  if (!display || embed.mode) return null;
 
   return (
     <div className={cn("fixed right-4 bottom-4 z-50", className)}>
@@ -203,7 +205,9 @@ export function FloatingButton({
           <div className="space-y-4 p-4">
             <div className="space-y-2">
               <h4 className="leading-none font-medium">{copy.title}</h4>
-              <p className="text-muted-foreground text-sm">{copy.description}</p>
+              <p className="text-muted-foreground text-sm">
+                {copy.description}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

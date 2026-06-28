@@ -14,9 +14,15 @@ export type EmbedSection = (typeof ALL_EMBED_SECTIONS)[number];
 
 export type EmbedState = { mode: boolean; sections: EmbedSection[] };
 
+const DEFAULT_COMPACT_EMBED_SECTIONS: EmbedSection[] = ["overview", "cards"];
+
 export const embedParser = createParser<EmbedState>({
   parse(raw) {
-    if (raw === "" || raw.toLowerCase() === "all") {
+    const normalized = raw.trim().toLowerCase();
+    if (["1", "true", "compact"].includes(normalized)) {
+      return { mode: true, sections: [...DEFAULT_COMPACT_EMBED_SECTIONS] };
+    }
+    if (raw === "" || normalized === "all") {
       return { mode: true, sections: [...ALL_EMBED_SECTIONS] };
     }
     const parsedSections = Array.from(

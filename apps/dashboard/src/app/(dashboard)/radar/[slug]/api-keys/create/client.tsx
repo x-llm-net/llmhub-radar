@@ -209,9 +209,7 @@ export function Client() {
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
-              <Label htmlFor="radar-token-probe-model">
-                {t("probeModel")}
-              </Label>
+              <Label htmlFor="radar-token-probe-model">{t("probeModel")}</Label>
               <TooltipProvider delayDuration={150}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -228,33 +226,33 @@ export function Client() {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Select
+            <Input
+              id="radar-token-probe-model"
               value={selectedProbeModel}
-              disabled={discoveredModelOptions.length === 0}
-              onValueChange={(value) => {
+              onChange={(event) => {
+                const value = event.target.value;
                 setProbeModel(value);
                 setProbeModelTouched(true);
                 if (!modelTypeTouched) {
                   setModelType(inferRadarModelType(value));
                 }
               }}
-            >
-              <SelectTrigger
-                id="radar-token-probe-model"
-                className="w-full font-mono"
-              >
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {selectedProbeModel || t("probeModel")}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
+              placeholder={t("probeModel")}
+              className="font-mono"
+              list={
+                discoveredModelOptions.length > 0
+                  ? "radar-token-probe-model-options"
+                  : undefined
+              }
+              required
+            />
+            {discoveredModelOptions.length > 0 ? (
+              <datalist id="radar-token-probe-model-options">
                 {discoveredModelOptions.map((model) => (
-                  <SelectItem key={model} value={model} className="font-mono">
-                    {model}
-                  </SelectItem>
+                  <option key={model} value={model} />
                 ))}
-              </SelectContent>
-            </Select>
+              </datalist>
+            ) : null}
             {discoveryMessage ? (
               <p className="text-muted-foreground text-xs">
                 {discoveryMessage}

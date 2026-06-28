@@ -100,9 +100,9 @@ function dayTone(day: DirectoryItem["dailyStatus7d"][number]) {
 
   const availability = day.ok / total;
   if (availability >= 0.98) return "bg-emerald-500";
-  if (availability >= 0.95) return "bg-lime-400";
-  if (availability >= 0.9) return "bg-amber-400";
-  if (availability >= 0.85) return "bg-orange-400";
+  if (availability >= 0.9) return "bg-emerald-300";
+  if (availability >= 0.75) return "bg-lime-400";
+  if (availability >= 0.5) return "bg-amber-400";
   return "bg-red-500";
 }
 

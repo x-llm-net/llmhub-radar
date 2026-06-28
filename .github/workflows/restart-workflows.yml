@@ -3,8 +3,6 @@ name: Restart Workflows Machines
 # Periodic rolling restart to cap the native libsql embedded-replica memory growth
 # (see apps/workflows/research.md). Restarts machines one at a time so the app stays up.
 on:
-  schedule:
-    - cron: "0 */12 * * *"
   workflow_dispatch: {}
 
 concurrency:

@@ -28,6 +28,32 @@ function isBlockedHostname(hostname: string): boolean {
   return false;
 }
 
+function isRawIpAddress(hostname: string) {
+  return isIpv4Address(hostname) || hostname.includes(":");
+}
+
+function isIpv4Address(hostname: string) {
+  const parts = hostname.split(".");
+
+  if (parts.length !== 4) {
+    return false;
+  }
+
+  return parts.every((part) => {
+    if (!/^\d+$/.test(part)) return false;
+    const value = Number(part);
+    return Number.isInteger(value) && value >= 0 && value <= 255;
+  });
+}
+
+function isLocalDevelopmentHostname(hostname: string) {
+  return hostname === "localhost" || hostname.endsWith(".localhost");
+}
+
+function isSingleLabelHostname(hostname: string) {
+  return !hostname.includes(".") && !isRawIpAddress(hostname);
+}
+
 export function normalizeRadarBaseUrl(input: string): string {
   const url = new URL(input);
   if (!["https:", "http:"].includes(url.protocol)) {
@@ -41,6 +67,14 @@ export function normalizeRadarBaseUrl(input: string): string {
   }
   if (isBlockedHostname(url.hostname)) {
     throw new ValidationError("Base URL points to a blocked host.");
+  }
+  if (
+    isSingleLabelHostname(url.hostname.toLowerCase()) &&
+    !isLocalDevelopmentHostname(url.hostname.toLowerCase())
+  ) {
+    throw new ValidationError(
+      "Base URL must use a full hostname, for example https://api.example.com.",
+    );
   }
   url.hash = "";
   url.search = "";

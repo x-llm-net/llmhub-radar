@@ -27,7 +27,7 @@ export function evaluateRadarTargetStatus(
     previousStatus,
     failureThreshold = 3,
     recoveryThreshold = 2,
-    slowFirstTokenMs = 10_000,
+    slowFirstTokenMs = 15_000,
     slowTotalLatencyMs = 30_000,
   } = input;
 
@@ -100,10 +100,10 @@ function isSlowProbe(
 ) {
   if (
     typeof result.firstTokenMs === "number" &&
-    result.firstTokenMs >= slowFirstTokenMs
+    result.firstTokenMs > slowFirstTokenMs
   ) {
     return true;
   }
 
-  return result.totalLatencyMs >= slowTotalLatencyMs;
+  return result.totalLatencyMs > slowTotalLatencyMs;
 }

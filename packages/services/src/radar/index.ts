@@ -21,6 +21,7 @@ export {
   dispatchPendingRadarNotifications,
   type DispatchRadarNotificationsResult,
 } from "./notifications";
+export { getPriorityProbeRuntimeConfig } from "./priority-probe";
 export { recordRadarProbeRun } from "./probe-run";
 export {
   CreateRadarPoolInput,

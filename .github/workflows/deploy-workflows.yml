@@ -1,17 +1,6 @@
 name: Fly Deploy Workflows
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/workflows/**"
-      - "packages/db/**"
-      - "packages/emails/**"
-      - "packages/utils/**"
-      - "packages/tsconfig/**"
-      - "packages/notifications/**"
-      - "packages/status-fetcher/**"
-      - "pnpm-workspace.yaml"
+  workflow_dispatch:
 jobs:
   deploy-workflows:
     name: Deploy Workflows

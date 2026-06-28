@@ -1,0 +1,119 @@
+name: LLMHub Radar Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag built by LLMHub Radar Build Images."
+        required: true
+        type: string
+      restart_notifications:
+        description: "Run notification preflight and restart notification worker."
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: llmhub-radar-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      DEPLOY_PATH: ${{ vars.LLMHUB_RADAR_DEPLOY_PATH || '/opt/llmhub-radar' }}
+      SSH_PORT: ${{ secrets.LLMHUB_RADAR_SSH_PORT || '22' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve owner
+        run: echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - name: Validate image tag
+        env:
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+        run: |
+          if ! [[ "$IMAGE_TAG_INPUT" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid Docker image tag: $IMAGE_TAG_INPUT" >&2
+            exit 2
+          fi
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.LLMHUB_RADAR_SSH_KEY }}" > ~/.ssh/llmhub_radar
+          chmod 600 ~/.ssh/llmhub_radar
+          ssh-keyscan -p "${{ env.SSH_PORT }}" "${{ secrets.LLMHUB_RADAR_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload deployment files
+        run: |
+          tar czf /tmp/llmhub-radar-deploy-files.tgz \
+            docker-compose.radar.yaml \
+            docker-compose.radar.images.yaml \
+            .env.radar.example \
+            infra/Caddyfile.radar.example \
+            scripts/deploy-llmhub-radar.sh
+
+          ssh -i ~/.ssh/llmhub_radar \
+            -p "${{ env.SSH_PORT }}" \
+            "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}" \
+            "mkdir -p '${{ env.DEPLOY_PATH }}'"
+
+          scp -i ~/.ssh/llmhub_radar \
+            -P "${{ env.SSH_PORT }}" \
+            /tmp/llmhub-radar-deploy-files.tgz \
+            "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}:${{ env.DEPLOY_PATH }}/llmhub-radar-deploy-files.tgz"
+
+          ssh -i ~/.ssh/llmhub_radar \
+            -p "${{ env.SSH_PORT }}" \
+            "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}" \
+            "cd '${{ env.DEPLOY_PATH }}' && tar xzf llmhub-radar-deploy-files.tgz && chmod +x scripts/deploy-llmhub-radar.sh"
+
+      - name: Deploy
+        env:
+          GHCR_TOKEN: ${{ secrets.LLMHUB_RADAR_GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.LLMHUB_RADAR_GHCR_USERNAME }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          RADAR_DEPLOY_NOTIFICATIONS: ${{ inputs.restart_notifications && '1' || '0' }}
+        run: |
+          set -euo pipefail
+
+          umask 077
+          DEPLOY_ENV_FILE="$(mktemp)"
+          trap 'rm -f "${DEPLOY_ENV_FILE}"' EXIT
+          {
+            printf 'LLMHUB_RADAR_IMAGE_REGISTRY=%q\n' '${{ env.REGISTRY }}'
+            printf 'LLMHUB_RADAR_IMAGE_OWNER=%q\n' '${{ env.OWNER_LC }}'
+            printf 'LLMHUB_RADAR_IMAGE_TAG=%q\n' "${IMAGE_TAG}"
+            printf 'RADAR_DEPLOY_NOTIFICATIONS=%q\n' "${RADAR_DEPLOY_NOTIFICATIONS}"
+            printf 'GHCR_USERNAME=%q\n' "${GHCR_USERNAME}"
+            printf 'GHCR_TOKEN=%q\n' "${GHCR_TOKEN}"
+          } > "${DEPLOY_ENV_FILE}"
+
+          scp -i ~/.ssh/llmhub_radar \
+            -P "${{ env.SSH_PORT }}" \
+            "${DEPLOY_ENV_FILE}" \
+            "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}:${{ env.DEPLOY_PATH }}/.deploy.env"
+
+          ssh -i ~/.ssh/llmhub_radar \
+            -p "${{ env.SSH_PORT }}" \
+            "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}" \
+            "cd '${{ env.DEPLOY_PATH }}' && \
+             bash -lc 'trap \"rm -f ./.deploy.env\" EXIT; set -a; . ./.deploy.env; set +a; bash scripts/deploy-llmhub-radar.sh'"
+
+      - name: Summary
+        run: |
+          echo "## LLMHub Radar deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag: \`${{ inputs.image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Notifications restarted: \`${{ inputs.restart_notifications }}\`" >> "$GITHUB_STEP_SUMMARY"

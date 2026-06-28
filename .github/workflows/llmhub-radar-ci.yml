@@ -1,0 +1,155 @@
+name: LLMHub Radar CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/llmhub-radar-*.yml"
+      - "apps/dashboard/**"
+      - "apps/status-page/**"
+      - "apps/workflows/src/radar/**"
+      - "packages/api/**"
+      - "packages/db/**"
+      - "packages/services/src/radar/**"
+      - "docker-compose.radar*.yaml"
+      - "docs/LLMHUB_RADAR*.md"
+      - "scripts/deploy-llmhub-radar.sh"
+      - "pnpm-lock.yaml"
+      - "package.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/llmhub-radar-*.yml"
+      - "apps/dashboard/**"
+      - "apps/status-page/**"
+      - "apps/workflows/src/radar/**"
+      - "packages/api/**"
+      - "packages/db/**"
+      - "packages/services/src/radar/**"
+      - "docker-compose.radar*.yaml"
+      - "docs/LLMHUB_RADAR*.md"
+      - "scripts/deploy-llmhub-radar.sh"
+      - "pnpm-lock.yaml"
+      - "package.json"
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: llmhub-radar-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      libsql:
+        image: ghcr.io/tursodatabase/libsql-server:latest
+        ports:
+          - 8080:8080
+    env:
+      AUTH_SECRET: ci-auth-secret-min-32-characters-long
+      NEXTAUTH_SECRET: ci-nextauth-secret-min-32-characters-long
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: https://app.llm-hub.store
+      CRON_SECRET: ci-cron-secret
+      DATABASE_AUTH_TOKEN: basic:token
+      DATABASE_URL: http://127.0.0.1:8080
+      NEXT_PUBLIC_DASHBOARD_URL: https://app.llm-hub.store
+      NEXT_PUBLIC_STATUS_PAGE_URL: https://llm-hub.store
+      NEXT_PUBLIC_URL: https://app.llm-hub.store
+      RADAR_CREDENTIAL_SECRET: ci-radar-credential-secret-min-32-characters
+      RESEND_API_KEY: test
+      RESEND_FROM: notifications@llm-hub.store
+      STATUS_PAGE_URL: http://127.0.0.1:3001
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Check focused formatting
+        run: |
+          pnpm exec oxfmt --check \
+            apps/dashboard/src/app/layout.tsx \
+            apps/status-page/src/app/layout.tsx \
+            apps/dashboard/src/app/globals.css \
+            apps/status-page/src/app/globals.css \
+            packages/services/src/radar/priority-probe.ts \
+            packages/services/src/radar/priority-probe.test.ts \
+            packages/services/src/radar/cron.ts \
+            apps/dashboard/src/scripts/radar-cron-loop.ts \
+            packages/api/src/router/statusPage.ts
+
+      - name: Lint focused release files
+        run: |
+          pnpm exec oxlint \
+            apps/dashboard/src/app/layout.tsx \
+            apps/status-page/src/app/layout.tsx \
+            packages/services/src/radar/priority-probe.ts \
+            packages/services/src/radar/priority-probe.test.ts \
+            packages/services/src/radar/cron.ts \
+            apps/dashboard/src/scripts/radar-cron-loop.ts \
+            packages/api/src/router/statusPage.ts
+
+      - name: Verify migrations
+        run: pnpm --filter @openstatus/db verify:radar-migrations
+
+      - name: Type check services
+        run: pnpm --filter @openstatus/services tsc
+
+      - name: Type check API
+        run: pnpm --filter @openstatus/api exec tsc --noEmit
+
+      - name: Type check dashboard
+        run: pnpm --filter @openstatus/dashboard tsc
+
+      - name: Type check status page
+        run: pnpm --filter @openstatus/status-page tsc
+
+      - name: Run radar service tests
+        working-directory: packages/services
+        run: |
+          bun test \
+            src/radar/priority-probe.test.ts \
+            src/radar/probe.test.ts \
+            src/radar/base-url.test.ts \
+            src/radar/discover-models.test.ts \
+            src/radar/probe-run.test.ts \
+            src/radar/notification-policy.test.ts
+
+      - name: Run workflow radar tests
+        working-directory: apps/workflows
+        run: bun test src/radar/radar.test.ts
+
+      - name: Build dashboard
+        run: pnpm --filter @openstatus/dashboard build
+
+      - name: Build status page
+        run: pnpm --filter @openstatus/status-page build

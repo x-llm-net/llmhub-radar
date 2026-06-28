@@ -23,8 +23,10 @@ Radar uses dedicated deployment files instead of the old upstream OpenStatus com
 
 ```text
 docker-compose.radar.yaml
+docker-compose.radar.images.yaml
 .env.radar.example
 apps/radar-worker/Dockerfile
+scripts/deploy-llmhub-radar.sh
 ```
 
 The worker image runs the dashboard script entrypoints directly with Bun:
@@ -36,6 +38,73 @@ pnpm radar:notifications:preflight
 ```
 
 The Next.js standalone dashboard/status-page images are kept for web traffic only.
+
+## GitHub Actions Release Line
+
+The normal production release path is GitHub Actions based. The server should
+pull prebuilt images instead of building Next.js and Docker images locally.
+
+| Workflow | Trigger | Purpose |
+| --- | --- | --- |
+| `LLMHub Radar CI` | pull request, push to `main`, manual, reusable | release checks, type checks, migration verification, radar tests, dashboard/status-page builds |
+| `LLMHub Radar Build Images` | manual only | runs CI, builds linux/amd64 images, pushes them to GHCR |
+| `LLMHub Radar Deploy` | manual only | uploads deploy files, pulls the chosen image tag, backs up libSQL, runs migrations, starts web/probe services |
+
+The image names are:
+
+```text
+ghcr.io/{owner}/llmhub-radar-dashboard:{tag}
+ghcr.io/{owner}/llmhub-radar-status-page:{tag}
+ghcr.io/{owner}/llmhub-radar-radar-worker:{tag}
+```
+
+Normal release order:
+
+1. Push the release commit to GitHub.
+2. Confirm `LLMHub Radar CI` is green.
+3. Run `LLMHub Radar Build Images`.
+4. Record the image tag from the workflow summary.
+5. Run `LLMHub Radar Deploy` with that image tag and
+   `restart_notifications=false`.
+6. Smoke test dashboard and public pages.
+7. Restart notifications only after preflight is reviewed.
+
+Rollback is the same deploy workflow with a previous known-good image tag.
+
+`docker-compose.radar.images.yaml` uses Docker Compose `!reset` to remove local
+`build` blocks when images are supplied by GHCR. The production server must run
+Docker Compose v2.24 or newer. Verify with:
+
+```bash
+docker compose version
+```
+
+Old upstream OpenStatus deploy/publish/migrate workflows are intentionally
+manual-only in this fork. That prevents a push to `main` from accidentally
+deploying Fly/OpenStatus services or running upstream migrations. Ordinary test
+workflows may still run automatically.
+
+## GitHub Configuration
+
+Configure these GitHub repository secrets before the first Actions deploy:
+
+| Name | Required | Value |
+| --- | --- | --- |
+| `LLMHUB_RADAR_SSH_HOST` | yes | `154.222.27.176` |
+| `LLMHUB_RADAR_SSH_USER` | yes | `root` |
+| `LLMHUB_RADAR_SSH_KEY` | yes | private key that can SSH to the server |
+| `LLMHUB_RADAR_SSH_PORT` | no | `22` unless SSH uses a custom port |
+| `LLMHUB_RADAR_GHCR_USERNAME` | if GHCR package is private | GitHub username or org user allowed to pull packages |
+| `LLMHUB_RADAR_GHCR_TOKEN` | if GHCR package is private | PAT with `read:packages` |
+
+Configure this GitHub repository variable if the server path changes:
+
+| Name | Default |
+| --- | --- |
+| `LLMHUB_RADAR_DEPLOY_PATH` | `/opt/llmhub-radar` |
+
+Use the GitHub `production` environment for the deploy workflow. Environment
+review is recommended so a deploy cannot start by accident.
 
 ## Recommended Production Topology
 
@@ -201,6 +270,9 @@ URL rules:
 - `NEXT_PUBLIC_*` values are also used at Docker build time. If they are wrong
   during image build, client-side links can stay wrong until the image is rebuilt.
 - `RADAR_CREDENTIAL_SECRET` must be generated once for a production database and must stay stable across deployments. Changing it makes stored provider Base URLs and API keys undecryptable.
+- `RADAR_PRIORITY_POOL_SLUGS` is optional. It enables priority probe behavior
+  for a comma-separated list of radar pool slugs, for example `x-llm,skyhope`.
+  Keep it empty for ordinary third-party pools.
 
 For the recommended production topology:
 
@@ -211,6 +283,21 @@ AUTH_URL=https://app.llm-hub.store
 NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store
 STATUS_PAGE_URL=http://status-page:3000
 ```
+
+Optional priority probe retry:
+
+```text
+RADAR_PRIORITY_POOL_SLUGS=x-llm
+RADAR_PRIORITY_PROBE_RETRIES=1
+RADAR_PRIORITY_PROBE_RETRY_BACKOFF_MS=1500
+```
+
+Priority retry is intentionally narrow: it only retries transient probe failures
+such as timeout, network error, and upstream 5xx server error. It does not retry
+auth errors, missing models, quota errors, rate limits, or bad responses.
+The retry worker records only the final probe result, and the final latency
+includes the earlier failed attempt plus backoff time. P95/P50 statistics keep
+their normal calculation.
 
 Generate the production credential secret once:
 
@@ -230,11 +317,11 @@ openssl rand -base64 48 # CRON_SECRET
 
 ## Deployment Order
 
-Before applying database migrations to production, run the local migration
-verification script:
+Before applying database migrations to production, confirm the migration
+verification has passed in `LLMHub Radar CI`:
 
-```bash
-pnpm --filter @openstatus/db verify:radar-migrations
+```text
+LLMHub Radar CI -> Verify migrations
 ```
 
 This script creates temporary libSQL databases and verifies both paths:
@@ -247,35 +334,57 @@ It specifically checks that `0081_page_subscriber_locale.sql` and
 `0082_radar_page_component_binding.sql` preserve existing OpenStatus page,
 subscriber, and component data while backfilling Radar page-component bindings.
 
-Build and start the non-notification stack first:
+Build images with the manual `LLMHub Radar Build Images` workflow. The workflow
+runs CI first, then publishes these images to GHCR:
+
+```text
+llmhub-radar-dashboard:{tag}
+llmhub-radar-status-page:{tag}
+llmhub-radar-radar-worker:{tag}
+```
+
+Deploy with the manual `LLMHub Radar Deploy` workflow using the same image tag.
+Keep `restart_notifications=false` for normal releases. The deploy script:
+
+- validates the compose config before changing services
+- logs in to GHCR if package pull credentials are configured
+- pulls the selected dashboard/status-page/worker images
+- backs up the `llmhub-radar-libsql-data` volume
+- starts libSQL
+- runs `db-migrate` as a one-shot container
+- starts `dashboard`, `status-page`, and `radar-probe-worker`
+- smoke-tests local dashboard and status-page HTTP endpoints
+- leaves `radar-notification-worker` untouched by default
+
+The server-side deployment script can be run manually for emergency rollback or
+debugging after the workflow has uploaded deployment files:
+
+```bash
+cd /opt/llmhub-radar
+LLMHUB_RADAR_IMAGE_OWNER=<github-owner-lowercase> \
+LLMHUB_RADAR_IMAGE_TAG=<image-tag> \
+bash scripts/deploy-llmhub-radar.sh
+```
+
+Local server builds are fallback only. Use them when GitHub Actions or GHCR is
+unavailable, not for normal production release:
 
 ```bash
 docker compose -f docker-compose.radar.yaml up -d --build \
   libsql db-migrate dashboard status-page radar-probe-worker
 ```
 
-Then verify:
+Before enabling subscriber notifications, run preflight and review the output.
+The deploy workflow does this only when `restart_notifications=true`:
 
 ```bash
-docker compose -f docker-compose.radar.yaml logs -f radar-probe-worker
-docker compose -f docker-compose.radar.yaml ps
-```
-
-Before enabling subscriber notifications, run the preflight command:
-
-```bash
-docker compose -f docker-compose.radar.yaml run --rm \
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
   radar-probe-worker bun src/scripts/radar-notification-preflight.ts
 ```
 
-Only start the notification worker after reviewing the output:
-
-```bash
-docker compose -f docker-compose.radar.yaml --profile notifications up -d \
-  radar-notification-worker
-```
-
-The notification worker is behind the `notifications` profile on purpose. A normal redeploy should not start it unless the operator explicitly enables that profile.
+The notification worker is behind the `notifications` profile on purpose. A
+normal redeploy should not start it unless the operator explicitly enables that
+profile.
 
 ## First Server Deployment Runbook
 
@@ -283,49 +392,55 @@ Use this exact order for the first deployment to `llm-hub`:
 
 1. Point DNS to the server and remove stale IPv6 records.
 2. Bootstrap the server: swap, Docker, Caddy, firewall.
-3. Commit and push local code changes to GitHub.
-4. Clone or pull the repository on the server under `/opt/llmhub-radar`.
-5. Create `/opt/llmhub-radar/.env.radar` from `.env.radar.example`.
-6. Copy `infra/Caddyfile.radar.example` to `/etc/caddy/Caddyfile` and reload
+3. Create `/opt/llmhub-radar/.env.radar` from `.env.radar.example`.
+4. Copy `infra/Caddyfile.radar.example` to `/etc/caddy/Caddyfile` and reload
    Caddy.
-7. Run local release checks before touching production data.
-8. Start the non-notification stack.
-9. Smoke test dashboard login and public status pages.
-10. Run notification preflight.
-11. Start `radar-notification-worker` only after preflight looks correct.
-12. Create the first database backup.
+5. Configure GitHub Actions secrets and variables.
+6. Commit and push local code changes to GitHub.
+7. Confirm `LLMHub Radar CI` is green.
+8. Run `LLMHub Radar Build Images` and record the image tag.
+9. Run `LLMHub Radar Deploy` with `restart_notifications=false`.
+10. Smoke test dashboard login and public status pages.
+11. Run notification preflight.
+12. Start `radar-notification-worker` only after preflight looks correct.
+13. Create the first database backup.
 
-Server commands after the repo is present:
+The deploy workflow uploads `docker-compose.radar.yaml`,
+`docker-compose.radar.images.yaml`, `.env.radar.example`,
+`infra/Caddyfile.radar.example`, and `scripts/deploy-llmhub-radar.sh` to
+`/opt/llmhub-radar`. The server does not need a full Git checkout for normal
+deploys, but `.env.radar` must already exist in that directory.
+
+The deploy script writes `.env.images` with the current image registry, owner,
+and tag. It contains no runtime secrets. Use it for manual inspection, restart,
+rollback, or notification commands after the first Actions deploy.
+
+Manual inspection commands after deploy:
 
 ```bash
 cd /opt/llmhub-radar
-docker compose -f docker-compose.radar.yaml up -d --build \
-  libsql db-migrate dashboard status-page radar-probe-worker
-docker compose -f docker-compose.radar.yaml ps
-docker compose -f docker-compose.radar.yaml logs --tail=200 dashboard
-docker compose -f docker-compose.radar.yaml logs --tail=200 status-page
-docker compose -f docker-compose.radar.yaml logs --tail=200 radar-probe-worker
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 dashboard
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 status-page
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-probe-worker
 ```
 
 Notification worker:
 
 ```bash
-docker compose -f docker-compose.radar.yaml run --rm \
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
   radar-probe-worker bun src/scripts/radar-notification-preflight.ts
-docker compose -f docker-compose.radar.yaml --profile notifications up -d \
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build \
   radar-notification-worker
-docker compose -f docker-compose.radar.yaml logs --tail=200 radar-notification-worker
+docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-notification-worker
 ```
 
 Redeploy later without notifications:
 
-```bash
-cd /opt/llmhub-radar
-git pull --ff-only
-docker compose -f docker-compose.radar.yaml up -d --build \
-  libsql db-migrate dashboard status-page radar-probe-worker
-docker compose -f docker-compose.radar.yaml ps
-```
+1. Confirm CI is green.
+2. Run `LLMHub Radar Build Images`.
+3. Run `LLMHub Radar Deploy` with the new image tag and
+   `restart_notifications=false`.
 
 Then run notification preflight and restart notification worker explicitly if
 the release changed notification behavior.

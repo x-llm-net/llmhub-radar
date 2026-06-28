@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { radarErrorTypes } from "@openstatus/db/src/schema";
 
-export const RADAR_PROBE_PROMPT = "Reply with exactly: ok";
+export const RADAR_PROBE_PROMPT = "hi";
 
 export type RadarProbeErrorType = (typeof radarErrorTypes)[number];
 
@@ -40,7 +40,8 @@ type ClassifyFailureInput = {
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_MAX_TOKENS = 3;
+const DEFAULT_MAX_TOKENS = 1;
+const MAX_PROBE_TOKENS = 1;
 
 const TOKEN_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
@@ -83,7 +84,9 @@ export async function runOpenAICompatibleProbe(
       method: "POST",
       signal: controller.signal,
       headers: {
+        "cache-control": "no-store",
         "content-type": "application/json",
+        pragma: "no-cache",
         authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
@@ -279,7 +282,7 @@ function clampMaxTokens(value?: number) {
     return DEFAULT_MAX_TOKENS;
   }
 
-  return Math.min(8, Math.max(1, Math.floor(value)));
+  return Math.min(MAX_PROBE_TOKENS, Math.max(1, Math.floor(value)));
 }
 
 async function parseJsonProbeResponse(
@@ -305,7 +308,7 @@ async function parseJsonProbeResponse(
   const content = extractChatContent(json);
   const usage = extractUsage(json);
 
-  if (content.trim() !== "ok") {
+  if (!hasProbeOutput(content)) {
     return {
       success: false,
       httpStatus: response.status,
@@ -315,7 +318,7 @@ async function parseJsonProbeResponse(
       tokensIn: usage.tokensIn,
       tokensOut: usage.tokensOut,
       responseSampleHash: hashSample(content),
-      safeErrorSummary: "Probe response did not match expected content",
+      safeErrorSummary: "Probe response did not contain text",
     };
   }
 
@@ -417,21 +420,6 @@ async function parseStreamingProbeResponse(
       ttfbMs,
       totalLatencyMs: elapsedMs(startedAt),
       safeErrorSummary: "Streaming response completed without content",
-    };
-  }
-
-  if (content.trim() !== "ok") {
-    return {
-      success: false,
-      httpStatus: response.status,
-      errorType: "bad_response",
-      ttfbMs,
-      firstTokenMs,
-      totalLatencyMs: elapsedMs(startedAt),
-      tokensIn,
-      tokensOut,
-      responseSampleHash: hashSample(content),
-      safeErrorSummary: "Probe stream did not match expected content",
     };
   }
 
@@ -602,15 +590,18 @@ function isIpv4Address(hostname: string) {
 
 function isTimeoutError(error: unknown) {
   return (
-    error instanceof DOMException && error.name === "AbortError"
-  ) || (
-    error instanceof Error &&
-    (error.name === "AbortError" || error.name === "TimeoutError")
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError"))
   );
 }
 
 function elapsedMs(startedAt: number) {
   return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+function hasProbeOutput(value: string) {
+  return value.trim().length > 0;
 }
 
 function hashSample(value: string) {

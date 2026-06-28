@@ -1,11 +1,6 @@
 name: Fly Deploy Private Location
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/private-location/**"
-      - "apps/checker/**"
+  workflow_dispatch:
 jobs:
   deploy-private-location:
     name: Deploy Private Location

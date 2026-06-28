@@ -1,4 +1,4 @@
-export const RADAR_PROBE_PROMPT = "Reply with exactly: ok";
+export const RADAR_PROBE_PROMPT = "hi";
 
 export const radarProbeErrorTypes = [
   "auth_error",
