@@ -61,6 +61,13 @@ jobs:
       CRON_SECRET: ci-cron-secret
       DATABASE_AUTH_TOKEN: basic:token
       DATABASE_URL: http://127.0.0.1:8080
+      PROJECT_ID_VERCEL: ci-vercel-project
+      STRIPE_SECRET_KEY: sk_test_ci
+      TEAM_ID_VERCEL: ci-vercel-team
+      TINY_BIRD_API_KEY: ci-tinybird-key
+      UNKEY_API_ID: ci-unkey-api
+      UNKEY_TOKEN: ci-unkey-token
+      VERCEL_AUTH_BEARER_TOKEN: ci-vercel-token
       NEXT_PUBLIC_DASHBOARD_URL: https://app.llm-hub.store
       NEXT_PUBLIC_STATUS_PAGE_URL: https://llm-hub.store
       NEXT_PUBLIC_URL: https://app.llm-hub.store
