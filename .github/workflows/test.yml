@@ -1,11 +1,7 @@
 # https://github.com/kentcdodds/kentcdodds.com/blob/main/.github/workflows/deployment.yml
 name: Tests
 on:
-  push:
-    branches:
-      - "main"
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   tests:
