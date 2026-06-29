@@ -75,8 +75,8 @@ smoke_test() {
   local dashboard_url="${LLMHUB_RADAR_LOCAL_DASHBOARD_URL:-http://127.0.0.1:3000/}"
   local status_page_url="${LLMHUB_RADAR_LOCAL_STATUS_PAGE_URL:-http://127.0.0.1:3001/}"
 
-  curl -fsS --retry 12 --retry-delay 5 --retry-connrefused "$dashboard_url" >/dev/null
-  curl -fsS --retry 12 --retry-delay 5 --retry-connrefused "$status_page_url" >/dev/null
+  curl -sS -o /dev/null -w "%{http_code}" --retry 12 --retry-delay 5 --retry-connrefused "$dashboard_url" | grep -Eq "^[23][0-9][0-9]$"
+  curl -sS -o /dev/null -w "%{http_code}" --retry 12 --retry-delay 5 --retry-connrefused "$status_page_url" | grep -Eq "^[23][0-9][0-9]$"
   echo "Smoke tests passed: $dashboard_url $status_page_url"
 }
 
