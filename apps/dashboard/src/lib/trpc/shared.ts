@@ -30,6 +30,11 @@ export function guardTRPCSource(req: Request): Response | null {
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
   // Note: dashboard has its own tRPC API routes
+  if (process.env.DASHBOARD_URL) return process.env.DASHBOARD_URL;
+  if (process.env.NEXT_PUBLIC_DASHBOARD_URL) {
+    return process.env.NEXT_PUBLIC_DASHBOARD_URL;
+  }
+  if (process.env.NEXT_PUBLIC_URL) return process.env.NEXT_PUBLIC_URL;
   if (process.env.VERCEL_URL) return "https://app.llm-hub.store"; // Vercel
   return "http://localhost:3000"; // Local dev and Docker (internal calls)
 };

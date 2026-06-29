@@ -35,7 +35,7 @@ import {
   UpdateRadarPoolInput,
 } from "./schemas";
 
-const DEFAULT_POOL_LIMIT = 5;
+const DEFAULT_POOL_LIMIT = 100;
 
 function toTargetName(providerName: string, targetName: string): string {
   return `${providerName} / ${targetName}`;
