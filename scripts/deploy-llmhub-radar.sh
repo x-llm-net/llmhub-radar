@@ -67,6 +67,24 @@ backup_database() {
   echo "Created backup: $backup_file"
 }
 
+wait_for_container_healthy() {
+  local container="$1"
+  local attempt
+  local health
+
+  for attempt in $(seq 1 24); do
+    health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+    if [ "$health" = "healthy" ] || [ "$health" = "running" ]; then
+      return 0
+    fi
+    echo "Waiting for $container to become healthy, attempt $attempt/24, status=${health:-missing}"
+    sleep 5
+  done
+
+  echo "Container $container did not become healthy after 24 attempts" >&2
+  return 1
+}
+
 validate_compose() {
   "${COMPOSE[@]}" config --quiet
 }
@@ -121,6 +139,7 @@ echo "Deploying LLMHub Radar image tag: ${LLMHUB_RADAR_IMAGE_TAG}"
 backup_database
 
 "${COMPOSE[@]}" up -d libsql
+wait_for_container_healthy "${LLMHUB_RADAR_LIBSQL_CONTAINER:-llmhub-radar-libsql}"
 "${COMPOSE[@]}" up \
   --no-deps \
   --force-recreate \
