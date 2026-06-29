@@ -136,6 +136,8 @@ function buildRadarStabilityBuckets(
   runs: Array<{
     startedAt: Date;
     success: boolean;
+    firstTokenMs: number | null;
+    totalLatencyMs: number | null;
     errorType: string | null;
   }>,
 ) {
@@ -165,12 +167,14 @@ function buildRadarStabilityBuckets(
     if (!bucket) continue;
 
     if (run.success) {
-      bucket.ok += 1;
-    } else if (
-      run.errorType === "timeout" ||
-      run.errorType === "server_error"
-    ) {
-      bucket.degraded += 1;
+      if (
+        (run.firstTokenMs != null && run.firstTokenMs > 15_000) ||
+        (run.totalLatencyMs != null && run.totalLatencyMs > 30_000)
+      ) {
+        bucket.degraded += 1;
+      } else {
+        bucket.ok += 1;
+      }
     } else {
       bucket.error += 1;
     }
@@ -185,10 +189,11 @@ function buildRadarStabilityBuckets(
 
   return visibleBuckets.map((bucket) => {
     const total = bucket.ok + bucket.degraded + bucket.error;
+    const available = bucket.ok + bucket.degraded;
     return {
       ...bucket,
       availability:
-        total === 0 ? null : Math.round((bucket.ok / total) * 10_000),
+        total === 0 ? null : Math.round((available / total) * 10_000),
     };
   });
 }
@@ -565,6 +570,7 @@ export const statusPageRouter = createTRPCRouter({
             success: radarProbeRun.success,
             errorType: radarProbeRun.errorType,
             firstTokenMs: radarProbeRun.firstTokenMs,
+            totalLatencyMs: radarProbeRun.totalLatencyMs,
           })
           .from(radarProbeRun)
           .where(
@@ -643,12 +649,14 @@ export const statusPageRouter = createTRPCRouter({
           const bucket = dailyStatusByDate.get(dayKey(run.startedAt));
           if (!bucket) continue;
           if (run.success) {
-            bucket.ok += 1;
-          } else if (
-            run.errorType === "timeout" ||
-            run.errorType === "server_error"
-          ) {
-            bucket.degraded += 1;
+            if (
+              (run.firstTokenMs != null && run.firstTokenMs > 15_000) ||
+              (run.totalLatencyMs != null && run.totalLatencyMs > 30_000)
+            ) {
+              bucket.degraded += 1;
+            } else {
+              bucket.ok += 1;
+            }
           } else {
             bucket.error += 1;
           }

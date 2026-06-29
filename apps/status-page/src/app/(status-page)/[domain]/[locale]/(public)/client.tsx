@@ -1141,7 +1141,7 @@ const radarCopy = {
     criteriaOverall:
       "Overall status: degraded means at least one API key is degraded or unavailable; outage means all active API keys are unavailable.",
     criteriaAvailability:
-      "7d availability: >=98% stable; 90-98% slightly variable; 75-90% variable; 50-75% needs attention; <50% unstable.",
+      "7d availability counts successful probes as available, including slower successful probes: >=98% stable; 90-98% slightly variable; 75-90% variable; 50-75% needs attention; <50% unstable.",
     criteriaLatency:
       "First token: <=5s fast; 5-15s acceptable; >15s high latency. Successful probes never count as down because of latency alone.",
     firstTokenP50: "First token P50",
@@ -1174,7 +1174,7 @@ const radarCopy = {
     samples7d: "{count} valid samples",
     sevenDaysAgo: "7 days ago",
     bucketOk: "Normal",
-    bucketDegraded: "Degraded",
+    bucketDegraded: "Slow",
     bucketError: "Failed",
     past: "Past",
     now: "Now",
@@ -1220,7 +1220,7 @@ const radarCopy = {
     criteriaOverall:
       "整体状态：部分 API 密钥降级或不可用显示服务降级；全部活跃 API 密钥不可用显示服务中断。",
     criteriaAvailability:
-      "7 天可用性：≥98% 稳定；90-98% 轻微波动；75-90% 波动；50-75% 需要关注；<50% 不稳定。",
+      "7 天可用性：按成功率计算，成功但偏慢仍计为可用；≥98% 稳定，90-98% 轻微波动，75-90% 波动，50-75% 需要关注，<50% 不稳定。",
     criteriaLatency:
       "首 token：≤5s 快；5-15s 可接受；>15s 高延时。只要探测成功，不会因为延时被判定为不可用。",
     firstTokenP50: "首T P50",
@@ -1253,7 +1253,7 @@ const radarCopy = {
     samples7d: "{count} 个有效样本",
     sevenDaysAgo: "7 \u5929\u524d",
     bucketOk: "\u6b63\u5e38",
-    bucketDegraded: "\u964d\u7ea7",
+    bucketDegraded: "\u504f\u6162",
     bucketError: "\u5931\u8d25",
     past: "过去",
     now: "现在",
