@@ -75,9 +75,27 @@ smoke_test() {
   local dashboard_url="${LLMHUB_RADAR_LOCAL_DASHBOARD_URL:-http://127.0.0.1:3000/}"
   local status_page_url="${LLMHUB_RADAR_LOCAL_STATUS_PAGE_URL:-http://127.0.0.1:3001/}"
 
-  curl -sS -o /dev/null -w "%{http_code}" --retry 12 --retry-delay 5 --retry-connrefused "$dashboard_url" | grep -Eq "^[23][0-9][0-9]$"
-  curl -sS -o /dev/null -w "%{http_code}" --retry 12 --retry-delay 5 --retry-connrefused "$status_page_url" | grep -Eq "^[23][0-9][0-9]$"
+  smoke_test_url "$dashboard_url"
+  smoke_test_url "$status_page_url"
   echo "Smoke tests passed: $dashboard_url $status_page_url"
+}
+
+smoke_test_url() {
+  local url="$1"
+  local attempt
+  local code
+
+  for attempt in $(seq 1 24); do
+    code="$(curl -sS -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)"
+    if [[ "$code" =~ ^[23][0-9][0-9]$ ]]; then
+      return 0
+    fi
+    echo "Smoke test waiting for $url, attempt $attempt/24, code=${code:-curl_failed}"
+    sleep 5
+  done
+
+  echo "Smoke test failed for $url after 24 attempts" >&2
+  return 1
 }
 
 require_env LLMHUB_RADAR_IMAGE_OWNER
