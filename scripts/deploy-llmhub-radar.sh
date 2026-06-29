@@ -31,14 +31,38 @@ write_compose_env() {
 backup_database() {
   local backup_dir="${LLMHUB_RADAR_BACKUP_DIR:-/opt/backups/llmhub-radar}"
   local backup_file
+  local libsql_container="${LLMHUB_RADAR_LIBSQL_CONTAINER:-llmhub-radar-libsql}"
+  local paused_libsql=0
+  local backup_status=0
   backup_file="${backup_dir}/libsql-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 
   mkdir -p "$backup_dir"
+  if [ "$(docker inspect -f '{{.State.Running}}' "$libsql_container" 2>/dev/null || true)" = "true" ]; then
+    docker pause "$libsql_container" >/dev/null
+    paused_libsql=1
+  fi
+
+  restore_libsql() {
+    if [ "$paused_libsql" = "1" ]; then
+      docker unpause "$libsql_container" >/dev/null || true
+      paused_libsql=0
+    fi
+  }
+  trap restore_libsql RETURN
+
   docker run --rm \
     -v llmhub-radar-libsql-data:/data:ro \
     -v "$backup_dir:/backup" \
     ubuntu:24.04 \
-    tar czf "/backup/$(basename "$backup_file")" -C /data .
+    tar czf "/backup/$(basename "$backup_file")" -C /data . || backup_status=$?
+
+  restore_libsql
+  trap - RETURN
+
+  if [ "$backup_status" -ne 0 ]; then
+    echo "Failed to create backup: $backup_file" >&2
+    return "$backup_status"
+  fi
 
   echo "Created backup: $backup_file"
 }
