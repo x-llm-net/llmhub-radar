@@ -49,18 +49,16 @@ LABEL \
     io.dofigen.version="2.7.0" \
     org.opencontainers.image.base.digest="sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2" \
     org.opencontainers.image.base.name="docker.io/node:24-slim"
+ENV \
+    HOSTNAME="0.0.0.0" \
+    PORT="3000"
 WORKDIR /app/apps/status-page
 COPY \
     --from=builder \
     --chown=1000:1000 \
     --chmod=555 \
     --link \
-    "/app/apps/status-page/.next/standalone/apps/status-page/" "./"
-COPY \
-    --from=builder \
-    --chown=1000:1000 \
-    --link \
-    "/app/node_modules/" "/app/node_modules/"
+    "/app/apps/status-page/.next/standalone/" "/app/"
 COPY \
     --from=builder \
     --chown=1000:1000 \

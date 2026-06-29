@@ -1,7 +1,8 @@
-import { and, db, eq, inArray } from "@openstatus/db";
+import { and, db, desc, eq, gte, inArray } from "@openstatus/db";
 import {
   page,
   radarPool,
+  radarProbeRun,
   radarProbeTarget,
   radarTargetStatus,
 } from "@openstatus/db/src/schema";
@@ -16,12 +17,13 @@ export const dynamic = "force-dynamic";
 
 const MAX_SLUGS = 20;
 const MAX_BODY_BYTES = 8 * 1024;
-const MIN_SAMPLE_COUNT_24H = 10;
+const MIN_SAMPLE_COUNT_7D = 10;
 const API_VERSION = "v1";
-const SCHEMA_VERSION = "2026-06-28";
-const SCORE_VERSION = "radar-public-health-v1";
+const SCHEMA_VERSION = "2026-06-29";
+const SCORE_VERSION = "radar-public-availability-7d-v1";
 const CACHE_BUCKET_MS = 10 * 60 * 1000;
 const CACHE_CONTROL = "public, max-age=600, stale-while-revalidate=300";
+const MAX_CACHE_ENTRIES = 500;
 
 type TargetStatus =
   | "unknown"
@@ -33,7 +35,14 @@ type TargetStatus =
 
 type PublicProviderStatus = "operational" | "degraded" | "down" | "unknown";
 type ConfidenceLevel = "high" | "medium" | "low" | "insufficient";
-type Grade = "A" | "B" | "C" | "D" | "F" | "unknown";
+type Grade = "S" | "A" | "B" | "C" | "D" | "F" | "unknown";
+
+type CacheEntry = {
+  body: string;
+  etag: string;
+};
+
+const responseCache = new Map<string, CacheEntry>();
 
 const querySchema = z.object({
   slugs: z
@@ -91,16 +100,17 @@ function aggregateStatus(statuses: TargetStatus[]): PublicProviderStatus {
 function confidenceForSampleCount(sampleCount: number): ConfidenceLevel {
   if (sampleCount >= 120) return "high";
   if (sampleCount >= 30) return "medium";
-  if (sampleCount >= MIN_SAMPLE_COUNT_24H) return "low";
+  if (sampleCount >= MIN_SAMPLE_COUNT_7D) return "low";
   return "insufficient";
 }
 
 function gradeForScore(score: number | null): Grade {
   if (score === null) return "unknown";
+  if (score >= 98) return "S";
   if (score >= 95) return "A";
   if (score >= 90) return "B";
   if (score >= 80) return "C";
-  if (score >= 70) return "D";
+  if (score >= 60) return "D";
   return "F";
 }
 
@@ -149,46 +159,31 @@ function weightedP95FirstTokenSummaryMs(
   return Math.round(weightedTotal / sampleCount);
 }
 
-function latencyPenalty(p95FirstTokenMs: number | null) {
-  if (p95FirstTokenMs === null) return 0;
-  if (p95FirstTokenMs > 15_000) return 20;
-  if (p95FirstTokenMs > 8_000) return 10;
-  if (p95FirstTokenMs > 5_000) return 5;
-  return 0;
+function percentile(values: number[], percentileValue: number) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.ceil((percentileValue / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(index, sorted.length - 1))] ?? null;
 }
 
-function statusPenalty(status: PublicProviderStatus) {
-  if (status === "down") return 35;
-  if (status === "degraded") return 10;
-  if (status === "unknown") return 15;
-  return 0;
+function availabilityBasisPoints(runs: Array<{ success: boolean }>) {
+  if (runs.length === 0) return null;
+  const successCount = runs.filter((run) => run.success).length;
+  return Math.round((successCount / runs.length) * 10_000);
 }
 
-function clampScore(score: number) {
-  return Math.max(0, Math.min(100, score));
-}
-
-function observedHealthScore(args: {
-  availability24hBasisPoints: number | null;
-  sampleCount24h: number;
-  p95FirstTokenMs: number | null;
-  status: PublicProviderStatus;
+function scoreFromAvailability7d(args: {
+  availability7dBasisPoints: number | null;
+  sampleCount7d: number;
 }) {
   if (
-    args.availability24hBasisPoints === null ||
-    args.sampleCount24h < MIN_SAMPLE_COUNT_24H
+    args.availability7dBasisPoints === null ||
+    args.sampleCount7d < MIN_SAMPLE_COUNT_7D
   ) {
     return null;
   }
 
-  const availabilityScore = args.availability24hBasisPoints / 100;
-  return clampScore(
-    Math.round(
-      availabilityScore -
-        statusPenalty(args.status) -
-        latencyPenalty(args.p95FirstTokenMs),
-    ),
-  );
+  return Number((args.availability7dBasisPoints / 100).toFixed(2));
 }
 
 function buildQualityFlags(args: {
@@ -231,12 +226,22 @@ function toIsoString(value: Date | null) {
   return value ? value.toISOString() : null;
 }
 
-async function buildPayload(inputSlugs: string[]) {
+function cacheKey(slugs: string[], generatedAt: Date) {
+  return `${generatedAt.toISOString()}:${slugs.join(",")}`;
+}
+
+function rememberCacheEntry(key: string, entry: CacheEntry) {
+  responseCache.set(key, entry);
+  if (responseCache.size <= MAX_CACHE_ENTRIES) return;
+
+  const oldestKey = responseCache.keys().next().value;
+  if (oldestKey) responseCache.delete(oldestKey);
+}
+
+async function buildPayload(inputSlugs: string[], generatedAt: Date) {
   const slugs = uniqueSlugs(inputSlugs);
-  const generatedAt = new Date(
-    Math.floor(Date.now() / CACHE_BUCKET_MS) * CACHE_BUCKET_MS,
-  );
-  const windowFrom = new Date(generatedAt.getTime() - 24 * 60 * 60 * 1000);
+  const windowFrom7d = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const windowFrom24h = new Date(generatedAt.getTime() - 24 * 60 * 60 * 1000);
 
   const rows = await db
     .select({
@@ -292,6 +297,27 @@ async function buildPayload(inputSlugs: string[]) {
           )
           .all()
       : [];
+  const runRows =
+    poolIds.length > 0
+      ? await db
+          .select({
+            poolId: radarProbeRun.poolId,
+            startedAt: radarProbeRun.startedAt,
+            success: radarProbeRun.success,
+            firstTokenMs: radarProbeRun.firstTokenMs,
+            totalLatencyMs: radarProbeRun.totalLatencyMs,
+          })
+          .from(radarProbeRun)
+          .where(
+            and(
+              inArray(radarProbeRun.poolId, poolIds),
+              gte(radarProbeRun.startedAt, windowFrom7d),
+            ),
+          )
+          .orderBy(desc(radarProbeRun.startedAt))
+          .limit(50_000)
+          .all()
+      : [];
 
   const targetsByPoolId = new Map<number, typeof targetRows>();
   for (const target of targetRows) {
@@ -299,10 +325,17 @@ async function buildPayload(inputSlugs: string[]) {
     list.push(target);
     targetsByPoolId.set(target.poolId, list);
   }
+  const runsByPoolId = new Map<number, typeof runRows>();
+  for (const run of runRows) {
+    const list = runsByPoolId.get(run.poolId) ?? [];
+    list.push(run);
+    runsByPoolId.set(run.poolId, list);
+  }
 
   const itemsBySlug = new Map();
   for (const row of rows) {
     const targets = targetsByPoolId.get(row.poolId) ?? [];
+    const runs = runsByPoolId.get(row.poolId) ?? [];
     const status = aggregateStatus(
       targets.map(
         (target) => target.status ?? target.targetStatus ?? "unknown",
@@ -324,18 +357,23 @@ async function buildPayload(inputSlugs: string[]) {
         p95FirstTokenMs: target.p95FirstTokenMs ?? null,
       })),
     );
+    const firstTokenValues7d = runs
+      .map((run) => run.firstTokenMs)
+      .filter((value): value is number => typeof value === "number");
+    const availability7dBasisPoints = availabilityBasisPoints(runs);
+    const p50FirstToken7dMs = percentile(firstTokenValues7d, 50);
+    const p95FirstToken7dMs = percentile(firstTokenValues7d, 95);
     const lastCheckAt = latestDate(
       targets.map((target) => target.lastCheckAt ?? null),
     );
     const statusUpdatedAt = latestDate(
       targets.map((target) => target.statusUpdatedAt ?? null),
     );
-    const confidenceLevel = confidenceForSampleCount(sampleCount24h);
-    const score = observedHealthScore({
-      availability24hBasisPoints,
-      sampleCount24h,
-      p95FirstTokenMs: p95FirstTokenSummaryMs,
-      status,
+    const sampleCount7d = runs.length;
+    const confidenceLevel = confidenceForSampleCount(sampleCount7d);
+    const score = scoreFromAvailability7d({
+      availability7dBasisPoints,
+      sampleCount7d,
     });
 
     itemsBySlug.set(row.slug, {
@@ -354,22 +392,25 @@ async function buildPayload(inputSlugs: string[]) {
       qualityFlags: buildQualityFlags({
         status,
         confidenceLevel,
-        p95FirstTokenMs: p95FirstTokenSummaryMs,
+        p95FirstTokenMs: p95FirstToken7dMs ?? p95FirstTokenSummaryMs,
         lastCheckAt,
         generatedAt,
       }),
       targetCount: targets.length,
+      sampleCount7d,
+      availability7dBasisPoints,
       sampleCount24h,
       availability24hBasisPoints,
+      p50FirstTokenMs: p50FirstToken7dMs,
+      p95FirstTokenMs: p95FirstToken7dMs,
       p95FirstTokenSummaryMs,
       lastCheckAt: toIsoString(lastCheckAt),
       updatedAt: toIsoString(statusUpdatedAt ?? row.pageUpdatedAt ?? null),
       scoreVersion: SCORE_VERSION,
       scoreInputs: {
-        minSampleCount24h: MIN_SAMPLE_COUNT_24H,
-        availabilityWeight: 1,
-        statusPenalty: statusPenalty(status),
-        latencyPenalty: latencyPenalty(p95FirstTokenSummaryMs),
+        minSampleCount7d: MIN_SAMPLE_COUNT_7D,
+        scoreFormula: "observedHealthScore = availability7dBasisPoints / 100",
+        latencyPenalty: 0,
       },
     });
   }
@@ -384,20 +425,32 @@ async function buildPayload(inputSlugs: string[]) {
     schemaVersion: SCHEMA_VERSION,
     generatedAt: generatedAt.toISOString(),
     window: {
-      label: "24h",
-      from: windowFrom.toISOString(),
+      label: "7d",
+      from: windowFrom7d.toISOString(),
       to: generatedAt.toISOString(),
+    },
+    windows: {
+      primary: {
+        label: "7d",
+        from: windowFrom7d.toISOString(),
+        to: generatedAt.toISOString(),
+      },
+      shortTerm: {
+        label: "24h",
+        from: windowFrom24h.toISOString(),
+        to: generatedAt.toISOString(),
+      },
     },
     units: {
       availability: "basis_points",
       latency: "milliseconds",
-      score: "0_to_100",
+      score: "availability_percent",
     },
     limit: MAX_SLUGS,
     items,
     missing: slugs.filter((slug) => !foundSlugs.has(slug)),
     disclaimer:
-      "Observed health is based only on LLMHub Radar active probe samples. It is not an official SLA, model quality score, price ranking, or purchase recommendation.",
+      "Observed health score equals the 7-day observed probe availability percentage. It is not an official SLA, model quality score, price ranking, or purchase recommendation.",
   };
 }
 
@@ -428,29 +481,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const payload = await buildPayload(parsed.data.slugs);
-    const body = JSON.stringify(payload);
-    const etag = computeETag(body);
+    const slugs = uniqueSlugs(parsed.data.slugs);
+    const generatedAt = new Date(
+      Math.floor(Date.now() / CACHE_BUCKET_MS) * CACHE_BUCKET_MS,
+    );
+    const key = cacheKey(slugs, generatedAt);
+    let entry = responseCache.get(key);
+    if (!entry) {
+      const payload = await buildPayload(slugs, generatedAt);
+      const body = JSON.stringify(payload);
+      entry = {
+        body,
+        etag: computeETag(body),
+      };
+      rememberCacheEntry(key, entry);
+    }
 
-    if (isNotModified(request, etag)) {
+    if (isNotModified(request, entry.etag)) {
       return new NextResponse(null, {
         status: 304,
         headers: {
           ...corsHeaders,
           "Cache-Control": CACHE_CONTROL,
-          ETag: etag,
+          ETag: entry.etag,
           "Content-Type": "application/json; charset=utf-8",
         },
       });
     }
 
-    return new NextResponse(body, {
+    return new NextResponse(entry.body, {
       status: 200,
       headers: {
         ...corsHeaders,
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": CACHE_CONTROL,
-        ETag: etag,
+        ETag: entry.etag,
       },
     });
   } catch (error) {

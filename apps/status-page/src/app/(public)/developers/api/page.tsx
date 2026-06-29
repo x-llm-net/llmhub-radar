@@ -20,18 +20,19 @@ Content-Type: application/json
 
 const exampleResponse = `{
   "apiVersion": "v1",
-  "generatedAt": "2026-06-28T10:00:00.000Z",
-  "window": { "label": "24h" },
+  "generatedAt": "2026-06-29T10:00:00.000Z",
+  "window": { "label": "7d" },
   "items": [
     {
       "slug": "skyhope",
       "name": "Skyhope",
       "status": "operational",
-      "observedHealthScore": 96,
+      "observedHealthScore": 96.77,
       "grade": "A",
       "confidenceLevel": "medium",
-      "availability24hBasisPoints": 9875,
-      "p95FirstTokenSummaryMs": 4200,
+      "availability7dBasisPoints": 9677,
+      "sampleCount7d": 1114,
+      "p95FirstTokenMs": 6485,
       "statusPageUrl": "https://llm-hub.store/skyhope"
     }
   ],
@@ -67,7 +68,7 @@ export default function Page() {
             </h1>
             <p className="text-muted-foreground max-w-2xl text-base leading-7">
               这个 API 面向中转站聚合、导航和榜单网站。你可以按 slug
-              批量获取公开服务商的实时状态、24 小时观测评分、可用性和首 token
+              批量获取公开服务商的实时状态、7 天观测可用率、评分和首 token
               延迟摘要。
             </p>
           </header>
@@ -92,8 +93,8 @@ export default function Page() {
 
           <section className="grid gap-3 sm:grid-cols-3">
             {[
-              ["observedHealthScore", "0-100 的观测健康分，基于 24 小时样本。"],
-              ["grade", "A/B/C/D/F/unknown，适合做列表粗筛。"],
+              ["observedHealthScore", "等于 7 天观测可用率百分数，例如 96.77。"],
+              ["grade", "S/A/B/C/D/F/unknown，适合做列表粗筛。"],
               [
                 "confidenceLevel",
                 "high/medium/low/insufficient，表示样本可信度。",
