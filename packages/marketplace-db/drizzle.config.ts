@@ -1,0 +1,14 @@
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/schema.ts",
+  out: "./migrations",
+  dbCredentials: {
+    url:
+      process.env.MARKETPLACE_DATABASE_URL ??
+      "postgres://llmhub:llmhub@127.0.0.1:55432/llmhub_marketplace",
+  },
+  strict: true,
+  verbose: true,
+});

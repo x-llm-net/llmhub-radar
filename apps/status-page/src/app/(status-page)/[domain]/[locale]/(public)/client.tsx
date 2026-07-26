@@ -34,6 +34,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Link } from "@/components/common/link";
 import { useStatusPage } from "@/components/status-page/floating-button";
+import { RadarMarkdown } from "@/components/status-page/radar-markdown";
 import {
   StatusBanner,
   StatusBannerContainer,
@@ -168,7 +169,9 @@ export function Client() {
         <StatusHeader className="group-data-[hide-title=true]/embed:hidden">
           <StatusTitle>{page.title}</StatusTitle>
           <StatusDescription>
-            {getStatusPageDescription(page.description, locale)}
+            <RadarMarkdown
+              value={getStatusPageDescription(page.description, locale) ?? ""}
+            />
           </StatusDescription>
         </StatusHeader>
         {events.length > 0 ? (

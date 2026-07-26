@@ -61,6 +61,7 @@ jobs:
             docker-compose.radar.yaml \
             docker-compose.radar.images.yaml \
             .env.radar.example \
+            apps/storefront \
             infra/Caddyfile.radar.example \
             scripts/deploy-llmhub-radar.sh
 
@@ -77,7 +78,34 @@ jobs:
           ssh -i ~/.ssh/llmhub_radar \
             -p "${{ env.SSH_PORT }}" \
             "${{ secrets.LLMHUB_RADAR_SSH_USER }}@${{ secrets.LLMHUB_RADAR_SSH_HOST }}" \
-            "cd '${{ env.DEPLOY_PATH }}' && tar xzf llmhub-radar-deploy-files.tgz && chmod +x scripts/deploy-llmhub-radar.sh"
+            "bash -s -- '${{ env.DEPLOY_PATH }}'" <<'REMOTE'
+          set -eu
+          DEPLOY_PATH="$1"
+          cd "$DEPLOY_PATH"
+
+          BACKUP_DIR="/opt/backups/llmhub-radar/release-$(date -u +%Y%m%dT%H%M%SZ)"
+          install -d -m 700 "$BACKUP_DIR"
+          for file in \
+            .env.images \
+            .env.radar.example \
+            docker-compose.radar.yaml \
+            docker-compose.radar.images.yaml \
+            scripts/deploy-llmhub-radar.sh; do
+            if [ -e "$file" ]; then
+              cp -a "$file" "$BACKUP_DIR/"
+            fi
+          done
+          if [ -f /etc/caddy/Caddyfile ]; then
+            cp -a /etc/caddy/Caddyfile "$BACKUP_DIR/Caddyfile"
+          fi
+          if [ -L storefront/current ]; then
+            readlink storefront/current >"$BACKUP_DIR/storefront-current-target"
+          fi
+          printf '%s\n' "$BACKUP_DIR" >.previous-release-backup
+
+          tar xzf llmhub-radar-deploy-files.tgz
+          chmod +x scripts/deploy-llmhub-radar.sh
+          REMOTE
 
       - name: Deploy
         env:
@@ -96,6 +124,7 @@ jobs:
             printf 'LLMHUB_RADAR_IMAGE_OWNER=%q\n' '${{ env.OWNER_LC }}'
             printf 'LLMHUB_RADAR_IMAGE_TAG=%q\n' "${IMAGE_TAG}"
             printf 'RADAR_DEPLOY_NOTIFICATIONS=%q\n' "${RADAR_DEPLOY_NOTIFICATIONS}"
+            printf 'LLMHUB_RADAR_PUBLIC_MARKETPLACE_URL=%q\n' 'https://llm-hub.store/v1/models'
             printf 'GHCR_USERNAME=%q\n' "${GHCR_USERNAME}"
             printf 'GHCR_TOKEN=%q\n' "${GHCR_TOKEN}"
           } > "${DEPLOY_ENV_FILE}"

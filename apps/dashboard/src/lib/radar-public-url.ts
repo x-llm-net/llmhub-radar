@@ -13,6 +13,6 @@ function getPublicStatusOrigin() {
   if (configured) return configured.replace(/\/$/, "");
 
   return process.env.NODE_ENV === "development"
-    ? "http://localhost:3001"
+    ? "http://127.0.0.1:3001"
     : "https://llm-hub.store";
 }

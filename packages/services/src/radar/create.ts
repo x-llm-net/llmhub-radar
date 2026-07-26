@@ -18,10 +18,11 @@ import { requireScope } from "../auth";
 import { type DB, type ServiceContext, withTransaction } from "../context";
 import {
   ConflictError,
-  LimitExceededError,
   NotFoundError,
+  PreconditionFailedError,
   ValidationError,
 } from "../errors";
+import { resolveRadarCreationOwner } from "./access";
 import { getBaseUrlHostHash, normalizeRadarBaseUrl } from "./base-url";
 import { encryptSecret, getSecretLastFour, hashSecret } from "./crypto";
 import {
@@ -34,8 +35,6 @@ import {
   UpdateRadarTokenProbeInput,
   UpdateRadarPoolInput,
 } from "./schemas";
-
-const DEFAULT_POOL_LIMIT = 100;
 
 function toTargetName(providerName: string, targetName: string): string {
   return `${providerName} / ${targetName}`;
@@ -182,27 +181,24 @@ export async function createRadarPool(args: {
   const input = CreateRadarPoolInput.parse(args.input);
 
   return withTransaction(ctx, async (tx) => {
-    const [existingSlug, existingPageSlug, countRow] = await Promise.all([
+    const ownership = await resolveRadarCreationOwner({
+      ctx,
+      db: tx,
+      requestedOwnerUserId: input.ownerUserId,
+    });
+    const workspaceId = ownership.workspaceId;
+
+    const [existingSlug, existingPageSlug] = await Promise.all([
       tx
         .select({ id: radarPool.id })
         .from(radarPool)
-        .where(
-          and(
-            eq(radarPool.workspaceId, ctx.workspace.id),
-            eq(radarPool.slug, input.slug),
-          ),
-        )
+        .where(eq(radarPool.slug, input.slug))
         .get(),
       tx
         .select({ id: page.id })
         .from(page)
         .where(eq(page.slug, input.slug))
         .get(),
-      tx
-        .select({ count: radarPool.id })
-        .from(radarPool)
-        .where(eq(radarPool.workspaceId, ctx.workspace.id))
-        .all(),
     ]);
 
     if (existingSlug) {
@@ -210,16 +206,16 @@ export async function createRadarPool(args: {
     }
     if (existingPageSlug)
       throw new ConflictError("Status page slug already exists.");
-    if (countRow.length >= DEFAULT_POOL_LIMIT) {
-      throw new LimitExceededError("radar status pages", DEFAULT_POOL_LIMIT);
-    }
+
     const publicPage = await tx
       .insert(page)
       .values({
-        workspaceId: ctx.workspace.id,
+        workspaceId,
         title: input.name,
         description:
           input.description || "Model availability and first-token latency.",
+        homepageUrl: input.homepageUrl ?? null,
+        contactUrl: input.contactUrl ?? null,
         slug: input.slug,
         customDomain: "",
         published: true,
@@ -233,10 +229,15 @@ export async function createRadarPool(args: {
     const pool = await tx
       .insert(radarPool)
       .values({
-        workspaceId: ctx.workspace.id,
+        workspaceId,
+        ownerUserId: ownership.ownerUserId,
+        claimable: ownership.claimable,
         name: input.name,
         slug: input.slug,
         description: input.description,
+        pricingUrl: input.pricingUrl ?? null,
+        redirectUrlTemplate: input.redirectUrlTemplate ?? null,
+        contactQq: input.contactQq ?? null,
         visibility: input.visibility,
         publicPoolOptIn: input.publicPoolOptIn,
         pageId: publicPage.id,
@@ -256,7 +257,7 @@ export async function createRadarPool(args: {
     const provider = await tx
       .insert(radarProvider)
       .values({
-        workspaceId: ctx.workspace.id,
+        workspaceId,
         poolId: pool.id,
         name: providerName,
         displayName: input.provider.displayName,
@@ -278,7 +279,7 @@ export async function createRadarPool(args: {
     const credential = await tx
       .insert(radarCredential)
       .values({
-        workspaceId: ctx.workspace.id,
+        workspaceId,
         providerId: provider.id,
         name: input.credential.name,
         encryptedApiKey,
@@ -303,7 +304,7 @@ export async function createRadarPool(args: {
       const target = await tx
         .insert(radarProbeTarget)
         .values({
-          workspaceId: ctx.workspace.id,
+          workspaceId,
           poolId: pool.id,
           providerId: provider.id,
           credentialId: credential.id,
@@ -317,14 +318,14 @@ export async function createRadarPool(args: {
         .get();
 
       await tx.insert(radarTargetStatus).values({
-        workspaceId: ctx.workspace.id,
+        workspaceId,
         targetId: target.id,
         currentStatus: "unknown",
         updatedAt: new Date(),
       });
 
       await ensurePageComponentForTarget(tx, {
-        workspaceId: ctx.workspace.id,
+        workspaceId,
         poolId: pool.id,
         pageId: publicPage.id,
         targetId: target.id,
@@ -416,6 +417,9 @@ export async function updateRadarPool(args: {
         name: input.name,
         slug: input.slug,
         description: input.description,
+        pricingUrl: input.pricingUrl ?? null,
+        redirectUrlTemplate: input.redirectUrlTemplate ?? null,
+        contactQq: input.contactQq ?? null,
         visibility: "unlisted",
         publicPoolOptIn: input.publicPoolOptIn,
         updatedAt,
@@ -481,6 +485,12 @@ export async function updateRadarPool(args: {
           title: input.name,
           description:
             input.description || "Model availability and first-token latency.",
+          ...(input.homepageUrl !== undefined
+            ? { homepageUrl: input.homepageUrl }
+            : {}),
+          ...(input.contactUrl !== undefined
+            ? { contactUrl: input.contactUrl }
+            : {}),
           slug: input.slug,
           updatedAt,
         })
@@ -730,6 +740,11 @@ export async function updateRadarTokenProbe(args: {
     if (!row) {
       throw new NotFoundError("radar_credential", input.credentialId);
     }
+    if (row.credential.handoverExpiresAt && !input.apiKey) {
+      throw new PreconditionFailedError(
+        "Enter a replacement API key to complete the platform credential handover.",
+      );
+    }
 
     const now = new Date();
     const modelCatalog = normalizeModelCatalog(
@@ -749,6 +764,8 @@ export async function updateRadarTokenProbe(args: {
       credentialUpdate.encryptedApiKey = await encryptSecret(input.apiKey);
       credentialUpdate.keyFingerprint = keyFingerprint;
       credentialUpdate.lastFour = getSecretLastFour(input.apiKey);
+      credentialUpdate.handoverExpiresAt = null;
+      credentialUpdate.enabled = true;
     }
 
     const credential = await tx
@@ -776,10 +793,18 @@ export async function updateRadarTokenProbe(args: {
           name: `${row.provider.displayName} / ${input.modelType} / ${input.apiKeyName}`,
           displayName: input.apiKeyName,
           modelName: input.probeModel,
+          currentStatus: input.apiKey ? "unknown" : target.currentStatus,
           nextCheckAt: now,
           updatedAt: now,
         })
         .where(eq(radarProbeTarget.id, target.id));
+
+      if (input.apiKey) {
+        await tx
+          .update(radarTargetStatus)
+          .set({ currentStatus: "unknown", updatedAt: now })
+          .where(eq(radarTargetStatus.targetId, target.id));
+      }
 
       await ensurePageComponentForTarget(tx, {
         workspaceId: ctx.workspace.id,
@@ -864,6 +889,11 @@ export async function deleteRadarCredential(args: {
 
     if (!row) {
       throw new NotFoundError("radar_credential", input.credentialId);
+    }
+    if (row.credential.handoverExpiresAt) {
+      throw new PreconditionFailedError(
+        "Replace the platform handover key instead of deleting its probe history.",
+      );
     }
 
     const targetBindings = await tx

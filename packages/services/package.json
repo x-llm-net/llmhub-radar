@@ -33,6 +33,10 @@
       "import": "./src/radar/index.ts",
       "types": "./src/radar/index.ts"
     },
+    "./media": {
+      "import": "./src/media/index.ts",
+      "types": "./src/media/index.ts"
+    },
     "./notification": {
       "import": "./src/notification/index.ts",
       "types": "./src/notification/index.ts"

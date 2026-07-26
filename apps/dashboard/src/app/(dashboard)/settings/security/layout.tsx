@@ -6,7 +6,6 @@ import {
 import { AppSidebarTrigger } from "@/components/nav/app-sidebar";
 
 import { Tabs } from "../tabs";
-import { Breadcrumb } from "./breadcrumb";
 import { NavActions } from "./nav-actions";
 
 export default async function Layout({
@@ -17,15 +16,14 @@ export default async function Layout({
   return (
     <div>
       <AppHeader>
-        <AppHeaderContent>
+        <AppHeaderContent className="min-w-0">
           <AppSidebarTrigger />
-          <Breadcrumb />
+          <Tabs placement="header" />
         </AppHeaderContent>
         <AppHeaderActions>
           <NavActions />
         </AppHeaderActions>
       </AppHeader>
-      <Tabs />
       <main className="w-full flex-1">{children}</main>
     </div>
   );

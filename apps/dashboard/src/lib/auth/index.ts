@@ -126,5 +126,5 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   // basePath: "/api/auth", // default is `/api/auth`
   // secret: process.env.AUTH_SECRET, // default is `AUTH_SECRET`
-  debug: process.env.NODE_ENV === "development",
+  debug: process.env.AUTH_DEBUG === "true",
 });

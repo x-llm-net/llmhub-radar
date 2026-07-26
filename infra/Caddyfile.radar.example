@@ -3,7 +3,20 @@
 
 llm-hub.store {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:3001
+
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:3010
+	}
+
+	@storefront path / /index.html /model.html /provider.html /styles.css /main.js /model-page.js /provider-page.js /dashboard-links.js /favicon.svg
+	handle @storefront {
+		root * /opt/llmhub-radar/storefront/current
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
 }
 
 app.llm-hub.store {

@@ -102,6 +102,9 @@ export function Client() {
   const [openDialog, setOpenDialog] = useState(false);
   const { data: workspace } = useQuery(trpc.workspace.get.queryOptions());
   const { data: auditLogs } = useQuery(trpc.auditLog.list.queryOptions({}));
+  const { data: radarData } = useQuery(
+    trpc.radar.listPools.queryOptions({ limit: 1 }),
+  );
   const columns = useMemo(
     () =>
       getColumns({
@@ -115,17 +118,16 @@ export function Client() {
     [t],
   );
 
-  if (!workspace) return null;
+  if (!workspace || !radarData) return null;
 
-  const isLimited = workspace.limits["audit-log"] === false;
+  const isLimited =
+    workspace.limits["audit-log"] === false && !radarData.access.isAdmin;
 
   return (
     <SectionGroup>
       <SectionHeader>
         <SectionTitle>{t("title")}</SectionTitle>
-        <SectionDescription>
-          {t("description")}
-        </SectionDescription>
+        <SectionDescription>{t("description")}</SectionDescription>
       </SectionHeader>
       <Section>
         {isLimited ? (

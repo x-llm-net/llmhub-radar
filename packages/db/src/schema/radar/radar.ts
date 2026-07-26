@@ -2,26 +2,118 @@ import { relations, sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { mediaAsset } from "../media_assets";
 import { monitor } from "../monitors";
 import { pageComponent } from "../page_components";
 import { page } from "../pages";
+import { user } from "../users";
 import { workspace } from "../workspaces";
 import {
   radarBaseUrlVisibility,
+  radarClaimApplicationStatuses,
   radarEndpointTypes,
   radarErrorTypes,
   radarNotificationDeliveryStatuses,
   radarNotificationEventTypes,
   radarNotificationSeverities,
+  radarOrderStatuses,
+  radarOrderTypes,
   radarPoolVisibility,
   radarProviderTypes,
   radarTargetStatuses,
+  radarVerificationApplicationStatuses,
+  radarVerificationApplicationTypes,
+  radarVerificationStatuses,
 } from "./constants";
+
+export const radarAccount = sqliteTable("radar_account", {
+  userId: integer("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  verificationStatus: text("verification_status", {
+    enum: radarVerificationStatuses,
+  })
+    .default("unverified")
+    .notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s', 'now'))`,
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s', 'now'))`,
+  ),
+});
+
+export const radarVerificationApplication = sqliteTable(
+  "radar_verification_application",
+  {
+    id: integer("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    type: text("type", {
+      enum: radarVerificationApplicationTypes,
+    }).notNull(),
+    status: text("status", {
+      enum: radarVerificationApplicationStatuses,
+    })
+      .default("pending")
+      .notNull(),
+    realName: text("real_name", { length: 120 }),
+    companyName: text("company_name", { length: 200 }),
+    creditCode: text("credit_code", { length: 64 }),
+    legalRepresentativeName: text("legal_representative_name", {
+      length: 120,
+    }),
+    identityNumberEncrypted: text("identity_number_encrypted"),
+    identityNumberHash: text("identity_number_hash", { length: 128 }),
+    identityNumberMasked: text("identity_number_masked", { length: 32 }),
+    mobileEncrypted: text("mobile_encrypted"),
+    mobileHash: text("mobile_hash", { length: 128 }),
+    mobileMasked: text("mobile_masked", { length: 32 }),
+    // Deprecated v1 fields retained as nullable columns for a safe migration.
+    contactName: text("contact_name", { length: 120 }),
+    contactQq: text("contact_qq", { length: 64 }),
+    websiteUrl: text("website_url", { length: 256 }),
+    proof: text("proof", { length: 2000 }),
+    reviewNote: text("review_note", { length: 1000 }),
+    reviewedByUserId: integer("reviewed_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp" }),
+    paymentConfirmedAt: integer("payment_confirmed_at", {
+      mode: "timestamp",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    index("radar_verification_application_user_created_idx").on(
+      t.userId,
+      t.createdAt,
+    ),
+    index("radar_verification_application_status_created_idx").on(
+      t.status,
+      t.createdAt,
+    ),
+    index("radar_verification_application_identity_hash_idx").on(
+      t.identityNumberHash,
+    ),
+    index("radar_verification_application_credit_code_idx").on(t.creditCode),
+  ],
+);
 
 export const radarPool = sqliteTable(
   "radar_pool",
@@ -30,9 +122,18 @@ export const radarPool = sqliteTable(
     workspaceId: integer("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    ownerUserId: integer("owner_user_id").references(() => user.id, {
+      onDelete: "restrict",
+    }),
+    claimable: integer("claimable", { mode: "boolean" })
+      .default(false)
+      .notNull(),
     name: text("name", { length: 120 }).notNull(),
     slug: text("slug", { length: 80 }).notNull(),
-    description: text("description", { length: 500 }).default("").notNull(),
+    description: text("description", { length: 5000 }).default("").notNull(),
+    pricingUrl: text("pricing_url", { length: 256 }),
+    redirectUrlTemplate: text("redirect_url_template", { length: 256 }),
+    contactQq: text("contact_qq", { length: 64 }),
     visibility: text("visibility", { enum: radarPoolVisibility })
       .default("private")
       .notNull(),
@@ -52,6 +153,133 @@ export const radarPool = sqliteTable(
   (t) => [
     uniqueIndex("radar_pool_workspace_slug_idx").on(t.workspaceId, t.slug),
     index("radar_pool_workspace_id_idx").on(t.workspaceId),
+    index("radar_pool_owner_user_id_idx").on(t.ownerUserId),
+  ],
+);
+
+export const radarClaimApplication = sqliteTable(
+  "radar_claim_application",
+  {
+    id: integer("id").primaryKey(),
+    poolId: integer("pool_id")
+      .notNull()
+      .references(() => radarPool.id, { onDelete: "cascade" }),
+    applicantUserId: integer("applicant_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    status: text("status", { enum: radarClaimApplicationStatuses })
+      .default("pending")
+      .notNull(),
+    proof: text("proof", { length: 2000 }).notNull(),
+    evidenceImageUrls: text("evidence_image_urls", { mode: "json" })
+      .$type<string[]>()
+      .default([])
+      .notNull(),
+    reviewNote: text("review_note", { length: 1000 }),
+    reviewedByUserId: integer("reviewed_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    index("radar_claim_application_pool_status_idx").on(t.poolId, t.status),
+    index("radar_claim_application_applicant_status_idx").on(
+      t.applicantUserId,
+      t.status,
+    ),
+    index("radar_claim_application_created_idx").on(t.createdAt),
+  ],
+);
+
+export const radarClaimApplicationEvidence = sqliteTable(
+  "radar_claim_application_evidence",
+  {
+    applicationId: integer("application_id")
+      .notNull()
+      .references(() => radarClaimApplication.id, { onDelete: "cascade" }),
+    assetId: text("asset_id", { length: 36 })
+      .notNull()
+      .references(() => mediaAsset.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    primaryKey({ columns: [t.applicationId, t.assetId] }),
+    index("radar_claim_evidence_application_order_idx").on(
+      t.applicationId,
+      t.sortOrder,
+    ),
+    index("radar_claim_evidence_asset_idx").on(t.assetId),
+  ],
+);
+
+export const radarOrder = sqliteTable(
+  "radar_order",
+  {
+    id: integer("id").primaryKey(),
+    orderNumber: text("order_number", { length: 40 }).notNull(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    verificationApplicationId: integer(
+      "verification_application_id",
+    ).references(() => radarVerificationApplication.id, {
+      onDelete: "set null",
+    }),
+    poolId: integer("pool_id").references(() => radarPool.id, {
+      onDelete: "set null",
+    }),
+    modelSlug: text("model_slug", { length: 160 }),
+    type: text("type", { enum: radarOrderTypes }).notNull(),
+    status: text("status", { enum: radarOrderStatuses })
+      .default("pending_payment")
+      .notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency", { length: 8 }).default("CNY").notNull(),
+    receiptAssetId: text("receipt_asset_id", { length: 36 }).references(
+      () => mediaAsset.id,
+      { onDelete: "set null" },
+    ),
+    reviewNote: text("review_note", { length: 1000 }),
+    reviewedByUserId: integer("reviewed_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    submittedAt: integer("submitted_at", { mode: "timestamp" }),
+    paidAt: integer("paid_at", { mode: "timestamp" }),
+    activatedAt: integer("activated_at", { mode: "timestamp" }),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (t) => [
+    uniqueIndex("radar_order_number_idx").on(t.orderNumber),
+    uniqueIndex("radar_order_verification_application_idx").on(
+      t.verificationApplicationId,
+    ),
+    uniqueIndex("radar_order_receipt_asset_idx").on(t.receiptAssetId),
+    index("radar_order_user_created_idx").on(t.userId, t.createdAt),
+    index("radar_order_status_created_idx").on(t.status, t.createdAt),
   ],
 );
 
@@ -118,6 +346,7 @@ export const radarCredential = sqliteTable(
     dailyCostLimitCents: integer("daily_cost_limit_cents")
       .default(100)
       .notNull(),
+    handoverExpiresAt: integer("handover_expires_at", { mode: "timestamp" }),
     enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(
@@ -384,6 +613,58 @@ export const radarPoolRelations = relations(radarPool, ({ one, many }) => ({
   }),
   providers: many(radarProvider),
   targets: many(radarProbeTarget),
+}));
+
+export const radarClaimApplicationRelations = relations(
+  radarClaimApplication,
+  ({ one, many }) => ({
+    pool: one(radarPool, {
+      fields: [radarClaimApplication.poolId],
+      references: [radarPool.id],
+    }),
+    applicant: one(user, {
+      fields: [radarClaimApplication.applicantUserId],
+      references: [user.id],
+    }),
+    evidence: many(radarClaimApplicationEvidence),
+  }),
+);
+
+export const radarClaimApplicationEvidenceRelations = relations(
+  radarClaimApplicationEvidence,
+  ({ one }) => ({
+    application: one(radarClaimApplication, {
+      fields: [radarClaimApplicationEvidence.applicationId],
+      references: [radarClaimApplication.id],
+    }),
+    asset: one(mediaAsset, {
+      fields: [radarClaimApplicationEvidence.assetId],
+      references: [mediaAsset.id],
+    }),
+  }),
+);
+
+export const radarOrderRelations = relations(radarOrder, ({ one }) => ({
+  user: one(user, {
+    fields: [radarOrder.userId],
+    references: [user.id],
+  }),
+  workspace: one(workspace, {
+    fields: [radarOrder.workspaceId],
+    references: [workspace.id],
+  }),
+  verificationApplication: one(radarVerificationApplication, {
+    fields: [radarOrder.verificationApplicationId],
+    references: [radarVerificationApplication.id],
+  }),
+  pool: one(radarPool, {
+    fields: [radarOrder.poolId],
+    references: [radarPool.id],
+  }),
+  receiptAsset: one(mediaAsset, {
+    fields: [radarOrder.receiptAssetId],
+    references: [mediaAsset.id],
+  }),
 }));
 
 export const radarProviderRelations = relations(

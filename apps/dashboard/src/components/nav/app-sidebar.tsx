@@ -16,15 +16,19 @@ import {
   TooltipTrigger,
 } from "@openstatus/ui/components/ui/tooltip";
 import {
+  BadgeCheck,
   Bell,
-  Cog,
+  ChartNoAxesCombined,
+  CircleUserRound,
   LayoutGrid,
-  Radar,
+  ReceiptText,
+  Store,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import * as React from "react";
 
 import { Kbd } from "@/components/common/kbd";
+import { NavContact } from "@/components/nav/nav-contact";
 import { NavOverview } from "@/components/nav/nav-overview";
 import { NavUser } from "@/components/nav/nav-user";
 import { WorkspaceSwitcher } from "@/components/nav/workspace-switcher";
@@ -33,11 +37,32 @@ const SIDEBAR_KEYBOARD_SHORTCUT = "[";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const t = useTranslations("nav");
-  const overview = [
+  const workbench = [
     { name: t("overview"), url: "/overview", icon: LayoutGrid },
-    { name: t("radar"), url: "/radar", icon: Radar },
+    { name: t("myProviders"), url: "/radar", icon: Store },
+    {
+      name: t("dataRankings"),
+      url: "/rankings",
+      icon: ChartNoAxesCombined,
+    },
     { name: t("notifications"), url: "/notifications", icon: Bell },
-    { name: t("settings"), url: "/settings/general", icon: Cog },
+  ];
+  const accountBenefits = [
+    {
+      name: t("verificationBenefits"),
+      url: "/verification",
+      icon: BadgeCheck,
+    },
+    {
+      name: t("orders"),
+      url: "/orders",
+      icon: ReceiptText,
+    },
+    {
+      name: t("accountSettings"),
+      url: "/settings/account",
+      icon: CircleUserRound,
+    },
   ];
 
   return (
@@ -46,7 +71,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        <NavOverview items={overview} />
+        <NavOverview label={t("workbench")} items={workbench} />
+        <NavOverview label={t("accountBenefits")} items={accountBenefits} />
+        <NavContact />
       </SidebarContent>
       <SidebarFooter className="flex h-14 flex-col justify-center gap-0 border-t p-0">
         <NavUser />
@@ -60,7 +87,6 @@ export function AppSidebarTrigger() {
   const { toggleSidebar } = useSidebar();
   const t = useTranslations("nav");
 
-  // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (

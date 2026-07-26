@@ -13,6 +13,10 @@ networks:
 volumes:
   libsql-data:
     name: llmhub-radar-libsql-data
+  media-data:
+    name: llmhub-radar-media-data
+  marketplace-postgres-data:
+    name: llmhub-radar-marketplace-postgres-data
 
 services:
   libsql:
@@ -37,6 +41,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  marketplace-postgres:
+    container_name: llmhub-radar-marketplace-postgres
+    image: postgres:16-alpine
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    environment:
+      POSTGRES_DB: ${MARKETPLACE_POSTGRES_DB:-llmhub_marketplace}
+      POSTGRES_USER: ${MARKETPLACE_POSTGRES_USER:-llmhub}
+      POSTGRES_PASSWORD: ${MARKETPLACE_POSTGRES_PASSWORD:-llmhub-local-only}
+    volumes:
+      - marketplace-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
       start_period: 10s
     restart: unless-stopped
 
@@ -71,6 +99,8 @@ services:
       dockerfile: apps/dashboard/Dockerfile
       args:
         NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+        NEXT_PUBLIC_MARKETPLACE_API_URL: ${NEXT_PUBLIC_MARKETPLACE_API_URL:-https://llm-hub.store}
+        NEXT_PUBLIC_MARKETPLACE_URL: ${NEXT_PUBLIC_MARKETPLACE_URL:-https://llm-hub.store}
         NEXT_PUBLIC_STATUS_PAGE_URL: ${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
     image: llmhub-radar/dashboard:latest
     logging: *default-logging
@@ -83,12 +113,17 @@ services:
     environment:
       - DATABASE_URL=http://libsql:8080
       - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-https://app.llm-hub.store}
+      - NEXT_PUBLIC_MARKETPLACE_API_URL=${NEXT_PUBLIC_MARKETPLACE_API_URL:-https://llm-hub.store}
+      - NEXT_PUBLIC_MARKETPLACE_URL=${NEXT_PUBLIC_MARKETPLACE_URL:-https://llm-hub.store}
       - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-https://app.llm-hub.store}
       - NEXT_PUBLIC_STATUS_PAGE_URL=${NEXT_PUBLIC_STATUS_PAGE_URL:-https://llm-hub.store}
       - AUTH_URL=${AUTH_URL:-https://app.llm-hub.store}
+      - MEDIA_STORAGE_ROOT=/app/data/media
       - PORT=3000
       - HOSTNAME=0.0.0.0
       - AUTH_TRUST_HOST=true
+    volumes:
+      - media-data:/app/data/media
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -190,4 +225,82 @@ services:
         condition: service_completed_successfully
       libsql:
         condition: service_healthy
+    restart: unless-stopped
+
+  marketplace-migrate:
+    container_name: llmhub-radar-marketplace-migrate
+    build:
+      context: .
+      dockerfile: apps/marketplace-api/Dockerfile
+    image: llmhub-radar/marketplace-api:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    working_dir: /app/packages/marketplace-db
+    environment:
+      MARKETPLACE_DATABASE_URL: ${MARKETPLACE_DATABASE_URL:-postgres://llmhub:llmhub-local-only@marketplace-postgres:5432/llmhub_marketplace}
+    command: ["sh", "-c", "bun src/migrate.ts && bun src/seed.ts"]
+    depends_on:
+      marketplace-postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  marketplace-api:
+    container_name: llmhub-radar-marketplace-api
+    build:
+      context: .
+      dockerfile: apps/marketplace-api/Dockerfile
+    image: llmhub-radar/marketplace-api:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    ports:
+      - "127.0.0.1:3010:3010"
+    environment:
+      MARKETPLACE_DATABASE_URL: ${MARKETPLACE_DATABASE_URL:-postgres://llmhub:llmhub-local-only@marketplace-postgres:5432/llmhub_marketplace}
+      PORT: 3010
+    depends_on:
+      marketplace-migrate:
+        condition: service_completed_successfully
+      marketplace-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bun -e 'const response = await fetch(\"http://127.0.0.1:3010/health\"); if (!response.ok) process.exit(1)'",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  marketplace-maintenance:
+    container_name: llmhub-radar-marketplace-maintenance
+    build:
+      context: .
+      dockerfile: apps/marketplace-api/Dockerfile
+    image: llmhub-radar/marketplace-api:latest
+    logging: *default-logging
+    networks:
+      - llmhub-radar
+    working_dir: /app/packages/marketplace-db
+    environment:
+      MARKETPLACE_DATABASE_URL: ${MARKETPLACE_DATABASE_URL:-postgres://llmhub:llmhub-local-only@marketplace-postgres:5432/llmhub_marketplace}
+      MARKETPLACE_LEGACY_PUBLIC_URL: ${MARKETPLACE_LEGACY_PUBLIC_URL:-https://llm-hub.store}
+      MARKETPLACE_LEGACY_PUBLIC_SLUGS: ${MARKETPLACE_LEGACY_PUBLIC_SLUGS:-x-llm,skyhope,autorouter,deepkey}
+      MARKETPLACE_MIN_RANKING_SCORE: ${MARKETPLACE_MIN_RANKING_SCORE:-80}
+      MARKETPLACE_SYNC_INTERVAL_MS: ${MARKETPLACE_SYNC_INTERVAL_MS:-600000}
+      MARKETPLACE_CLEANUP_INTERVAL_MS: ${MARKETPLACE_CLEANUP_INTERVAL_MS:-86400000}
+    command: ["bun", "src/run-maintenance-loop.ts"]
+    depends_on:
+      marketplace-migrate:
+        condition: service_completed_successfully
+      status-page:
+        condition: service_healthy
+    healthcheck:
+      disable: true
     restart: unless-stopped

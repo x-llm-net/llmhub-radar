@@ -352,6 +352,8 @@ async function getPublicRadarByPageId(args: {
       name: pool.name,
       slug: pool.slug,
       description: pool.description,
+      pricingUrl: pool.pricingUrl ?? null,
+      redirectUrlTemplate: pool.redirectUrlTemplate ?? null,
     },
     status,
     targets,

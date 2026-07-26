@@ -11,6 +11,8 @@ pages.
   `pnpm --filter @openstatus/status-page tsc --pretty false`
 - [ ] Dashboard type check passes:
   `pnpm --filter @openstatus/dashboard tsc --pretty false`
+- [ ] Marketplace packages type checks and tests pass:
+  `pnpm --filter @llmhub/marketplace-db typecheck && pnpm --filter @llmhub/marketplace-api typecheck`
 - [ ] Radar service tests pass where relevant:
   `pnpm --filter @openstatus/services test src/radar`
 - [ ] Changed files pass formatter and lint:
@@ -20,6 +22,8 @@ pages.
 ## 2. Database And Migrations
 
 - [ ] Production database backup exists before deployment.
+- [ ] Marketplace PostgreSQL backup exists before deployment, except on its
+  first creation.
 - [ ] Migration verification passes locally:
   `pnpm --filter @openstatus/db verify:radar-migrations`
 - [ ] Empty database path is verified.
@@ -45,6 +49,8 @@ pages.
   `https://llm-hub.store`.
 - [ ] `STATUS_PAGE_URL` points to the internal status-page service URL in
   Docker, for example `http://status-page:3000`.
+- [ ] Marketplace PostgreSQL credentials, public source URL, provider slugs,
+  ranking threshold, sync interval, and cleanup interval are configured.
 - [ ] Docker build args for `dashboard` and `status-page` use the same
   production public URLs, not localhost placeholders.
 - [ ] `CRON_SECRET` is set to a random production value.
@@ -63,8 +69,11 @@ pages.
   `swapon --show`.
 - [ ] Docker Engine and Docker Compose plugin are installed:
   `docker version` and `docker compose version`.
+- [ ] Root filesystem has at least 8 GiB free before pulling release images.
 - [ ] Caddy is installed and serving
   `infra/Caddyfile.radar.example` routes.
+- [ ] `https://llm-hub.store/v1/models` reaches Marketplace API and a normal
+  public status-page route still reaches `status-page`.
 - [ ] Firewall allows only SSH, HTTP, and HTTPS by default:
   `ufw status`.
 - [ ] `docker-compose.radar.yaml` binds internal ports to `127.0.0.1`, not
@@ -91,17 +100,22 @@ pages.
 - [ ] `LLMHub Radar Deploy` is run with the recorded image tag.
 - [ ] Normal deploy uses `restart_notifications=false`.
 - [ ] The deploy workflow summary shows the expected image tag.
-- [ ] The deploy workflow completed the smoke tests for dashboard and
-  status-page.
+- [ ] The deploy workflow completed smoke tests for dashboard, status-page,
+  Marketplace health, public `/v1/models`, `/v1/homepage`, and the static
+  storefront.
 
 ## 6. Runtime Verification
 
 - [ ] `.env.images` exists on the server after deploy and contains only image
   registry, owner, and tag values.
-- [ ] `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps`
-  shows healthy/running `dashboard`, `status-page`, `libsql`, and
+- [ ] `docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps`
+  shows healthy/running `dashboard`, `status-page`, `libsql`,
+  `marketplace-postgres`, `marketplace-api`, `marketplace-maintenance`, and
   `radar-probe-worker`.
 - [ ] `db-migrate` exits successfully.
+- [ ] `marketplace-migrate` exits successfully and seeds the model catalog.
+- [ ] `marketplace-maintenance` logs show a successful legacy sync and cleanup.
+- [ ] `/opt/llmhub-radar/storefront/current` points to the deployed image tag.
 - [ ] `radar-probe-worker` logs show regular ticks and no credential decrypt
   failures.
 - [ ] `radar-notification-worker` is not started by default.
@@ -109,7 +123,7 @@ pages.
 ## 7. Notification Safety
 
 - [ ] Run notification preflight before enabling notifications:
-  `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm radar-probe-worker bun src/scripts/radar-notification-preflight.ts`
+  `docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm radar-probe-worker bun src/scripts/radar-notification-preflight.ts`
 - [ ] `pending`, `retryable failed`, `fresh dispatchable`, and
   `stale dispatchable` counts are reviewed.
 - [ ] If stale dispatchable events exist, they are reviewed manually instead of
@@ -117,7 +131,7 @@ pages.
 - [ ] Notification worker startup logs include `replayGuardStartedAt`,
   `dispatchCutoff`, and `ignoredOlderThanCutoff`.
 - [ ] Start notification worker only after preflight is understood:
-  `docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build radar-notification-worker`
+  `docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build radar-notification-worker`
 - [ ] Email and webhook notifications are verified with a test subscriber.
 
 ## 8. Product Smoke Test
@@ -156,6 +170,8 @@ pages.
 ## 9. Public Page Review
 
 - [ ] Header logo and navigation link to the correct public paths.
+- [ ] `https://llm-hub.store/` contains the `LLMHub Marketplace` deployment
+  marker and loads real `/v1/homepage` data rather than a mock fixture.
 - [ ] `状态` / `Status` tab opens the status page.
 - [ ] `事件公告` / `Events` tab opens the events page.
 - [ ] Footer brand links to `https://llm-hub.store`.
@@ -178,7 +194,10 @@ pages.
 ## 10. Backup And Recovery
 
 - [ ] Database Docker volume `llmhub-radar-libsql-data` has a fresh backup.
-- [ ] Backup file is listed under `/opt/backups/llmhub-radar`.
+- [ ] Media Docker volume `llmhub-radar-media-data` has a fresh backup.
+- [ ] Marketplace PostgreSQL has a fresh compressed SQL backup.
+- [ ] Matching database and media backup files are listed under
+  `/opt/backups/llmhub-radar`.
 - [ ] Restore path is understood before the first real production migration.
 - [ ] At least the latest 7 daily backups are retained.
 - [ ] Once real users exist, backups are copied off-server.

@@ -56,6 +56,7 @@ The image names are:
 ghcr.io/{owner}/llmhub-radar-dashboard:{tag}
 ghcr.io/{owner}/llmhub-radar-status-page:{tag}
 ghcr.io/{owner}/llmhub-radar-radar-worker:{tag}
+ghcr.io/{owner}/llmhub-radar-marketplace-api:{tag}
 ```
 
 Normal release order:
@@ -113,7 +114,9 @@ Caddy:
 
 | Public host | Target |
 | --- | --- |
-| `https://llm-hub.store` | `status-page` on `127.0.0.1:3001` |
+| `https://llm-hub.store/` and storefront assets | versioned static storefront served by Caddy |
+| `https://llm-hub.store/v1/*` | `marketplace-api` on `127.0.0.1:3010` |
+| Other `https://llm-hub.store/*` routes | `status-page` on `127.0.0.1:3001` |
 | `https://app.llm-hub.store` | `dashboard` on `127.0.0.1:3000` |
 
 `llm-hub.store` is the public provider square and shareable status-page host.
@@ -124,11 +127,12 @@ The compose file binds web and database ports to `127.0.0.1` only:
 ```text
 127.0.0.1:3000 -> dashboard
 127.0.0.1:3001 -> status-page
+127.0.0.1:3010 -> marketplace-api
 127.0.0.1:18080 -> libsql HTTP
 127.0.0.1:15001 -> libsql replication/admin port
 ```
 
-Do not expose `3000`, `3001`, `18080`, or `15001` directly to the public
+Do not expose `3000`, `3001`, `3010`, `18080`, or `15001` directly to the public
 internet. Public traffic should enter through ports `80` and `443` only.
 
 Use the example Caddy config:
@@ -341,6 +345,7 @@ runs CI first, then publishes these images to GHCR:
 llmhub-radar-dashboard:{tag}
 llmhub-radar-status-page:{tag}
 llmhub-radar-radar-worker:{tag}
+llmhub-radar-marketplace-api:{tag}
 ```
 
 Deploy with the manual `LLMHub Radar Deploy` workflow using the same image tag.
@@ -349,11 +354,17 @@ Keep `restart_notifications=false` for normal releases. The deploy script:
 - validates the compose config before changing services
 - logs in to GHCR if package pull credentials are configured
 - pulls the selected dashboard/status-page/worker images
-- backs up the `llmhub-radar-libsql-data` volume
+- backs up the `llmhub-radar-libsql-data` and `llmhub-radar-media-data` volumes
 - starts libSQL
 - runs `db-migrate` as a one-shot container
 - starts `dashboard`, `status-page`, and `radar-probe-worker`
-- smoke-tests local dashboard and status-page HTTP endpoints
+- starts Marketplace PostgreSQL, runs Marketplace migrations, and starts the
+  Marketplace API and maintenance loop
+- installs the static storefront under a versioned release directory
+- validates and reloads Caddy only after local services are healthy
+- restores the previous storefront symlink and Caddy config if public smoke
+  tests fail
+- smoke-tests local services, public Marketplace APIs, and the storefront
 - leaves `radar-notification-worker` untouched by default
 
 The server-side deployment script can be run manually for emergency rollback or
@@ -378,7 +389,7 @@ Before enabling subscriber notifications, run preflight and review the output.
 The deploy workflow does this only when `restart_notifications=true`:
 
 ```bash
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
   radar-probe-worker bun src/scripts/radar-notification-preflight.ts
 ```
 
@@ -393,8 +404,10 @@ Use this exact order for the first deployment to `llm-hub`:
 1. Point DNS to the server and remove stale IPv6 records.
 2. Bootstrap the server: swap, Docker, Caddy, firewall.
 3. Create `/opt/llmhub-radar/.env.radar` from `.env.radar.example`.
-4. Copy `infra/Caddyfile.radar.example` to `/etc/caddy/Caddyfile` and reload
-   Caddy.
+4. Confirm Caddy is installed and the current production config is valid. The
+   deploy script installs the candidate config only after Marketplace API is
+   healthy, then verifies `/v1/models`, the storefront, and status-page fallback
+   routing.
 5. Configure GitHub Actions secrets and variables.
 6. Commit and push local code changes to GitHub.
 7. Confirm `LLMHub Radar CI` is green.
@@ -407,9 +420,19 @@ Use this exact order for the first deployment to `llm-hub`:
 
 The deploy workflow uploads `docker-compose.radar.yaml`,
 `docker-compose.radar.images.yaml`, `.env.radar.example`,
-`infra/Caddyfile.radar.example`, and `scripts/deploy-llmhub-radar.sh` to
-`/opt/llmhub-radar`. The server does not need a full Git checkout for normal
+`apps/storefront`, `infra/Caddyfile.radar.example`, and
+`scripts/deploy-llmhub-radar.sh` to `/opt/llmhub-radar`. Before extraction it
+backs up the previous Compose files, image metadata, deploy script, Caddy config,
+and storefront target. The server does not need a full Git checkout for normal
 deploys, but `.env.radar` must already exist in that directory.
+
+The first release that introduces Marketplace cannot roll back through an older
+image tag because that tag has no Marketplace API image. Restore the release
+backup recorded in `/opt/llmhub-radar/.previous-release-backup`, restore its
+Caddy config, and recreate the previous three application services. Keep the
+Marketplace PostgreSQL volume unless its data is known to be corrupt. After the
+first successful Marketplace release, normal tag-based rollback is available
+again.
 
 The deploy script writes `.env.images` with the current image registry, owner,
 and tag. It contains no runtime secrets. Use it for manual inspection, restart,
@@ -419,20 +442,21 @@ Manual inspection commands after deploy:
 
 ```bash
 cd /opt/llmhub-radar
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 dashboard
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 status-page
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-probe-worker
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 dashboard
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 status-page
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-probe-worker
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 marketplace-api marketplace-maintenance
 ```
 
 Notification worker:
 
 ```bash
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml run --rm \
   radar-probe-worker bun src/scripts/radar-notification-preflight.ts
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build \
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml --profile notifications up -d --no-build \
   radar-notification-worker
-docker compose --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-notification-worker
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-notification-worker
 ```
 
 Redeploy later without notifications:
@@ -447,9 +471,11 @@ the release changed notification behavior.
 
 ## Backup
 
-The production database lives in the Docker volume
-`llmhub-radar-libsql-data`. Back up the volume before every production deploy
-that changes migrations or persistence code.
+The production account database, uploaded claim evidence, and Marketplace
+database live in `llmhub-radar-libsql-data`, `llmhub-radar-media-data`, and
+`llmhub-radar-marketplace-postgres-data`. Treat their backups as one release
+set. Marketplace PostgreSQL uses a logical `pg_dump`; do not copy its live
+volume files.
 
 Manual backup:
 
@@ -460,6 +486,14 @@ docker run --rm \
   -v /opt/backups/llmhub-radar:/backup \
   ubuntu:24.04 \
   tar czf /backup/libsql-$(date +%F-%H%M%S).tar.gz -C /data .
+docker run --rm \
+  -v llmhub-radar-media-data:/data:ro \
+  -v /opt/backups/llmhub-radar:/backup \
+  ubuntu:24.04 \
+  tar czf /backup/media-$(date +%F-%H%M%S).tar.gz -C /data .
+docker exec llmhub-radar-marketplace-postgres sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump --no-owner --no-privileges -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  | gzip -c > /opt/backups/llmhub-radar/marketplace-postgres-$(date +%F-%H%M%S).sql.gz
 ls -lh /opt/backups/llmhub-radar
 ```
 

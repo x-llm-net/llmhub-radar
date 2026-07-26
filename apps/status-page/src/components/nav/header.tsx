@@ -21,7 +21,7 @@ import {
 } from "@openstatus/ui/components/ui/sheet";
 import { cn } from "@openstatus/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Menu, MessageCircleMore } from "lucide-react";
+import { ExternalLink, Menu, MessageCircleMore } from "lucide-react";
 import { useExtracted, useLocale } from "next-intl";
 import NextLink from "next/link";
 import { useParams, usePathname } from "next/navigation";
@@ -95,7 +95,7 @@ export function Header({
     >
       <StatusPageHeaderContent>
         {/* NOTE: same width as the `StatusUpdates` button */}
-        <StatusPageHeaderBrand>
+        <StatusPageHeaderBrand className="w-auto md:w-[150px]">
           <div className="flex items-center justify-center">
             <StatusPageHeaderBrandButton>
               <Link
@@ -127,6 +127,46 @@ export function Header({
         </StatusPageHeaderBrand>
         <NavDesktop className="hidden md:flex" />
         <StatusPageHeaderActions>
+          {page?.radar?.pool.pricingUrl ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-8 px-0 sm:w-auto sm:px-3"
+              asChild
+            >
+              <a
+                href={page.radar.pool.pricingUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={locale === "zh" ? "查看定价" : "View pricing"}
+              >
+                <ExternalLink />
+                <span className="hidden sm:inline">
+                  {locale === "zh" ? "定价" : "Pricing"}
+                </span>
+              </a>
+            </Button>
+          ) : null}
+          {page?.radar?.pool.redirectUrlTemplate ? (
+            <Button
+              size="sm"
+              variant="default"
+              className="w-8 px-0 sm:w-auto sm:px-3"
+              asChild
+            >
+              <a
+                href={page.radar.pool.redirectUrlTemplate}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={locale === "zh" ? "前往中转站" : "Visit provider"}
+              >
+                <ExternalLink />
+                <span className="hidden sm:inline">
+                  {locale === "zh" ? "前往中转站" : "Visit provider"}
+                </span>
+              </a>
+            </Button>
+          ) : null}
           {page?.contactUrl ? (
             <StatusPageGetInTouchIcon>
               <a href={page.contactUrl} target="_blank" rel="noreferrer">

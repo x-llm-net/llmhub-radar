@@ -1,5 +1,17 @@
-import { and, count, desc, eq, gte, inArray, sql } from "@openstatus/db";
 import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  like,
+  or,
+  sql,
+} from "@openstatus/db";
+import {
+  page,
+  radarAccount,
   radarCredential,
   radarPool,
   radarProbeRun,
@@ -12,16 +24,28 @@ import {
   selectRadarProbeTargetSchema,
   selectRadarProviderSchema,
   selectRadarTargetStatusSchema,
+  user,
 } from "@openstatus/db/src/schema";
 
-import { getReadDb, type ServiceContext } from "../context";
+import { type DB, getReadDb, type ServiceContext } from "../context";
 import { NotFoundError } from "../errors";
+import { getRadarActorAccess, type RadarVerificationStatus } from "./access";
 import { decryptSecret } from "./crypto";
-import { GetRadarPoolInput, ListRadarPoolsInput } from "./schemas";
+import {
+  GetRadarPoolInput,
+  ListClaimableRadarPoolsInput,
+  ListRadarPoolsInput,
+} from "./schemas";
 
 export type RadarPoolListItem = ReturnType<
   typeof selectRadarPoolSchema.parse
 > & {
+  owner: {
+    userId: number;
+    name: string | null;
+    email: string;
+    verificationStatus: RadarVerificationStatus;
+  } | null;
   providerCount: number;
   targetCount: number;
   lastCheckAt: Date | null;
@@ -36,6 +60,8 @@ export type RadarPoolListItem = ReturnType<
 
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
   pageId: number | null;
+  homepageUrl: string | null;
+  contactUrl: string | null;
   providers: Array<
     Omit<
       ReturnType<typeof selectRadarProviderSchema.parse>,
@@ -108,26 +134,165 @@ export async function listRadarPools(args: {
   const { ctx } = args;
   const input = ListRadarPoolsInput.parse(args.input ?? {});
   const db = getReadDb(ctx);
+  const access = await getRadarActorAccess({ ctx, db });
 
   const [countRow, rows] = await Promise.all([
-    db
-      .select({ count: count() })
-      .from(radarPool)
-      .where(eq(radarPool.workspaceId, ctx.workspace.id))
-      .get(),
-    db
-      .select()
-      .from(radarPool)
-      .where(eq(radarPool.workspaceId, ctx.workspace.id))
-      .orderBy(desc(radarPool.createdAt))
-      .limit(input.limit)
-      .offset(input.offset)
-      .all(),
+    access.isAdmin
+      ? db.select({ count: count() }).from(radarPool).get()
+      : db
+          .select({ count: count() })
+          .from(radarPool)
+          .where(eq(radarPool.ownerUserId, access.userId))
+          .get(),
+    access.isAdmin
+      ? db
+          .select()
+          .from(radarPool)
+          .orderBy(desc(radarPool.createdAt))
+          .limit(input.limit)
+          .offset(input.offset)
+          .all()
+      : db
+          .select()
+          .from(radarPool)
+          .where(eq(radarPool.ownerUserId, access.userId))
+          .orderBy(desc(radarPool.createdAt))
+          .limit(input.limit)
+          .offset(input.offset)
+          .all(),
   ]);
 
   if (rows.length === 0) {
-    return { items: [], totalSize: countRow?.count ?? 0 };
+    return { items: [], totalSize: countRow?.count ?? 0, access };
   }
+
+  const poolIds = rows.map((row) => row.id);
+  const ownerUserIds = rows
+    .map((row) => row.ownerUserId)
+    .filter((ownerUserId): ownerUserId is number => ownerUserId != null);
+  const [providerCounts, targetCounts, statuses, owners] = await Promise.all([
+    db
+      .select({
+        poolId: radarProvider.poolId,
+        count: sql<number>`count(*)`,
+      })
+      .from(radarProvider)
+      .where(inArray(radarProvider.poolId, poolIds))
+      .groupBy(radarProvider.poolId)
+      .all(),
+    db
+      .select({
+        poolId: radarProbeTarget.poolId,
+        count: sql<number>`count(*)`,
+      })
+      .from(radarProbeTarget)
+      .where(
+        and(
+          inArray(radarProbeTarget.poolId, poolIds),
+          eq(radarProbeTarget.enabled, true),
+        ),
+      )
+      .groupBy(radarProbeTarget.poolId)
+      .all(),
+    db
+      .select({
+        poolId: radarProbeTarget.poolId,
+        status: radarTargetStatus.currentStatus,
+        lastCheckAt: radarTargetStatus.lastCheckAt,
+      })
+      .from(radarProbeTarget)
+      .leftJoin(
+        radarTargetStatus,
+        eq(radarTargetStatus.targetId, radarProbeTarget.id),
+      )
+      .where(
+        and(
+          inArray(radarProbeTarget.poolId, poolIds),
+          eq(radarProbeTarget.enabled, true),
+        ),
+      )
+      .all(),
+    ownerUserIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            userId: user.id,
+            name: user.name,
+            email: user.email,
+            verificationStatus: radarAccount.verificationStatus,
+          })
+          .from(user)
+          .leftJoin(radarAccount, eq(radarAccount.userId, user.id))
+          .where(inArray(user.id, ownerUserIds))
+          .all(),
+  ]);
+
+  const providerCountByPool = new Map(
+    providerCounts.map((row) => [row.poolId, row.count]),
+  );
+  const targetCountByPool = new Map(
+    targetCounts.map((row) => [row.poolId, row.count]),
+  );
+  const ownerByUserId = new Map(
+    owners.map((owner) => [
+      owner.userId,
+      {
+        userId: owner.userId,
+        name: owner.name,
+        email: owner.email ?? "",
+        verificationStatus:
+          (owner.verificationStatus as RadarVerificationStatus | null) ??
+          "unverified",
+      },
+    ]),
+  );
+  const summaryByPool = new Map<
+    number,
+    { worstStatus: RadarPoolListItem["worstStatus"]; lastCheckAt: Date | null }
+  >();
+
+  for (const row of statuses) {
+    const current = summaryByPool.get(row.poolId) ?? {
+      worstStatus: "operational" as RadarPoolListItem["worstStatus"],
+      lastCheckAt: null,
+    };
+    current.worstStatus = worseStatus(
+      current.worstStatus,
+      row.status ?? "unknown",
+    );
+    if (
+      row.lastCheckAt &&
+      (!current.lastCheckAt || row.lastCheckAt > current.lastCheckAt)
+    ) {
+      current.lastCheckAt = row.lastCheckAt;
+    }
+    summaryByPool.set(row.poolId, current);
+  }
+
+  const items: RadarPoolListItem[] = rows.map((row) => {
+    const pool = selectRadarPoolSchema.parse(row);
+    const summary = summaryByPool.get(pool.id);
+    return {
+      ...pool,
+      owner:
+        pool.ownerUserId == null
+          ? null
+          : (ownerByUserId.get(pool.ownerUserId) ?? null),
+      providerCount: providerCountByPool.get(pool.id) ?? 0,
+      targetCount: targetCountByPool.get(pool.id) ?? 0,
+      worstStatus: summary?.worstStatus ?? "unknown",
+      lastCheckAt: summary?.lastCheckAt ?? null,
+    };
+  });
+
+  return { items, totalSize: countRow?.count ?? 0, access };
+}
+
+async function hydrateClaimablePools(
+  db: DB,
+  rows: Array<typeof radarPool.$inferSelect>,
+) {
+  if (rows.length === 0) return [];
 
   const poolIds = rows.map((row) => row.id);
   const [providerCounts, targetCounts, statuses] = await Promise.all([
@@ -203,19 +368,58 @@ export async function listRadarPools(args: {
     summaryByPool.set(row.poolId, current);
   }
 
-  const items: RadarPoolListItem[] = rows.map((row) => {
+  return rows.map((row): RadarPoolListItem => {
     const pool = selectRadarPoolSchema.parse(row);
     const summary = summaryByPool.get(pool.id);
     return {
       ...pool,
+      owner: null,
       providerCount: providerCountByPool.get(pool.id) ?? 0,
       targetCount: targetCountByPool.get(pool.id) ?? 0,
       worstStatus: summary?.worstStatus ?? "unknown",
       lastCheckAt: summary?.lastCheckAt ?? null,
     };
   });
+}
 
-  return { items, totalSize: countRow?.count ?? 0 };
+export async function listClaimableRadarPools(args: {
+  ctx: ServiceContext;
+  input?: ListClaimableRadarPoolsInput;
+}) {
+  const { ctx } = args;
+  const input = ListClaimableRadarPoolsInput.parse(args.input ?? {});
+  const db = getReadDb(ctx);
+  const access = await getRadarActorAccess({ ctx, db });
+  if (access.isAdmin) {
+    return { items: [], totalSize: 0, access };
+  }
+
+  const condition = and(
+    eq(radarPool.claimable, true),
+    input.query
+      ? or(
+          like(radarPool.name, `%${input.query}%`),
+          like(radarPool.slug, `%${input.query}%`),
+        )
+      : undefined,
+  );
+  const [countRow, rows] = await Promise.all([
+    db.select({ count: count() }).from(radarPool).where(condition).get(),
+    db
+      .select()
+      .from(radarPool)
+      .where(condition)
+      .orderBy(desc(radarPool.createdAt))
+      .limit(input.limit)
+      .offset(input.offset)
+      .all(),
+  ]);
+
+  return {
+    items: await hydrateClaimablePools(db, rows),
+    totalSize: countRow?.count ?? 0,
+    access,
+  };
 }
 
 export async function getRadarPool(args: {
@@ -225,61 +429,69 @@ export async function getRadarPool(args: {
   const { ctx } = args;
   const input = GetRadarPoolInput.parse(args.input);
   const db = getReadDb(ctx);
+  const access = await getRadarActorAccess({ ctx, db });
 
   const row = await db
     .select()
     .from(radarPool)
-    .where(
-      and(
-        eq(radarPool.slug, input.slug),
-        eq(radarPool.workspaceId, ctx.workspace.id),
-      ),
-    )
+    .where(eq(radarPool.slug, input.slug))
     .get();
-  if (!row) throw new NotFoundError("radar_pool", input.slug);
+  if (!row || (!access.isAdmin && row.ownerUserId !== access.userId)) {
+    throw new NotFoundError("radar_pool", input.slug);
+  }
 
-  const [providers, credentials, targets, catalogTargets] = await Promise.all([
-    db
-      .select()
-      .from(radarProvider)
-      .where(eq(radarProvider.poolId, row.id))
-      .all(),
-    db
-      .select()
-      .from(radarCredential)
-      .innerJoin(
-        radarProvider,
-        eq(radarCredential.providerId, radarProvider.id),
-      )
-      .where(eq(radarProvider.poolId, row.id))
-      .all(),
-    db
-      .select({
-        target: radarProbeTarget,
-        status: radarTargetStatus,
-      })
-      .from(radarProbeTarget)
-      .leftJoin(
-        radarTargetStatus,
-        eq(radarTargetStatus.targetId, radarProbeTarget.id),
-      )
-      .where(
-        and(
-          eq(radarProbeTarget.poolId, row.id),
-          eq(radarProbeTarget.enabled, true),
-        ),
-      )
-      .all(),
-    db
-      .select({
-        credentialId: radarProbeTarget.credentialId,
-        modelName: radarProbeTarget.modelName,
-      })
-      .from(radarProbeTarget)
-      .where(eq(radarProbeTarget.poolId, row.id))
-      .all(),
-  ]);
-
+  const [providers, credentials, targets, catalogTargets, publicPage] =
+    await Promise.all([
+      db
+        .select()
+        .from(radarProvider)
+        .where(eq(radarProvider.poolId, row.id))
+        .all(),
+      db
+        .select()
+        .from(radarCredential)
+        .innerJoin(
+          radarProvider,
+          eq(radarCredential.providerId, radarProvider.id),
+        )
+        .where(eq(radarProvider.poolId, row.id))
+        .all(),
+      db
+        .select({
+          target: radarProbeTarget,
+          status: radarTargetStatus,
+        })
+        .from(radarProbeTarget)
+        .leftJoin(
+          radarTargetStatus,
+          eq(radarTargetStatus.targetId, radarProbeTarget.id),
+        )
+        .where(
+          and(
+            eq(radarProbeTarget.poolId, row.id),
+            eq(radarProbeTarget.enabled, true),
+          ),
+        )
+        .all(),
+      db
+        .select({
+          credentialId: radarProbeTarget.credentialId,
+          modelName: radarProbeTarget.modelName,
+        })
+        .from(radarProbeTarget)
+        .where(eq(radarProbeTarget.poolId, row.id))
+        .all(),
+      row.pageId == null
+        ? Promise.resolve(null)
+        : db
+            .select({
+              homepageUrl: page.homepageUrl,
+              contactUrl: page.contactUrl,
+            })
+            .from(page)
+            .where(eq(page.id, row.pageId))
+            .get(),
+    ]);
   const catalogByCredential = new Map<number, string[]>();
   for (const target of catalogTargets) {
     if (!target.credentialId) continue;
@@ -324,6 +536,8 @@ export async function getRadarPool(args: {
 
   return {
     ...selectRadarPoolSchema.parse(row),
+    homepageUrl: publicPage?.homepageUrl ?? null,
+    contactUrl: publicPage?.contactUrl ?? null,
     providers: await Promise.all(
       providers.map(async (provider) => ({
         ...safeProvider(provider),
@@ -335,6 +549,10 @@ export async function getRadarPool(args: {
         selectRadarCredentialSchema.parse(row.radar_credential);
       return {
         ...safe,
+        keyFingerprint:
+          !access.isAdmin && safe.handoverExpiresAt ? "" : safe.keyFingerprint,
+        lastFour:
+          !access.isAdmin && safe.handoverExpiresAt ? "" : safe.lastFour,
         modelCatalog: safe.modelCatalog.length
           ? safe.modelCatalog
           : (catalogByCredential.get(safe.id) ?? []),

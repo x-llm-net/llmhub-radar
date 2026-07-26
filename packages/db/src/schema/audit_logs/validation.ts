@@ -102,6 +102,34 @@ const workspaceActions = [
   action("workspace.update", "workspace", intId),
 ] as const;
 
+const radarPoolActions = [
+  action("radar_pool.claim", "radar_pool", intId),
+  action("radar_pool.update", "radar_pool", intId),
+] as const;
+
+const radarClaimApplicationActions = [
+  action("radar_claim_application.create", "radar_claim_application", intId),
+  action("radar_claim_application.update", "radar_claim_application", intId),
+] as const;
+
+const radarVerificationApplicationActions = [
+  action(
+    "radar_verification_application.create",
+    "radar_verification_application",
+    intId,
+  ),
+  action(
+    "radar_verification_application.update",
+    "radar_verification_application",
+    intId,
+  ),
+] as const;
+
+const radarOrderActions = [
+  action("radar_order.create", "radar_order", intId),
+  action("radar_order.update", "radar_order", intId),
+] as const;
+
 const maintenanceActions = [
   action("maintenance.create", "maintenance", intId, {
     optionalMetadata: true,
@@ -185,6 +213,10 @@ export const auditActionSchema = z.discriminatedUnion("action", [
   ...notificationActions,
   ...userActions,
   ...workspaceActions,
+  ...radarPoolActions,
+  ...radarClaimApplicationActions,
+  ...radarVerificationApplicationActions,
+  ...radarOrderActions,
   ...maintenanceActions,
   ...incidentActions,
   ...statusReportActions,

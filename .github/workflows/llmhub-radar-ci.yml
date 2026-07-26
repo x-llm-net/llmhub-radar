@@ -8,12 +8,17 @@ on:
       - ".github/workflows/llmhub-radar-*.yml"
       - "apps/dashboard/**"
       - "apps/status-page/**"
+      - "apps/storefront/**"
+      - "apps/marketplace-api/**"
       - "apps/workflows/src/radar/**"
       - "packages/api/**"
       - "packages/db/**"
       - "packages/services/src/radar/**"
+      - "packages/marketplace-db/**"
       - "docker-compose.radar*.yaml"
+      - "docker-compose.marketplace.yaml"
       - "docs/LLMHUB_RADAR*.md"
+      - "docs/MARKETPLACE*.md"
       - "scripts/deploy-llmhub-radar.sh"
       - "pnpm-lock.yaml"
       - "package.json"
@@ -24,12 +29,17 @@ on:
       - ".github/workflows/llmhub-radar-*.yml"
       - "apps/dashboard/**"
       - "apps/status-page/**"
+      - "apps/storefront/**"
+      - "apps/marketplace-api/**"
       - "apps/workflows/src/radar/**"
       - "packages/api/**"
       - "packages/db/**"
       - "packages/services/src/radar/**"
+      - "packages/marketplace-db/**"
       - "docker-compose.radar*.yaml"
+      - "docker-compose.marketplace.yaml"
       - "docs/LLMHUB_RADAR*.md"
+      - "docs/MARKETPLACE*.md"
       - "scripts/deploy-llmhub-radar.sh"
       - "pnpm-lock.yaml"
       - "package.json"
@@ -53,6 +63,19 @@ jobs:
         image: ghcr.io/tursodatabase/libsql-server:latest
         ports:
           - 8080:8080
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: llmhub_marketplace_test
+          POSTGRES_USER: llmhub
+          POSTGRES_PASSWORD: llmhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U llmhub -d llmhub_marketplace_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       AUTH_SECRET: ci-auth-secret-min-32-characters-long
       NEXTAUTH_SECRET: ci-nextauth-secret-min-32-characters-long
@@ -61,6 +84,8 @@ jobs:
       CRON_SECRET: ci-cron-secret
       DATABASE_AUTH_TOKEN: basic:token
       DATABASE_URL: http://127.0.0.1:8080
+      MARKETPLACE_DATABASE_URL: postgres://llmhub:llmhub@127.0.0.1:5432/llmhub_marketplace_test
+      MARKETPLACE_TEST_DATABASE_URL: postgres://llmhub:llmhub@127.0.0.1:5432/llmhub_marketplace_test
       PROJECT_ID_VERCEL: ci-vercel-project
       STRIPE_SECRET_KEY: sk_test_ci
       TEAM_ID_VERCEL: ci-vercel-team
@@ -101,6 +126,15 @@ jobs:
       - name: Check whitespace
         run: git diff --check
 
+      - name: Validate static storefront
+        run: |
+          test -s apps/storefront/index.html
+          test -s apps/storefront/model.html
+          test -s apps/storefront/provider.html
+          grep -Fq 'LLMHub Marketplace' apps/storefront/index.html
+          ! grep -R 'mock-data.js' apps/storefront/*.html apps/storefront/*.js
+          for file in apps/storefront/*.js; do node --check "$file"; done
+
       - name: Check focused formatting
         run: |
           pnpm exec oxfmt --check \
@@ -112,7 +146,12 @@ jobs:
             packages/services/src/radar/priority-probe.test.ts \
             packages/services/src/radar/cron.ts \
             apps/dashboard/src/scripts/radar-cron-loop.ts \
-            packages/api/src/router/statusPage.ts
+            packages/api/src/router/statusPage.ts \
+            'packages/marketplace-db/src/**/*.ts' \
+            packages/marketplace-db/drizzle.config.ts \
+            packages/marketplace-db/package.json \
+            'apps/marketplace-api/src/**/*.ts' \
+            apps/marketplace-api/package.json
 
       - name: Lint focused release files
         run: |
@@ -123,7 +162,10 @@ jobs:
             packages/services/src/radar/priority-probe.test.ts \
             packages/services/src/radar/cron.ts \
             apps/dashboard/src/scripts/radar-cron-loop.ts \
-            packages/api/src/router/statusPage.ts
+            packages/api/src/router/statusPage.ts \
+            packages/marketplace-db/src \
+            packages/marketplace-db/drizzle.config.ts \
+            apps/marketplace-api/src
 
       - name: Verify migrations
         run: pnpm --filter @openstatus/db verify:radar-migrations
@@ -140,20 +182,33 @@ jobs:
       - name: Type check status page
         run: pnpm --filter @openstatus/status-page tsc
 
+      - name: Migrate Radar test database
+        run: pnpm --filter @openstatus/db exec bun src/migrate.mts
+
       - name: Run radar service tests
         working-directory: packages/services
-        run: |
-          bun test \
-            src/radar/priority-probe.test.ts \
-            src/radar/probe.test.ts \
-            src/radar/base-url.test.ts \
-            src/radar/discover-models.test.ts \
-            src/radar/probe-run.test.ts \
-            src/radar/notification-policy.test.ts
+        run: bun test src/radar
+
+      - name: Run media upload safety tests
+        working-directory: packages/api
+        run: bun test src/router/blob.test.ts
 
       - name: Run workflow radar tests
         working-directory: apps/workflows
         run: bun test src/radar/radar.test.ts
+
+      - name: Migrate Marketplace test database
+        run: pnpm --filter @llmhub/marketplace-db migrate
+
+      - name: Type check Marketplace packages
+        run: |
+          pnpm --filter @llmhub/marketplace-db typecheck
+          pnpm --filter @llmhub/marketplace-api typecheck
+
+      - name: Run Marketplace tests
+        run: |
+          pnpm --filter @llmhub/marketplace-db test
+          pnpm --filter @llmhub/marketplace-api test
 
       - name: Build dashboard
         run: pnpm --filter @openstatus/dashboard build

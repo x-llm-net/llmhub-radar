@@ -1,0 +1,1 @@
+ALTER TABLE `radar_claim_application` ADD `evidence_image_urls` text DEFAULT '[]' NOT NULL;

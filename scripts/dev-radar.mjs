@@ -35,22 +35,46 @@ function parseEnvFile(path) {
 
 const dashboardPort = process.env.DASHBOARD_PORT ?? "3000";
 const statusPagePort = process.env.STATUS_PAGE_PORT ?? "3001";
+const marketplacePort = process.env.MARKETPLACE_PORT ?? "3010";
 const envFromFile = parseEnvFile(envFile);
+const statusPageOrigin = `http://127.0.0.1:${statusPagePort}`;
+const marketplaceApiOrigin = `http://127.0.0.1:${marketplacePort}`;
+const inheritedEnv = { ...process.env };
+const inheritedPath = inheritedEnv.Path ?? inheritedEnv.PATH ?? "";
+delete inheritedEnv.Path;
+delete inheritedEnv.PATH;
+const pathKey = process.platform === "win32" ? "Path" : "PATH";
 
 const childEnv = {
-  ...process.env,
+  ...inheritedEnv,
   ...envFromFile,
+  [pathKey]: `${dirname(process.execPath)}${
+    process.platform === "win32" ? ";" : ":"
+  }${inheritedPath}`,
   AUTH_TRUST_HOST: "true",
   AUTH_URL: `http://localhost:${dashboardPort}`,
   DATABASE_URL:
     process.env.RADAR_DEV_DATABASE_URL ??
     envFromFile.RADAR_DEV_DATABASE_URL ??
     "http://localhost:18080",
-  NEXT_PUBLIC_STATUS_PAGE_URL: `http://localhost:${statusPagePort}`,
+  MEDIA_STORAGE_ROOT:
+    process.env.MEDIA_STORAGE_ROOT ??
+    envFromFile.MEDIA_STORAGE_ROOT ??
+    resolve(root, ".tmp/media"),
+  MARKETPLACE_DATABASE_URL:
+    process.env.MARKETPLACE_DATABASE_URL ??
+    envFromFile.MARKETPLACE_DATABASE_URL ??
+    "postgres://llmhub:llmhub@127.0.0.1:55432/llmhub_marketplace",
+  NEXT_PUBLIC_MARKETPLACE_API_URL: marketplaceApiOrigin,
+  NEXT_PUBLIC_MARKETPLACE_URL:
+    process.env.NEXT_PUBLIC_MARKETPLACE_URL ??
+    envFromFile.NEXT_PUBLIC_MARKETPLACE_URL ??
+    "http://127.0.0.1:18792",
+  NEXT_PUBLIC_STATUS_PAGE_URL: statusPageOrigin,
   NEXT_PUBLIC_DASHBOARD_URL: `http://localhost:${dashboardPort}`,
   NEXT_PUBLIC_URL: `http://localhost:${dashboardPort}`,
   NODE_ENV: "development",
-  STATUS_PAGE_URL: `http://localhost:${statusPagePort}`,
+  STATUS_PAGE_URL: statusPageOrigin,
 };
 
 const isWindows = process.platform === "win32";
@@ -58,13 +82,7 @@ const pnpm = isWindows ? "cmd.exe" : "pnpm";
 const processes = [
   {
     name: "dashboard",
-    args: [
-      "--filter",
-      "@openstatus/dashboard",
-      "dev",
-      "--port",
-      dashboardPort,
-    ],
+    args: ["--filter", "@openstatus/dashboard", "dev", "--port", dashboardPort],
   },
   {
     name: "status-page",
@@ -76,22 +94,29 @@ const processes = [
       statusPagePort,
     ],
   },
+  {
+    name: "marketplace-api",
+    args: ["--filter", "@llmhub/marketplace-api", "dev"],
+    env: { PORT: marketplacePort },
+  },
 ];
 
 console.log("Starting LLMHub Radar local dev servers");
 console.log(`- dashboard:   http://localhost:${dashboardPort}`);
-console.log(`- status page: http://localhost:${statusPagePort}`);
+console.log(`- status page: ${statusPageOrigin}`);
+console.log(`- rankings:    ${marketplaceApiOrigin}`);
 console.log(`- database:    ${childEnv.DATABASE_URL}`);
+console.log(`- media:       ${childEnv.MEDIA_STORAGE_ROOT}`);
 console.log("");
 
 let shuttingDown = false;
-const children = processes.map(({ name, args }) => {
+const children = processes.map(({ name, args, env }) => {
   const childArgs = isWindows
     ? ["/d", "/s", "/c", ["pnpm", ...args].join(" ")]
     : args;
   const child = spawn(pnpm, childArgs, {
     cwd: root,
-    env: childEnv,
+    env: { ...childEnv, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

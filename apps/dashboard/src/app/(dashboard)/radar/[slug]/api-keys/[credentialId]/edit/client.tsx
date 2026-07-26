@@ -62,6 +62,10 @@ export function Client() {
   });
   const { data: pool } = useQuery(poolQueryOptions);
   const credential = pool?.credentials.find((item) => item.id === credentialId);
+  const isHandover = credential?.handoverExpiresAt != null;
+  const handoverExpired =
+    credential?.handoverExpiresAt != null &&
+    new Date(credential.handoverExpiresAt).getTime() <= Date.now();
   const target = pool?.targets.find(
     (item) => item.credentialId === credentialId,
   );
@@ -173,8 +177,14 @@ export function Client() {
     <SectionGroup>
       <Section>
         <SectionHeader>
-          <SectionTitle>{t("editApiKey")}</SectionTitle>
-          <SectionDescription>{t("editApiKeyDescription")}</SectionDescription>
+          <SectionTitle>
+            {isHandover ? t("replaceHandoverKey") : t("editApiKey")}
+          </SectionTitle>
+          <SectionDescription>
+            {isHandover
+              ? t("replaceHandoverKeyDescription")
+              : t("editApiKeyDescription")}
+          </SectionDescription>
         </SectionHeader>
         <form
           className="grid max-w-3xl gap-4 rounded-md border p-4"
@@ -182,6 +192,10 @@ export function Client() {
             event.preventDefault();
             if (!selectedProbeModel) {
               toast.error(t("probeModelRequired"));
+              return;
+            }
+            if (isHandover && apiKey.trim().length < 8) {
+              toast.error(t("handoverApiKeyRequired"));
               return;
             }
             updateTokenProbe.mutate({
@@ -198,6 +212,13 @@ export function Client() {
             });
           }}
         >
+          {isHandover ? (
+            <p className="bg-muted/50 text-muted-foreground rounded-md px-3 py-2 text-xs">
+              {handoverExpired
+                ? t("handoverExpiredDescription")
+                : t("handoverActiveDescription")}
+            </p>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="radar-token-group">{t("apiKeyName")}</Label>
@@ -241,11 +262,18 @@ export function Client() {
                 setApiKey(event.target.value);
                 setProbeModelTouched(false);
               }}
-              placeholder={t("replacementApiKeyPlaceholder")}
+              placeholder={
+                isHandover
+                  ? t("handoverApiKeyPlaceholder")
+                  : t("replacementApiKeyPlaceholder")
+              }
               type="password"
+              required={isHandover}
             />
             <p className="text-muted-foreground text-xs">
-              {t("replacementApiKeyHelp")}
+              {isHandover
+                ? t("handoverApiKeyHelp")
+                : t("replacementApiKeyHelp")}
             </p>
           </div>
           <div className="space-y-2">
@@ -310,7 +338,11 @@ export function Client() {
             </Button>
             <Button type="submit" disabled={updateTokenProbe.isPending}>
               <Save className="size-4" />
-              {updateTokenProbe.isPending ? t("saving") : t("saveApiKey")}
+              {updateTokenProbe.isPending
+                ? t("saving")
+                : isHandover
+                  ? t("completeHandover")
+                  : t("saveApiKey")}
             </Button>
           </div>
         </form>

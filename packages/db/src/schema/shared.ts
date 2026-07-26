@@ -171,6 +171,8 @@ export const selectPublicRadarSchema = z
       name: z.string(),
       slug: z.string(),
       description: z.string(),
+      pricingUrl: z.string().nullable(),
+      redirectUrlTemplate: z.string().nullable(),
     }),
     status: publicStatusVariantSchema.prefault("info"),
     targets: z.array(

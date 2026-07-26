@@ -79,6 +79,9 @@ jobs:
           - service: radar-worker
             dockerfile: apps/radar-worker/Dockerfile
             image_suffix: radar-worker
+          - service: marketplace-api
+            dockerfile: apps/marketplace-api/Dockerfile
+            image_suffix: marketplace-api
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -120,6 +123,8 @@ jobs:
           provenance: false
           build-args: |
             NEXT_PUBLIC_DASHBOARD_URL=https://app.llm-hub.store
+            NEXT_PUBLIC_MARKETPLACE_API_URL=https://llm-hub.store
+            NEXT_PUBLIC_MARKETPLACE_URL=https://llm-hub.store
             NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store
 
   summary:

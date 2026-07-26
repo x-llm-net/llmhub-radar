@@ -1,14 +1,15 @@
-import { and, db, eq, isNull, lte, or } from "@openstatus/db";
+import { and, db, eq, gt, inArray, isNull, lte, or } from "@openstatus/db";
 import {
   radarCredential,
   radarPool,
   radarProbeTarget,
   radarProvider,
+  radarTargetStatus,
   selectWorkspaceSchema,
   workspace,
 } from "@openstatus/db/src/schema";
 
-import type { ServiceContext } from "../context";
+import type { DB, ServiceContext } from "../context";
 import { withBusyRetry } from "../retry";
 import { decryptSecret } from "./crypto";
 import {
@@ -22,7 +23,9 @@ const DEFAULT_BATCH_SIZE = 25;
 const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_LEASE_MS = 2 * 60 * 1000;
 
-type DueRadarTarget = Awaited<ReturnType<typeof listDueRadarTargets>>[number];
+type DueRadarTarget = NonNullable<
+  Awaited<ReturnType<typeof getProbeableRadarTarget>>
+>;
 
 export type RunRadarCronResult = {
   selected: number;
@@ -41,6 +44,7 @@ export async function runRadarCron(input?: {
   const now = input?.now ?? new Date();
   const batchSize = input?.batchSize ?? DEFAULT_BATCH_SIZE;
   const concurrency = input?.concurrency ?? DEFAULT_CONCURRENCY;
+  await retireExpiredRadarCredentialHandovers({ now });
   const dueTargets = await listDueRadarTargets({ now, limit: batchSize });
 
   const results = await runWithConcurrency(
@@ -85,6 +89,64 @@ export async function runRadarCron(input?: {
   return summary;
 }
 
+export async function retireExpiredRadarCredentialHandovers(input?: {
+  now?: Date;
+  db?: DB;
+}) {
+  const now = input?.now ?? new Date();
+  const database = input?.db ?? db;
+  const expiredCredentials = await database
+    .select({ id: radarCredential.id })
+    .from(radarCredential)
+    .where(
+      and(
+        eq(radarCredential.enabled, true),
+        lte(radarCredential.handoverExpiresAt, now),
+      ),
+    )
+    .all();
+  const credentialIds = expiredCredentials.map((credential) => credential.id);
+  if (credentialIds.length === 0) return 0;
+
+  const targets = await database
+    .select({ id: radarProbeTarget.id })
+    .from(radarProbeTarget)
+    .where(inArray(radarProbeTarget.credentialId, credentialIds))
+    .all();
+  const targetIds = targets.map((target) => target.id);
+
+  await database
+    .update(radarCredential)
+    .set({
+      encryptedApiKey: "",
+      keyFingerprint: "",
+      lastFour: "",
+      enabled: false,
+      updatedAt: now,
+    })
+    .where(inArray(radarCredential.id, credentialIds));
+
+  if (targetIds.length > 0) {
+    await Promise.all([
+      database
+        .update(radarProbeTarget)
+        .set({
+          currentStatus: "paused",
+          nextCheckAt: null,
+          lockedUntil: null,
+          updatedAt: now,
+        })
+        .where(inArray(radarProbeTarget.id, targetIds)),
+      database
+        .update(radarTargetStatus)
+        .set({ currentStatus: "paused", updatedAt: now })
+        .where(inArray(radarTargetStatus.targetId, targetIds)),
+    ]);
+  }
+
+  return credentialIds.length;
+}
+
 async function listDueRadarTargets(args: { now: Date; limit: number }) {
   return db
     .select({
@@ -108,6 +170,10 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
         eq(radarProvider.enabled, true),
         eq(radarCredential.enabled, true),
         or(
+          isNull(radarCredential.handoverExpiresAt),
+          gt(radarCredential.handoverExpiresAt, args.now),
+        ),
+        or(
           isNull(radarProbeTarget.nextCheckAt),
           lte(radarProbeTarget.nextCheckAt, args.now),
         ),
@@ -121,8 +187,40 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
     .all();
 }
 
+async function getProbeableRadarTarget(targetId: number, now: Date) {
+  return db
+    .select({
+      target: radarProbeTarget,
+      pool: radarPool,
+      provider: radarProvider,
+      credential: radarCredential,
+      workspace,
+    })
+    .from(radarProbeTarget)
+    .innerJoin(radarPool, eq(radarPool.id, radarProbeTarget.poolId))
+    .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
+    .innerJoin(
+      radarCredential,
+      eq(radarCredential.id, radarProbeTarget.credentialId),
+    )
+    .innerJoin(workspace, eq(workspace.id, radarProbeTarget.workspaceId))
+    .where(
+      and(
+        eq(radarProbeTarget.id, targetId),
+        eq(radarProbeTarget.enabled, true),
+        eq(radarProvider.enabled, true),
+        eq(radarCredential.enabled, true),
+        or(
+          isNull(radarCredential.handoverExpiresAt),
+          gt(radarCredential.handoverExpiresAt, now),
+        ),
+      ),
+    )
+    .get();
+}
+
 async function runDueRadarTarget(
-  row: DueRadarTarget,
+  candidate: DueRadarTarget,
   now: Date,
 ): Promise<
   | { status: "success"; targetId: number }
@@ -132,14 +230,20 @@ async function runDueRadarTarget(
   const startedAt = new Date();
   const leaseUntil = new Date(startedAt.getTime() + DEFAULT_LEASE_MS);
   const claimed = await claimRadarTarget({
-    targetId: row.target.id,
+    targetId: candidate.target.id,
     now,
     startedAt,
     leaseUntil,
   });
 
   if (!claimed) {
-    return { status: "skipped", targetId: row.target.id };
+    return { status: "skipped", targetId: candidate.target.id };
+  }
+
+  const row = await getProbeableRadarTarget(candidate.target.id, new Date());
+  if (!row) {
+    await releaseRadarTargetLease(candidate.target.id);
+    return { status: "skipped", targetId: candidate.target.id };
   }
 
   const ctx: ServiceContext = {
@@ -243,6 +347,16 @@ async function claimRadarTarget(args: {
   );
 
   return Boolean(claimed);
+}
+
+async function releaseRadarTargetLease(targetId: number) {
+  await withBusyRetry(() =>
+    db
+      .update(radarProbeTarget)
+      .set({ lockedUntil: null, updatedAt: new Date() })
+      .where(eq(radarProbeTarget.id, targetId))
+      .run(),
+  );
 }
 
 async function probeTarget(row: DueRadarTarget): Promise<RadarProbeResult> {

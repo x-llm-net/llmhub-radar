@@ -24,7 +24,7 @@ export default async function Layout({
         cookieName={LEFT_SIDEBAR_COOKIE}
       >
         <AppSidebar />
-        <SidebarInset>{children}</SidebarInset>
+        <SidebarInset className="min-w-0">{children}</SidebarInset>
       </SidebarProvider>
     </HydrateSidebar>
   );

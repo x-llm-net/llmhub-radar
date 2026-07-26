@@ -1,10 +1,13 @@
 import {
   radarBaseUrlVisibility,
+  radarClaimApplicationStatuses,
   radarEndpointTypes,
   radarErrorTypes,
+  radarOrderStatuses,
   radarPoolVisibility,
   radarProviderTypes,
   radarTargetStatuses,
+  radarVerificationApplicationStatuses,
 } from "@openstatus/db/src/schema";
 import { z } from "zod";
 
@@ -16,13 +19,168 @@ export const radarSlugSchema = z
   .min(3)
   .max(80);
 
+const radarHomepageUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string().trim().url().max(256).nullable().optional(),
+);
+
+const radarPublicUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z
+    .string()
+    .trim()
+    .max(256)
+    .refine((value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === "http:" || url.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "Use an HTTP(S) URL.")
+    .nullable()
+    .optional(),
+);
+
+const radarContactUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z
+    .string()
+    .trim()
+    .url()
+    .max(256)
+    .refine((value) => {
+      const protocol = new URL(value).protocol;
+      return ["http:", "https:", "mailto:"].includes(protocol);
+    }, "Use an HTTP(S) or mailto URL.")
+    .nullable()
+    .optional(),
+);
+
+const radarContactQqSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string().trim().min(4).max(64).nullable().optional(),
+);
+
+const radarChineseIdentityNumberSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^(?:\d{15}|\d{17}[\dX])$/, "Use a valid Chinese ID number.");
+
+const radarChineseMobileSchema = z
+  .string()
+  .trim()
+  .regex(/^1[3-9]\d{9}$/, "Use a valid mainland China mobile number.");
+
+const radarCreditCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(
+    /^[0-9A-HJ-NPQRTUWXY]{18}$/,
+    "Use a valid unified social credit code.",
+  );
+
+export const SubmitRadarVerificationApplicationInput = z.discriminatedUnion(
+  "type",
+  [
+    z.object({
+      type: z.literal("personal"),
+      realName: z.string().trim().min(2).max(120),
+      identityNumber: radarChineseIdentityNumberSchema,
+      mobile: radarChineseMobileSchema,
+    }),
+    z.object({
+      type: z.literal("enterprise"),
+      companyName: z.string().trim().min(2).max(200),
+      creditCode: radarCreditCodeSchema,
+      legalRepresentativeName: z.string().trim().min(2).max(120),
+      identityNumber: radarChineseIdentityNumberSchema,
+    }),
+  ],
+);
+export type SubmitRadarVerificationApplicationInput = z.infer<
+  typeof SubmitRadarVerificationApplicationInput
+>;
+
+export const ListRadarVerificationApplicationsInput = z
+  .object({
+    status: z.enum(radarVerificationApplicationStatuses).optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+    offset: z.number().int().min(0).default(0),
+  })
+  .default({ limit: 50, offset: 0 });
+export type ListRadarVerificationApplicationsInput = z.infer<
+  typeof ListRadarVerificationApplicationsInput
+>;
+
+export const ReviewRadarVerificationApplicationInput = z
+  .object({
+    applicationId: z.number().int().positive(),
+    decision: z.enum(["approved", "rejected"]),
+    reviewNote: z.string().trim().max(1000).default(""),
+  })
+  .superRefine((input, ctx) => {
+    if (input.decision === "rejected" && !input.reviewNote) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a reason before rejecting the application.",
+        path: ["reviewNote"],
+      });
+    }
+  });
+export type ReviewRadarVerificationApplicationInput = z.infer<
+  typeof ReviewRadarVerificationApplicationInput
+>;
+
+export const ListRadarOrdersInput = z
+  .object({
+    status: z.enum(radarOrderStatuses).optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+    offset: z.number().int().min(0).default(0),
+  })
+  .default({ limit: 50, offset: 0 });
+export type ListRadarOrdersInput = z.infer<typeof ListRadarOrdersInput>;
+
+export const SubmitRadarOrderReceiptInput = z.object({
+  orderId: z.number().int().positive(),
+  receiptAssetId: z.string().uuid(),
+});
+export type SubmitRadarOrderReceiptInput = z.infer<
+  typeof SubmitRadarOrderReceiptInput
+>;
+
+export const ReviewRadarOrderInput = z
+  .object({
+    orderId: z.number().int().positive(),
+    decision: z.enum(["approved", "rejected"]),
+    reviewNote: z.string().trim().max(1000).default(""),
+  })
+  .superRefine((input, ctx) => {
+    if (input.decision === "rejected" && !input.reviewNote) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a reason before rejecting the payment.",
+        path: ["reviewNote"],
+      });
+    }
+  });
+export type ReviewRadarOrderInput = z.infer<typeof ReviewRadarOrderInput>;
+
 export const CreateRadarPoolInput = z
   .object({
     name: z.string().trim().min(1).max(120),
     slug: radarSlugSchema,
-    description: z.string().trim().max(500).optional().default(""),
+    description: z.string().trim().max(5000).optional().default(""),
+    homepageUrl: radarHomepageUrlSchema,
+    pricingUrl: radarPublicUrlSchema,
+    contactUrl: radarContactUrlSchema,
+    redirectUrlTemplate: radarPublicUrlSchema,
+    contactQq: radarContactQqSchema,
     visibility: z.enum(radarPoolVisibility).optional().default("unlisted"),
     publicPoolOptIn: z.boolean().optional().default(false),
+    ownerUserId: z.number().int().positive().optional(),
     provider: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
@@ -90,6 +248,79 @@ export const ListRadarPoolsInput = z
   .default({ limit: 50, offset: 0 });
 export type ListRadarPoolsInput = z.infer<typeof ListRadarPoolsInput>;
 
+export const ListClaimableRadarPoolsInput = z
+  .object({
+    query: z.string().trim().max(120).default(""),
+    limit: z.number().int().min(1).max(100).default(50),
+    offset: z.number().int().min(0).default(0),
+  })
+  .default({ query: "", limit: 50, offset: 0 });
+export type ListClaimableRadarPoolsInput = z.infer<
+  typeof ListClaimableRadarPoolsInput
+>;
+
+export const ListRadarOwnerCandidatesInput = z
+  .object({
+    query: z.string().trim().max(120).default(""),
+    limit: z.number().int().min(1).max(50).default(20),
+    selectedUserId: z.number().int().positive().optional(),
+  })
+  .default({ query: "", limit: 20 });
+export type ListRadarOwnerCandidatesInput = z.infer<
+  typeof ListRadarOwnerCandidatesInput
+>;
+
+export const TransferRadarPoolOwnershipInput = z.object({
+  poolId: z.number().int().positive(),
+  ownerUserId: z.number().int().positive().nullable(),
+});
+export type TransferRadarPoolOwnershipInput = z.infer<
+  typeof TransferRadarPoolOwnershipInput
+>;
+
+export const SubmitRadarClaimApplicationInput = z.object({
+  poolId: z.number().int().positive(),
+  proof: z.string().trim().min(10).max(2000),
+  evidenceAssetIds: z
+    .array(z.string().uuid())
+    .max(3)
+    .transform((ids) => Array.from(new Set(ids)))
+    .default([]),
+});
+export type SubmitRadarClaimApplicationInput = z.input<
+  typeof SubmitRadarClaimApplicationInput
+>;
+
+export const ListRadarClaimApplicationsInput = z
+  .object({
+    status: z.enum(radarClaimApplicationStatuses).optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+    offset: z.number().int().min(0).default(0),
+  })
+  .default({ limit: 50, offset: 0 });
+export type ListRadarClaimApplicationsInput = z.infer<
+  typeof ListRadarClaimApplicationsInput
+>;
+
+export const ReviewRadarClaimApplicationInput = z
+  .object({
+    applicationId: z.number().int().positive(),
+    decision: z.enum(["approved", "rejected"]),
+    reviewNote: z.string().trim().max(1000).default(""),
+  })
+  .superRefine((input, ctx) => {
+    if (input.decision === "rejected" && !input.reviewNote) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a reason before rejecting the claim.",
+        path: ["reviewNote"],
+      });
+    }
+  });
+export type ReviewRadarClaimApplicationInput = z.infer<
+  typeof ReviewRadarClaimApplicationInput
+>;
+
 export const GetRadarPoolInput = z.object({
   slug: radarSlugSchema,
 });
@@ -99,8 +330,13 @@ export const UpdateRadarPoolInput = z.object({
   currentSlug: radarSlugSchema,
   name: z.string().trim().min(1).max(120),
   slug: radarSlugSchema,
-  description: z.string().trim().max(500).optional().default(""),
+  description: z.string().trim().max(5000).optional().default(""),
   baseUrl: z.string().trim().url(),
+  homepageUrl: radarHomepageUrlSchema,
+  pricingUrl: radarPublicUrlSchema,
+  contactUrl: radarContactUrlSchema,
+  redirectUrlTemplate: radarPublicUrlSchema,
+  contactQq: radarContactQqSchema,
   publicPoolOptIn: z.boolean().optional().default(false),
 });
 export type UpdateRadarPoolInput = z.infer<typeof UpdateRadarPoolInput>;

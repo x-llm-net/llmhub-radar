@@ -15,6 +15,8 @@ builders:
       NEXT_PUBLIC_OPENPANEL_CLIENT_ID: test
       NEXT_PUBLIC_DASHBOARD_URL: https://app.llm-hub.store
       NEXT_PUBLIC_STATUS_PAGE_URL: https://llm-hub.store
+      NEXT_PUBLIC_MARKETPLACE_API_URL: https://llm-hub.store
+      NEXT_PUBLIC_MARKETPLACE_URL: https://llm-hub.store
       NEXT_PUBLIC_URL: https://app.llm-hub.store
       TEAM_ID_VERCEL: test
       PROJECT_ID_VERCEL: test
@@ -64,6 +66,8 @@ root:
     - apt-get update
     - apt-get install -y --no-install-recommends curl
     - rm -rf /var/lib/apt/lists/*
+    - mkdir -p /app/data/media
+    - chown -R 1000:1000 /app/data
 
 # Security: run as non-root user
 user: "1000:1000"

@@ -3,27 +3,49 @@ import { z } from "zod";
 
 import {
   radarBaseUrlVisibility,
+  radarClaimApplicationStatuses,
   radarEndpointTypes,
   radarErrorTypes,
   radarNotificationDeliveryStatuses,
   radarNotificationEventTypes,
   radarNotificationSeverities,
+  radarOrderStatuses,
+  radarOrderTypes,
   radarPoolVisibility,
   radarProviderTypes,
   radarTargetStatuses,
+  radarVerificationApplicationStatuses,
+  radarVerificationApplicationTypes,
+  radarVerificationStatuses,
 } from "./constants";
 import {
+  radarAccount,
+  radarClaimApplication,
   radarCredential,
   radarNotificationEvent,
+  radarOrder,
   radarPool,
   radarProbeRun,
   radarProbeTarget,
   radarProvider,
   radarTargetOpenStatusBinding,
   radarTargetStatus,
+  radarVerificationApplication,
 } from "./radar";
 
 export const radarPoolVisibilitySchema = z.enum(radarPoolVisibility);
+export const radarVerificationStatusSchema = z.enum(radarVerificationStatuses);
+export const radarVerificationApplicationTypeSchema = z.enum(
+  radarVerificationApplicationTypes,
+);
+export const radarVerificationApplicationStatusSchema = z.enum(
+  radarVerificationApplicationStatuses,
+);
+export const radarClaimApplicationStatusSchema = z.enum(
+  radarClaimApplicationStatuses,
+);
+export const radarOrderTypeSchema = z.enum(radarOrderTypes);
+export const radarOrderStatusSchema = z.enum(radarOrderStatuses);
 export const radarProviderTypeSchema = z.enum(radarProviderTypes);
 export const radarBaseUrlVisibilitySchema = z.enum(radarBaseUrlVisibility);
 export const radarEndpointTypeSchema = z.enum(radarEndpointTypes);
@@ -38,6 +60,30 @@ export const radarNotificationSeveritySchema = z.enum(
 export const radarNotificationDeliveryStatusSchema = z.enum(
   radarNotificationDeliveryStatuses,
 );
+
+export const selectRadarAccountSchema = createSelectSchema(radarAccount, {
+  verificationStatus: radarVerificationStatusSchema.prefault("unverified"),
+});
+
+export const selectRadarVerificationApplicationSchema = createSelectSchema(
+  radarVerificationApplication,
+  {
+    type: radarVerificationApplicationTypeSchema,
+    status: radarVerificationApplicationStatusSchema.prefault("pending"),
+  },
+);
+
+export const selectRadarClaimApplicationSchema = createSelectSchema(
+  radarClaimApplication,
+  {
+    status: radarClaimApplicationStatusSchema.prefault("pending"),
+  },
+);
+
+export const selectRadarOrderSchema = createSelectSchema(radarOrder, {
+  type: radarOrderTypeSchema,
+  status: radarOrderStatusSchema.prefault("pending_payment"),
+});
 
 export const selectRadarPoolSchema = createSelectSchema(radarPool, {
   visibility: radarPoolVisibilitySchema.prefault("private"),
@@ -84,6 +130,14 @@ export const selectRadarNotificationEventSchema = createSelectSchema(
   },
 );
 
+export type RadarAccount = z.infer<typeof selectRadarAccountSchema>;
+export type RadarVerificationApplication = z.infer<
+  typeof selectRadarVerificationApplicationSchema
+>;
+export type RadarClaimApplication = z.infer<
+  typeof selectRadarClaimApplicationSchema
+>;
+export type RadarOrder = z.infer<typeof selectRadarOrderSchema>;
 export type RadarPool = z.infer<typeof selectRadarPoolSchema>;
 export type RadarProvider = z.infer<typeof selectRadarProviderSchema>;
 export type RadarCredential = z.infer<typeof selectRadarCredentialSchema>;

@@ -5,6 +5,8 @@
 FROM node@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG NEXT_PUBLIC_DASHBOARD_URL=https://app.llm-hub.store
+ARG NEXT_PUBLIC_MARKETPLACE_API_URL=https://llm-hub.store
+ARG NEXT_PUBLIC_MARKETPLACE_URL=https://llm-hub.store
 ARG NEXT_PUBLIC_STATUS_PAGE_URL=https://llm-hub.store
 LABEL \
     org.opencontainers.image.base.digest="sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2" \
@@ -12,6 +14,8 @@ LABEL \
 ENV \
     NODE_ENV="production" \
     NEXT_PUBLIC_DASHBOARD_URL="$NEXT_PUBLIC_DASHBOARD_URL" \
+    NEXT_PUBLIC_MARKETPLACE_API_URL="$NEXT_PUBLIC_MARKETPLACE_API_URL" \
+    NEXT_PUBLIC_MARKETPLACE_URL="$NEXT_PUBLIC_MARKETPLACE_URL" \
     NEXT_PUBLIC_STATUS_PAGE_URL="$NEXT_PUBLIC_STATUS_PAGE_URL" \
     TINY_BIRD_API_KEY="test" \
     OPENPANEL_CLIENT_SECRET="test" \
@@ -73,7 +77,9 @@ COPY \
 USER 0:0
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /app/data/media && \
+    chown -R 1000:1000 /app/data
 USER 1000:1000
 EXPOSE 3000
 HEALTHCHECK \

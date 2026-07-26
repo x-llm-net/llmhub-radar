@@ -18,3 +18,15 @@ services:
   radar-notification-worker:
     build: !reset null
     image: ${LLMHUB_RADAR_IMAGE_REGISTRY:-ghcr.io}/${LLMHUB_RADAR_IMAGE_OWNER:?set LLMHUB_RADAR_IMAGE_OWNER}/llmhub-radar-radar-worker:${LLMHUB_RADAR_IMAGE_TAG:?set LLMHUB_RADAR_IMAGE_TAG}
+
+  marketplace-migrate:
+    build: !reset null
+    image: ${LLMHUB_RADAR_IMAGE_REGISTRY:-ghcr.io}/${LLMHUB_RADAR_IMAGE_OWNER:?set LLMHUB_RADAR_IMAGE_OWNER}/llmhub-radar-marketplace-api:${LLMHUB_RADAR_IMAGE_TAG:?set LLMHUB_RADAR_IMAGE_TAG}
+
+  marketplace-api:
+    build: !reset null
+    image: ${LLMHUB_RADAR_IMAGE_REGISTRY:-ghcr.io}/${LLMHUB_RADAR_IMAGE_OWNER:?set LLMHUB_RADAR_IMAGE_OWNER}/llmhub-radar-marketplace-api:${LLMHUB_RADAR_IMAGE_TAG:?set LLMHUB_RADAR_IMAGE_TAG}
+
+  marketplace-maintenance:
+    build: !reset null
+    image: ${LLMHUB_RADAR_IMAGE_REGISTRY:-ghcr.io}/${LLMHUB_RADAR_IMAGE_OWNER:?set LLMHUB_RADAR_IMAGE_OWNER}/llmhub-radar-marketplace-api:${LLMHUB_RADAR_IMAGE_TAG:?set LLMHUB_RADAR_IMAGE_TAG}

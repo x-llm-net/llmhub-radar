@@ -17,8 +17,28 @@ import {
 } from "@openstatus/ui/components/ui/alert-dialog";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@openstatus/ui/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, RadioTower, Trash2 } from "lucide-react";
+import {
+  Activity,
+  ArrowUpRight,
+  Clock3,
+  Code2,
+  ExternalLink,
+  Megaphone,
+  Pencil,
+  Plus,
+  RadioTower,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -35,6 +55,7 @@ import {
   SectionDescription,
   SectionGroup,
   SectionHeader,
+  SectionHeaderRow,
   SectionTitle,
 } from "@/components/content/section";
 import {
@@ -44,6 +65,7 @@ import {
   MetricCardTitle,
   MetricCardValue,
 } from "@/components/metric/metric-card";
+import { getPublicStatusHref } from "@/lib/radar-public-url";
 import { useTRPC } from "@/lib/trpc/client";
 
 type Status =
@@ -362,6 +384,7 @@ export function Client() {
   const params = useParams<{ slug: string }>();
   const t = useTranslations("radar");
   const commonT = useTranslations("common");
+  const notificationsT = useTranslations("notifications");
   const locale = useLocale();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -403,7 +426,6 @@ export function Client() {
     );
   }
 
-  const defaultProvider = pool.providers[0];
   const targetByCredentialId = new Map(
     pool.targets
       .filter((target) => target.credentialId)
@@ -417,53 +439,236 @@ export function Client() {
   ).length;
   const cards = pool.credentials.map((credential) => {
     const target = targetByCredentialId.get(credential.id);
-    const status = (target?.status?.currentStatus ??
-      target?.currentStatus ??
-      (credential.enabled ? "unknown" : "paused")) as Status;
+    const handoverExpiresAt = credential.handoverExpiresAt
+      ? new Date(credential.handoverExpiresAt)
+      : null;
+    const handoverExpired =
+      handoverExpiresAt != null && handoverExpiresAt.getTime() <= Date.now();
+    const status = (
+      handoverExpired
+        ? "paused"
+        : (target?.status?.currentStatus ??
+          target?.currentStatus ??
+          (credential.enabled ? "unknown" : "paused"))
+    ) as Status;
 
-    return { credential, target, status };
+    return {
+      credential,
+      target,
+      status,
+      handoverExpiresAt,
+      handoverExpired,
+    };
   });
 
+  const totalSamples = cards.reduce(
+    (sum, card) => sum + (card.target?.stats7d.sampleCount ?? 0),
+    0,
+  );
+  const weightedAvailability =
+    totalSamples === 0
+      ? null
+      : Math.round(
+          cards.reduce((sum, card) => {
+            const stats = card.target?.stats7d;
+            return sum + (stats?.successRate ?? 0) * (stats?.sampleCount ?? 0);
+          }, 0) / totalSamples,
+        );
+  const coveredModels = uniqueModels([
+    ...pool.credentials.flatMap((credential) => credential.modelCatalog),
+    ...pool.targets.map((target) => target.modelName),
+  ]);
+  const activeCredentials = cards.filter(
+    ({ credential, handoverExpired }) => credential.enabled && !handoverExpired,
+  ).length;
+  const publicHref = getPublicStatusHref(pool.slug, locale);
+  const visibilityLabel = t(
+    pool.visibility === "public"
+      ? "visibilityPublic"
+      : pool.visibility === "unlisted"
+        ? "visibilityUnlisted"
+        : "visibilityPrivate",
+  );
+  const operationLinks = [
+    {
+      title: t("openStatusPage"),
+      description: t("openStatusPageDescription"),
+      href: publicHref,
+      icon: Activity,
+      external: true,
+    },
+    {
+      title: t("embed"),
+      description: t("embedDescription"),
+      href: `/radar/${pool.slug}/embed`,
+      icon: Code2,
+      external: false,
+    },
+    {
+      title: t("announcements"),
+      description: t("announcementsDescription"),
+      href: `/radar/${pool.slug}/announcements`,
+      icon: Megaphone,
+      external: false,
+    },
+    {
+      title: notificationsT("manageSubscribers"),
+      description: t("subscriberManagementDescription"),
+      href: `/radar/${pool.slug}/subscribers`,
+      icon: Users,
+      external: false,
+    },
+  ];
+
   return (
-    <SectionGroup>
-      <Section>
-        <SectionHeader>
-          <SectionTitle>{pool.name}</SectionTitle>
-          <SectionDescription>
-            {pool.description || t("privateMonitoringPool")}
-          </SectionDescription>
-        </SectionHeader>
+    <SectionGroup className="max-w-6xl space-y-10">
+      <Section id="overview" className="scroll-mt-28">
+        <SectionHeaderRow className="items-start sm:items-start">
+          <SectionHeader className="max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <SectionTitle className="text-xl">{pool.name}</SectionTitle>
+              <Badge variant="outline">{visibilityLabel}</Badge>
+              <Badge variant={pool.publicPoolOptIn ? "secondary" : "outline"}>
+                {pool.publicPoolOptIn
+                  ? t("publicPoolOptedIn")
+                  : t("publicPoolOptedOut")}
+              </Badge>
+            </div>
+            <SectionDescription className="line-clamp-2">
+              {pool.description || t("privateMonitoringPool")}
+            </SectionDescription>
+          </SectionHeader>
+          {pool.homepageUrl ? (
+            <Button size="sm" variant="outline" asChild>
+              <a href={pool.homepageUrl} target="_blank" rel="noreferrer">
+                {t("providerHomepage")}
+                <ExternalLink className="size-3.5" />
+              </a>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" asChild>
+              <Link href={`/radar/${pool.slug}/edit`}>
+                <Pencil className="size-3.5" />
+                {t("completePublicProfile")}
+              </Link>
+            </Button>
+          )}
+        </SectionHeaderRow>
         <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
           <MetricCard>
             <MetricCardHeader>
-              <MetricCardTitle>{t("provider")}</MetricCardTitle>
+              <MetricCardTitle>{t("averageAvailability7d")}</MetricCardTitle>
             </MetricCardHeader>
-            <MetricCardValue>
-              {defaultProvider?.displayName ?? "-"}
+            <MetricCardValue
+              className={availabilityClass(weightedAvailability)}
+            >
+              {formatAvailability(weightedAvailability)}
             </MetricCardValue>
           </MetricCard>
           <MetricCard>
             <MetricCardHeader>
-              <MetricCardTitle>{t("credentials")}</MetricCardTitle>
+              <MetricCardTitle>{t("coveredModels")}</MetricCardTitle>
             </MetricCardHeader>
-            <MetricCardValue>{pool.credentials.length}</MetricCardValue>
+            <MetricCardValue>{coveredModels.length}</MetricCardValue>
           </MetricCard>
           <MetricCard>
             <MetricCardHeader>
-              <MetricCardTitle>{t("targets")}</MetricCardTitle>
+              <MetricCardTitle>{t("activeApiKeys")}</MetricCardTitle>
             </MetricCardHeader>
-            <MetricCardValue>{pool.targets.length}</MetricCardValue>
+            <MetricCardValue>
+              {activeCredentials}/{pool.credentials.length}
+            </MetricCardValue>
           </MetricCard>
           <MetricCard variant={unhealthy > 0 ? "warning" : "default"}>
             <MetricCardHeader>
-              <MetricCardTitle>{t("unhealthy")}</MetricCardTitle>
+              <MetricCardTitle>{t("needsAttention")}</MetricCardTitle>
             </MetricCardHeader>
             <MetricCardValue>{unhealthy}</MetricCardValue>
           </MetricCard>
         </MetricCardGroup>
       </Section>
 
-      <Section>
+      <Section id="performance" className="scroll-mt-28">
+        <SectionHeader>
+          <SectionTitle>{t("modelPerformance")}</SectionTitle>
+          <SectionDescription>
+            {t("modelPerformanceDescription")}
+          </SectionDescription>
+        </SectionHeader>
+        {cards.length === 0 ? (
+          <EmptyStateContainer className="min-h-32">
+            <EmptyStateTitle>{t("noModelPerformance")}</EmptyStateTitle>
+            <EmptyStateDescription>
+              {t("noTargetsDescription")}
+            </EmptyStateDescription>
+          </EmptyStateContainer>
+        ) : (
+          <div className="overflow-x-auto border-y">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("representativeModel")}</TableHead>
+                  <TableHead>{t("tokenGroup")}</TableHead>
+                  <TableHead>{t("availability7d")}</TableHead>
+                  <TableHead>{t("p95Ttft")}</TableHead>
+                  <TableHead>{t("samples")}</TableHead>
+                  <TableHead className="text-right">
+                    {commonT("status")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cards.map(({ credential, target, status }) => {
+                  const stats = target?.stats7d;
+                  const health = healthTone(
+                    status,
+                    stats?.successRate ?? null,
+                    stats?.p95FirstTokenMs ?? null,
+                  );
+                  const modelGroup =
+                    credential.modelGroup || t("generalFamily");
+
+                  return (
+                    <TableRow key={credential.id}>
+                      <TableCell>
+                        <div className="min-w-44">
+                          <p className="font-mono text-sm font-medium">
+                            {target?.modelName ?? "-"}
+                          </p>
+                          <p className="text-muted-foreground mt-1 text-xs">
+                            {modelGroup}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {credential.name}
+                      </TableCell>
+                      <TableCell
+                        className={availabilityClass(stats?.successRate)}
+                      >
+                        {formatAvailability(stats?.successRate)}
+                      </TableCell>
+                      <TableCell
+                        className={latencyClass(stats?.p95FirstTokenMs)}
+                      >
+                        {formatMs(stats?.p95FirstTokenMs)}
+                      </TableCell>
+                      <TableCell>{stats?.sampleCount ?? 0}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant="outline" className={health.className}>
+                          {t(health.labelKey)}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Section>
+
+      <Section id="probes" className="scroll-mt-28">
         <SectionHeader>
           <SectionTitle>{t("apiKeyCardsTitle")}</SectionTitle>
           <SectionDescription>{t("apiKeyCardsDescription")}</SectionDescription>
@@ -485,151 +690,241 @@ export function Client() {
           </EmptyStateContainer>
         ) : (
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {cards.map(({ credential, target, status }) => {
-              const stats = target?.stats7d;
-              const health = healthTone(
+            {cards.map(
+              ({
+                credential,
+                target,
                 status,
-                stats?.successRate ?? null,
-                stats?.p95FirstTokenMs ?? null,
-              );
-              const lastCheckAt =
-                target?.status?.lastCheckAt ?? target?.lastCheckStartedAt;
-              const modelGroup = credential.modelGroup || t("generalFamily");
-              const interval = formatInterval(target?.intervalSeconds, t);
+                handoverExpiresAt,
+                handoverExpired,
+              }) => {
+                const stats = target?.stats7d;
+                const health = healthTone(
+                  status,
+                  stats?.successRate ?? null,
+                  stats?.p95FirstTokenMs ?? null,
+                );
+                const lastCheckAt =
+                  target?.status?.lastCheckAt ?? target?.lastCheckStartedAt;
+                const modelGroup = credential.modelGroup || t("generalFamily");
+                const interval = formatInterval(target?.intervalSeconds, t);
 
-              return (
-                <RadarServiceCard
-                  key={credential.id}
-                  title={credential.name}
-                  status={{
-                    className: health.className,
-                    label: t(health.labelKey),
-                  }}
-                  actions={
-                    <>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        title={t("editApiKey")}
-                        asChild
-                      >
-                        <Link
-                          href={`/radar/${pool.slug}/api-keys/${credential.id}/edit`}
+                return (
+                  <RadarServiceCard
+                    key={credential.id}
+                    title={credential.name}
+                    status={{
+                      className: health.className,
+                      label: t(health.labelKey),
+                    }}
+                    actions={
+                      <>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          title={
+                            handoverExpiresAt
+                              ? t("replaceHandoverKey")
+                              : t("editApiKey")
+                          }
+                          asChild
                         >
-                          <Pencil className="size-4" />
-                        </Link>
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            title={t("deleteApiKey")}
+                          <Link
+                            href={`/radar/${pool.slug}/api-keys/${credential.id}/edit`}
                           >
-                            <Trash2 className="text-destructive size-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              {t("deleteApiKeyTitle")}
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              {t("deleteApiKeyDescription", {
-                                name: credential.name,
-                              })}
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>
-                              {commonT("cancel")}
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-destructive hover:bg-destructive/90 text-white"
-                              onClick={() =>
-                                deleteCredential.mutate({
-                                  poolSlug: pool.slug,
-                                  credentialId: credential.id,
-                                })
-                              }
-                            >
-                              {deleteCredential.isPending
-                                ? commonT("deleting")
-                                : commonT("delete")}
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </>
-                  }
-                  meta={
-                    <>
-                      <Badge
-                        variant="outline"
-                        className={`shrink-0 ${modelFamilyTone(modelGroup)}`}
-                      >
-                        {modelGroup}
-                      </Badge>
-                      {target?.modelName ? (
-                        <span
-                          title={target.modelName}
-                          className="min-w-0 truncate font-mono text-slate-700 dark:text-slate-300"
+                            <Pencil className="size-4" />
+                          </Link>
+                        </Button>
+                        {!handoverExpiresAt && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                title={t("deleteApiKey")}
+                              >
+                                <Trash2 className="text-destructive size-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  {t("deleteApiKeyTitle")}
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {t("deleteApiKeyDescription", {
+                                    name: credential.name,
+                                  })}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>
+                                  {commonT("cancel")}
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive hover:bg-destructive/90 text-white"
+                                  onClick={() =>
+                                    deleteCredential.mutate({
+                                      poolSlug: pool.slug,
+                                      credentialId: credential.id,
+                                    })
+                                  }
+                                >
+                                  {deleteCredential.isPending
+                                    ? commonT("deleting")
+                                    : commonT("delete")}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </>
+                    }
+                    meta={
+                      <>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 ${modelFamilyTone(modelGroup)}`}
                         >
-                          {target.modelName}
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                  metrics={[
-                    {
-                      label: t("availability7d"),
-                      value: formatAvailability(stats?.successRate),
-                      hint: availabilityHint(
-                        stats?.successRate,
-                        stats?.sampleCount,
-                        t,
+                          {modelGroup}
+                        </Badge>
+                        {handoverExpiresAt ? (
+                          <Badge
+                            variant={handoverExpired ? "outline" : "secondary"}
+                            className="shrink-0"
+                          >
+                            <Clock3 className="size-3" />
+                            {handoverExpired
+                              ? t("handoverExpired")
+                              : t("handoverRemaining", {
+                                  hours: Math.max(
+                                    1,
+                                    Math.ceil(
+                                      (handoverExpiresAt.getTime() -
+                                        Date.now()) /
+                                        (60 * 60 * 1000),
+                                    ),
+                                  ),
+                                })}
+                          </Badge>
+                        ) : null}
+                        {target?.modelName ? (
+                          <span
+                            title={target.modelName}
+                            className="min-w-0 truncate font-mono text-slate-700 dark:text-slate-300"
+                          >
+                            {target.modelName}
+                          </span>
+                        ) : null}
+                        {credential.modelCatalog.length > 0 ? (
+                          <span className="text-muted-foreground shrink-0 text-xs">
+                            {t("modelCatalogCount", {
+                              count: uniqueModels(credential.modelCatalog)
+                                .length,
+                            })}
+                          </span>
+                        ) : null}
+                      </>
+                    }
+                    metrics={[
+                      {
+                        label: t("availability7d"),
+                        value: formatAvailability(stats?.successRate),
+                        hint: availabilityHint(
+                          stats?.successRate,
+                          stats?.sampleCount,
+                          t,
+                        ),
+                        valueClassName: availabilityClass(stats?.successRate),
+                      },
+                      {
+                        label: t("p50Ttft"),
+                        value: formatMs(stats?.p50FirstTokenMs),
+                        hint: latencyHint(stats?.p50FirstTokenMs, t),
+                        valueClassName: latencyClass(stats?.p50FirstTokenMs),
+                      },
+                      {
+                        label: t("p95Ttft"),
+                        value: formatMs(stats?.p95FirstTokenMs),
+                        hint: latencyHint(stats?.p95FirstTokenMs, t),
+                        valueClassName: latencyClass(stats?.p95FirstTokenMs),
+                      },
+                    ]}
+                    timeline={{
+                      recentLabel: t("recentRuns", { count: 60 }),
+                      samplesLabel: t("samples7d", {
+                        count: stats?.sampleCount ?? 0,
+                      }),
+                      runs: buildTimelineRuns(
+                        target?.recentRuns ?? [],
+                        probeTooltipLabels,
+                        locale,
                       ),
-                      valueClassName: availabilityClass(stats?.successRate),
-                    },
-                    {
-                      label: t("p50Ttft"),
-                      value: formatMs(stats?.p50FirstTokenMs),
-                      hint: latencyHint(stats?.p50FirstTokenMs, t),
-                      valueClassName: latencyClass(stats?.p50FirstTokenMs),
-                    },
-                    {
-                      label: t("p95Ttft"),
-                      value: formatMs(stats?.p95FirstTokenMs),
-                      hint: latencyHint(stats?.p95FirstTokenMs, t),
-                      valueClassName: latencyClass(stats?.p95FirstTokenMs),
-                    },
-                  ]}
-                  timeline={{
-                    recentLabel: t("recentRuns", { count: 60 }),
-                    samplesLabel: t("samples7d", {
-                      count: stats?.sampleCount ?? 0,
-                    }),
-                    runs: buildTimelineRuns(
-                      target?.recentRuns ?? [],
-                      probeTooltipLabels,
-                      locale,
-                    ),
-                    pastLabel: t("past"),
-                    nowLabel: t("now"),
-                  }}
-                  footer={{
-                    interval,
-                    intervalTitle: `${t("interval")}: ${interval}`,
-                    lastCheck: `${t("lastCheck")}: ${formatDateTime(
-                      lastCheckAt,
-                      locale,
-                    )}`,
-                  }}
-                />
-              );
-            })}
+                      pastLabel: t("past"),
+                      nowLabel: t("now"),
+                    }}
+                    footer={{
+                      interval,
+                      intervalTitle: `${t("interval")}: ${interval}`,
+                      lastCheck: `${t("lastCheck")}: ${formatDateTime(
+                        lastCheckAt,
+                        locale,
+                      )}`,
+                    }}
+                  />
+                );
+              },
+            )}
           </div>
         )}
+      </Section>
+
+      <Section>
+        <SectionHeader>
+          <SectionTitle>{t("statusAndOperations")}</SectionTitle>
+          <SectionDescription>
+            {t("statusAndOperationsDescription")}
+          </SectionDescription>
+        </SectionHeader>
+        <div className="grid border-t md:grid-cols-2">
+          {operationLinks.map((item) => {
+            const Icon = item.icon;
+            const content = (
+              <>
+                <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
+                  <Icon className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">
+                    {item.title}
+                  </span>
+                  <span className="text-muted-foreground mt-1 line-clamp-2 block text-xs leading-5">
+                    {item.description}
+                  </span>
+                </span>
+                <ArrowUpRight className="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors" />
+              </>
+            );
+            const className =
+              "group flex min-h-24 items-start gap-3 border-b px-2 py-4 transition-colors hover:bg-muted/40 md:odd:border-r md:px-4";
+
+            return item.external ? (
+              <a
+                key={item.href}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                className={className}
+              >
+                {content}
+              </a>
+            ) : (
+              <Link key={item.href} href={item.href} className={className}>
+                {content}
+              </Link>
+            );
+          })}
+        </div>
       </Section>
     </SectionGroup>
   );

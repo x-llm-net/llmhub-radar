@@ -13,7 +13,7 @@ import { ResendProvider } from "./providers";
 export type { DefaultSession };
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  debug: process.env.NODE_ENV === "development",
+  debug: process.env.AUTH_DEBUG === "true",
   adapter,
   providers: [ResendProvider],
   callbacks: {

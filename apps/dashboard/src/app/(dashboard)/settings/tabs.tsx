@@ -5,11 +5,16 @@ import { useTranslations } from "next-intl";
 
 import { NavTabs } from "@/components/nav/nav-tabs";
 
-export function Tabs() {
+export function Tabs({
+  placement = "subnav",
+}: {
+  placement?: "header" | "subnav";
+}) {
   const t = useTranslations("settings.tabs");
 
   return (
     <NavTabs
+      placement={placement}
       items={[
         {
           value: "general",

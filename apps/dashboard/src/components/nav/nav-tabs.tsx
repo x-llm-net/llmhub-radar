@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 interface NavTabsProps {
+  placement?: "header" | "subnav";
   items: {
     value: string;
     label: string;
@@ -15,13 +16,25 @@ interface NavTabsProps {
   }[];
 }
 
-export function NavTabs({ items }: NavTabsProps) {
+export function NavTabs({ items, placement = "subnav" }: NavTabsProps) {
   const pathname = usePathname();
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
 
   return (
-    <nav className="bg-background sticky top-14 z-10 h-[41px] w-full overflow-x-auto border-b px-2">
-      <ul className="inline-flex h-full items-center gap-1 px-3 text-sm">
+    <nav
+      className={cn(
+        "bg-background overflow-x-auto",
+        placement === "header"
+          ? "h-14 min-w-0 flex-1"
+          : "sticky top-14 z-10 h-[41px] w-full border-b px-2",
+      )}
+    >
+      <ul
+        className={cn(
+          "inline-flex h-full items-center gap-1 text-sm",
+          placement === "header" ? "px-1" : "px-3",
+        )}
+      >
         {items.map((item) => {
           const normalizedHref = item.href.replace(/\/+$/, "") || "/";
           const isActive =

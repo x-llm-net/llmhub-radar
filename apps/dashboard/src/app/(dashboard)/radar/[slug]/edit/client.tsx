@@ -50,6 +50,11 @@ export function Client() {
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [homepageUrl, setHomepageUrl] = useState("");
+  const [pricingUrl, setPricingUrl] = useState("");
+  const [contactUrl, setContactUrl] = useState("");
+  const [redirectUrlTemplate, setRedirectUrlTemplate] = useState("");
+  const [contactQq, setContactQq] = useState("");
   const [publicPoolOptIn, setPublicPoolOptIn] = useState(false);
 
   useEffect(() => {
@@ -58,6 +63,11 @@ export function Client() {
     setSlug(pool.slug);
     setDescription(pool.description);
     setBaseUrl(pool.providers[0]?.baseUrl ?? "");
+    setHomepageUrl(pool.homepageUrl ?? "");
+    setPricingUrl(pool.pricingUrl ?? "");
+    setContactUrl(pool.contactUrl ?? "");
+    setRedirectUrlTemplate(pool.redirectUrlTemplate ?? "");
+    setContactQq(pool.contactQq ?? "");
     setPublicPoolOptIn(pool.publicPoolOptIn);
   }, [pool]);
 
@@ -95,7 +105,7 @@ export function Client() {
           <SectionDescription>{t("editPoolDescription")}</SectionDescription>
         </SectionHeader>
         <form
-          className="grid max-w-3xl gap-4 rounded-md border p-4"
+          className="bg-card grid max-w-4xl gap-8 rounded-lg border p-5 shadow-sm sm:p-7"
           onSubmit={(event) => {
             event.preventDefault();
             updatePool.mutate({
@@ -104,11 +114,22 @@ export function Client() {
               slug,
               description,
               baseUrl,
+              homepageUrl,
+              pricingUrl,
+              contactUrl,
+              redirectUrlTemplate,
+              contactQq,
               publicPoolOptIn,
             });
           }}
         >
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-x-5 gap-y-5 md:grid-cols-2">
+            <div className="space-y-1 border-b pb-3 md:col-span-2">
+              <h2 className="text-sm font-semibold">{t("basicInfo")}</h2>
+              <p className="text-muted-foreground text-sm">
+                {t("basicInfoDescription")}
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="radar-name">{t("poolName")}</Label>
               <Input
@@ -129,18 +150,28 @@ export function Client() {
                 required
               />
             </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="radar-description">{t("officialIntro")}</Label>
+              <Textarea
+                id="radar-description"
+                className="min-h-36 resize-y"
+                value={description}
+                placeholder={t("officialIntroPlaceholder")}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={5}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("officialIntroHelp")}
+              </p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="radar-description">{t("formDescription")}</Label>
-            <Textarea
-              id="radar-description"
-              value={description}
-              placeholder={t("formDescriptionPlaceholder")}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={4}
-            />
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-x-5 gap-y-5 md:grid-cols-2">
+            <div className="space-y-1 border-b pb-3 md:col-span-2">
+              <h2 className="text-sm font-semibold">{t("publicLinks")}</h2>
+              <p className="text-muted-foreground text-sm">
+                {t("publicLinksDescription")}
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="radar-base-url">{t("baseUrl")}</Label>
               <Input
@@ -154,7 +185,79 @@ export function Client() {
                 {t("baseUrlEditHelp")}
               </p>
             </div>
-            <label className="flex items-start gap-3 rounded-md border p-3">
+            <div className="space-y-2">
+              <Label htmlFor="radar-homepage-url">{t("homepageUrl")}</Label>
+              <Input
+                id="radar-homepage-url"
+                value={homepageUrl}
+                placeholder={t("homepageUrlPlaceholder")}
+                onChange={(event) => setHomepageUrl(event.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("homepageUrlHelp")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="radar-pricing-url">{t("pricingUrl")}</Label>
+              <Input
+                id="radar-pricing-url"
+                value={pricingUrl}
+                placeholder={t("pricingUrlPlaceholder")}
+                onChange={(event) => setPricingUrl(event.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("optionalPublicLinkHelp")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="radar-contact-url">{t("contactUrl")}</Label>
+              <Input
+                id="radar-contact-url"
+                value={contactUrl}
+                placeholder={t("contactUrlPlaceholder")}
+                onChange={(event) => setContactUrl(event.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("contactUrlHelp")}
+              </p>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="radar-redirect-url">
+                {t("redirectUrlTemplate")}
+              </Label>
+              <Input
+                id="radar-redirect-url"
+                value={redirectUrlTemplate}
+                placeholder={t("redirectUrlTemplatePlaceholder")}
+                onChange={(event) => setRedirectUrlTemplate(event.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("redirectUrlTemplateHelp")}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-x-5 gap-y-5 md:grid-cols-2">
+            <div className="space-y-1 border-b pb-3 md:col-span-2">
+              <h2 className="text-sm font-semibold">
+                {t("operationsSettings")}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {t("operationsSettingsDescription")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="radar-contact-qq">{t("contactQq")}</Label>
+              <Input
+                id="radar-contact-qq"
+                value={contactQq}
+                placeholder={t("contactQqPlaceholder")}
+                onChange={(event) => setContactQq(event.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t("contactQqHelp")}
+              </p>
+            </div>
+            <label className="bg-muted/30 hover:bg-muted/50 flex items-start gap-3 rounded-md border p-4 transition-colors">
               <Checkbox
                 checked={publicPoolOptIn}
                 onCheckedChange={(checked) =>
@@ -169,7 +272,7 @@ export function Client() {
               </span>
             </label>
           </div>
-          <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+          <div className="flex flex-col gap-2 border-t pt-5 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" asChild>
               <Link href={`/radar/${pool.slug}`}>
                 <ArrowLeft className="size-4" />

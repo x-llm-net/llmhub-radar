@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { isSvgFile, sanitizeSvg } from "./blob";
+import { hasValidRasterImageSignature, isSvgFile, sanitizeSvg } from "./blob";
 
 describe("isSvgFile", () => {
   it("detects .svg extension", () => {
@@ -135,5 +135,49 @@ describe("sanitizeSvg", () => {
     ]) {
       expect(result).toContain(`<${tag}`);
     }
+  });
+});
+
+describe("hasValidRasterImageSignature", () => {
+  it("accepts matching PNG, JPEG, WebP, and ICO signatures", () => {
+    expect(
+      hasValidRasterImageSignature(
+        "evidence.png",
+        Buffer.from("89504e470d0a1a0a", "hex"),
+      ),
+    ).toBe(true);
+    expect(
+      hasValidRasterImageSignature(
+        "evidence.jpg",
+        Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+      ),
+    ).toBe(true);
+    expect(
+      hasValidRasterImageSignature(
+        "evidence.webp",
+        Buffer.from("524946460000000057454250", "hex"),
+      ),
+    ).toBe(true);
+    expect(
+      hasValidRasterImageSignature(
+        "favicon.ico",
+        Buffer.from([0x00, 0x00, 0x01, 0x00]),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects unsupported extensions and mismatched content", () => {
+    expect(
+      hasValidRasterImageSignature(
+        "evidence.png",
+        Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+      ),
+    ).toBe(false);
+    expect(
+      hasValidRasterImageSignature(
+        "evidence.gif",
+        Buffer.from("474946383961", "hex"),
+      ),
+    ).toBe(false);
   });
 });

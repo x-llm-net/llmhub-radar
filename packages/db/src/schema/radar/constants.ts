@@ -1,5 +1,45 @@
 export const radarPoolVisibility = ["private", "unlisted", "public"] as const;
 
+export const radarVerificationStatuses = [
+  "unverified",
+  "pending",
+  "verified",
+  "rejected",
+] as const;
+
+export const radarVerificationApplicationTypes = [
+  "personal",
+  "enterprise",
+] as const;
+
+export const radarVerificationApplicationStatuses = [
+  "pending",
+  "approved",
+  "rejected",
+] as const;
+
+export const radarClaimApplicationStatuses = [
+  "pending",
+  "approved",
+  "rejected",
+] as const;
+
+export const radarOrderTypes = [
+  "permanent_listing",
+  "sponsored_slot",
+  "pro_subscription",
+] as const;
+
+export const radarOrderStatuses = [
+  "pending_payment",
+  "pending_review",
+  "paid",
+  "active",
+  "rejected",
+  "cancelled",
+  "refunded",
+] as const;
+
 export const radarProviderTypes = [
   "openai_compatible",
   "anthropic_compatible",

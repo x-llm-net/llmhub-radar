@@ -1,0 +1,25 @@
+{
+  "name": "@llmhub/marketplace-db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "cleanup": "bun src/run-cleanup.ts",
+    "sync:legacy": "bun src/run-legacy-sync.ts",
+    "generate": "drizzle-kit generate",
+    "migrate": "bun src/migrate.ts",
+    "seed": "bun src/seed.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "catalog:",
+    "postgres": "3.4.7"
+  },
+  "devDependencies": {
+    "@openstatus/tsconfig": "workspace:*",
+    "bun-types": "catalog:",
+    "drizzle-kit": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -34,6 +34,22 @@ async function sha256Bytes(input: string): Promise<Uint8Array> {
   return new Uint8Array(digest);
 }
 
+async function hmacSha256Bytes(input: string): Promise<Uint8Array> {
+  const key = await getCrypto().subtle.importKey(
+    "raw",
+    toArrayBuffer(textEncoder.encode(getCredentialSecret())),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await getCrypto().subtle.sign(
+    "HMAC",
+    key,
+    toArrayBuffer(textEncoder.encode(input)),
+  );
+  return new Uint8Array(signature);
+}
+
 async function getAesKey(): Promise<CryptoKey> {
   const secret = getCredentialSecret();
   const keyBytes = await sha256Bytes(secret);
@@ -107,6 +123,10 @@ export async function decryptSecret(payload: string): Promise<string> {
 
 export async function hashSecret(input: string): Promise<string> {
   return bytesToBase64(await sha256Bytes(input)).slice(0, 64);
+}
+
+export async function hashPrivateIdentifier(input: string): Promise<string> {
+  return bytesToBase64(await hmacSha256Bytes(input)).slice(0, 64);
 }
 
 export function getSecretLastFour(input: string): string {

@@ -4,6 +4,7 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
@@ -18,42 +19,62 @@ function topSegment(url: string) {
 }
 
 export function NavOverview({
+  label,
   items,
 }: {
+  label?: string;
   items: {
     name: string;
-    url: string;
+    url?: string;
     icon: LucideIcon;
+    badge?: string;
+    disabled?: boolean;
   }[];
 }) {
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   const t = useTranslations("nav");
   const currentTop = topSegment(pathname);
+
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>{t("mainMenu")}</SidebarGroupLabel>
+      <SidebarGroupLabel>{label ?? t("mainMenu")}</SidebarGroupLabel>
       <SidebarMenu>
-        {items.map((item) => (
-          <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton
-              isActive={
-                currentTop !== "" && currentTop === topSegment(item.url)
-              }
-              asChild
-              tooltip={item.name}
-            >
-              <Link
-                href={item.url}
-                onClick={() => setOpenMobile(false)}
+        {items.map((item) => {
+          const content = (
+            <>
+              <item.icon />
+              <span>{item.name}</span>
+              {item.badge ? (
+                <SidebarMenuBadge>{item.badge}</SidebarMenuBadge>
+              ) : null}
+            </>
+          );
+
+          return (
+            <SidebarMenuItem key={item.name}>
+              <SidebarMenuButton
+                isActive={
+                  !!item.url &&
+                  currentTop !== "" &&
+                  currentTop === topSegment(item.url)
+                }
+                asChild={!item.disabled && !!item.url}
+                disabled={item.disabled}
+                tooltip={item.name}
                 className="font-commit-mono tracking-tight"
               >
-                <item.icon />
-                <span>{item.name}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ))}
+                {!item.disabled && item.url ? (
+                  <Link href={item.url} onClick={() => setOpenMobile(false)}>
+                    {content}
+                  </Link>
+                ) : (
+                  content
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
       </SidebarMenu>
     </SidebarGroup>
   );
