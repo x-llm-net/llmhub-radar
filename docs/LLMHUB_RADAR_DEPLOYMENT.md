@@ -477,6 +477,9 @@ database live in `llmhub-radar-libsql-data`, `llmhub-radar-media-data`, and
 set. Marketplace PostgreSQL uses a logical `pg_dump`; do not copy its live
 volume files.
 
+The PostgreSQL service uses the Docker Official Image mirrored by AWS Public
+ECR because the production host cannot reliably reach Docker Hub.
+
 Manual backup:
 
 ```bash
