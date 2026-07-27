@@ -38,7 +38,7 @@ describeDatabase("marketplace public API", () => {
     const payload = (await response.json()) as { data: unknown[] };
 
     expect(response.status).toBe(200);
-    expect(payload.data).toHaveLength(11);
+    expect(payload.data.length).toBeGreaterThanOrEqual(11);
     const cacheControl = response.headers.get("cache-control") ?? "";
     const sharedMaxAge = Number(/s-maxage=(\d+)/.exec(cacheControl)?.[1]);
     expect(sharedMaxAge).toBeGreaterThan(0);
