@@ -129,7 +129,7 @@ describeDatabase("marketplace public API", () => {
     expect(payload.error.code).toBe("provider_not_found");
   });
 
-  test("reports the ranking threshold stored by the sync layer", async () => {
+  test("reports that there is no minimum ranking score gate", async () => {
     await setMarketplaceMinRankingAvailabilityBps(db, 8_300);
     const isolatedApp = createMarketplaceApp(db);
     const response = await isolatedApp.request("/v1/homepage");
@@ -137,7 +137,7 @@ describeDatabase("marketplace public API", () => {
       meta: { minRankingScore: number };
     };
 
-    expect(payload.meta.minRankingScore).toBe(83);
-    await setMarketplaceMinRankingAvailabilityBps(db, 8_000);
+    expect(payload.meta.minRankingScore).toBe(0);
+    await setMarketplaceMinRankingAvailabilityBps(db, 0);
   });
 });

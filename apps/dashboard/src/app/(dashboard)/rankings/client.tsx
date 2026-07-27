@@ -199,8 +199,6 @@ export function Client() {
   );
   const rankedCount = rows.filter((row) => row.ranked).length;
   const observingCount = rows.length - rankedCount;
-  const minRankingScore =
-    rankingsQuery.data?.items[0]?.meta.minRankingScore ?? 80;
   const isLoading = poolsQuery.isLoading || rankingsQuery.isLoading;
 
   return (
@@ -425,12 +423,7 @@ export function Client() {
                         <p className="text-muted-foreground max-w-48 text-xs">
                           {row.ranked
                             ? t("qualified")
-                            : eligibilityLabel(
-                                row.result,
-                                minRankingScore,
-                                t,
-                                locale,
-                              )}
+                            : eligibilityLabel(row.result, t)}
                         </p>
                       </div>
                     </TableCell>
@@ -505,36 +498,17 @@ function formatPercentValue(value: number, locale: string) {
 
 function eligibilityLabel(
   result: RankingResult,
-  minRankingScore: number,
   t: ReturnType<typeof useTranslations<"rankings">>,
-  locale: string,
 ) {
   switch (result.eligibilityReason) {
-    case "incomplete_observation_period":
-    case "incomplete_window":
-    case "insufficient_bucket_coverage":
-      return t("eligibility.observation", {
-        count: result.validBucketCount,
-      });
-    case "insufficient_coverage":
-      return t("eligibility.coverage", {
-        value: formatPercentValue(result.coverageBps, locale),
-      });
     case "no_scoreable_samples":
       return t("eligibility.noSamples");
+    case "insufficient_samples":
+      return t("eligibility.samples", { count: result.sampleCount });
     case "configuration_error":
       return t("eligibility.configurationError");
     case "stale":
       return t("eligibility.stale");
-    case "currently_down":
-      return t("eligibility.down");
-    case "below_availability_threshold": {
-      const current = (result.availabilityBps ?? 0) / 100;
-      return t("eligibility.score", {
-        threshold: minRankingScore,
-        gap: Math.max(0, minRankingScore - current).toFixed(2),
-      });
-    }
     default:
       return t("eligibility.pending");
   }

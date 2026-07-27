@@ -1,6 +1,5 @@
 (() => {
   const preferredFamilyOrder = ["Claude", "GPT", "Gemini", "Grok"];
-  let minRankingScore = 80;
   const familyDetails = {
     Claude: {
       anchor: "claude-rankings",
@@ -238,12 +237,8 @@
     if (row.currentStatus === "stale") return "数据待更新";
     if (row.currentStatus === "down") return "当前不可用";
     const reasons = {
-      incomplete_observation_period: "观察未满 7 天",
-      incomplete_window: "观察窗口不足",
-      insufficient_bucket_coverage: `有效时段 ${row.validBucketCount}/56（需 52）`,
-      insufficient_coverage: "样本覆盖不足",
       no_scoreable_samples: "暂无有效样本",
-      below_availability_threshold: "可用率未达 " + minRankingScore + "%",
+      insufficient_samples: `有效样本 ${row.sampleCount}/4`,
     };
     return reasons[row.eligibilityReason] || "数据积累中";
   }
@@ -298,9 +293,9 @@
       : '<div class="leaderboard-no-sponsor">当前模型暂无赞助置顶。</div>';
     const rankingMarkup = ranked.length
       ? ranked.map((row) => scoredRow(row, model)).join("")
-      : '<div class="empty-state">当前还没有达到完整观测门槛的服务商。</div>';
+      : '<div class="empty-state">当前还没有达到 4 次有效探测的服务商。</div>';
     const observingMarkup = observing.length
-      ? `<div class="leaderboard-observing-label"><strong>观察中</strong><span>满足完整观测且可用率达到 ${minRankingScore}% 后参与排名</span></div>
+      ? `<div class="leaderboard-observing-label"><strong>观察中</strong><span>达到 4 次有效探测后进入自然排名，低可用率也会按真实分数展示。</span></div>
          <div class="model-ranking-list leaderboard-observing">${observing.map((row) => observingRow(row, model)).join("")}</div>`
       : "";
 
@@ -334,15 +329,7 @@
     </section>`;
   }
 
-  function render(
-    rankings,
-    providerCount,
-    latestStatsAt,
-    configuredMinRankingScore,
-  ) {
-    if (Number.isFinite(configuredMinRankingScore)) {
-      minRankingScore = configuredMinRankingScore;
-    }
+  function render(rankings, providerCount, latestStatsAt) {
     const families = getFamilyOrder(rankings);
     renderFamilies(rankings, families);
     elements.leaderboardStack.innerHTML = families
@@ -398,7 +385,6 @@
       rankings: payload.data,
       providerCount: payload.meta?.providerCount,
       latestStatsAt: payload.meta?.latestStatsAt ?? null,
-      minRankingScore: payload.meta?.minRankingScore,
     };
   }
 
@@ -447,8 +433,8 @@
   elements.leaderboardStack.innerHTML =
     '<div class="leaderboard-loading">正在载入真实观测数据...</div>';
   loadRankings()
-    .then(({ rankings, providerCount, latestStatsAt, minRankingScore }) =>
-      render(rankings, providerCount, latestStatsAt, minRankingScore),
+    .then(({ rankings, providerCount, latestStatsAt }) =>
+      render(rankings, providerCount, latestStatsAt),
     )
     .catch((error) => {
       console.error(error);

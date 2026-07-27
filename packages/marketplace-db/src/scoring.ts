@@ -5,9 +5,10 @@ export const WINDOW_MS = BUCKET_COUNT * BUCKET_MS;
 export const MIN_VALID_BUCKETS = 52;
 export const MIN_BUCKET_COVERAGE_BPS = 8_000;
 export const MIN_WINDOW_COVERAGE_BPS = 9_500;
+export const MIN_RANKING_SAMPLES = 4;
 export const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 export const DEFAULT_SLOW_FIRST_TOKEN_MS = 15_000;
-export const DEFAULT_MIN_RANKING_AVAILABILITY_BPS = 8_000;
+export const DEFAULT_MIN_RANKING_AVAILABILITY_BPS = 0;
 
 export type ProbeOutcomeValue =
   | "success"
@@ -177,8 +178,8 @@ export function calculateSevenDayStats(
   buckets: HealthBucketInput[],
   asOf: Date,
   currentStatus: CurrentStatusValue,
-  observationStartedAt?: Date,
-  minRankingAvailabilityBps = DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
+  _observationStartedAt?: Date,
+  _minRankingAvailabilityBps = DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
 ): SevenDayStats {
   const { windowStart, windowEnd } = getCompletedWindow(asOf);
   const windowBuckets = buckets.filter(
@@ -214,24 +215,14 @@ export function calculateSevenDayStats(
   );
 
   let eligibilityReason: string | null = null;
-  if (observationStartedAt && observationStartedAt > windowStart) {
-    eligibilityReason = "incomplete_observation_period";
-  } else if (windowBuckets.length < BUCKET_COUNT) {
-    eligibilityReason = "incomplete_window";
-  } else if (validBucketCount < MIN_VALID_BUCKETS) {
-    eligibilityReason = "insufficient_bucket_coverage";
-  } else if (coverageBps < MIN_WINDOW_COVERAGE_BPS) {
-    eligibilityReason = "insufficient_coverage";
-  } else if (availabilityBps === null) {
+  if (availabilityBps === null) {
     eligibilityReason = "no_scoreable_samples";
+  } else if (sampleCount < MIN_RANKING_SAMPLES) {
+    eligibilityReason = "insufficient_samples";
   } else if (currentStatus === "configuration_error") {
     eligibilityReason = "configuration_error";
   } else if (currentStatus === "stale" || currentStatus === "unknown") {
     eligibilityReason = "stale";
-  } else if (currentStatus === "down") {
-    eligibilityReason = "currently_down";
-  } else if (availabilityBps < minRankingAvailabilityBps) {
-    eligibilityReason = "below_availability_threshold";
   }
 
   const eligible = eligibilityReason === null;

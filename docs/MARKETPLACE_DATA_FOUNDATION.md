@@ -18,13 +18,13 @@ change the score.
 - Retries use `attempt_no > 0` and never change availability.
 - Provider failures enter the denominator.
 - Configuration and observer errors do not enter the denominator.
-- Current configuration errors, stale data, and current downtime suspend
-  natural-rank eligibility.
+- Current configuration errors and stale data suspend natural-rank eligibility.
 - The public score uses the latest 56 completed UTC-aligned three-hour buckets.
-- At least 52 buckets and 95% overall coverage are required.
-- The default minimum ranking score is 80%. `MARKETPLACE_MIN_RANKING_SCORE`
-  is validated by the sync command and stored in PostgreSQL; the public API
-  reads the stored value so the displayed threshold and ranking stay aligned.
+- A provider/model pair enters the natural ranking after at least 4 scoreable
+  probe samples. Successes and provider failures both count as scoreable
+  samples; configuration and observer errors do not.
+- There is no minimum availability gate. Low-availability providers remain
+  visible and rank naturally by measured availability.
 - Grades are S >= 98%, A >= 95%, B >= 90%, C >= 80%, and D below 80%.
 
 Scores are stored as integer basis points. `9990` means `99.90%`. `0` is a
@@ -82,13 +82,17 @@ To sync the existing public Radar pages, run:
 ```powershell
 $env:MARKETPLACE_DATABASE_URL='postgres://llmhub:llmhub@127.0.0.1:55432/llmhub_marketplace'
 $env:MARKETPLACE_LEGACY_PUBLIC_URL='https://llm-hub.store'
-$env:MARKETPLACE_LEGACY_PUBLIC_SLUGS='x-llm,skyhope,autorouter,deepkey'
 pnpm --filter @llmhub/marketplace-db sync:legacy
 ```
 
 The first enabled legacy target for each provider/model pair is the scoring
 target. Other groups are imported as non-scoring evidence targets. Changing
 the primary target should become an explicit owner action in the dashboard.
+When no explicit slug list is passed to the sync function, the adapter first
+loads the public Radar directory and imports every public, opt-in status page.
+Unknown model names are automatically created in PostgreSQL with the raw model
+name as display metadata; admins can later edit display name, vendor, family,
+aliases, and sort order in the database without a code release.
 
 The adapter reuses only public Radar outputs. API keys, endpoint URLs and
 ciphertext stay in the existing Radar database and worker. The storefront
@@ -124,6 +128,5 @@ status-page service.
   real sync profiling shows they exceed the ten-minute window.
 - Make the owner-selected scoring target explicit in the dashboard before
   providers manage multiple ranking groups directly in Marketplace.
-- Make ranking-threshold updates transactional with all stats refreshes if the
-  threshold becomes an interactive dashboard setting. The current environment
-  setting changes only during controlled sync runs.
+- Add a small admin UI for editing optional model metadata if direct database
+  edits become too slow.

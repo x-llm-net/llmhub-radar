@@ -8,7 +8,6 @@
     "orange",
     "teal",
   ];
-  let minRankingScore = 80;
   const elements = {
     breadcrumb: document.querySelector("#breadcrumb-model"),
     vendor: document.querySelector("#model-vendor"),
@@ -92,16 +91,6 @@
     return logoColors[seed % logoColors.length];
   }
 
-  function safeExternalUrl(value) {
-    if (!value) return null;
-    try {
-      const url = new URL(value);
-      return ["http:", "https:"].includes(url.protocol) ? url.href : null;
-    } catch {
-      return null;
-    }
-  }
-
   function providerIdentity(row, rank, observing = false, subtitle = null) {
     const rankMarkup = observing
       ? '<span class="observation-rank">观察</span>'
@@ -177,12 +166,8 @@
     if (row.currentStatus === "stale") return "数据待更新";
     if (row.currentStatus === "down") return "当前不可用";
     const reasons = {
-      incomplete_observation_period: "观察未满 7 天",
-      incomplete_window: "观察窗口不足",
-      insufficient_bucket_coverage: `有效时段 ${row.validBucketCount}/56（需 52）`,
-      insufficient_coverage: "样本覆盖不足",
       no_scoreable_samples: "暂无有效样本",
-      below_availability_threshold: "可用率未达 " + minRankingScore + "%",
+      insufficient_samples: `有效样本 ${row.sampleCount}/4`,
     };
     return reasons[row.eligibilityReason] || "数据积累中";
   }
@@ -291,9 +276,6 @@
     if (!boardResponse.ok)
       throw new Error(`模型榜单请求失败（HTTP ${boardResponse.status}）`);
     const boardPayload = await boardResponse.json();
-    if (Number.isFinite(boardPayload.meta?.minRankingScore)) {
-      minRankingScore = boardPayload.meta.minRankingScore;
-    }
     renderBoard(boardPayload.data, catalog);
   }
 

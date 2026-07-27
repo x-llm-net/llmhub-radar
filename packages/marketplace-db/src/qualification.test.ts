@@ -9,7 +9,7 @@ import {
 } from "./scoring";
 
 describe("marketplace qualification", () => {
-  test("does not rank a target before a full seven-day observation", () => {
+  test("ranks a target before a full seven-day observation once it has four samples", () => {
     const asOf = new Date("2026-07-23T12:34:56.000Z");
     const windowEnd = floorToBucket(asOf);
     const buckets: HealthBucketInput[] = Array.from(
@@ -43,7 +43,8 @@ describe("marketplace qualification", () => {
       startedSixDaysAgo,
     );
 
-    expect(stats.eligible).toBe(false);
-    expect(stats.eligibilityReason).toBe("incomplete_observation_period");
+    expect(stats.eligible).toBe(true);
+    expect(stats.eligibilityReason).toBeNull();
+    expect(stats.sampleCount).toBeGreaterThanOrEqual(4);
   });
 });

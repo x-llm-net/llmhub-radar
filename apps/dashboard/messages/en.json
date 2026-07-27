@@ -808,13 +808,14 @@
       "stale": "Stale data"
     },
     "eligibility": {
-      "observation": "{count}/52 valid observation buckets",
-      "coverage": "{value}% coverage; 95% required",
+      "observation": "Observation window is still filling; {count} valid buckets",
+      "coverage": "{value}% coverage",
       "noSamples": "No scoreable samples yet",
+      "samples": "{count}/4 scoreable samples",
       "configurationError": "Current probe configuration error",
       "stale": "Recent probe data is stale",
       "down": "Current probe is unavailable",
-      "score": "Requires {threshold}%; {gap}% remaining",
+      "score": "Waiting for more samples",
       "pending": "Waiting to meet public ranking criteria"
     }
   },

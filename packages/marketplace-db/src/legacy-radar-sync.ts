@@ -10,10 +10,8 @@ import {
   providerModels,
   providers,
 } from "./schema";
-import {
-  getMarketplaceMinRankingAvailabilityBps,
-  setMarketplaceMinRankingAvailabilityBps,
-} from "./settings";
+import { DEFAULT_MIN_RANKING_AVAILABILITY_BPS } from "./scoring";
+import { setMarketplaceMinRankingAvailabilityBps } from "./settings";
 
 const CONFIGURATION_ERRORS = new Set([
   "auth_error",
@@ -21,11 +19,11 @@ const CONFIGURATION_ERRORS = new Set([
   "model_not_found",
 ]);
 const DEFAULT_BASE_URL = "https://llm-hub.store";
-const DEFAULT_SLUGS = ["x-llm", "skyhope", "autorouter", "deepkey"];
 const INSERT_BATCH_SIZE = 500;
 const DEFAULT_FETCH_CONCURRENCY = 12;
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 const DEFAULT_STATS_CONCURRENCY = 8;
+const LEGACY_DIRECTORY_PAGE_SIZE = 24;
 const BUCKET_SECONDS = 3 * 60 * 60;
 
 type LegacyRun = {
@@ -71,6 +69,15 @@ type LegacyPublicPage = {
   } | null;
 };
 
+type LegacyDirectoryPage = {
+  items: Array<{
+    page: { slug: string };
+  }>;
+  totalSize: number;
+  limit: number;
+  offset: number;
+};
+
 export type LegacyRadarSyncResult = {
   providers: number;
   listings: number;
@@ -97,6 +104,39 @@ export function mapLegacyOutcome(args: {
 
 function normalizedModelName(value: string) {
   return value.trim().toLowerCase();
+}
+
+function modelSlug(value: string) {
+  return (
+    normalizedModelName(value)
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "model"
+  );
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function inferModelMetadata(name: string) {
+  const lower = normalizedModelName(name);
+  if (lower.startsWith("claude")) {
+    return { vendor: "Anthropic", family: "Claude" };
+  }
+  if (
+    lower.startsWith("gpt") ||
+    lower.startsWith("o1") ||
+    lower.startsWith("o3")
+  ) {
+    return { vendor: "OpenAI", family: "GPT" };
+  }
+  if (lower.startsWith("gemini")) {
+    return { vendor: "Google", family: "Gemini" };
+  }
+  if (lower.startsWith("grok")) {
+    return { vendor: "xAI", family: "Grok" };
+  }
+  return { vendor: "Other", family: "Other" };
 }
 
 function ratioToBps(numerator: number, denominator: number) {
@@ -173,6 +213,22 @@ function asLegacyPublicPage(value: unknown): LegacyPublicPage {
   return page;
 }
 
+function asLegacyDirectoryPage(value: unknown): LegacyDirectoryPage {
+  const directory = (
+    value as Array<{
+      result?: { data?: { json?: LegacyDirectoryPage } };
+    }>
+  )?.[0]?.result?.data?.json;
+
+  if (!directory || !Array.isArray(directory.items)) {
+    throw new Error(
+      "Legacy Radar returned an invalid public directory payload",
+    );
+  }
+
+  return directory;
+}
+
 async function fetchLegacyPublicPage(args: {
   baseUrl: string;
   slug: string;
@@ -209,6 +265,116 @@ async function fetchLegacyPublicPage(args: {
   }
 }
 
+async function fetchLegacyPublicDirectoryPage(args: {
+  baseUrl: string;
+  limit: number;
+  offset: number;
+  fetchFn: typeof fetch;
+  timeoutMs: number;
+}) {
+  const input = encodeURIComponent(
+    JSON.stringify({
+      "0": { json: { limit: args.limit, offset: args.offset } },
+    }),
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
+
+  try {
+    const response = await args.fetchFn(
+      `${args.baseUrl}/api/trpc/edge/statusPage.listPublicRadar?batch=1&input=${input}`,
+      {
+        headers: {
+          accept: "application/json",
+          "x-trpc-source": "client",
+        },
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Legacy Radar directory request failed with HTTP ${response.status}`,
+      );
+    }
+
+    return asLegacyDirectoryPage(await response.json());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchLegacyPublicSlugs(args: {
+  baseUrl: string;
+  fetchFn: typeof fetch;
+  timeoutMs: number;
+}) {
+  const slugs: string[] = [];
+  let offset = 0;
+  let totalSize = Number.POSITIVE_INFINITY;
+
+  while (offset < totalSize) {
+    const page = await fetchLegacyPublicDirectoryPage({
+      ...args,
+      limit: LEGACY_DIRECTORY_PAGE_SIZE,
+      offset,
+    });
+    totalSize = page.totalSize;
+    slugs.push(...page.items.map((item) => item.page.slug));
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+  }
+
+  return uniqueStrings(slugs);
+}
+
+async function resolveMarketplaceModel(args: {
+  db: MarketplaceDb;
+  modelByAlias: Map<string, typeof models.$inferSelect>;
+  modelName: string;
+  now: Date;
+}) {
+  const normalized = normalizedModelName(args.modelName);
+  const existing = args.modelByAlias.get(normalized);
+  if (existing) return existing;
+
+  const slug = modelSlug(args.modelName);
+  const metadata = inferModelMetadata(args.modelName);
+  const aliases = uniqueStrings([args.modelName, slug]);
+  const [inserted] = await args.db
+    .insert(models)
+    .values({
+      slug,
+      vendor: metadata.vendor,
+      family: metadata.family,
+      displayName: args.modelName,
+      shortName: args.modelName,
+      description: "",
+      aliases,
+      sortOrder: 10_000,
+      enabled: true,
+      createdAt: args.now,
+      updatedAt: args.now,
+    })
+    .onConflictDoNothing({
+      target: models.slug,
+    })
+    .returning();
+  const model =
+    inserted ??
+    (
+      await args.db.select().from(models).where(eq(models.slug, slug)).limit(1)
+    )[0];
+  if (!model) {
+    throw new Error(`Could not create marketplace model for ${args.modelName}`);
+  }
+
+  for (const alias of [model.slug, ...model.aliases, args.modelName]) {
+    args.modelByAlias.set(normalizedModelName(alias), model);
+  }
+  return model;
+}
+
 export async function syncLegacyRadar(args: {
   db: MarketplaceDb;
   baseUrl?: string;
@@ -222,12 +388,17 @@ export async function syncLegacyRadar(args: {
 }): Promise<LegacyRadarSyncResult> {
   const now = args.now ?? new Date();
   const baseUrl = (args.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const slugs = args.slugs ?? DEFAULT_SLUGS;
   const fetchFn = args.fetchFn ?? fetch;
-  const currentMinRankingAvailabilityBps =
-    await getMarketplaceMinRankingAvailabilityBps(args.db);
+  const slugs =
+    args.slugs && args.slugs.length > 0
+      ? uniqueStrings(args.slugs)
+      : await fetchLegacyPublicSlugs({
+          baseUrl,
+          fetchFn,
+          timeoutMs: args.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
+        });
   const minRankingAvailabilityBps =
-    args.minRankingAvailabilityBps ?? currentMinRankingAvailabilityBps;
+    args.minRankingAvailabilityBps ?? DEFAULT_MIN_RANKING_AVAILABILITY_BPS;
   const fetchResults = await mapWithConcurrency(
     slugs,
     args.fetchConcurrency ?? DEFAULT_FETCH_CONCURRENCY,
@@ -318,11 +489,16 @@ export async function syncLegacyRadar(args: {
     const targetsByModel = new Map<string, LegacyTarget[]>();
 
     for (const target of page.radar?.targets ?? []) {
-      const model = modelByAlias.get(normalizedModelName(target.modelName));
-      if (!model) {
+      if (!target.modelName.trim()) {
         skippedModels.add(target.modelName);
         continue;
       }
+      const model = await resolveMarketplaceModel({
+        db: args.db,
+        modelByAlias,
+        modelName: target.modelName,
+        now,
+      });
       const values = targetsByModel.get(model.id) ?? [];
       values.push(target);
       targetsByModel.set(model.id, values);
@@ -384,6 +560,32 @@ export async function syncLegacyRadar(args: {
         .update(providerModels)
         .set({ status: "retired", updatedAt: now })
         .where(inArray(providerModels.id, retiredListingIds));
+    }
+  }
+
+  if (!args.slugs) {
+    const syncedSlugs = new Set(pages.map((page) => page.slug));
+    const legacyProviderRows = await args.db
+      .select({ id: providers.id, slug: providers.slug })
+      .from(providers)
+      .innerJoin(providerModels, eq(providerModels.providerId, providers.id))
+      .innerJoin(
+        probeTargets,
+        eq(probeTargets.providerModelId, providerModels.id),
+      )
+      .where(eq(probeTargets.source, "legacy_radar"));
+    const removedProviderIds = [
+      ...new Map(
+        legacyProviderRows
+          .filter((provider) => !syncedSlugs.has(provider.slug))
+          .map((provider) => [provider.id, provider]),
+      ).keys(),
+    ];
+    if (removedProviderIds.length > 0) {
+      await args.db
+        .update(providers)
+        .set({ status: "observing", updatedAt: now })
+        .where(inArray(providers.id, removedProviderIds));
     }
   }
 

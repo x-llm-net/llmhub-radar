@@ -98,43 +98,56 @@ describe("marketplace scoring", () => {
     expect(bucket.coverageBps).toBe(5_000);
   });
 
-  test("keeps a real zero score but excludes it below the ranking threshold", () => {
+  test("keeps a real zero score eligible after enough samples", () => {
     const stats = calculateSevenDayStats(
       completeBuckets(0, 18),
+      AS_OF,
+      "normal",
+    );
+
+    expect(stats.eligible).toBe(true);
+    expect(stats.availabilityBps).toBe(0);
+    expect(stats.eligibilityReason).toBeNull();
+    expect(stats.grade).toBe("D");
+  });
+
+  test("keeps a target observing until four scoreable samples exist", () => {
+    const stats = calculateSevenDayStats(
+      [
+        {
+          bucketStart: new Date(floorToBucket(AS_OF).getTime() - BUCKET_MS),
+          expectedCount: 18,
+          attemptedCount: 3,
+          successCount: 2,
+          providerFailureCount: 1,
+          configurationErrorCount: 0,
+          observerErrorCount: 0,
+          slowSuccessCount: 0,
+          availabilityBps: 6_667,
+          coverageBps: 1_667,
+          lastCheckAt: new Date(AS_OF.getTime() - 5 * 60 * 1000),
+        },
+      ],
       AS_OF,
       "normal",
     );
 
     expect(stats.eligible).toBe(false);
-    expect(stats.availabilityBps).toBe(0);
-    expect(stats.eligibilityReason).toBe("below_availability_threshold");
+    expect(stats.sampleCount).toBe(3);
+    expect(stats.eligibilityReason).toBe("insufficient_samples");
     expect(stats.grade).toBeNull();
   });
 
-  test("allows the minimum ranking score to be configured", () => {
-    const stats = calculateSevenDayStats(
-      completeBuckets(0, 18),
-      AS_OF,
-      "normal",
-      undefined,
-      0,
-    );
-
-    expect(stats.eligible).toBe(true);
-    expect(stats.availabilityBps).toBe(0);
-    expect(stats.grade).toBe("D");
-  });
-
-  test("requires a complete seven-day observation window", () => {
+  test("does not require a complete seven-day observation window", () => {
     const stats = calculateSevenDayStats(
       completeBuckets().slice(1),
       AS_OF,
       "normal",
     );
 
-    expect(stats.eligible).toBe(false);
-    expect(stats.eligibilityReason).toBe("incomplete_window");
-    expect(stats.grade).toBeNull();
+    expect(stats.eligible).toBe(true);
+    expect(stats.eligibilityReason).toBeNull();
+    expect(stats.grade).toBe("S");
   });
 
   test("fills every missing trend slot with a no-data bucket", () => {

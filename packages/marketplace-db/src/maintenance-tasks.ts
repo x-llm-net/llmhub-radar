@@ -13,30 +13,9 @@ export async function runLegacySyncFromEnv() {
   const { client, db } = createMarketplaceDb(databaseUrl);
 
   try {
-    const slugs = process.env.MARKETPLACE_LEGACY_PUBLIC_SLUGS?.split(",")
-      .map((slug) => slug.trim())
-      .filter(Boolean);
-    const configuredMinScore = process.env.MARKETPLACE_MIN_RANKING_SCORE;
-    let minRankingAvailabilityBps: number | undefined;
-    if (configuredMinScore !== undefined) {
-      const parsedMinScore = Number(configuredMinScore);
-      if (
-        !Number.isFinite(parsedMinScore) ||
-        parsedMinScore < 0 ||
-        parsedMinScore > 100
-      ) {
-        throw new Error(
-          "MARKETPLACE_MIN_RANKING_SCORE must be a number from 0 to 100",
-        );
-      }
-      minRankingAvailabilityBps = Math.round(parsedMinScore * 100);
-    }
-
     return await syncLegacyRadar({
       db,
       baseUrl: process.env.MARKETPLACE_LEGACY_PUBLIC_URL,
-      slugs,
-      minRankingAvailabilityBps,
     });
   } finally {
     await client.close();

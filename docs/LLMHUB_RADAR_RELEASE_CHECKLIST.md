@@ -49,8 +49,8 @@ pages.
   `https://llm-hub.store`.
 - [ ] `STATUS_PAGE_URL` points to the internal status-page service URL in
   Docker, for example `http://status-page:3000`.
-- [ ] Marketplace PostgreSQL credentials, public source URL, provider slugs,
-  ranking threshold, sync interval, and cleanup interval are configured.
+- [ ] Marketplace PostgreSQL credentials, public source URL, sync interval, and
+  cleanup interval are configured.
 - [ ] Docker build args for `dashboard` and `status-page` use the same
   production public URLs, not localhost placeholders.
 - [ ] `CRON_SECRET` is set to a random production value.

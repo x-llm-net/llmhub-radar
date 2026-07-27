@@ -291,8 +291,6 @@ services:
     environment:
       MARKETPLACE_DATABASE_URL: ${MARKETPLACE_DATABASE_URL:-postgres://llmhub:llmhub-local-only@marketplace-postgres:5432/llmhub_marketplace}
       MARKETPLACE_LEGACY_PUBLIC_URL: ${MARKETPLACE_LEGACY_PUBLIC_URL:-https://llm-hub.store}
-      MARKETPLACE_LEGACY_PUBLIC_SLUGS: ${MARKETPLACE_LEGACY_PUBLIC_SLUGS:-x-llm,skyhope,autorouter,deepkey}
-      MARKETPLACE_MIN_RANKING_SCORE: ${MARKETPLACE_MIN_RANKING_SCORE:-80}
       MARKETPLACE_SYNC_INTERVAL_MS: ${MARKETPLACE_SYNC_INTERVAL_MS:-600000}
       MARKETPLACE_CLEANUP_INTERVAL_MS: ${MARKETPLACE_CLEANUP_INTERVAL_MS:-86400000}
     command: ["bun", "src/run-maintenance-loop.ts"]

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { seedModelCatalog } from "./catalog";
 import { createMarketplaceDb } from "./db";
+import { syncLegacyRadar } from "./legacy-radar-sync";
 import {
   getMarketplaceOverview,
   getModelLeaderboard,
@@ -207,15 +208,15 @@ describeDatabase("marketplace PostgreSQL integration", () => {
       windowStart: new Date(windowEnd.getTime() - BUCKET_COUNT * BUCKET_MS),
       windowEnd,
       expectedCount: 900,
-      successCount: 890,
-      providerFailureCount: 10,
-      sampleCount: 900,
-      availabilityBps: 9_889,
-      coverageBps: 10_000,
+      successCount: 2,
+      providerFailureCount: 1,
+      sampleCount: 3,
+      availabilityBps: 6_667,
+      coverageBps: 33,
       currentStatus: "normal",
       eligible: false,
-      eligibilityReason: "insufficient_bucket_coverage",
-      validBucketCount: 50,
+      eligibilityReason: "insufficient_samples",
+      validBucketCount: 1,
       lastCheckAt: new Date(asOf.getTime() - 20 * 60 * 1000),
       updatedAt: asOf,
     });
@@ -228,8 +229,11 @@ describeDatabase("marketplace PostgreSQL integration", () => {
     expect(leaderboard?.sponsored[0]?.naturalRank).toBe(1);
     expect(leaderboard?.observing).toHaveLength(1);
     expect(leaderboard?.observing[0]?.provider.slug).toBe("observing-provider");
-    expect(leaderboard?.observing[0]?.availabilityBps).toBe(9_889);
-    expect(leaderboard?.observing[0]?.validBucketCount).toBe(50);
+    expect(leaderboard?.observing[0]?.availabilityBps).toBe(6_667);
+    expect(leaderboard?.observing[0]?.sampleCount).toBe(3);
+    expect(leaderboard?.observing[0]?.eligibilityReason).toBe(
+      "insufficient_samples",
+    );
     expect(leaderboard?.observing[0]?.trend).toHaveLength(56);
     expect(leaderboard?.generatedAt).toBe(
       new Date(asOf.getTime() - 5 * 60 * 1000).toISOString(),
@@ -271,6 +275,114 @@ describeDatabase("marketplace PostgreSQL integration", () => {
     expect(staleLeaderboard?.ranking).toHaveLength(0);
     expect(staleLeaderboard?.sponsored).toHaveLength(0);
     expect(staleLeaderboard?.observing).toHaveLength(0);
+  });
+
+  test("discovers public legacy providers and creates unknown models", async () => {
+    const windowEnd = floorToBucket(asOf);
+    const bucketStart = new Date(windowEnd.getTime() - BUCKET_MS);
+    const runTimes = [5, 15, 25, 35].map(
+      (minutes) => new Date(asOf.getTime() - minutes * 60 * 1000),
+    );
+    const fetchFn = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("statusPage.listPublicRadar")) {
+        return Response.json([
+          {
+            result: {
+              data: {
+                json: {
+                  items: [{ page: { slug: "fresh-public-provider" } }],
+                  totalSize: 1,
+                  limit: 24,
+                  offset: 0,
+                },
+              },
+            },
+          },
+        ]);
+      }
+      if (url.includes("statusPage.get")) {
+        return Response.json([
+          {
+            result: {
+              data: {
+                json: {
+                  title: "Fresh Public Provider",
+                  description: "Imported from the public directory",
+                  icon: null,
+                  slug: "fresh-public-provider",
+                  homepageUrl: "https://fresh.example.com",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                  updatedAt: "2026-07-23T12:00:00.000Z",
+                  radar: {
+                    targets: [
+                      {
+                        id: 101,
+                        displayName: "default",
+                        serviceGroupName: "default",
+                        modelName: "llama-3.1-405b",
+                        intervalSeconds: 600,
+                        currentStatus: "operational",
+                        stabilityBuckets7d: [
+                          {
+                            from: bucketStart.toISOString(),
+                            to: windowEnd.toISOString(),
+                            ok: 4,
+                            degraded: 0,
+                            error: 0,
+                            availability: 100,
+                          },
+                        ],
+                        recentRuns: runTimes.map((startedAt, index) => ({
+                          id: index + 1,
+                          startedAt: startedAt.toISOString(),
+                          success: true,
+                          httpStatus: 200,
+                          errorType: null,
+                          firstTokenMs: 900,
+                          totalLatencyMs: 1_200,
+                        })),
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        ]);
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const result = await syncLegacyRadar({
+      db,
+      baseUrl: "https://legacy.example.com",
+      fetchFn,
+      now: asOf,
+    });
+
+    expect(result.providers).toBe(1);
+    expect(result.listings).toBe(1);
+    expect(result.scoringTargets).toBe(1);
+    expect(result.skippedModels).toEqual([]);
+
+    const [createdModel] = await db
+      .select()
+      .from(models)
+      .where(eq(models.slug, "llama-3-1-405b"))
+      .limit(1);
+    expect(createdModel?.displayName).toBe("llama-3.1-405b");
+    expect(createdModel?.vendor).toBe("Other");
+
+    const leaderboard = await getModelLeaderboard(db, "llama-3-1-405b", {
+      asOf,
+    });
+    expect(leaderboard?.ranking).toHaveLength(1);
+    expect(leaderboard?.ranking[0]?.provider.slug).toBe(
+      "fresh-public-provider",
+    );
+    expect(leaderboard?.ranking[0]?.sampleCount).toBe(4);
+    expect(leaderboard?.observing).toHaveLength(0);
   });
 
   test("caps a tied natural leaderboard at ten providers", async () => {

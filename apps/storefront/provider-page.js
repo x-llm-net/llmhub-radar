@@ -8,7 +8,6 @@
     "orange",
     "teal",
   ];
-  let minRankingScore = 80;
   const elements = {
     breadcrumb: document.querySelector("#breadcrumb-provider"),
     logo: document.querySelector("#provider-page-logo"),
@@ -170,12 +169,8 @@
     if (status === "stale") return "数据待更新";
     if (status === "down") return "当前不可用";
     const reasons = {
-      incomplete_observation_period: "观察未满 7 天",
-      incomplete_window: "观察窗口不足",
-      insufficient_bucket_coverage: `有效时段 ${row.validBucketCount}/56（需 52）`,
-      insufficient_coverage: "样本覆盖不足",
       no_scoreable_samples: "暂无有效样本",
-      below_availability_threshold: `可用率未达 ${minRankingScore}%`,
+      insufficient_samples: `有效样本 ${row.sampleCount}/4`,
     };
     return reasons[row.eligibilityReason] || "数据积累中";
   }
@@ -322,8 +317,6 @@
     }
     const payload = await response.json();
     if (!payload.data?.provider) throw new Error("服务商数据格式不正确");
-    if (Number.isFinite(payload.meta?.minRankingScore))
-      minRankingScore = payload.meta.minRankingScore;
     render(payload.data);
   }
 

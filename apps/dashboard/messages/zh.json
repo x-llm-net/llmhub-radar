@@ -808,13 +808,14 @@
       "stale": "数据过期"
     },
     "eligibility": {
-      "observation": "有效观测时段 {count}/52",
-      "coverage": "当前覆盖率 {value}%，需达到 95%",
+      "observation": "观测窗口还在补齐，已有 {count} 个有效时段",
+      "coverage": "当前覆盖率 {value}%",
       "noSamples": "暂无可计分样本",
+      "samples": "有效样本 {count}/4",
       "configurationError": "当前探测配置异常",
       "stale": "最近探测数据已过期",
       "down": "当前探测不可用",
-      "score": "需达到 {threshold}%，还差 {gap}%",
+      "score": "等待更多样本",
       "pending": "等待满足公开上榜条件"
     }
   },

@@ -122,19 +122,8 @@ export async function seedModelCatalog(db: MarketplaceDb) {
     await db
       .insert(models)
       .values({ ...model, aliases: [...model.aliases] })
-      .onConflictDoUpdate({
+      .onConflictDoNothing({
         target: models.slug,
-        set: {
-          vendor: model.vendor,
-          family: model.family,
-          displayName: model.displayName,
-          shortName: model.shortName,
-          description: model.description,
-          aliases: [...model.aliases],
-          sortOrder: model.sortOrder,
-          enabled: true,
-          updatedAt: new Date(),
-        },
       });
   }
 

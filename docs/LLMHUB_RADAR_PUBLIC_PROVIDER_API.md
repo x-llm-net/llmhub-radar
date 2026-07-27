@@ -211,7 +211,7 @@ confidenceLevel = "insufficient"
 
 | 标记 | 含义 |
 | --- | --- |
-| `insufficient_samples` | 7 天样本数不足 10。 |
+| `insufficient_samples` | 可计分样本不足 4 次。 |
 | `low_sample_count` | 7 天样本数达到 10 但不足 30。 |
 | `current_issue` | 当前聚合状态不是 `operational`。 |
 | `high_first_token_latency` | 7 天 P95 首 token 超过 8000ms。 |
@@ -323,4 +323,3 @@ HTTP/1.1 500 Internal Server Error
 | `x-llm` | `96.85` | `A` | `operational` | `1176` | `9685` | `678` | `9646` |
 | `skyhope` | `91.03` | `B` | `operational` | `1517` | `9103` | `660` | `8909` |
 | `autorouter` | `89.39` | `C` | `operational` | `1545` | `8939` | `791` | `8104` |
-
