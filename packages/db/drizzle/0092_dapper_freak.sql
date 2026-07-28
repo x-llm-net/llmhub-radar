@@ -1,0 +1,1 @@
+ALTER TABLE `radar_pool` ADD `deleted_at` integer;

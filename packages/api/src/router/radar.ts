@@ -5,6 +5,7 @@ import {
   DiscoverRadarModelsForPoolInput,
   DiscoverRadarModelsInput,
   DeleteRadarCredentialInput,
+  DeleteRadarPoolInput,
   GetRadarPoolInput,
   ListClaimableRadarPoolsInput,
   ListRadarClaimApplicationsInput,
@@ -13,6 +14,7 @@ import {
   ListRadarPoolsInput,
   ListRadarVerificationApplicationsInput,
   RecordRadarProbeRunInput,
+  RecheckRadarCredentialInput,
   ReviewRadarClaimApplicationInput,
   ReviewRadarOrderInput,
   ReviewRadarVerificationApplicationInput,
@@ -25,6 +27,7 @@ import {
   addRadarTokenProbe,
   createRadarPool,
   deleteRadarCredential,
+  deleteRadarPool,
   discoverRadarModelsForPool,
   discoverRadarModels,
   getRadarPool,
@@ -36,6 +39,7 @@ import {
   listRadarOrders,
   listRadarPools,
   recordRadarProbeRun,
+  recheckRadarCredential,
   reviewRadarClaimApplication,
   reviewRadarOrder,
   reviewRadarVerificationApplication,
@@ -298,11 +302,37 @@ export const radarRouter = createTRPCRouter({
       }
     }),
 
+  recheckCredential: protectedProcedure
+    .input(RecheckRadarCredentialInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await recheckRadarCredential({
+          ctx: toServiceCtx(ctx),
+          input,
+        });
+      } catch (err) {
+        toTRPCError(err);
+      }
+    }),
+
   deleteCredential: protectedProcedure
     .input(DeleteRadarCredentialInput)
     .mutation(async ({ ctx, input }) => {
       try {
         return await deleteRadarCredential({
+          ctx: toServiceCtx(ctx),
+          input,
+        });
+      } catch (err) {
+        toTRPCError(err);
+      }
+    }),
+
+  deletePool: protectedProcedure
+    .input(DeleteRadarPoolInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await deleteRadarPool({
           ctx: toServiceCtx(ctx),
           input,
         });

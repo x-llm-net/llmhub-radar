@@ -56,7 +56,7 @@
         normal: "当前正常",
         degraded: "近期波动",
         down: "当前不可用",
-        configuration_error: "配置待修复",
+        configuration_error: "配置异常",
         stale: "数据待更新",
         unknown: "数据积累中",
       }[status] || "状态未知"
@@ -93,12 +93,12 @@
 
   function providerIdentity(row, rank, observing = false, subtitle = null) {
     const rankMarkup = observing
-      ? '<span class="observation-rank">观察</span>'
+      ? '<span class="observation-rank">积累</span>'
       : `<span class="rank-number">${String(rank).padStart(2, "0")}</span>`;
     const name = row.provider.name || row.provider.slug;
     const mark = [...name.trim()][0]?.toUpperCase() || "L";
     const providerUrl = `./provider.html?slug=${encodeURIComponent(row.provider.slug)}`;
-    const nameMarkup = `<a class="provider-name-link" href="${providerUrl}" title="查看 ${escapeHtml(name)} 的模型观测">${escapeHtml(name)}</a>`;
+    const nameMarkup = `<a class="provider-name-link" href="${providerUrl}" title="查看 ${escapeHtml(name)} 的模型实测">${escapeHtml(name)}</a>`;
     return `<div class="provider-identity">
       ${rankMarkup}
       <span class="provider-logo logo-${logoColor(row.provider.slug)}">${escapeHtml(mark)}</span>
@@ -130,7 +130,7 @@
       bucket.availabilityBps === null
         ? "暂无数据"
         : `可用率 ${scoreText(bucket.availabilityBps)}`;
-    return `${formatter.format(start)} - ${formatter.format(end)} · ${score} · ${bucket.sampleCount} 次样本`;
+    return `${formatter.format(start)} - ${formatter.format(end)} · ${score} · ${bucket.sampleCount} 次有效测试`;
   }
 
   function trendStrip(row, model) {
@@ -155,19 +155,19 @@
       <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong><span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span></div>
       ${trendStrip(row, model)}
       <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)}</span></div>
-      <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 有效时段</span></div>
+      <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 个时段有数据</span></div>
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}
     </article>`;
   }
 
   function eligibilityText(row) {
-    if (row.currentStatus === "configuration_error") return "配置待修复";
+    if (row.currentStatus === "configuration_error") return "配置异常";
     if (row.currentStatus === "stale") return "数据待更新";
     if (row.currentStatus === "down") return "当前不可用";
     const reasons = {
-      no_scoreable_samples: "暂无有效样本",
-      insufficient_samples: `有效样本 ${row.sampleCount}/4`,
+      no_scoreable_samples: "暂无有效测试",
+      insufficient_samples: `有效测试 ${row.sampleCount}/4`,
     };
     return reasons[row.eligibilityReason] || "数据积累中";
   }
@@ -178,7 +178,7 @@
       <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong></div>
       ${trendStrip(row, model)}
       <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)}</span></div>
-      <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 有效时段</span></div>
+      <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 个时段有数据</span></div>
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}
     </article>`;
@@ -217,7 +217,7 @@
     elements.vendor.textContent = `${model.vendor.toUpperCase()} · MODEL RANKING`;
     elements.title.textContent = `${model.displayName} 中转站榜单`;
     elements.description.textContent = model.description;
-    elements.rankingTitle.textContent = `${model.displayName} Top 10 自然排名`;
+    elements.rankingTitle.textContent = `${model.displayName} Top 10 实测排名`;
     elements.summaryProviders.textContent = `${new Set(visible.map((row) => row.provider.slug)).size} 家`;
     elements.summarySamples.textContent = `${totalSamples} 次`;
     elements.summaryBest.textContent = scoreText(best);
@@ -231,8 +231,8 @@
       .map((row) => scoredRow(row, model))
       .join("");
     elements.empty.textContent = observing.length
-      ? "暂无更多满足入榜门槛的服务商，以下服务商仍在积累观测数据。"
-      : "该模型暂时没有可展示的观测数据。";
+      ? "暂无更多中转站进入实测排名，以下中转站仍在积累测试数据。"
+      : "该模型暂时没有可展示的测试数据。";
     elements.empty.hidden = Boolean(ranking.length);
     elements.observingSection.hidden = !observing.length;
     elements.observingList.innerHTML = observing
@@ -241,10 +241,10 @@
   }
 
   function showError(message) {
-    elements.title.textContent = "榜单暂时无法载入";
+    elements.title.textContent = "榜单暂时无法加载";
     elements.description.textContent = message;
     elements.rankingList.innerHTML = "";
-    elements.empty.textContent = "观测数据没有被样例内容替代，请稍后刷新重试。";
+    elements.empty.textContent = "数据暂时无法加载，请稍后重试。";
     elements.empty.hidden = false;
     elements.observingSection.hidden = true;
     elements.sponsoredSection.hidden = true;

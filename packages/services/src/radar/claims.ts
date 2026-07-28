@@ -174,6 +174,7 @@ export async function submitRadarClaimApplication(args: {
       .where(eq(radarPool.id, input.poolId))
       .get();
     if (!pool) throw new NotFoundError("radar_pool", input.poolId);
+    if (pool.deletedAt) throw new NotFoundError("radar_pool", input.poolId);
     if (!pool.claimable) {
       throw new ConflictError("This provider has already been claimed.");
     }
@@ -295,6 +296,9 @@ export async function reviewRadarClaimApplication(args: {
       .where(eq(radarPool.id, application.poolId))
       .get();
     if (!pool) throw new NotFoundError("radar_pool", application.poolId);
+    if (pool.deletedAt) {
+      throw new NotFoundError("radar_pool", application.poolId);
+    }
 
     const now = new Date();
     if (input.decision === "approved") {

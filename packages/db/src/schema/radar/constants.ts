@@ -50,6 +50,8 @@ export const radarBaseUrlVisibility = ["hidden", "masked", "public"] as const;
 
 export const radarEndpointTypes = ["chat_completions"] as const;
 
+export const radarCredentialPauseReasons = ["insufficient_quota"] as const;
+
 export const radarTargetStatuses = [
   "unknown",
   "operational",

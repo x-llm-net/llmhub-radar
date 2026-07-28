@@ -1,5 +1,16 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@openstatus/ui/components/ui/alert-dialog";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
 import {
@@ -25,6 +36,7 @@ import {
   History,
   Pencil,
   RadioTower,
+  Trash2,
   UserRoundCog,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
@@ -140,6 +152,19 @@ export function Client() {
         toast.success(t("ownershipUpdated"));
         setOwnershipPool(null);
         setSelectedOwner(null);
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    }),
+  );
+  const deletePool = useMutation(
+    trpc.radar.deletePool.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(
+          trpc.radar.listPools.queryOptions({}),
+        );
+        toast.success(t("poolDeleted"));
       },
       onError: (error) => {
         toast.error(error.message);
@@ -395,12 +420,52 @@ export function Client() {
                             </Button>
                           )}
                           {canEdit && (
-                            <Button size="sm" variant="outline" asChild>
-                              <Link href={`/radar/${pool.slug}/edit`}>
-                                <Pencil className="size-3.5" />
-                                {t("editPoolShort")}
-                              </Link>
-                            </Button>
+                            <>
+                              <Button size="sm" variant="outline" asChild>
+                                <Link href={`/radar/${pool.slug}/edit`}>
+                                  <Pencil className="size-3.5" />
+                                  {t("editPoolShort")}
+                                </Link>
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="outline">
+                                    <Trash2 className="text-destructive size-3.5" />
+                                    {t("deletePoolShort")}
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      {t("deletePoolTitle")}
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      {t("deletePoolDescription", {
+                                        name: pool.name,
+                                      })}
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>
+                                      {commonT("cancel")}
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-destructive hover:bg-destructive/90 text-white"
+                                      disabled={deletePool.isPending}
+                                      onClick={() =>
+                                        deletePool.mutate({
+                                          poolSlug: pool.slug,
+                                        })
+                                      }
+                                    >
+                                      {deletePool.isPending
+                                        ? commonT("deleting")
+                                        : commonT("delete")}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </>
                           )}
                           <Button size="sm" variant="outline" asChild>
                             <Link href={`/radar/${pool.slug}`}>

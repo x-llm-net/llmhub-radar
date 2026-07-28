@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="LLMHub 中转站与具体模型稳定性榜单" />
+    <meta name="description" content="LLMHub AI API 中转站近 7 天可用率实测榜单" />
     <meta name="application-name" content="LLMHub Marketplace" />
     <title>LLMHub | 挑选靠谱的中转站</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css?v=13" />
 
     <script src="./dashboard-links.js?v=1" defer></script>
-    <script src="./main.js?v=16" defer></script>
+    <script src="./main.js?v=19" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -25,10 +25,10 @@
         <nav class="site-nav" aria-label="主导航">
           <a class="is-active" href="./index.html">首页</a>
           <a href="#leaderboards">模型榜单</a>
-          <a href="#rules">评测规则</a>
-          <a href="#submit">申请收录</a>
+          <a href="#rules">榜单规则</a>
+          <a href="#submit">服务商入驻</a>
         </nav>
-        <a class="header-login" href="https://app.llm-hub.store/login" data-dashboard-path="/login">登录控制台 <span aria-hidden="true">↗</span></a>
+        <a class="header-login" href="https://app.llm-hub.store/login" data-dashboard-path="/login">服务商后台 <span aria-hidden="true">↗</span></a>
       </div>
     </header>
 
@@ -36,32 +36,30 @@
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="shell hero-inner hero-single">
           <div class="hero-copy">
-            <p class="eyebrow">AI API 中转站可靠性榜</p>
+            <p class="eyebrow">AI API 中转站实测榜</p>
             <h1 id="hero-title">挑选靠谱的中转站</h1>
             <p class="hero-lede">
-              站长授权专用 API Key 后，LLMHub
-              持续探测具体模型的可用率与数据新鲜度。首页只展示聚合结果，API Key
-              与原始探测证据保持私有。
+              持续测试不同中转站的主流模型，帮你比较近 7 天可用率、近期状态和数据更新时间，选择更有依据。
             </p>
             <div class="hero-actions">
               <a class="primary-button" href="#leaderboards"
-                >查看靠谱榜单 <span aria-hidden="true">↓</span></a
+                >查看模型榜单 <span aria-hidden="true">↓</span></a
               >
-              <a class="secondary-button hero-secondary" href="#submit">我是站长 · 申请收录</a>
+              <a class="secondary-button hero-secondary" href="#rules">榜单怎么看</a>
             </div>
             <dl class="hero-facts">
               <div>
-                <dt>已覆盖中转站</dt>
+                <dt>已收录中转站</dt>
                 <dd id="provider-count">--</dd>
               </div>
               <div>
-                <dt>观测方式</dt>
-                <dd>持续验证</dd>
+                <dt>更新频率</dt>
+                <dd>每 10 分钟</dd>
               </div>
             </dl>
             <div class="hero-policy">
-              <strong>付费不改检测分与自然排名。</strong
-              ><span>赞助置顶是独立广告位；可用率、状态、样本与 Top 10 名次均来自持续探测。</span>
+              <strong>推广位会单独标注，不参与榜单排序。</strong
+              ><span>Top 10 仅按近 7 天实测结果生成。</span>
             </div>
           </div>
         </div>
@@ -70,20 +68,24 @@
       <section class="protocol-ranking-section" id="rankings" aria-labelledby="protocols-title">
         <div class="shell">
           <div class="protocol-intro">
-            <p class="section-kicker">PROTOCOL RANKINGS</p>
-            <h2 id="protocols-title">按协议看排行</h2>
-            <p>选择 Claude、OpenAI、Gemini 或 xAI，直接查看各协议下具体模型的可靠性排行。</p>
+            <p class="section-kicker">MODEL FAMILIES</p>
+            <h2 id="protocols-title">按模型系列查看</h2>
+            <p>选择你常用的模型，再比较支持它的中转站。</p>
           </div>
-          <nav class="protocol-grid" id="family-grid" aria-label="按协议跳转到对应排行榜"></nav>
+          <nav class="protocol-grid" id="family-grid" aria-label="按模型系列跳转到对应排行榜"></nav>
+
+          <div class="model-rail-shell" id="model-rail-shell">
+            <nav class="model-rail" id="model-rail" aria-label="模型快速切换"></nav>
+          </div>
 
           <div class="leaderboards-intro" id="leaderboards">
             <div>
               <p class="section-kicker">MODEL LEADERBOARDS</p>
-              <h2>按模型分组的靠谱榜</h2>
-              <p>赞助置顶与 Top 10 分开呈现，榜单数据来自站长授权 API Key 的独立持续探测。</p>
+              <h2>按模型找靠谱中转站</h2>
+              <p>每个模型单独排名，推广推荐另行标注，不影响 Top 10 实测排名。</p>
             </div>
             <span class="ranking-update" id="ranking-update"
-              ><i aria-hidden="true"></i> 正在读取观测数据</span
+              ><i aria-hidden="true"></i> 正在加载榜单数据</span
             >
           </div>
           <div class="leaderboard-stack" id="leaderboard-stack" aria-live="polite"></div>
@@ -92,21 +94,22 @@
       <section class="rules-strip shell" id="rules" aria-labelledby="rules-title">
         <div class="rules-strip-heading">
           <p class="section-kicker">HOW TO READ</p>
-          <h2 id="rules-title">怎样阅读榜单</h2>
-          <p>把广告、数据和排名分开看。</p>
+          <h2 id="rules-title">榜单怎么看</h2>
+          <p>先选模型，再看可用率、有效测试数和更新时间。</p>
+          <small class="sample-note">页面仅展示汇总结果，API 密钥等敏感信息不会公开。</small>
         </div>
         <div class="rules-strip-list">
           <div>
-            <span>01</span><strong>按具体模型</strong>
-            <p>Fable 5、Sonnet 5 等模型分别统计，不用大类平均值代替。</p>
+            <span>01</span><strong>一个模型，一张榜</strong>
+            <p>同一中转站的不同模型可能表现不同，我们分别统计。</p>
           </div>
           <div>
-            <span>02</span><strong>分数即可用率</strong>
-            <p>近 7 天成功样本占比，旁边同时展示样本量和更新时间。</p>
+            <span>02</span><strong>可用率怎么看</strong>
+            <p>展示近 7 天请求成功率；测试越多、更新时间越近，参考价值越高。</p>
           </div>
           <div>
-            <span>03</span><strong>赞助位单独标识</strong>
-            <p>可以购买展示位置，但不改变观测数据和自然排序。</p>
+            <span>03</span><strong>推广不影响排名</strong>
+            <p>推广位单独标注，Top 10 只按实际测试结果排序。</p>
           </div>
         </div>
       </section>
@@ -115,8 +118,8 @@
         <div class="shell bottom-band-inner">
           <div>
             <p class="section-kicker">FOR PROVIDERS</p>
-            <h2 id="submit-title">让用户查看你的公开状态</h2>
-            <p>创建状态页并申请收录，服务商资料与观测数据分别管理。</p>
+            <h2 id="submit-title">你的中转站也可以加入榜单</h2>
+            <p>创建公开状态页并持续积累测试数据，完成 4 次有效测试后自动参与排名。</p>
           </div>
           <a class="primary-button" href="https://app.llm-hub.store/login?redirectTo=%2Fradar%2Fcreate" data-dashboard-path="/login?redirectTo=%2Fradar%2Fcreate">申请收录 <span aria-hidden="true">↗</span></a>
         </div>
@@ -156,11 +159,11 @@
     </button>
     <footer class="site-footer">
       <div class="shell footer-inner">
-        <div><strong>LLMHub</strong><span>中转站模型可靠性排行</span></div>
+        <div><strong>LLMHub</strong><span>帮你挑选更稳定的 AI API 中转站</span></div>
         <nav aria-label="页尾导航">
-          <a href="#rules">评测规则</a><a href="#submit">申请收录</a><a href="#contact">联系我们</a>
+          <a href="#rules">榜单规则</a><a href="#submit">服务商入驻</a><a href="#contact">联系我们</a>
         </nav>
-        <small>公开观测数据每 10 分钟更新。</small>
+        <small>榜单数据每 10 分钟更新。</small>
       </div>
     </footer>
   </body>

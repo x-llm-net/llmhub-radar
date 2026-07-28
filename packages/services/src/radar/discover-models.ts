@@ -1,4 +1,4 @@
-import { and, eq } from "@openstatus/db";
+import { and, eq, isNull } from "@openstatus/db";
 import { radarPool, radarProvider } from "@openstatus/db/src/schema";
 
 import { requireScope } from "../auth";
@@ -90,6 +90,7 @@ export async function discoverRadarModelsForPool(args: {
       and(
         eq(radarPool.slug, input.poolSlug),
         eq(radarPool.workspaceId, args.ctx.workspace.id),
+        isNull(radarPool.deletedAt),
       ),
     )
     .get();

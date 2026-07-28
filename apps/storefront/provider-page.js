@@ -75,7 +75,7 @@
         normal: "当前正常",
         degraded: "近期波动",
         down: "当前不可用",
-        configuration_error: "配置待修复",
+        configuration_error: "配置异常",
         stale: "数据待更新",
         unknown: "数据积累中",
       }[status] || "状态未知"
@@ -149,7 +149,7 @@
       bucket.availabilityBps === null
         ? "暂无数据"
         : `可用率 ${scoreText(bucket.availabilityBps)}`;
-    return `${formatter.format(start)} - ${formatter.format(end)} · ${score} · ${bucket.sampleCount} 次样本`;
+    return `${formatter.format(start)} - ${formatter.format(end)} · ${score} · ${bucket.sampleCount} 次有效测试`;
   }
 
   function trendStrip(row, model) {
@@ -165,12 +165,12 @@
 
   function eligibilityText(row) {
     const status = effectiveStatus(row);
-    if (status === "configuration_error") return "配置待修复";
+    if (status === "configuration_error") return "配置异常";
     if (status === "stale") return "数据待更新";
     if (status === "down") return "当前不可用";
     const reasons = {
-      no_scoreable_samples: "暂无有效样本",
-      insufficient_samples: `有效样本 ${row.sampleCount}/4`,
+      no_scoreable_samples: "暂无有效测试",
+      insufficient_samples: `有效测试 ${row.sampleCount}/4`,
     };
     return reasons[row.eligibilityReason] || "数据积累中";
   }
@@ -184,7 +184,7 @@
     const badge = ranked
       ? `<span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span>`
       : `<span class="observation-badge">${escapeHtml(eligibilityText(row))}</span>`;
-    const rankText = ranked ? `自然排名 #${row.naturalRank}` : "持续观察中";
+    const rankText = ranked ? `实测排名 #${row.naturalRank}` : "数据积累中";
     return `<article class="provider-model-row">
       <div class="provider-model-identity">
         <span class="model-symbol ${modelTone(entry.model)}">${escapeHtml(modelMark(entry.model))}</span>
@@ -192,7 +192,7 @@
       </div>
       <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong>${badge}</div>
       ${trendStrip(row, entry.model)}
-      <div class="ranking-fact"><strong>${row.sampleCount} 次样本</strong><span>${scoreText(row.coverageBps)} 覆盖 · ${row.validBucketCount}/56 时段</span></div>
+      <div class="ranking-fact"><strong>${row.sampleCount} 次有效测试</strong><span>${scoreText(row.coverageBps)} 数据完整度 · ${row.validBucketCount}/56 个时段有数据</span></div>
       <span class="status-line ${tone(status)}"><i></i>${statusText(status)}</span>
       <a class="row-action" href="./model.html?model=${encodeURIComponent(entry.model.slug)}">查看模型榜 <span aria-hidden="true">→</span></a>
     </article>`;
@@ -205,14 +205,14 @@
     if (statuses.includes("degraded"))
       return { status: "degraded", text: "部分模型近期波动" };
     if (statuses.includes("configuration_error"))
-      return { status: "configuration_error", text: "部分模型配置待修复" };
+      return { status: "configuration_error", text: "部分模型配置异常" };
     if (statuses.includes("stale"))
-      return { status: "stale", text: "观测数据更新延迟" };
+      return { status: "stale", text: "榜单更新延迟" };
     if (rows.length && statuses.every((status) => status === "normal"))
-      return { status: "normal", text: "当前观测正常" };
+      return { status: "normal", text: "当前测试正常" };
     return {
       status: "unknown",
-      text: rows.length ? "部分数据仍在积累" : "暂无观测数据",
+      text: rows.length ? "部分数据仍在积累" : "暂无测试数据",
     };
   }
 
@@ -239,12 +239,12 @@
     const primaryUrl = purchaseUrl || websiteUrl;
     const name = provider.name || provider.slug;
 
-    document.title = `${name} 模型观测 | LLMHub`;
+    document.title = `${name} 模型实测 | LLMHub`;
     elements.breadcrumb.textContent = name;
     elements.title.textContent = name;
     elements.description.textContent = entries.length
-      ? `持续观测 ${entries.length} 个具体模型，以下数据按模型独立统计。`
-      : "该服务商暂时没有可展示的模型观测数据。";
+      ? `持续测试 ${entries.length} 个具体模型，以下数据按模型独立统计。`
+      : "该中转站暂时没有可展示的模型测试数据。";
     elements.logo.className = `provider-logo logo-${logoColor(provider.slug)}`;
     elements.logo.textContent = [...name.trim()][0]?.toUpperCase() || "L";
     const logoUrl = safeExternalUrl(provider.logoUrl);
@@ -264,7 +264,7 @@
     if (primaryUrl) {
       elements.websiteLink.href = primaryUrl;
       elements.websiteLink.firstChild.textContent = purchaseUrl
-        ? "前往服务商 "
+        ? "前往中转站 "
         : "访问官网 ";
       elements.websiteLink.hidden = false;
     }
@@ -275,7 +275,7 @@
       ? scoreText(Math.max(...scores))
       : "--";
     elements.summaryUpdated.textContent = relativeTime(data.generatedAt);
-    elements.modelCount.textContent = `${entries.filter((entry) => entry.ranking).length} 个入榜 · ${entries.filter((entry) => entry.observing).length} 个观察中`;
+    elements.modelCount.textContent = `${entries.filter((entry) => entry.ranking).length} 个入榜 · ${entries.filter((entry) => entry.observing).length} 个积累数据`;
     elements.modelList.innerHTML = entries.map(modelRow).join("");
     elements.modelList.hidden = !entries.length;
     elements.empty.hidden = Boolean(entries.length);
@@ -287,11 +287,11 @@
   }
 
   function showError(message) {
-    elements.title.textContent = "服务商详情暂时无法载入";
+    elements.title.textContent = "中转站详情暂时无法加载";
     elements.description.textContent = message;
     elements.status.className = "status-line is-muted";
     elements.status.innerHTML = "<i></i>数据不可用";
-    elements.modelList.innerHTML = `<div class="leaderboard-error"><strong>观测数据暂时无法载入</strong><span>页面没有使用样例数据替代，请稍后刷新重试。</span><button type="button" id="retry-provider">重新加载</button></div>`;
+    elements.modelList.innerHTML = `<div class="leaderboard-error"><strong>数据暂时无法加载</strong><span>请稍后重试。</span><button type="button" id="retry-provider">重新加载</button></div>`;
     document
       .querySelector("#retry-provider")
       ?.addEventListener("click", () => window.location.reload());
@@ -299,7 +299,7 @@
 
   async function load() {
     const slug = new URLSearchParams(window.location.search).get("slug");
-    if (!slug) throw new Error("链接中缺少服务商标识");
+    if (!slug) throw new Error("链接中缺少中转站标识");
     const isLocal = ["localhost", "127.0.0.1"].includes(
       window.location.hostname,
     );
@@ -312,11 +312,11 @@
     );
     if (!response.ok) {
       if (response.status === 404)
-        throw new Error("没有找到这个已公开的服务商");
-      throw new Error(`服务商数据请求失败（HTTP ${response.status}）`);
+        throw new Error("没有找到这个已公开的中转站");
+      throw new Error(`中转站数据请求失败（HTTP ${response.status}）`);
     }
     const payload = await response.json();
-    if (!payload.data?.provider) throw new Error("服务商数据格式不正确");
+    if (!payload.data?.provider) throw new Error("中转站数据格式不正确");
     render(payload.data);
   }
 

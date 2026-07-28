@@ -205,7 +205,7 @@ async function getPublicRadarByPageId(args: {
   const pool = await args.db
     .select()
     .from(radarPool)
-    .where(eq(radarPool.pageId, args.pageId))
+    .where(and(eq(radarPool.pageId, args.pageId), isNull(radarPool.deletedAt)))
     .get();
 
   if (!pool) return null;
@@ -461,6 +461,7 @@ export const statusPageRouter = createTRPCRouter({
         eq(page.published, true),
         eq(page.accessType, "public"),
         eq(radarPool.publicPoolOptIn, true),
+        isNull(radarPool.deletedAt),
       );
 
       const [countRow, rows] = await Promise.all([

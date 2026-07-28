@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "@openstatus/db";
+import { and, eq, inArray, isNull } from "@openstatus/db";
 import {
   page,
   pageComponent,
@@ -22,7 +22,7 @@ import {
   PreconditionFailedError,
   ValidationError,
 } from "../errors";
-import { resolveRadarCreationOwner } from "./access";
+import { getRadarActorAccess, resolveRadarCreationOwner } from "./access";
 import { getBaseUrlHostHash, normalizeRadarBaseUrl } from "./base-url";
 import { encryptSecret, getSecretLastFour, hashSecret } from "./crypto";
 import {
@@ -32,6 +32,7 @@ import {
   CreateRadarProviderInput,
   CreateRadarTargetInput,
   DeleteRadarCredentialInput,
+  DeleteRadarPoolInput,
   UpdateRadarTokenProbeInput,
   UpdateRadarPoolInput,
 } from "./schemas";
@@ -361,6 +362,7 @@ export async function updateRadarPool(args: {
         and(
           eq(radarPool.workspaceId, ctx.workspace.id),
           eq(radarPool.slug, input.currentSlug),
+          isNull(radarPool.deletedAt),
         ),
       )
       .get();
@@ -503,6 +505,125 @@ export async function updateRadarPool(args: {
   });
 }
 
+export async function deleteRadarPool(args: {
+  ctx: ServiceContext;
+  input: DeleteRadarPoolInput;
+}) {
+  const { ctx } = args;
+  requireScope(ctx, "write");
+  const input = DeleteRadarPoolInput.parse(args.input);
+
+  return withTransaction(ctx, async (tx) => {
+    const access = await getRadarActorAccess({ ctx, db: tx });
+    const pool = await tx
+      .select({
+        id: radarPool.id,
+        pageId: radarPool.pageId,
+        workspaceId: radarPool.workspaceId,
+      })
+      .from(radarPool)
+      .where(
+        and(
+          eq(radarPool.slug, input.poolSlug),
+          access.isAdmin ? undefined : eq(radarPool.ownerUserId, access.userId),
+          isNull(radarPool.deletedAt),
+        ),
+      )
+      .get();
+
+    if (!pool) throw new NotFoundError("radar_pool", input.poolSlug);
+
+    const now = new Date();
+    const providerRows = await tx
+      .select({ id: radarProvider.id })
+      .from(radarProvider)
+      .where(
+        and(
+          eq(radarProvider.poolId, pool.id),
+          eq(radarProvider.workspaceId, pool.workspaceId),
+        ),
+      )
+      .all();
+    const providerIds = providerRows.map((provider) => provider.id);
+
+    await tx
+      .update(radarPool)
+      .set({
+        claimable: false,
+        visibility: "private",
+        publicPoolOptIn: false,
+        deletedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(radarPool.id, pool.id),
+          eq(radarPool.workspaceId, pool.workspaceId),
+        ),
+      );
+
+    if (providerIds.length > 0) {
+      await tx
+        .update(radarProvider)
+        .set({ enabled: false, updatedAt: now })
+        .where(
+          and(
+            inArray(radarProvider.id, providerIds),
+            eq(radarProvider.workspaceId, pool.workspaceId),
+          ),
+        );
+      await tx
+        .update(radarCredential)
+        .set({ enabled: false, updatedAt: now })
+        .where(
+          and(
+            inArray(radarCredential.providerId, providerIds),
+            eq(radarCredential.workspaceId, pool.workspaceId),
+          ),
+        );
+    }
+
+    await tx
+      .update(radarProbeTarget)
+      .set({
+        enabled: false,
+        nextCheckAt: null,
+        lockedUntil: null,
+        currentStatus: "paused",
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(radarProbeTarget.poolId, pool.id),
+          eq(radarProbeTarget.workspaceId, pool.workspaceId),
+        ),
+      );
+    await tx
+      .update(radarTargetStatus)
+      .set({ currentStatus: "paused", updatedAt: now })
+      .where(
+        inArray(
+          radarTargetStatus.targetId,
+          tx
+            .select({ id: radarProbeTarget.id })
+            .from(radarProbeTarget)
+            .where(eq(radarProbeTarget.poolId, pool.id)),
+        ),
+      );
+
+    if (pool.pageId != null) {
+      await tx
+        .update(page)
+        .set({ published: false, updatedAt: now })
+        .where(
+          and(eq(page.id, pool.pageId), eq(page.workspaceId, pool.workspaceId)),
+        );
+    }
+
+    return { id: pool.id, slug: input.poolSlug };
+  });
+}
+
 export async function createRadarProvider(args: {
   ctx: ServiceContext;
   input: CreateRadarProviderInput;
@@ -519,6 +640,7 @@ export async function createRadarProvider(args: {
         and(
           eq(radarPool.id, input.poolId),
           eq(radarPool.workspaceId, ctx.workspace.id),
+          isNull(radarPool.deletedAt),
         ),
       )
       .get();
@@ -619,6 +741,7 @@ export async function addRadarTokenProbe(args: {
         and(
           eq(radarPool.slug, input.poolSlug),
           eq(radarPool.workspaceId, ctx.workspace.id),
+          isNull(radarPool.deletedAt),
         ),
       )
       .get();
@@ -732,6 +855,7 @@ export async function updateRadarTokenProbe(args: {
         and(
           eq(radarPool.slug, input.poolSlug),
           eq(radarPool.workspaceId, ctx.workspace.id),
+          isNull(radarPool.deletedAt),
           eq(radarCredential.id, input.credentialId),
         ),
       )
@@ -765,6 +889,9 @@ export async function updateRadarTokenProbe(args: {
       credentialUpdate.keyFingerprint = keyFingerprint;
       credentialUpdate.lastFour = getSecretLastFour(input.apiKey);
       credentialUpdate.handoverExpiresAt = null;
+      credentialUpdate.pauseReason = null;
+      credentialUpdate.autoPausedAt = null;
+      credentialUpdate.nextRecoveryCheckAt = null;
       credentialUpdate.enabled = true;
     }
 
@@ -867,6 +994,7 @@ export async function deleteRadarCredential(args: {
   const input = DeleteRadarCredentialInput.parse(args.input);
 
   return withTransaction(ctx, async (tx) => {
+    const access = await getRadarActorAccess({ ctx, db: tx });
     const row = await tx
       .select({
         pool: radarPool,
@@ -881,7 +1009,8 @@ export async function deleteRadarCredential(args: {
       .where(
         and(
           eq(radarPool.slug, input.poolSlug),
-          eq(radarPool.workspaceId, ctx.workspace.id),
+          access.isAdmin ? undefined : eq(radarPool.ownerUserId, access.userId),
+          isNull(radarPool.deletedAt),
           eq(radarCredential.id, input.credentialId),
         ),
       )
@@ -890,12 +1019,6 @@ export async function deleteRadarCredential(args: {
     if (!row) {
       throw new NotFoundError("radar_credential", input.credentialId);
     }
-    if (row.credential.handoverExpiresAt) {
-      throw new PreconditionFailedError(
-        "Replace the platform handover key instead of deleting its probe history.",
-      );
-    }
-
     const targetBindings = await tx
       .select({
         targetId: radarProbeTarget.id,

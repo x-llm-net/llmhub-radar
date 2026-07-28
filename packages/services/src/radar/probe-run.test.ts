@@ -1,6 +1,38 @@
 import { describe, expect, test } from "bun:test";
 
-import { hasConfirmedRecovery } from "./probe-run";
+import {
+  hasConfirmedRecovery,
+  shouldAutoPauseRadarCredential,
+} from "./probe-run";
+
+describe("shouldAutoPauseRadarCredential", () => {
+  test("does not pause after one insufficient quota failure", () => {
+    expect(
+      shouldAutoPauseRadarCredential([
+        { success: false, errorType: "insufficient_quota" },
+      ]),
+    ).toBe(false);
+  });
+
+  test("pauses after two consecutive insufficient quota failures", () => {
+    expect(
+      shouldAutoPauseRadarCredential([
+        { success: false, errorType: "insufficient_quota" },
+        { success: false, errorType: "insufficient_quota" },
+      ]),
+    ).toBe(true);
+  });
+
+  test("does not pause when a successful probe interrupts the failures", () => {
+    expect(
+      shouldAutoPauseRadarCredential([
+        { success: false, errorType: "insufficient_quota" },
+        { success: true },
+        { success: false, errorType: "insufficient_quota" },
+      ]),
+    ).toBe(false);
+  });
+});
 
 describe("hasConfirmedRecovery", () => {
   test("requires three recent successful probes", () => {

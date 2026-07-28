@@ -90,9 +90,12 @@ target. Other groups are imported as non-scoring evidence targets. Changing
 the primary target should become an explicit owner action in the dashboard.
 When no explicit slug list is passed to the sync function, the adapter first
 loads the public Radar directory and imports every public, opt-in status page.
-Unknown model names are automatically created in PostgreSQL with the raw model
-name as display metadata; admins can later edit display name, vendor, family,
-aliases, and sort order in the database without a code release.
+Unknown model names are automatically created in PostgreSQL with rule-based
+display metadata. `packages/marketplace-db/src/model-metadata.ts` renders
+`gpt-*` as `GPT`, title-cases other hyphenated tokens, joins numeric version
+tokens with dots, and sorts marketplace lists by family plus descending model
+version inside each relevant series. Database metadata should only be needed for
+true display or grouping exceptions.
 
 The adapter reuses only public Radar outputs. API keys, endpoint URLs and
 ciphertext stay in the existing Radar database and worker. The storefront
@@ -130,3 +133,6 @@ status-page service.
   providers manage multiple ranking groups directly in Marketplace.
 - Add a small admin UI for editing optional model metadata if direct database
   edits become too slow.
+- If a benchmark site offers allowed public access or an official API, consider
+  a secondary benchmark score from places such as hvoy.ai, veridrop, or cctest,
+  but keep it clearly separate from live probe stability and label the source.

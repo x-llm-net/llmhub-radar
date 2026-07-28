@@ -371,8 +371,8 @@ describeDatabase("marketplace PostgreSQL integration", () => {
       .from(models)
       .where(eq(models.slug, "llama-3-1-405b"))
       .limit(1);
-    expect(createdModel?.displayName).toBe("llama-3.1-405b");
-    expect(createdModel?.vendor).toBe("Other");
+    expect(createdModel?.displayName).toBe("Llama 3.1 405B");
+    expect(createdModel?.vendor).toBe("Meta");
 
     const leaderboard = await getModelLeaderboard(db, "llama-3-1-405b", {
       asOf,

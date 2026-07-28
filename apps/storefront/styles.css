@@ -631,6 +631,15 @@ body { color: var(--ink); background: #fff; }
 .home-top-section .section-row-heading { margin-top: 0; }
 .home-ranking-list { border-radius: 7px 7px 0 0; }
 
+/* Sticky model tabs */
+.model-rail-shell { position: sticky; top: 72px; z-index: 18; margin-top: 20px; padding: 8px 0; background: rgba(255,255,255,.96); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px); }
+.model-rail { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.model-rail::-webkit-scrollbar { display: none; }
+.model-rail-tab { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 34px; padding: 0 13px; color: var(--muted); background: #fff; border: 1px solid var(--line-strong); border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 750; white-space: nowrap; transition: color .16s ease, background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.model-rail-tab:hover, .model-rail-tab:focus-visible { color: var(--ink); border-color: #a8d6c6; outline: 0; box-shadow: 0 4px 12px rgba(16,24,20,.06); }
+.model-rail-tab.is-active { color: #fff; background: var(--ink); border-color: var(--ink); box-shadow: 0 6px 18px rgba(20,32,29,.14); }
+#leaderboard-stack .model-leaderboard { scroll-margin-top: 156px; }
+
 @media (max-width: 1000px) {
   .model-switcher { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-ranking-header { grid-template-columns: minmax(0, 1fr) auto; }
@@ -654,6 +663,10 @@ body { color: var(--ink); background: #fff; }
   .home-sponsored-section .section-row-heading, .home-top-section .section-row-heading { display: flex; align-items: flex-start; flex-direction: column; }
   .home-sponsored-section .quiet-button { margin-top: 9px; }
   .home-top-section { padding-top: 27px; }
+  .model-rail-shell { top: 64px; margin-top: 16px; padding: 7px 0; }
+  .model-rail { gap: 6px; }
+  .model-rail-tab { min-height: 32px; padding: 0 11px; font-size: 11px; }
+  #leaderboard-stack .model-leaderboard { scroll-margin-top: 132px; }
 }
 /* Protocol-group storefront */
 body, .hero, .protocol-ranking-section, .bottom-band { background: #fff; }

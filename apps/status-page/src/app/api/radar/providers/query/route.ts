@@ -1,4 +1,4 @@
-import { and, db, desc, eq, gte, inArray } from "@openstatus/db";
+import { and, db, desc, eq, gte, inArray, isNull } from "@openstatus/db";
 import {
   page,
   radarPool,
@@ -240,7 +240,9 @@ function rememberCacheEntry(key: string, entry: CacheEntry) {
 
 async function buildPayload(inputSlugs: string[], generatedAt: Date) {
   const slugs = uniqueSlugs(inputSlugs);
-  const windowFrom7d = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const windowFrom7d = new Date(
+    generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000,
+  );
   const windowFrom24h = new Date(generatedAt.getTime() - 24 * 60 * 60 * 1000);
 
   const rows = await db
@@ -265,6 +267,7 @@ async function buildPayload(inputSlugs: string[], generatedAt: Date) {
         eq(page.published, true),
         eq(page.accessType, "public"),
         eq(radarPool.publicPoolOptIn, true),
+        isNull(radarPool.deletedAt),
       ),
     )
     .all();

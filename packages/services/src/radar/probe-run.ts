@@ -1,5 +1,6 @@
-import { and, desc, eq, gte } from "@openstatus/db";
+import { and, desc, eq, gte, inArray, ne } from "@openstatus/db";
 import {
+  radarCredential,
   radarNotificationEvent,
   radarPool,
   radarProbeRun,
@@ -9,7 +10,7 @@ import {
 } from "@openstatus/db/src/schema";
 
 import { requireScope } from "../auth";
-import { type ServiceContext, withTransaction } from "../context";
+import { type DB, type ServiceContext, withTransaction } from "../context";
 import { NotFoundError } from "../errors";
 import { hashSecret } from "./crypto";
 import {
@@ -26,6 +27,9 @@ type TargetStatus =
   | "down"
   | "paused"
   | "configuration_error";
+
+export const RADAR_QUOTA_FAILURES_BEFORE_PAUSE = 2;
+export const RADAR_QUOTA_RECOVERY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function classifyStatus(args: {
   recentResults: Array<{
@@ -76,6 +80,17 @@ function countLeading<T>(items: T[], predicate: (item: T) => boolean) {
   return count;
 }
 
+export function shouldAutoPauseRadarCredential(
+  recentResults: Array<{ success: boolean; errorType?: string | null }>,
+) {
+  return (
+    countLeading(
+      recentResults,
+      (item) => !item.success && item.errorType === "insufficient_quota",
+    ) >= RADAR_QUOTA_FAILURES_BEFORE_PAUSE
+  );
+}
+
 export function hasConfirmedRecovery(
   recentResults: Array<{ success: boolean }>,
   requiredSuccesses = 3,
@@ -85,6 +100,99 @@ export function hasConfirmedRecovery(
   return recentResults
     .slice(0, requiredSuccesses)
     .every((item) => item.success);
+}
+
+async function pauseRadarCredentialForQuota(args: {
+  tx: DB;
+  credentialId: number;
+  autoPausedAt: Date;
+  now: Date;
+}) {
+  const targets = await args.tx
+    .select({ id: radarProbeTarget.id })
+    .from(radarProbeTarget)
+    .where(
+      and(
+        eq(radarProbeTarget.credentialId, args.credentialId),
+        eq(radarProbeTarget.enabled, true),
+      ),
+    )
+    .all();
+  const targetIds = targets.map((target) => target.id);
+
+  await args.tx
+    .update(radarCredential)
+    .set({
+      pauseReason: "insufficient_quota",
+      autoPausedAt: args.autoPausedAt,
+      nextRecoveryCheckAt: new Date(
+        args.now.getTime() + RADAR_QUOTA_RECOVERY_INTERVAL_MS,
+      ),
+      updatedAt: args.now,
+    })
+    .where(eq(radarCredential.id, args.credentialId));
+
+  if (targetIds.length === 0) return;
+
+  await args.tx
+    .update(radarProbeTarget)
+    .set({
+      currentStatus: "paused",
+      nextCheckAt: null,
+      lockedUntil: null,
+      updatedAt: args.now,
+    })
+    .where(inArray(radarProbeTarget.id, targetIds));
+  await args.tx
+    .update(radarTargetStatus)
+    .set({ currentStatus: "paused", updatedAt: args.now })
+    .where(inArray(radarTargetStatus.targetId, targetIds));
+}
+
+async function resumeRadarCredentialAfterQuotaRecovery(args: {
+  tx: DB;
+  credentialId: number;
+  recoveredTargetId: number;
+  recoveredAt: Date;
+}) {
+  const pendingTargets = await args.tx
+    .select({ id: radarProbeTarget.id })
+    .from(radarProbeTarget)
+    .where(
+      and(
+        eq(radarProbeTarget.credentialId, args.credentialId),
+        eq(radarProbeTarget.enabled, true),
+        ne(radarProbeTarget.id, args.recoveredTargetId),
+      ),
+    )
+    .all();
+  const pendingTargetIds = pendingTargets.map((target) => target.id);
+
+  await args.tx
+    .update(radarCredential)
+    .set({
+      pauseReason: null,
+      autoPausedAt: null,
+      nextRecoveryCheckAt: null,
+      updatedAt: args.recoveredAt,
+    })
+    .where(eq(radarCredential.id, args.credentialId));
+
+  if (pendingTargetIds.length === 0) return;
+
+  await args.tx
+    .update(radarProbeTarget)
+    .set({
+      currentStatus: "unknown",
+      nextCheckAt: args.recoveredAt,
+      lockedUntil: null,
+      updatedAt: args.recoveredAt,
+    })
+    .where(inArray(radarProbeTarget.id, pendingTargetIds));
+  await args.tx
+    .update(radarTargetStatus)
+    .set({ currentStatus: "unknown", updatedAt: args.recoveredAt })
+    .where(inArray(radarTargetStatus.targetId, pendingTargetIds));
 }
 
 function percentile(values: number[], pct: number): number | null {
@@ -179,11 +287,31 @@ export async function recordRadarProbeRun(args: {
       .from(radarTargetStatus)
       .where(eq(radarTargetStatus.targetId, target.id))
       .get();
-
-    const currentStatus = classifyStatus({
+    const credential = target.credentialId
+      ? await tx
+          .select({
+            id: radarCredential.id,
+            pauseReason: radarCredential.pauseReason,
+            autoPausedAt: radarCredential.autoPausedAt,
+          })
+          .from(radarCredential)
+          .where(eq(radarCredential.id, target.credentialId))
+          .get()
+      : null;
+    const isQuotaRecoveryProbe =
+      credential?.pauseReason === "insufficient_quota";
+    const shouldAutoPause =
+      credential != null &&
+      !isQuotaRecoveryProbe &&
+      shouldAutoPauseRadarCredential(recent);
+    const recoveredFromQuotaPause = isQuotaRecoveryProbe && input.success;
+    let currentStatus = classifyStatus({
       recentResults: recent,
       previousStatus: existingStatus?.currentStatus as TargetStatus | undefined,
     });
+    if (shouldAutoPause || (isQuotaRecoveryProbe && !input.success)) {
+      currentStatus = "paused";
+    }
     const latestNotificationEvent = await tx
       .select({
         id: radarNotificationEvent.id,
@@ -241,6 +369,24 @@ export async function recordRadarProbeRun(args: {
         .where(eq(radarTargetStatus.id, existingStatus.id));
     } else {
       await tx.insert(radarTargetStatus).values(statusValues);
+    }
+
+    if (credential && (shouldAutoPause || isQuotaRecoveryProbe)) {
+      if (recoveredFromQuotaPause) {
+        await resumeRadarCredentialAfterQuotaRecovery({
+          tx,
+          credentialId: credential.id,
+          recoveredTargetId: target.id,
+          recoveredAt: finishedAt,
+        });
+      } else {
+        await pauseRadarCredentialForQuota({
+          tx,
+          credentialId: credential.id,
+          autoPausedAt: credential.autoPausedAt ?? finishedAt,
+          now: finishedAt,
+        });
+      }
     }
 
     const eventType = decideRadarNotificationEvent({

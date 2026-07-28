@@ -1,6 +1,7 @@
 export * from "./catalog";
 export * from "./db";
 export * from "./legacy-radar-sync";
+export * from "./model-metadata";
 export * from "./repository";
 export * from "./retention";
 export * from "./schema";

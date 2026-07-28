@@ -31,6 +31,8 @@ pages.
 - [ ] Migrations `0081_page_subscriber_locale.sql` and
   `0082_radar_page_component_binding.sql` preserve existing status pages,
   subscribers, and page components.
+- [ ] Migration `0092_dapper_freak.sql` adds nullable
+  `radar_pool.deleted_at` without changing existing provider rows.
 - [ ] No migration requires regenerating `RADAR_CREDENTIAL_SECRET`.
 
 ## 3. Environment

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, like, or, sql } from "@openstatus/db";
+import { and, count, eq, inArray, isNull, like, or, sql } from "@openstatus/db";
 import {
   radarAccount,
   radarClaimApplication,
@@ -115,7 +115,7 @@ async function countOwnedPools(db: DB, userId: number) {
   const row = await db
     .select({ count: count() })
     .from(radarPool)
-    .where(eq(radarPool.ownerUserId, userId))
+    .where(and(eq(radarPool.ownerUserId, userId), isNull(radarPool.deletedAt)))
     .get();
   return row?.count ?? 0;
 }

@@ -1,6 +1,12 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { MarketplaceDb } from "./db";
+import {
+  formatModelDisplayName,
+  formatModelShortName,
+  inferModelMetadata,
+  modelSlug,
+} from "./model-metadata";
 import { refreshProviderModelStats } from "./repository";
 import {
   healthBuckets3h,
@@ -106,37 +112,8 @@ function normalizedModelName(value: string) {
   return value.trim().toLowerCase();
 }
 
-function modelSlug(value: string) {
-  return (
-    normalizedModelName(value)
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "model"
-  );
-}
-
 function uniqueStrings(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function inferModelMetadata(name: string) {
-  const lower = normalizedModelName(name);
-  if (lower.startsWith("claude")) {
-    return { vendor: "Anthropic", family: "Claude" };
-  }
-  if (
-    lower.startsWith("gpt") ||
-    lower.startsWith("o1") ||
-    lower.startsWith("o3")
-  ) {
-    return { vendor: "OpenAI", family: "GPT" };
-  }
-  if (lower.startsWith("gemini")) {
-    return { vendor: "Google", family: "Gemini" };
-  }
-  if (lower.startsWith("grok")) {
-    return { vendor: "xAI", family: "Grok" };
-  }
-  return { vendor: "Other", family: "Other" };
 }
 
 function ratioToBps(numerator: number, denominator: number) {
@@ -340,15 +317,16 @@ async function resolveMarketplaceModel(args: {
 
   const slug = modelSlug(args.modelName);
   const metadata = inferModelMetadata(args.modelName);
-  const aliases = uniqueStrings([args.modelName, slug]);
+  const displayName = formatModelDisplayName(args.modelName);
+  const aliases = uniqueStrings([args.modelName, slug, displayName]);
   const [inserted] = await args.db
     .insert(models)
     .values({
       slug,
       vendor: metadata.vendor,
       family: metadata.family,
-      displayName: args.modelName,
-      shortName: args.modelName,
+      displayName,
+      shortName: formatModelShortName(args.modelName),
       description: "",
       aliases,
       sortOrder: 10_000,

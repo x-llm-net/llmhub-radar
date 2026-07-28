@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   radarBaseUrlVisibility,
   radarClaimApplicationStatuses,
+  radarCredentialPauseReasons,
   radarEndpointTypes,
   radarErrorTypes,
   radarNotificationDeliveryStatuses,
@@ -49,6 +50,9 @@ export const radarOrderStatusSchema = z.enum(radarOrderStatuses);
 export const radarProviderTypeSchema = z.enum(radarProviderTypes);
 export const radarBaseUrlVisibilitySchema = z.enum(radarBaseUrlVisibility);
 export const radarEndpointTypeSchema = z.enum(radarEndpointTypes);
+export const radarCredentialPauseReasonSchema = z.enum(
+  radarCredentialPauseReasons,
+);
 export const radarTargetStatusSchema = z.enum(radarTargetStatuses);
 export const radarErrorTypeSchema = z.enum(radarErrorTypes);
 export const radarNotificationEventTypeSchema = z.enum(
@@ -94,7 +98,9 @@ export const selectRadarProviderSchema = createSelectSchema(radarProvider, {
   providerType: radarProviderTypeSchema.prefault("openai_compatible"),
 });
 
-export const selectRadarCredentialSchema = createSelectSchema(radarCredential);
+export const selectRadarCredentialSchema = createSelectSchema(radarCredential, {
+  pauseReason: radarCredentialPauseReasonSchema.nullish(),
+});
 
 export const selectRadarProbeTargetSchema = createSelectSchema(
   radarProbeTarget,

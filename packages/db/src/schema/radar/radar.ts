@@ -17,6 +17,7 @@ import { workspace } from "../workspaces";
 import {
   radarBaseUrlVisibility,
   radarClaimApplicationStatuses,
+  radarCredentialPauseReasons,
   radarEndpointTypes,
   radarErrorTypes,
   radarNotificationDeliveryStatuses,
@@ -149,6 +150,7 @@ export const radarPool = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(
       sql`(strftime('%s', 'now'))`,
     ),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
   },
   (t) => [
     uniqueIndex("radar_pool_workspace_slug_idx").on(t.workspaceId, t.slug),
@@ -347,6 +349,13 @@ export const radarCredential = sqliteTable(
       .default(100)
       .notNull(),
     handoverExpiresAt: integer("handover_expires_at", { mode: "timestamp" }),
+    pauseReason: text("pause_reason", {
+      enum: radarCredentialPauseReasons,
+    }),
+    autoPausedAt: integer("auto_paused_at", { mode: "timestamp" }),
+    nextRecoveryCheckAt: integer("next_recovery_check_at", {
+      mode: "timestamp",
+    }),
     enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(

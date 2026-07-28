@@ -1,4 +1,15 @@
-import { and, db, eq, gt, inArray, isNull, lte, or } from "@openstatus/db";
+import {
+  and,
+  asc,
+  db,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  or,
+} from "@openstatus/db";
 import {
   radarCredential,
   radarPool,
@@ -9,8 +20,11 @@ import {
   workspace,
 } from "@openstatus/db/src/schema";
 
+import { requireScope } from "../auth";
 import type { DB, ServiceContext } from "../context";
+import { PreconditionFailedError, NotFoundError } from "../errors";
 import { withBusyRetry } from "../retry";
+import { getRadarActorAccess } from "./access";
 import { decryptSecret } from "./crypto";
 import {
   getPriorityProbeConfig,
@@ -18,6 +32,7 @@ import {
 } from "./priority-probe";
 import type { RadarProbeResult } from "./probe";
 import { recordRadarProbeRun } from "./probe-run";
+import { RecheckRadarCredentialInput } from "./schemas";
 
 const DEFAULT_BATCH_SIZE = 25;
 const DEFAULT_CONCURRENCY = 5;
@@ -36,6 +51,12 @@ export type RunRadarCronResult = {
   errors: Array<{ targetId: number; message: string }>;
 };
 
+export type RecheckRadarCredentialResult = {
+  checkedAt: Date;
+  recovered: boolean;
+  errorType: string | null;
+};
+
 export async function runRadarCron(input?: {
   batchSize?: number;
   concurrency?: number;
@@ -45,12 +66,26 @@ export async function runRadarCron(input?: {
   const batchSize = input?.batchSize ?? DEFAULT_BATCH_SIZE;
   const concurrency = input?.concurrency ?? DEFAULT_CONCURRENCY;
   await retireExpiredRadarCredentialHandovers({ now });
-  const dueTargets = await listDueRadarTargets({ now, limit: batchSize });
+  const recoveryTargets = await listDueRadarRecoveryTargets({
+    now,
+    limit: Math.min(batchSize, 5),
+  });
+  const dueTargets = [
+    ...recoveryTargets,
+    ...(await listDueRadarTargets({
+      now,
+      limit: Math.max(0, batchSize - recoveryTargets.length),
+    })),
+  ];
 
   const results = await runWithConcurrency(
     dueTargets,
     Math.max(1, concurrency),
-    (target) => runDueRadarTarget(target, now),
+    (target) =>
+      runDueRadarTarget(target, now, {
+        allowPausedCredential:
+          target.credential.pauseReason === "insufficient_quota",
+      }),
   );
 
   const summary = results.reduce<RunRadarCronResult>(
@@ -89,6 +124,78 @@ export async function runRadarCron(input?: {
   return summary;
 }
 
+export async function recheckRadarCredential(args: {
+  ctx: ServiceContext;
+  input: RecheckRadarCredentialInput;
+}): Promise<RecheckRadarCredentialResult> {
+  requireScope(args.ctx, "write");
+  const input = RecheckRadarCredentialInput.parse(args.input);
+  const access = await getRadarActorAccess({ ctx: args.ctx, db });
+  const now = new Date();
+  const candidate = await db
+    .select({
+      target: radarProbeTarget,
+      pool: radarPool,
+      provider: radarProvider,
+      credential: radarCredential,
+      workspace,
+    })
+    .from(radarProbeTarget)
+    .innerJoin(radarPool, eq(radarPool.id, radarProbeTarget.poolId))
+    .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
+    .innerJoin(
+      radarCredential,
+      eq(radarCredential.id, radarProbeTarget.credentialId),
+    )
+    .innerJoin(workspace, eq(workspace.id, radarProbeTarget.workspaceId))
+    .where(
+      and(
+        eq(radarPool.slug, input.poolSlug),
+        isNull(radarPool.deletedAt),
+        eq(radarCredential.id, input.credentialId),
+        eq(radarCredential.enabled, true),
+        eq(radarCredential.pauseReason, "insufficient_quota"),
+        eq(radarProbeTarget.enabled, true),
+        eq(radarProvider.enabled, true),
+      ),
+    )
+    .orderBy(asc(radarProbeTarget.id))
+    .get();
+
+  if (
+    !candidate ||
+    (!access.isAdmin && candidate.pool.ownerUserId !== access.userId)
+  ) {
+    throw new NotFoundError("radar_credential", input.credentialId);
+  }
+  if (
+    candidate.credential.handoverExpiresAt &&
+    candidate.credential.handoverExpiresAt <= now
+  ) {
+    throw new PreconditionFailedError(
+      "The platform credential handover has expired.",
+    );
+  }
+
+  const result = await runDueRadarTarget(candidate, now, {
+    allowPausedCredential: true,
+  });
+  if (result.status === "skipped") {
+    throw new PreconditionFailedError(
+      "A credential recovery check is already running.",
+    );
+  }
+  if (result.status === "failed") {
+    throw new PreconditionFailedError(result.message);
+  }
+
+  return {
+    checkedAt: new Date(),
+    recovered: result.probeSuccess,
+    errorType: result.errorType ?? null,
+  };
+}
+
 export async function retireExpiredRadarCredentialHandovers(input?: {
   now?: Date;
   db?: DB;
@@ -121,6 +228,9 @@ export async function retireExpiredRadarCredentialHandovers(input?: {
       encryptedApiKey: "",
       keyFingerprint: "",
       lastFour: "",
+      pauseReason: null,
+      autoPausedAt: null,
+      nextRecoveryCheckAt: null,
       enabled: false,
       updatedAt: now,
     })
@@ -169,6 +279,7 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
         eq(radarProbeTarget.enabled, true),
         eq(radarProvider.enabled, true),
         eq(radarCredential.enabled, true),
+        isNull(radarCredential.pauseReason),
         or(
           isNull(radarCredential.handoverExpiresAt),
           gt(radarCredential.handoverExpiresAt, args.now),
@@ -187,7 +298,61 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
     .all();
 }
 
-async function getProbeableRadarTarget(targetId: number, now: Date) {
+async function listDueRadarRecoveryTargets(args: { now: Date; limit: number }) {
+  if (args.limit <= 0) return [];
+
+  const rows = await db
+    .select({
+      target: radarProbeTarget,
+      pool: radarPool,
+      provider: radarProvider,
+      credential: radarCredential,
+      workspace,
+    })
+    .from(radarProbeTarget)
+    .innerJoin(radarPool, eq(radarPool.id, radarProbeTarget.poolId))
+    .innerJoin(radarProvider, eq(radarProvider.id, radarProbeTarget.providerId))
+    .innerJoin(
+      radarCredential,
+      eq(radarCredential.id, radarProbeTarget.credentialId),
+    )
+    .innerJoin(workspace, eq(workspace.id, radarProbeTarget.workspaceId))
+    .where(
+      and(
+        eq(radarProbeTarget.enabled, true),
+        eq(radarProvider.enabled, true),
+        eq(radarCredential.enabled, true),
+        eq(radarCredential.pauseReason, "insufficient_quota"),
+        lte(radarCredential.nextRecoveryCheckAt, args.now),
+        or(
+          isNull(radarCredential.handoverExpiresAt),
+          gt(radarCredential.handoverExpiresAt, args.now),
+        ),
+        or(
+          isNull(radarProbeTarget.lockedUntil),
+          lte(radarProbeTarget.lockedUntil, args.now),
+        ),
+      ),
+    )
+    .orderBy(asc(radarCredential.nextRecoveryCheckAt), asc(radarProbeTarget.id))
+    .limit(args.limit * 10)
+    .all();
+
+  const credentialIds = new Set<number>();
+  return rows
+    .filter((row) => {
+      if (credentialIds.has(row.credential.id)) return false;
+      credentialIds.add(row.credential.id);
+      return true;
+    })
+    .slice(0, args.limit);
+}
+
+async function getProbeableRadarTarget(
+  targetId: number,
+  now: Date,
+  allowPausedCredential = false,
+) {
   return db
     .select({
       target: radarProbeTarget,
@@ -210,6 +375,9 @@ async function getProbeableRadarTarget(targetId: number, now: Date) {
         eq(radarProbeTarget.enabled, true),
         eq(radarProvider.enabled, true),
         eq(radarCredential.enabled, true),
+        allowPausedCredential
+          ? eq(radarCredential.pauseReason, "insufficient_quota")
+          : isNull(radarCredential.pauseReason),
         or(
           isNull(radarCredential.handoverExpiresAt),
           gt(radarCredential.handoverExpiresAt, now),
@@ -222,8 +390,14 @@ async function getProbeableRadarTarget(targetId: number, now: Date) {
 async function runDueRadarTarget(
   candidate: DueRadarTarget,
   now: Date,
+  options?: { allowPausedCredential?: boolean },
 ): Promise<
-  | { status: "success"; targetId: number }
+  | {
+      status: "success";
+      targetId: number;
+      probeSuccess: boolean;
+      errorType?: string;
+    }
   | { status: "failed"; targetId: number; message: string }
   | { status: "skipped"; targetId: number }
 > {
@@ -240,7 +414,11 @@ async function runDueRadarTarget(
     return { status: "skipped", targetId: candidate.target.id };
   }
 
-  const row = await getProbeableRadarTarget(candidate.target.id, new Date());
+  const row = await getProbeableRadarTarget(
+    candidate.target.id,
+    new Date(),
+    options?.allowPausedCredential,
+  );
   if (!row) {
     await releaseRadarTargetLease(candidate.target.id);
     return { status: "skipped", targetId: candidate.target.id };
@@ -280,7 +458,12 @@ async function runDueRadarTarget(
       finishedAt,
       row.target.intervalSeconds,
     );
-    return { status: "success", targetId: row.target.id };
+    return {
+      status: "success",
+      targetId: row.target.id,
+      probeSuccess: result.success,
+      errorType: result.errorType,
+    };
   } catch (error) {
     const finishedAt = new Date();
     const message = toSafeErrorMessage(error);
@@ -402,7 +585,12 @@ async function scheduleNextCheck(
         lockedUntil: null,
         updatedAt: new Date(),
       })
-      .where(eq(radarProbeTarget.id, targetId))
+      .where(
+        and(
+          eq(radarProbeTarget.id, targetId),
+          ne(radarProbeTarget.currentStatus, "paused"),
+        ),
+      )
       .run(),
   );
 }

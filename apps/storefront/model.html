@@ -9,15 +9,15 @@
   <link rel="stylesheet" href="./styles.css?v=15">
 
   <script src="./dashboard-links.js?v=1" defer></script>
-  <script src="./model-page.js?v=8" defer></script>
+  <script src="./model-page.js?v=9" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="site-header">
     <div class="shell header-inner">
       <a class="brand" href="./index.html" aria-label="LLMHub 首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy"><strong>LLMHub</strong><small>中转站靠谱榜</small></span></a>
-      <nav class="site-nav" aria-label="主导航"><a href="./index.html">首页</a><a class="is-active" href="./index.html#leaderboards">模型榜单</a><a href="./index.html#rules">评测规则</a><a href="./index.html#submit">申请收录</a></nav>
-      <a class="header-login" href="https://app.llm-hub.store/login" data-dashboard-path="/login">登录控制台 <span aria-hidden="true">↗</span></a>
+      <nav class="site-nav" aria-label="主导航"><a href="./index.html">首页</a><a class="is-active" href="./index.html#leaderboards">模型榜单</a><a href="./index.html#rules">榜单规则</a><a href="./index.html#submit">服务商入驻</a></nav>
+      <a class="header-login" href="https://app.llm-hub.store/login" data-dashboard-path="/login">服务商后台 <span aria-hidden="true">↗</span></a>
     </div>
   </header>
 
@@ -30,8 +30,8 @@
           <label class="page-model-select"><span>切换模型</span><select id="page-model-select" aria-label="切换具体模型"></select></label>
         </div>
         <dl class="page-summary">
-          <div><dt>可观测服务商</dt><dd id="summary-providers">--</dd></div>
-          <div><dt>有效样本</dt><dd id="summary-samples">--</dd></div>
+          <div><dt>参与排名的中转站</dt><dd id="summary-providers">--</dd></div>
+          <div><dt>有效测试</dt><dd id="summary-samples">--</dd></div>
           <div><dt>最高可用率</dt><dd id="summary-best">--</dd></div>
           <div><dt>数据窗口</dt><dd>近 7 天</dd></div>
         </dl>
@@ -40,30 +40,30 @@
 
     <section class="shell model-page-content" aria-labelledby="ranking-title">
       <section id="model-sponsored-section" class="model-sponsored-section" hidden>
-        <div class="section-row-heading"><div><div class="title-with-label"><h2>赞助置顶</h2><span class="sponsored-label">SPONSORED</span></div><p>已通过基础质量门槛；合作仅影响展示位置，不影响检测分和自然排名。</p></div></div>
+        <div class="section-row-heading"><div><div class="title-with-label"><h2>推广推荐</h2><span class="sponsored-label">SPONSORED</span></div><p>付费展示，不参与下方实测排名。</p></div></div>
         <div id="model-sponsored-list" class="model-sponsored-list"></div>
       </section>
 
       <section class="model-ranking-section">
-        <div class="section-row-heading"><div><div class="title-with-label"><h2 id="ranking-title">Top 10 自然排名</h2><span class="organic-label">RADAR RANKED</span></div><p>按该模型近 7 天可用率排序，赞助服务商仍按真实分数进入对应名次。</p></div><span class="sample-note">数据每 10 分钟更新</span></div>
-        <div class="model-ranking-head" aria-hidden="true"><span>服务商</span><span>7 天可用率</span><span>近 7 日走势</span><span>有效样本</span><span>覆盖率</span><span>当前状态</span><span></span></div>
+        <div class="section-row-heading"><div><div class="title-with-label"><h2 id="ranking-title">Top 10 实测排名</h2><span class="organic-label">RADAR RANKED</span></div><p>按该模型近 7 天可用率排序，推广服务也会按实际表现参与排名。</p></div><span class="sample-note">数据每 10 分钟更新</span></div>
+        <div class="model-ranking-head" aria-hidden="true"><span>中转站</span><span>7 天可用率</span><span>近 7 日走势</span><span>有效测试</span><span>数据完整度</span><span>当前状态</span><span></span></div>
         <div id="model-ranking-list" class="model-ranking-list"></div>
-        <div id="model-empty" class="empty-state" hidden>该模型暂时没有足够的观测数据。</div>
+        <div id="model-empty" class="empty-state" hidden>该模型暂时没有足够的测试数据。</div>
       </section>
 
       <section id="model-observing-section" class="model-observing-section" hidden>
-        <div class="section-row-heading"><div><div class="title-with-label"><h2>观察中</h2><span class="organic-label">BUILDING HISTORY</span></div><p>展示真实观测数据，满足当前入榜门槛后参与自然排名。</p></div></div>
+        <div class="section-row-heading"><div><div class="title-with-label"><h2>数据积累中</h2><span class="organic-label">BUILDING HISTORY</span></div><p>有效测试不足 4 次，数据仍在持续积累。</p></div></div>
         <div id="model-observing-list" class="model-ranking-list"></div>
       </section>
 
       <section class="model-page-note">
         <div><p class="section-kicker">ABOUT THIS VIEW</p><h2>为什么按具体模型查看</h2></div>
-        <p>同一服务商的不同上游渠道、分组和模型路由可能表现不同。这个页面只比较当前模型，不把 Claude 或 GPT 大类的数据混在一起。</p>
-        <a class="text-link" href="./index.html#rules">查看评测规则 <span aria-hidden="true">↗</span></a>
+        <p>同一中转站的不同模型可能表现不同。这个页面只比较当前模型，不把 Claude 或 GPT 系列的数据混在一起。</p>
+        <a class="text-link" href="./index.html#rules">查看榜单规则 <span aria-hidden="true">↗</span></a>
       </section>
     </section>
   </main>
 
-  <footer class="site-footer"><div class="shell footer-inner"><div><strong>LLMHub</strong><span>中转站模型可靠性排行</span></div><nav aria-label="页尾导航"><a href="./index.html#leaderboards">模型榜单</a><a href="./index.html#rules">评测规则</a></nav><small>公开观测数据每 10 分钟更新。</small></div></footer>
+  <footer class="site-footer"><div class="shell footer-inner"><div><strong>LLMHub</strong><span>帮你挑选更稳定的 AI API 中转站</span></div><nav aria-label="页尾导航"><a href="./index.html#leaderboards">模型榜单</a><a href="./index.html#rules">榜单规则</a></nav><small>榜单数据每 10 分钟更新。</small></div></footer>
 </body>
 </html>

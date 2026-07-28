@@ -14,6 +14,10 @@ import {
 
 import type { MarketplaceDb } from "./db";
 import {
+  compareMarketplaceModels,
+  presentMarketplaceModel,
+} from "./model-metadata";
+import {
   healthBuckets3h,
   models,
   probeChecks,
@@ -624,14 +628,14 @@ export async function getModelLeaderboard(
   );
 
   return {
-    model: {
+    model: presentMarketplaceModel({
       slug: model.slug,
       vendor: model.vendor,
       family: model.family,
       displayName: model.displayName,
       shortName: model.shortName,
       description: model.description,
-    },
+    }),
     generatedAt: generatedAt?.toISOString() ?? null,
     sponsored: selectedSponsored.map((entry) => ({
       ...toLeaderboardRow(
@@ -671,10 +675,17 @@ export async function getProviderRankings(
   if (!provider) return null;
 
   const catalog = await db
-    .select({ slug: models.slug })
+    .select({
+      slug: models.slug,
+      vendor: models.vendor,
+      family: models.family,
+      displayName: models.displayName,
+      sortOrder: models.sortOrder,
+    })
     .from(models)
     .where(eq(models.enabled, true))
     .orderBy(asc(models.sortOrder), asc(models.slug));
+  catalog.sort(compareMarketplaceModels);
   const leaderboards = await Promise.all(
     catalog.map((model) =>
       getModelLeaderboard(db, model.slug, {
@@ -750,10 +761,17 @@ export async function getHomepageRankings(
   options: { limit?: number; asOf?: Date } = {},
 ) {
   const catalog = await db
-    .select({ slug: models.slug })
+    .select({
+      slug: models.slug,
+      vendor: models.vendor,
+      family: models.family,
+      displayName: models.displayName,
+      sortOrder: models.sortOrder,
+    })
     .from(models)
     .where(eq(models.enabled, true))
     .orderBy(asc(models.sortOrder), asc(models.slug));
+  catalog.sort(compareMarketplaceModels);
   const rankings = await Promise.all(
     catalog.map((model) => getModelLeaderboard(db, model.slug, options)),
   );

@@ -460,6 +460,19 @@ export type DeleteRadarCredentialInput = z.infer<
   typeof DeleteRadarCredentialInput
 >;
 
+export const RecheckRadarCredentialInput = z.object({
+  poolSlug: radarSlugSchema,
+  credentialId: z.number().int().positive(),
+});
+export type RecheckRadarCredentialInput = z.infer<
+  typeof RecheckRadarCredentialInput
+>;
+
+export const DeleteRadarPoolInput = z.object({
+  poolSlug: radarSlugSchema,
+});
+export type DeleteRadarPoolInput = z.infer<typeof DeleteRadarPoolInput>;
+
 export const RecordRadarProbeRunInput = z.object({
   targetId: z.number().int(),
   startedAt: z.date(),

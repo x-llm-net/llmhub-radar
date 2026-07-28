@@ -29,19 +29,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowUpRight,
+  CircleAlert,
   Clock3,
   Code2,
   ExternalLink,
+  KeyRound,
   Megaphone,
   Pencil,
   Plus,
   RadioTower,
+  RefreshCw,
   Trash2,
   Users,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -386,6 +389,7 @@ export function Client() {
   const commonT = useTranslations("common");
   const notificationsT = useTranslations("notifications");
   const locale = useLocale();
+  const router = useRouter();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const poolQueryOptions = trpc.radar.getPool.queryOptions({
@@ -397,6 +401,35 @@ export function Client() {
       onSuccess: async () => {
         await queryClient.invalidateQueries(poolQueryOptions);
         toast.success(t("apiKeyDeleted"));
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    }),
+  );
+  const recheckCredential = useMutation(
+    trpc.radar.recheckCredential.mutationOptions({
+      onSuccess: async (result) => {
+        await queryClient.invalidateQueries(poolQueryOptions);
+        if (result.recovered) {
+          toast.success(t("recheckRecovered"));
+        } else {
+          toast.info(t("recheckStillPaused"));
+        }
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    }),
+  );
+  const deletePool = useMutation(
+    trpc.radar.deletePool.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(
+          trpc.radar.listPools.queryOptions({}),
+        );
+        toast.success(t("poolDeleted"));
+        router.replace("/radar");
       },
       onError: (error) => {
         toast.error(error.message);
@@ -439,13 +472,14 @@ export function Client() {
   ).length;
   const cards = pool.credentials.map((credential) => {
     const target = targetByCredentialId.get(credential.id);
+    const quotaPaused = credential.pauseReason === "insufficient_quota";
     const handoverExpiresAt = credential.handoverExpiresAt
       ? new Date(credential.handoverExpiresAt)
       : null;
     const handoverExpired =
       handoverExpiresAt != null && handoverExpiresAt.getTime() <= Date.now();
     const status = (
-      handoverExpired
+      handoverExpired || quotaPaused
         ? "paused"
         : (target?.status?.currentStatus ??
           target?.currentStatus ??
@@ -458,6 +492,7 @@ export function Client() {
       status,
       handoverExpiresAt,
       handoverExpired,
+      quotaPaused,
     };
   });
 
@@ -479,7 +514,8 @@ export function Client() {
     ...pool.targets.map((target) => target.modelName),
   ]);
   const activeCredentials = cards.filter(
-    ({ credential, handoverExpired }) => credential.enabled && !handoverExpired,
+    ({ credential, handoverExpired, quotaPaused }) =>
+      credential.enabled && !handoverExpired && !quotaPaused,
   ).length;
   const publicHref = getPublicStatusHref(pool.slug, locale);
   const visibilityLabel = t(
@@ -538,21 +574,54 @@ export function Client() {
               {pool.description || t("privateMonitoringPool")}
             </SectionDescription>
           </SectionHeader>
-          {pool.homepageUrl ? (
-            <Button size="sm" variant="outline" asChild>
-              <a href={pool.homepageUrl} target="_blank" rel="noreferrer">
-                {t("providerHomepage")}
-                <ExternalLink className="size-3.5" />
-              </a>
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" asChild>
-              <Link href={`/radar/${pool.slug}/edit`}>
-                <Pencil className="size-3.5" />
-                {t("completePublicProfile")}
-              </Link>
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {pool.homepageUrl ? (
+              <Button size="sm" variant="outline" asChild>
+                <a href={pool.homepageUrl} target="_blank" rel="noreferrer">
+                  {t("providerHomepage")}
+                  <ExternalLink className="size-3.5" />
+                </a>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/radar/${pool.slug}/edit`}>
+                  <Pencil className="size-3.5" />
+                  {t("completePublicProfile")}
+                </Link>
+              </Button>
+            )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="outline"
+                  title={t("deletePoolShort")}
+                >
+                  <Trash2 className="text-destructive size-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("deletePoolTitle")}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("deletePoolDescription", { name: pool.name })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{commonT("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive hover:bg-destructive/90 text-white"
+                    disabled={deletePool.isPending}
+                    onClick={() => deletePool.mutate({ poolSlug: pool.slug })}
+                  >
+                    {deletePool.isPending
+                      ? commonT("deleting")
+                      : commonT("delete")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </SectionHeaderRow>
         <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
           <MetricCard>
@@ -697,6 +766,7 @@ export function Client() {
                 status,
                 handoverExpiresAt,
                 handoverExpired,
+                quotaPaused,
               }) => {
                 const stats = target?.stats7d;
                 const health = healthTone(
@@ -735,49 +805,47 @@ export function Client() {
                             <Pencil className="size-4" />
                           </Link>
                         </Button>
-                        {!handoverExpiresAt && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                title={t("deleteApiKey")}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              title={t("deleteApiKey")}
+                            >
+                              <Trash2 className="text-destructive size-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                {t("deleteApiKeyTitle")}
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {t("deleteApiKeyDescription", {
+                                  name: credential.name,
+                                })}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>
+                                {commonT("cancel")}
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive hover:bg-destructive/90 text-white"
+                                onClick={() =>
+                                  deleteCredential.mutate({
+                                    poolSlug: pool.slug,
+                                    credentialId: credential.id,
+                                  })
+                                }
                               >
-                                <Trash2 className="text-destructive size-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  {t("deleteApiKeyTitle")}
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("deleteApiKeyDescription", {
-                                    name: credential.name,
-                                  })}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>
-                                  {commonT("cancel")}
-                                </AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive hover:bg-destructive/90 text-white"
-                                  onClick={() =>
-                                    deleteCredential.mutate({
-                                      poolSlug: pool.slug,
-                                      credentialId: credential.id,
-                                    })
-                                  }
-                                >
-                                  {deleteCredential.isPending
-                                    ? commonT("deleting")
-                                    : commonT("delete")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
+                                {deleteCredential.isPending
+                                  ? commonT("deleting")
+                                  : commonT("delete")}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </>
                     }
                     meta={
@@ -788,6 +856,11 @@ export function Client() {
                         >
                           {modelGroup}
                         </Badge>
+                        {quotaPaused ? (
+                          <Badge variant="outline" className="shrink-0">
+                            {t("quotaPauseBadge")}
+                          </Badge>
+                        ) : null}
                         {handoverExpiresAt ? (
                           <Badge
                             variant={handoverExpired ? "outline" : "secondary"}
@@ -825,6 +898,83 @@ export function Client() {
                           </span>
                         ) : null}
                       </>
+                    }
+                    notice={
+                      handoverExpired ? (
+                        <div className="flex items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                          <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium">
+                              {t("handoverExpiredNoticeTitle")}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                              {t("handoverExpiredDescription")}
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2 h-7 border-amber-300 bg-white px-2.5 text-xs text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100 dark:hover:bg-amber-900"
+                              asChild
+                            >
+                              <Link
+                                href={`/radar/${pool.slug}/api-keys/${credential.id}/edit`}
+                              >
+                                <KeyRound className="size-3.5" />
+                                {t("configureApiKey")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ) : quotaPaused ? (
+                        <div className="flex items-start gap-2.5 rounded-md border border-slate-200 bg-slate-50 p-3 text-slate-950 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100">
+                          <CircleAlert className="mt-0.5 size-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium">
+                              {t("quotaPauseNoticeTitle")}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                              {t("quotaPauseDescription")}
+                            </p>
+                            {credential.nextRecoveryCheckAt ? (
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {t("quotaPauseNextCheck", {
+                                  time: formatDateTime(
+                                    credential.nextRecoveryCheckAt,
+                                    locale,
+                                  ),
+                                })}
+                              </p>
+                            ) : null}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2 h-7 border-slate-300 bg-white px-2.5 text-xs text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+                              disabled={recheckCredential.isPending}
+                              onClick={() =>
+                                recheckCredential.mutate({
+                                  poolSlug: pool.slug,
+                                  credentialId: credential.id,
+                                })
+                              }
+                            >
+                              <RefreshCw
+                                className={`size-3.5 ${
+                                  recheckCredential.isPending &&
+                                  recheckCredential.variables?.credentialId ===
+                                    credential.id
+                                    ? "animate-spin"
+                                    : ""
+                                }`}
+                              />
+                              {recheckCredential.isPending &&
+                              recheckCredential.variables?.credentialId ===
+                                credential.id
+                                ? t("recheckingCredential")
+                                : t("recheckCredential")}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null
                     }
                     metrics={[
                       {

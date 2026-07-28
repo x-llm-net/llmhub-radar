@@ -19,12 +19,15 @@ export {
   addRadarTokenProbe,
   createRadarPool,
   deleteRadarCredential,
+  deleteRadarPool,
   updateRadarPool,
   updateRadarTokenProbe,
 } from "./create";
 export {
+  recheckRadarCredential,
   retireExpiredRadarCredentialHandovers,
   runRadarCron,
+  type RecheckRadarCredentialResult,
   type RunRadarCronResult,
 } from "./cron";
 export {
@@ -71,6 +74,7 @@ export {
   DiscoverRadarModelsForPoolInput,
   DiscoverRadarModelsInput,
   DeleteRadarCredentialInput,
+  DeleteRadarPoolInput,
   GetRadarPoolInput,
   ListClaimableRadarPoolsInput,
   ListRadarClaimApplicationsInput,
@@ -80,6 +84,7 @@ export {
   RadarProbeTargetInput,
   TransferRadarPoolOwnershipInput,
   RecordRadarProbeRunInput,
+  RecheckRadarCredentialInput,
   ReviewRadarClaimApplicationInput,
   ReviewRadarOrderInput,
   ReviewRadarVerificationApplicationInput,
@@ -95,6 +100,7 @@ export {
   type DiscoverRadarModelsForPoolInput as DiscoverRadarModelsForPoolInputType,
   type DiscoverRadarModelsInput as DiscoverRadarModelsInputType,
   type DeleteRadarCredentialInput as DeleteRadarCredentialInputType,
+  type DeleteRadarPoolInput as DeleteRadarPoolInputType,
   type GetRadarPoolInput as GetRadarPoolInputType,
   type ListClaimableRadarPoolsInput as ListClaimableRadarPoolsInputType,
   type ListRadarClaimApplicationsInput as ListRadarClaimApplicationsInputType,
@@ -104,6 +110,7 @@ export {
   type RadarProbeTargetInput as RadarProbeTargetInputType,
   type TransferRadarPoolOwnershipInput as TransferRadarPoolOwnershipInputType,
   type RecordRadarProbeRunInput as RecordRadarProbeRunInputType,
+  type RecheckRadarCredentialInput as RecheckRadarCredentialInputType,
   type ReviewRadarClaimApplicationInput as ReviewRadarClaimApplicationInputType,
   type ReviewRadarOrderInput as ReviewRadarOrderInputType,
   type ReviewRadarVerificationApplicationInput as ReviewRadarVerificationApplicationInputType,

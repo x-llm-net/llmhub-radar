@@ -36,6 +36,7 @@ async function verifyEmptyDatabaseMigration() {
       "radar_target_openstatus_binding",
       "page_component_id",
     );
+    await assertColumnExists(db.client, "radar_pool", "deleted_at");
     await assertIndexExists(
       db.client,
       "radar_target_openstatus_binding",
@@ -59,6 +60,7 @@ async function verifyExistingDatabaseMigration() {
       "radar_target_openstatus_binding",
       "page_component_id",
     );
+    await assertColumnMissing(db.client, "radar_pool", "deleted_at");
 
     const seeded = await seedPre0081RadarData(db.client);
     const before = await readExistingDataSnapshot(db.client, seeded);
@@ -71,6 +73,7 @@ async function verifyExistingDatabaseMigration() {
       "radar_target_openstatus_binding",
       "page_component_id",
     );
+    await assertColumnExists(db.client, "radar_pool", "deleted_at");
     await assertIndexExists(
       db.client,
       "radar_target_openstatus_binding",

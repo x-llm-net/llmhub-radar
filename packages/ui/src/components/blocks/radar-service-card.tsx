@@ -32,6 +32,7 @@ export type RadarServiceCardProps = {
   };
   meta?: React.ReactNode;
   metrics: RadarServiceCardMetric[];
+  notice?: React.ReactNode;
   models?: {
     countLabel: string;
     emptyLabel: string;
@@ -59,6 +60,7 @@ export function RadarServiceCard({
   meta,
   metrics,
   models,
+  notice,
   status,
   timeline,
   title,
@@ -67,7 +69,7 @@ export function RadarServiceCard({
     <div
       data-radar-service-card
       className={cn(
-        "bg-background group/card flex h-full flex-col rounded-lg border p-4 shadow-sm",
+        "bg-background group/card isolate flex h-full flex-col rounded-lg border p-4 shadow-sm",
         className,
       )}
     >
@@ -92,7 +94,7 @@ export function RadarServiceCard({
               {status.label}
             </Badge>
             {actions ? (
-              <div className="pointer-events-none absolute top-1/2 right-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
+              <div className="pointer-events-none absolute top-1/2 right-0 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
                 {actions}
               </div>
             ) : null}
@@ -104,6 +106,8 @@ export function RadarServiceCard({
           </div>
         ) : null}
       </div>
+
+      {notice ? <div className="mt-3">{notice}</div> : null}
 
       <div className="mt-4 grid grid-cols-[1.12fr_1fr_1fr] gap-2">
         {metrics.map((metric) => (

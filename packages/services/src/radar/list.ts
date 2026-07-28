@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   like,
   or,
   sql,
@@ -135,31 +136,23 @@ export async function listRadarPools(args: {
   const input = ListRadarPoolsInput.parse(args.input ?? {});
   const db = getReadDb(ctx);
   const access = await getRadarActorAccess({ ctx, db });
+  const condition = access.isAdmin
+    ? isNull(radarPool.deletedAt)
+    : and(
+        eq(radarPool.ownerUserId, access.userId),
+        isNull(radarPool.deletedAt),
+      );
 
   const [countRow, rows] = await Promise.all([
-    access.isAdmin
-      ? db.select({ count: count() }).from(radarPool).get()
-      : db
-          .select({ count: count() })
-          .from(radarPool)
-          .where(eq(radarPool.ownerUserId, access.userId))
-          .get(),
-    access.isAdmin
-      ? db
-          .select()
-          .from(radarPool)
-          .orderBy(desc(radarPool.createdAt))
-          .limit(input.limit)
-          .offset(input.offset)
-          .all()
-      : db
-          .select()
-          .from(radarPool)
-          .where(eq(radarPool.ownerUserId, access.userId))
-          .orderBy(desc(radarPool.createdAt))
-          .limit(input.limit)
-          .offset(input.offset)
-          .all(),
+    db.select({ count: count() }).from(radarPool).where(condition).get(),
+    db
+      .select()
+      .from(radarPool)
+      .where(condition)
+      .orderBy(desc(radarPool.createdAt))
+      .limit(input.limit)
+      .offset(input.offset)
+      .all(),
   ]);
 
   if (rows.length === 0) {
@@ -396,6 +389,7 @@ export async function listClaimableRadarPools(args: {
 
   const condition = and(
     eq(radarPool.claimable, true),
+    isNull(radarPool.deletedAt),
     input.query
       ? or(
           like(radarPool.name, `%${input.query}%`),
@@ -434,7 +428,7 @@ export async function getRadarPool(args: {
   const row = await db
     .select()
     .from(radarPool)
-    .where(eq(radarPool.slug, input.slug))
+    .where(and(eq(radarPool.slug, input.slug), isNull(radarPool.deletedAt)))
     .get();
   if (!row || (!access.isAdmin && row.ownerUserId !== access.userId)) {
     throw new NotFoundError("radar_pool", input.slug);
