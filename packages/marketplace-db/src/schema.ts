@@ -30,6 +30,12 @@ export const listingStatus = pgEnum("listing_status", [
   "retired",
 ]);
 
+export const modelVisibility = pgEnum("model_visibility", [
+  "auto",
+  "show",
+  "hide",
+]);
+
 export const probeOutcome = pgEnum("probe_outcome", [
   "success",
   "provider_failure",
@@ -129,6 +135,7 @@ export const models = pgTable(
       .default(sql`ARRAY[]::text[]`)
       .notNull(),
     enabled: boolean("enabled").default(true).notNull(),
+    visibility: modelVisibility("visibility").default("auto").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     ...timestamps,
   },

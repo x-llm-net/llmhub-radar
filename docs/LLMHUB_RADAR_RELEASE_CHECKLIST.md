@@ -115,7 +115,8 @@ pages.
   `marketplace-postgres`, `marketplace-api`, `marketplace-maintenance`, and
   `radar-probe-worker`.
 - [ ] `db-migrate` exits successfully.
-- [ ] `marketplace-migrate` exits successfully and seeds the model catalog.
+- [ ] `marketplace-migrate` exits successfully without seeding a built-in
+  model catalog.
 - [ ] `marketplace-maintenance` logs show a successful legacy sync and cleanup.
 - [ ] `/opt/llmhub-radar/storefront/current` points to the deployed image tag.
 - [ ] `radar-probe-worker` logs show regular ticks and no credential decrypt

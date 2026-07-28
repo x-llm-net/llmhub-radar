@@ -36,6 +36,28 @@ measured zero score; `NULL` means there is not enough scoreable data.
 - `health_buckets_3h`: 13 months.
 - Current stats and catalog data: retained while the listing exists.
 
+## Model lifecycle
+
+- Radar credentials discover model IDs from the provider's authenticated
+  OpenAI-compatible `/v1/models` endpoint.
+- A model is public only when it has an enabled scoring target attached to a
+  published provider listing in `observing` or `ranked` state. A row in
+  `models` by itself never creates a storefront tab.
+- Unknown target model IDs are inserted into `models` automatically. The table
+  remains the canonical place for aliases, display metadata and ordering, but
+  production startup does not seed a built-in model list.
+- `/v1/models` is called only when a credential is added or edited so the user
+  can select a probe model. The scheduled worker does not refresh catalogs.
+- A target is hidden from Marketplace after three consecutive probe responses
+  report `model_not_found`, but Radar continues its normal ten-minute probes.
+  After twelve consecutive responses it retires the target and stops probing.
+  Any successful probe or different error clears the counter, and a hidden
+  listing returns to observation automatically. Editing the credential also
+  re-enables a retired target. Historical checks and model metadata are kept.
+- `models.visibility` defaults to `auto`. Database operators may use `show` for
+  an explicit global exception or `hide` to suppress a model. Historical rows
+  are retained in every mode.
+
 Run `pnpm --filter @llmhub/marketplace-db cleanup` from a daily scheduler. It
 deletes in bounded batches until all expired rows are gone, avoiding one large
 table lock without leaving a permanent retention backlog.
@@ -68,7 +90,6 @@ recently recomputed their materialized stats.
 docker compose -f docker-compose.marketplace.yaml up -d postgres
 $env:MARKETPLACE_DATABASE_URL='postgres://llmhub:llmhub@127.0.0.1:55432/llmhub_marketplace'
 pnpm --filter @llmhub/marketplace-db migrate
-pnpm --filter @llmhub/marketplace-db seed
 pnpm --filter @llmhub/marketplace-api dev
 ```
 
@@ -116,8 +137,8 @@ provider failures. A
 current configuration error still suspends ranking. Native Marketplace probes
 retain typed error handling and individual scheduled attempts.
 
-Production Compose includes PostgreSQL, a one-shot migration and catalog seed,
-the Marketplace API, and the maintenance loop. Caddy routes `/v1/*` to the API
+Production Compose includes PostgreSQL, a one-shot migration, the Marketplace
+API, and the maintenance loop. Caddy routes `/v1/*` to the API
 on loopback port `3010`; all other `llm-hub.store` traffic continues to the
 status-page service.
 
@@ -131,8 +152,8 @@ status-page service.
   real sync profiling shows they exceed the ten-minute window.
 - Make the owner-selected scoring target explicit in the dashboard before
   providers manage multiple ranking groups directly in Marketplace.
-- Add a small admin UI for editing optional model metadata if direct database
-  edits become too slow.
+- Add a small admin UI for editing optional model metadata and visibility if
+  direct database edits become too slow.
 - If a benchmark site offers allowed public access or an official API, consider
   a secondary benchmark score from places such as hvoy.ai, veridrop, or cctest,
   but keep it clearly separate from live probe stability and label the source.

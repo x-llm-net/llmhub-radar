@@ -186,6 +186,7 @@ export const selectPublicRadarSchema = z
         modelFamily: z.string(),
         modelName: z.string(),
         modelCatalog: z.array(z.string()).prefault([]),
+        modelNotFoundCount: z.number().int().nonnegative().prefault(0),
         currentStatus: publicRadarTargetStatusSchema.prefault("unknown"),
         intervalSeconds: z.number(),
         nextCheckAt: z.date().nullable(),

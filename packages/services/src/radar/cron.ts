@@ -34,8 +34,8 @@ import type { RadarProbeResult } from "./probe";
 import { recordRadarProbeRun } from "./probe-run";
 import { RecheckRadarCredentialInput } from "./schemas";
 
-const DEFAULT_BATCH_SIZE = 25;
-const DEFAULT_CONCURRENCY = 5;
+const DEFAULT_BATCH_SIZE = 1_200;
+const DEFAULT_CONCURRENCY = 100;
 const DEFAULT_LEASE_MS = 2 * 60 * 1000;
 
 type DueRadarTarget = NonNullable<
@@ -63,8 +63,12 @@ export async function runRadarCron(input?: {
   now?: Date;
 }): Promise<RunRadarCronResult> {
   const now = input?.now ?? new Date();
-  const batchSize = input?.batchSize ?? DEFAULT_BATCH_SIZE;
-  const concurrency = input?.concurrency ?? DEFAULT_CONCURRENCY;
+  const batchSize =
+    input?.batchSize ??
+    positiveIntegerEnv("RADAR_PROBE_BATCH_SIZE", DEFAULT_BATCH_SIZE);
+  const concurrency =
+    input?.concurrency ??
+    positiveIntegerEnv("RADAR_PROBE_CONCURRENCY", DEFAULT_CONCURRENCY);
   await retireExpiredRadarCredentialHandovers({ now });
   const recoveryTargets = await listDueRadarRecoveryTargets({
     now,
@@ -294,6 +298,7 @@ async function listDueRadarTargets(args: { now: Date; limit: number }) {
         ),
       ),
     )
+    .orderBy(asc(radarProbeTarget.nextCheckAt), asc(radarProbeTarget.id))
     .limit(args.limit)
     .all();
 }
@@ -588,11 +593,17 @@ async function scheduleNextCheck(
       .where(
         and(
           eq(radarProbeTarget.id, targetId),
+          eq(radarProbeTarget.enabled, true),
           ne(radarProbeTarget.currentStatus, "paused"),
         ),
       )
       .run(),
   );
+}
+
+function positiveIntegerEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
 function calculateTokensPerSecond(result: RadarProbeResult) {

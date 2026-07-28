@@ -914,19 +914,26 @@ export async function updateRadarTokenProbe(args: {
       .get();
 
     if (target) {
+      const resetTargetStatus =
+        Boolean(input.apiKey) ||
+        target.modelName !== input.probeModel ||
+        target.modelRetiredAt !== null;
       await tx
         .update(radarProbeTarget)
         .set({
           name: `${row.provider.displayName} / ${input.modelType} / ${input.apiKeyName}`,
           displayName: input.apiKeyName,
           modelName: input.probeModel,
-          currentStatus: input.apiKey ? "unknown" : target.currentStatus,
+          enabled: true,
+          modelNotFoundCount: 0,
+          modelRetiredAt: null,
+          currentStatus: resetTargetStatus ? "unknown" : target.currentStatus,
           nextCheckAt: now,
           updatedAt: now,
         })
         .where(eq(radarProbeTarget.id, target.id));
 
-      if (input.apiKey) {
+      if (resetTargetStatus) {
         await tx
           .update(radarTargetStatus)
           .set({ currentStatus: "unknown", updatedAt: now })

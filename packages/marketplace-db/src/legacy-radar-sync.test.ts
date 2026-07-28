@@ -2,8 +2,23 @@ import { describe, expect, test } from "bun:test";
 
 import {
   expectedLegacyChecksPerBucket,
+  legacyListingStatus,
   mapLegacyOutcome,
 } from "./legacy-radar-sync";
+
+describe("legacy Radar listing status", () => {
+  test("keeps the first two model-not-found failures observable", () => {
+    expect(legacyListingStatus({ modelNotFoundCount: 2 })).toBe("observing");
+  });
+
+  test("suspends the listing after three consecutive failures", () => {
+    expect(legacyListingStatus({ modelNotFoundCount: 3 })).toBe("suspended");
+  });
+
+  test("returns the listing to observation after recovery", () => {
+    expect(legacyListingStatus({ modelNotFoundCount: 0 })).toBe("observing");
+  });
+});
 
 describe("legacy Radar outcome mapping", () => {
   test("keeps successful checks scoreable", () => {

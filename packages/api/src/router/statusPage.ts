@@ -317,6 +317,7 @@ async function getPublicRadarByPageId(args: {
       modelFamily: row.credential?.modelGroup || "General",
       modelName: row.target.modelName,
       modelCatalog,
+      modelNotFoundCount: row.target.modelNotFoundCount,
       currentStatus,
       intervalSeconds: row.target.intervalSeconds,
       nextCheckAt: row.target.nextCheckAt ?? null,

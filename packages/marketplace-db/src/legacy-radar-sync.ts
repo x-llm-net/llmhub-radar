@@ -56,6 +56,7 @@ type LegacyTarget = {
   displayName: string;
   serviceGroupName: string;
   modelName: string;
+  modelNotFoundCount: number;
   intervalSeconds: number;
   currentStatus: string;
   stabilityBuckets7d: LegacyBucket[];
@@ -106,6 +107,14 @@ export function mapLegacyOutcome(args: {
     return "configuration_error" as const;
   }
   return "provider_failure" as const;
+}
+
+export function legacyListingStatus(
+  target: Pick<LegacyTarget, "modelNotFoundCount">,
+) {
+  return target.modelNotFoundCount >= 3
+    ? ("suspended" as const)
+    : ("observing" as const);
 }
 
 function normalizedModelName(value: string) {
@@ -486,6 +495,7 @@ export async function syncLegacyRadar(args: {
       targets.sort((left, right) => left.id - right.id);
       const primary = targets[0];
       if (!primary) continue;
+      const nextStatus = legacyListingStatus(primary);
       seenModelIds.add(modelId);
       const createdAt = new Date(page.createdAt);
       const [listing] = await args.db
@@ -495,7 +505,7 @@ export async function syncLegacyRadar(args: {
           modelId,
           providerModelName: primary.modelName,
           purchaseUrl: page.homepageUrl || null,
-          status: "observing",
+          status: nextStatus,
           publishedAt: new Date(page.createdAt),
           createdAt,
           updatedAt: now,
@@ -512,10 +522,15 @@ export async function syncLegacyRadar(args: {
         .returning({ id: providerModels.id });
       if (!listing) continue;
 
-      if (existingListingByModel.get(modelId)?.status === "retired") {
+      const existingStatus = existingListingByModel.get(modelId)?.status;
+      if (
+        (nextStatus === "suspended" && existingStatus !== "suspended") ||
+        (nextStatus === "observing" &&
+          (existingStatus === "suspended" || existingStatus === "retired"))
+      ) {
         await args.db
           .update(providerModels)
-          .set({ status: "observing", updatedAt: now })
+          .set({ status: nextStatus, updatedAt: now })
           .where(eq(providerModels.id, listing.id));
       }
 

@@ -403,6 +403,10 @@ export const radarProbeTarget = sqliteTable(
       .default(true)
       .notNull(),
     enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
+    modelNotFoundCount: integer("model_not_found_count").default(0).notNull(),
+    modelRetiredAt: integer("model_retired_at", {
+      mode: "timestamp",
+    }),
     nextCheckAt: integer("next_check_at", { mode: "timestamp" }),
     lastCheckStartedAt: integer("last_check_started_at", {
       mode: "timestamp",

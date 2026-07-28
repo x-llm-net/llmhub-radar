@@ -3,12 +3,15 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
   gte,
   inArray,
   isNotNull,
   lt,
   lte,
+  ne,
+  or,
   sql,
 } from "drizzle-orm";
 
@@ -121,6 +124,58 @@ export interface ProviderRankings {
     ranking: LeaderboardRow | null;
     observing: ObservingRow | null;
   }>;
+}
+
+export async function listPublicMarketplaceModels(
+  db: MarketplaceDb,
+  options: { modelSlug?: string; providerSlug?: string } = {},
+) {
+  const activeAssociation = db
+    .select({ id: providerModels.id })
+    .from(providerModels)
+    .innerJoin(providers, eq(providers.id, providerModels.providerId))
+    .innerJoin(
+      probeTargets,
+      eq(probeTargets.providerModelId, providerModels.id),
+    )
+    .where(
+      and(
+        eq(providerModels.modelId, models.id),
+        inArray(providerModels.status, ["observing", "ranked"]),
+        eq(providers.status, "published"),
+        eq(probeTargets.enabled, true),
+        eq(probeTargets.isScoring, true),
+        options.providerSlug
+          ? eq(providers.slug, options.providerSlug)
+          : undefined,
+      ),
+    );
+  const visibilityCondition = options.providerSlug
+    ? exists(activeAssociation)
+    : or(eq(models.visibility, "show"), exists(activeAssociation));
+  const catalog = await db
+    .select({
+      id: models.id,
+      slug: models.slug,
+      vendor: models.vendor,
+      family: models.family,
+      displayName: models.displayName,
+      shortName: models.shortName,
+      description: models.description,
+      sortOrder: models.sortOrder,
+    })
+    .from(models)
+    .where(
+      and(
+        eq(models.enabled, true),
+        ne(models.visibility, "hide"),
+        visibilityCondition,
+        options.modelSlug ? eq(models.slug, options.modelSlug) : undefined,
+      ),
+    );
+
+  catalog.sort(compareMarketplaceModels);
+  return catalog;
 }
 
 const LEADERBOARD_FRESHNESS_MS = 30 * 60 * 1000;
@@ -460,19 +515,7 @@ export async function getModelLeaderboard(
   const limit = options.limit ?? 10;
   const asOf = options.asOf ?? new Date();
   const freshnessCutoff = new Date(asOf.getTime() - LEADERBOARD_FRESHNESS_MS);
-  const [model] = await db
-    .select({
-      id: models.id,
-      slug: models.slug,
-      vendor: models.vendor,
-      family: models.family,
-      displayName: models.displayName,
-      shortName: models.shortName,
-      description: models.description,
-    })
-    .from(models)
-    .where(and(eq(models.slug, modelSlug), eq(models.enabled, true)))
-    .limit(1);
+  const [model] = await listPublicMarketplaceModels(db, { modelSlug });
 
   if (!model) return null;
 
@@ -674,18 +717,7 @@ export async function getProviderRankings(
 
   if (!provider) return null;
 
-  const catalog = await db
-    .select({
-      slug: models.slug,
-      vendor: models.vendor,
-      family: models.family,
-      displayName: models.displayName,
-      sortOrder: models.sortOrder,
-    })
-    .from(models)
-    .where(eq(models.enabled, true))
-    .orderBy(asc(models.sortOrder), asc(models.slug));
-  catalog.sort(compareMarketplaceModels);
+  const catalog = await listPublicMarketplaceModels(db, { providerSlug });
   const leaderboards = await Promise.all(
     catalog.map((model) =>
       getModelLeaderboard(db, model.slug, {
@@ -760,18 +792,7 @@ export async function getHomepageRankings(
   db: MarketplaceDb,
   options: { limit?: number; asOf?: Date } = {},
 ) {
-  const catalog = await db
-    .select({
-      slug: models.slug,
-      vendor: models.vendor,
-      family: models.family,
-      displayName: models.displayName,
-      sortOrder: models.sortOrder,
-    })
-    .from(models)
-    .where(eq(models.enabled, true))
-    .orderBy(asc(models.sortOrder), asc(models.slug));
-  catalog.sort(compareMarketplaceModels);
+  const catalog = await listPublicMarketplaceModels(db);
   const rankings = await Promise.all(
     catalog.map((model) => getModelLeaderboard(db, model.slug, options)),
   );

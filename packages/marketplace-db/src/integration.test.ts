@@ -1,14 +1,14 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
-import { seedModelCatalog } from "./catalog";
 import { createMarketplaceDb } from "./db";
 import { syncLegacyRadar } from "./legacy-radar-sync";
 import {
   getMarketplaceOverview,
   getModelLeaderboard,
   getProviderRankings,
+  listPublicMarketplaceModels,
   refreshProviderModelStats,
 } from "./repository";
 import { cleanupExpiredHistory } from "./retention";
@@ -54,7 +54,15 @@ describeDatabase("marketplace PostgreSQL integration", () => {
     await db.delete(probeTargets);
     await db.delete(providerModels);
     await db.delete(providers);
-    await seedModelCatalog(db);
+    await db.delete(models);
+    await db.insert(models).values({
+      slug: "gpt-5-4",
+      vendor: "OpenAI",
+      family: "GPT",
+      displayName: "GPT 5.4",
+      shortName: "GPT 5.4",
+      aliases: ["gpt-5.4", "gpt-5-4"],
+    });
   });
 
   afterAll(async () => {
@@ -69,6 +77,106 @@ describeDatabase("marketplace PostgreSQL integration", () => {
 
     expect(result.deletedChecks).toBe(0);
     expect(result.deletedBuckets).toBe(0);
+  });
+
+  test("publishes only models backed by active scoring targets", async () => {
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(0);
+
+    const [model] = await db
+      .select({ id: models.id })
+      .from(models)
+      .where(eq(models.slug, "gpt-5-4"))
+      .limit(1);
+    const providerRows = await db
+      .insert(providers)
+      .values([
+        {
+          slug: "catalog-provider-a",
+          name: "Catalog Provider A",
+          status: "published",
+        },
+        {
+          slug: "catalog-provider-b",
+          name: "Catalog Provider B",
+          status: "published",
+        },
+      ])
+      .returning({ id: providers.id });
+    expect(model).toBeDefined();
+    if (!model || providerRows.length !== 2) return;
+
+    const listings = await db
+      .insert(providerModels)
+      .values(
+        providerRows.map((provider) => ({
+          providerId: provider.id,
+          modelId: model.id,
+          providerModelName: "gpt-5.4",
+          status: "observing" as const,
+        })),
+      )
+      .returning({ id: providerModels.id });
+    const catalogTargets = await db
+      .insert(probeTargets)
+      .values(
+        listings.map((listing, index) => ({
+          providerModelId: listing.id,
+          name: `catalog-target-${index}`,
+          source: "legacy_radar" as const,
+          sourceRef: `catalog-target-${index}`,
+          enabled: true,
+          isScoring: true,
+        })),
+      )
+      .returning({ id: probeTargets.id });
+
+    expect(
+      (await listPublicMarketplaceModels(db)).map((row) => row.slug),
+    ).toEqual(["gpt-5-4"]);
+
+    await db
+      .update(probeTargets)
+      .set({ enabled: false })
+      .where(
+        inArray(
+          probeTargets.id,
+          catalogTargets.map((target) => target.id),
+        ),
+      );
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(0);
+    await db
+      .update(probeTargets)
+      .set({ enabled: true })
+      .where(
+        inArray(
+          probeTargets.id,
+          catalogTargets.map((target) => target.id),
+        ),
+      );
+
+    await db
+      .update(providerModels)
+      .set({ status: "retired" })
+      .where(eq(providerModels.id, listings[0]?.id ?? ""));
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(1);
+
+    await db
+      .update(providerModels)
+      .set({ status: "retired" })
+      .where(eq(providerModels.id, listings[1]?.id ?? ""));
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(0);
+
+    await db
+      .update(models)
+      .set({ visibility: "show" })
+      .where(eq(models.id, model.id));
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(1);
+
+    await db
+      .update(models)
+      .set({ visibility: "hide" })
+      .where(eq(models.id, model.id));
+    expect(await listPublicMarketplaceModels(db)).toHaveLength(0);
   });
 
   test("publishes a measured model in natural and sponsored results", async () => {
@@ -416,6 +524,15 @@ describeDatabase("marketplace PostgreSQL integration", () => {
         })),
       )
       .returning({ id: providerModels.id });
+    await db.insert(probeTargets).values(
+      listingRows.map((listing, index) => ({
+        providerModelId: listing.id,
+        name: "tied-target-" + (index + 1),
+        source: "legacy_radar" as const,
+        sourceRef: "tied-target-" + (index + 1),
+        isScoring: true,
+      })),
+    );
     const windowEnd = floorToBucket(asOf);
     await db.insert(providerModelStats).values(
       listingRows.map((listing) => ({

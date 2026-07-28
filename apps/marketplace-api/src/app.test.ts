@@ -3,7 +3,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   createMarketplaceDb,
   models,
-  seedModelCatalog,
+  probeTargets,
+  providerModels,
+  providers,
   setMarketplaceMinRankingAvailabilityBps,
 } from "@llmhub/marketplace-db";
 import { eq } from "drizzle-orm";
@@ -26,7 +28,77 @@ describeDatabase("marketplace public API", () => {
   const app = createMarketplaceApp(db);
 
   beforeAll(async () => {
-    await seedModelCatalog(db);
+    const [model] = await db
+      .insert(models)
+      .values({
+        slug: "gpt-5-4",
+        vendor: "OpenAI",
+        family: "GPT",
+        displayName: "GPT 5.4",
+        shortName: "GPT 5.4",
+        aliases: ["gpt-5.4", "gpt-5-4"],
+        visibility: "auto",
+      })
+      .onConflictDoUpdate({
+        target: models.slug,
+        set: { visibility: "auto", enabled: true },
+      })
+      .returning({ id: models.id });
+    const [provider] = await db
+      .insert(providers)
+      .values({
+        slug: "marketplace-api-test-provider",
+        name: "Marketplace API Test Provider",
+        status: "published",
+      })
+      .onConflictDoUpdate({
+        target: providers.slug,
+        set: { status: "published" },
+      })
+      .returning({ id: providers.id });
+    if (!model || !provider) throw new Error("Unable to create API test data");
+    const [listing] = await db
+      .insert(providerModels)
+      .values({
+        providerId: provider.id,
+        modelId: model.id,
+        providerModelName: "gpt-5.4",
+        status: "observing",
+      })
+      .onConflictDoUpdate({
+        target: [providerModels.providerId, providerModels.modelId],
+        set: { status: "observing" },
+      })
+      .returning({ id: providerModels.id });
+    if (!listing) throw new Error("Unable to create API test listing");
+    await db
+      .insert(probeTargets)
+      .values({
+        providerModelId: listing.id,
+        name: "marketplace-api-test-target",
+        source: "legacy_radar",
+        sourceRef: "marketplace-api-test-target",
+        enabled: true,
+        isScoring: true,
+      })
+      .onConflictDoUpdate({
+        target: [probeTargets.source, probeTargets.sourceRef],
+        set: { enabled: true, isScoring: true },
+      });
+    await db
+      .insert(models)
+      .values({
+        slug: "unassociated-api-test-model",
+        vendor: "Other",
+        family: "Other",
+        displayName: "Unassociated API Test Model",
+        shortName: "Unassociated API Test Model",
+        visibility: "auto",
+      })
+      .onConflictDoUpdate({
+        target: models.slug,
+        set: { visibility: "auto", enabled: true },
+      });
   });
 
   afterAll(async () => {
@@ -38,7 +110,12 @@ describeDatabase("marketplace public API", () => {
     const payload = (await response.json()) as { data: unknown[] };
 
     expect(response.status).toBe(200);
-    expect(payload.data.length).toBeGreaterThanOrEqual(11);
+    expect(payload.data).toContainEqual(
+      expect.objectContaining({ slug: "gpt-5-4" }),
+    );
+    expect(payload.data).not.toContainEqual(
+      expect.objectContaining({ slug: "unassociated-api-test-model" }),
+    );
     const cacheControl = response.headers.get("cache-control") ?? "";
     const sharedMaxAge = Number(/s-maxage=(\d+)/.exec(cacheControl)?.[1]);
     expect(sharedMaxAge).toBeGreaterThan(0);
@@ -70,7 +147,10 @@ describeDatabase("marketplace public API", () => {
       secondPayload.data.find((model) => model.slug === "gpt-5-4")?.description,
     ).toBe(original.description);
 
-    await seedModelCatalog(db);
+    await db
+      .update(models)
+      .set({ description: original.description })
+      .where(eq(models.slug, "gpt-5-4"));
   });
 
   test("supports conditional requests through ETag", async () => {

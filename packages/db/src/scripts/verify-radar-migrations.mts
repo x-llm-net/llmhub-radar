@@ -37,6 +37,16 @@ async function verifyEmptyDatabaseMigration() {
       "page_component_id",
     );
     await assertColumnExists(db.client, "radar_pool", "deleted_at");
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "model_not_found_count",
+    );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "model_retired_at",
+    );
     await assertIndexExists(
       db.client,
       "radar_target_openstatus_binding",
@@ -74,6 +84,16 @@ async function verifyExistingDatabaseMigration() {
       "page_component_id",
     );
     await assertColumnExists(db.client, "radar_pool", "deleted_at");
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "model_not_found_count",
+    );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "model_retired_at",
+    );
     await assertIndexExists(
       db.client,
       "radar_target_openstatus_binding",

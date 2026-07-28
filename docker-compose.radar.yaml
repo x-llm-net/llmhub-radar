@@ -239,7 +239,7 @@ services:
     working_dir: /app/packages/marketplace-db
     environment:
       MARKETPLACE_DATABASE_URL: ${MARKETPLACE_DATABASE_URL:-postgres://llmhub:llmhub-local-only@marketplace-postgres:5432/llmhub_marketplace}
-    command: ["sh", "-c", "bun src/migrate.ts && bun src/seed.ts"]
+    command: ["bun", "src/migrate.ts"]
     depends_on:
       marketplace-postgres:
         condition: service_healthy

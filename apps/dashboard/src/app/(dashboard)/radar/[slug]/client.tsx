@@ -758,7 +758,7 @@ export function Client() {
             </Button>
           </EmptyStateContainer>
         ) : (
-          <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
             {cards.map(
               ({
                 credential,
@@ -782,6 +782,7 @@ export function Client() {
                 return (
                   <RadarServiceCard
                     key={credential.id}
+                    className="h-auto"
                     title={credential.name}
                     status={{
                       className: health.className,

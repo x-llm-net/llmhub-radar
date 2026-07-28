@@ -8,7 +8,6 @@
     "sync:legacy": "bun src/run-legacy-sync.ts",
     "generate": "drizzle-kit generate",
     "migrate": "bun src/migrate.ts",
-    "seed": "bun src/seed.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

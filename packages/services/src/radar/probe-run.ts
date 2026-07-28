@@ -30,6 +30,24 @@ type TargetStatus =
 
 export const RADAR_QUOTA_FAILURES_BEFORE_PAUSE = 2;
 export const RADAR_QUOTA_RECOVERY_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const RADAR_MODEL_NOT_FOUND_HIDE_THRESHOLD = 3;
+export const RADAR_MODEL_NOT_FOUND_RETIRE_THRESHOLD = 12;
+
+export function nextModelNotFoundState(args: {
+  previousCount: number;
+  success: boolean;
+  errorType?: string | null;
+}) {
+  const count =
+    !args.success && args.errorType === "model_not_found"
+      ? args.previousCount + 1
+      : 0;
+
+  return {
+    count,
+    retired: count >= RADAR_MODEL_NOT_FOUND_RETIRE_THRESHOLD,
+  };
+}
 
 function classifyStatus(args: {
   recentResults: Array<{
@@ -305,6 +323,11 @@ export async function recordRadarProbeRun(args: {
       !isQuotaRecoveryProbe &&
       shouldAutoPauseRadarCredential(recent);
     const recoveredFromQuotaPause = isQuotaRecoveryProbe && input.success;
+    const modelNotFoundState = nextModelNotFoundState({
+      previousCount: target.modelNotFoundCount,
+      success: input.success,
+      errorType: input.errorType,
+    });
     let currentStatus = classifyStatus({
       recentResults: recent,
       previousStatus: existingStatus?.currentStatus as TargetStatus | undefined,
@@ -334,7 +357,15 @@ export async function recordRadarProbeRun(args: {
 
     await tx
       .update(radarProbeTarget)
-      .set({ currentStatus, updatedAt: new Date() })
+      .set({
+        enabled: modelNotFoundState.retired ? false : target.enabled,
+        modelNotFoundCount: modelNotFoundState.count,
+        modelRetiredAt: modelNotFoundState.retired ? finishedAt : null,
+        nextCheckAt: modelNotFoundState.retired ? null : target.nextCheckAt,
+        lockedUntil: modelNotFoundState.retired ? null : target.lockedUntil,
+        currentStatus,
+        updatedAt: finishedAt,
+      })
       .where(eq(radarProbeTarget.id, target.id));
 
     const statusValues = {

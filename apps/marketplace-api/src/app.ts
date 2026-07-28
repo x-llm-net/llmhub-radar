@@ -1,17 +1,16 @@
 import { createHash } from "node:crypto";
 
 import {
-  compareMarketplaceModels,
   getHomepageRankings,
   getMarketplaceOverview,
   getMarketplaceMinRankingAvailabilityBps,
   getModelLeaderboard,
   getProviderRankings,
-  models,
+  listPublicMarketplaceModels,
   presentMarketplaceModel,
   type MarketplaceDb,
 } from "@llmhub/marketplace-db";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -131,19 +130,7 @@ export function createMarketplaceApp(db: MarketplaceDb) {
 
   app.get("/v1/models", (context) =>
     cachedRoute(context.req.raw, "models", async () => {
-      const rows = await db
-        .select({
-          slug: models.slug,
-          vendor: models.vendor,
-          family: models.family,
-          displayName: models.displayName,
-          shortName: models.shortName,
-          description: models.description,
-          sortOrder: models.sortOrder,
-        })
-        .from(models)
-        .where(eq(models.enabled, true));
-      rows.sort(compareMarketplaceModels);
+      const rows = await listPublicMarketplaceModels(db);
       const catalog = rows.map((row) => {
         const { sortOrder: _sortOrder, ...model } = row;
         return presentMarketplaceModel(model);
