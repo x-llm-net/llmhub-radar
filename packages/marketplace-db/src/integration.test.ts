@@ -491,6 +491,49 @@ describeDatabase("marketplace PostgreSQL integration", () => {
     );
     expect(leaderboard?.ranking[0]?.sampleCount).toBe(4);
     expect(leaderboard?.observing).toHaveLength(0);
+
+    const [providerModel] = await db
+      .select({ id: providerModels.id })
+      .from(providerModels)
+      .limit(1);
+    expect(providerModel).toBeDefined();
+    if (!providerModel) return;
+
+    const staleBucketStart = new Date(
+      windowEnd.getTime() - BUCKET_COUNT * BUCKET_MS,
+    );
+    await db.insert(healthBuckets3h).values({
+      providerModelId: providerModel.id,
+      bucketStart: staleBucketStart,
+      expectedCount: 18,
+      attemptedCount: 4,
+      successCount: 4,
+      providerFailureCount: 0,
+      configurationErrorCount: 0,
+      observerErrorCount: 0,
+      slowSuccessCount: 0,
+      availabilityBps: 10_000,
+      coverageBps: 2_222,
+      lastCheckAt: new Date(staleBucketStart.getTime() + BUCKET_MS),
+      updatedAt: asOf,
+    });
+
+    const resyncResult = await syncLegacyRadar({
+      db,
+      baseUrl: "https://legacy.example.com",
+      fetchFn,
+      now: asOf,
+    });
+    expect(resyncResult.staleBucketsDeleted).toBe(1);
+
+    const resyncedLeaderboard = await getModelLeaderboard(
+      db,
+      "llama-3-1-405b",
+      { asOf },
+    );
+    const trend = resyncedLeaderboard?.ranking[0]?.trend ?? [];
+    expect(trend[0]?.sampleCount).toBe(0);
+    expect(trend.at(-1)?.sampleCount).toBe(4);
   });
 
   test("orders tied availability by internal ranking score without exposing it", async () => {

@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 
 import type { MarketplaceDb } from "./db";
 import {
@@ -16,7 +16,10 @@ import {
   providerModels,
   providers,
 } from "./schema";
-import { DEFAULT_MIN_RANKING_AVAILABILITY_BPS } from "./scoring";
+import {
+  DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
+  getCompletedWindow,
+} from "./scoring";
 import { setMarketplaceMinRankingAvailabilityBps } from "./settings";
 
 const CONFIGURATION_ERRORS = new Set([
@@ -92,6 +95,7 @@ export type LegacyRadarSyncResult = {
   scoringTargets: number;
   checksRead: number;
   checksInserted: number;
+  staleBucketsDeleted: number;
   skippedModels: string[];
   failedProviders: Array<{ slug: string; error: string }>;
   failedProviderModels: Array<{ providerModelId: string; error: string }>;
@@ -758,6 +762,36 @@ export async function syncLegacyRadar(args: {
       });
   }
 
+  const { windowStart, windowEnd } = getCompletedWindow(now);
+  let staleBucketsDeleted = 0;
+  for (const target of scoringTargets) {
+    const sourceBucketStarts = [
+      ...new Set(
+        target.source.stabilityBuckets7d
+          .map((bucket) => new Date(bucket.from))
+          .filter(
+            (bucketStart) =>
+              bucketStart >= windowStart && bucketStart < windowEnd,
+          )
+          .map((bucketStart) => bucketStart.toISOString()),
+      ),
+    ].map((bucketStart) => new Date(bucketStart));
+    const staleRows = await args.db
+      .delete(healthBuckets3h)
+      .where(
+        and(
+          eq(healthBuckets3h.providerModelId, target.providerModelId),
+          gte(healthBuckets3h.bucketStart, windowStart),
+          lt(healthBuckets3h.bucketStart, windowEnd),
+          sourceBucketStarts.length > 0
+            ? notInArray(healthBuckets3h.bucketStart, sourceBucketStarts)
+            : undefined,
+        ),
+      )
+      .returning({ providerModelId: healthBuckets3h.providerModelId });
+    staleBucketsDeleted += staleRows.length;
+  }
+
   const activeScoringRows = await args.db
     .select({ providerModelId: probeTargets.providerModelId })
     .from(probeTargets)
@@ -805,6 +839,7 @@ export async function syncLegacyRadar(args: {
     scoringTargets: scoringTargets.length,
     checksRead: checkValues.length,
     checksInserted,
+    staleBucketsDeleted,
     skippedModels: [...skippedModels].sort(),
     failedProviders,
     failedProviderModels,
