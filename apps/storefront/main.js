@@ -117,6 +117,16 @@
       .replaceAll("'", "&#039;");
   }
 
+  function safeExternalUrl(value) {
+    if (!value) return null;
+    try {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
   function gradeForBps(value) {
     if (value === null || value === undefined) return null;
     if (value >= 9800) return "S";
@@ -179,9 +189,13 @@
       : `<span class="rank-number">${String(rank).padStart(2, "0")}</span>`;
     const name = row.provider.name || row.provider.slug;
     const mark = [...name.trim()][0]?.toUpperCase() || "L";
+    const logoUrl = safeExternalUrl(row.provider.logoUrl);
+    const logoImage = logoUrl
+      ? `<img src="${escapeHtml(logoUrl)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">`
+      : "";
     return `<div class="provider-identity">
       ${rankMarkup}
-      <span class="provider-logo logo-${logoColor(row.provider.slug)}">${escapeHtml(mark)}</span>
+      <span class="provider-logo logo-${logoColor(row.provider.slug)}">${escapeHtml(mark)}${logoImage}</span>
       <div class="provider-name"><a class="provider-name-link" href="./provider.html?slug=${encodeURIComponent(row.provider.slug)}">${escapeHtml(name)}</a><span>${escapeHtml(row.providerModelName)}</span></div>
     </div>`;
   }
