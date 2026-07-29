@@ -1,5 +1,6 @@
-import { and, eq, inArray, isNull } from "@openstatus/db";
+import { and, eq, gt, inArray, isNull, or } from "@openstatus/db";
 import {
+  mediaAsset,
   page,
   pageComponent,
   radarCredential,
@@ -22,6 +23,7 @@ import {
   PreconditionFailedError,
   ValidationError,
 } from "../errors";
+import { getMediaAssetIdFromUrl, getMediaAssetUrl } from "../media/index";
 import { getRadarActorAccess, resolveRadarCreationOwner } from "./access";
 import { getBaseUrlHostHash, normalizeRadarBaseUrl } from "./base-url";
 import { encryptSecret, getSecretLastFour, hashSecret } from "./crypto";
@@ -384,6 +386,50 @@ export async function updateRadarPool(args: {
 
     if (!provider) throw new NotFoundError("radar_provider", input.currentSlug);
 
+    const publicPage =
+      pool.pageId == null
+        ? null
+        : await tx
+            .select({ icon: page.icon })
+            .from(page)
+            .where(
+              and(
+                eq(page.id, pool.pageId),
+                eq(page.workspaceId, ctx.workspace.id),
+              ),
+            )
+            .get();
+    let nextLogoUrl: string | null | undefined;
+    if (input.logoAssetId === null) {
+      nextLogoUrl = null;
+    } else if (input.logoAssetId !== undefined) {
+      if (!publicPage) {
+        throw new PreconditionFailedError(
+          "Provider status page is not available.",
+        );
+      }
+      const now = new Date();
+      const logoAsset = await tx
+        .select({ id: mediaAsset.id })
+        .from(mediaAsset)
+        .where(
+          and(
+            eq(mediaAsset.id, input.logoAssetId),
+            eq(mediaAsset.workspaceId, ctx.workspace.id),
+            eq(mediaAsset.purpose, "provider_logo"),
+            eq(mediaAsset.visibility, "public"),
+            or(isNull(mediaAsset.expiresAt), gt(mediaAsset.expiresAt, now)),
+          ),
+        )
+        .get();
+      if (!logoAsset) {
+        throw new ValidationError(
+          "Provider logo upload is invalid or expired.",
+        );
+      }
+      nextLogoUrl = getMediaAssetUrl(logoAsset.id);
+    }
+
     if (input.slug !== pool.slug) {
       const [existingPool, existingPage] = await Promise.all([
         tx
@@ -493,11 +539,37 @@ export async function updateRadarPool(args: {
           ...(input.contactUrl !== undefined
             ? { contactUrl: input.contactUrl }
             : {}),
+          ...(nextLogoUrl !== undefined ? { icon: nextLogoUrl ?? "" } : {}),
           slug: input.slug,
           updatedAt,
         })
         .where(
           and(eq(page.id, pool.pageId), eq(page.workspaceId, ctx.workspace.id)),
+        );
+    }
+
+    if (input.logoAssetId) {
+      await tx
+        .update(mediaAsset)
+        .set({ expiresAt: null, updatedAt })
+        .where(eq(mediaAsset.id, input.logoAssetId));
+    }
+
+    const previousLogoAssetId = getMediaAssetIdFromUrl(publicPage?.icon);
+    if (
+      nextLogoUrl !== undefined &&
+      previousLogoAssetId &&
+      previousLogoAssetId !== input.logoAssetId
+    ) {
+      await tx
+        .update(mediaAsset)
+        .set({ expiresAt: updatedAt, updatedAt })
+        .where(
+          and(
+            eq(mediaAsset.id, previousLogoAssetId),
+            eq(mediaAsset.workspaceId, ctx.workspace.id),
+            eq(mediaAsset.purpose, "provider_logo"),
+          ),
         );
     }
 

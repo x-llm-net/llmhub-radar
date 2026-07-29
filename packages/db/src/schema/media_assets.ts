@@ -10,7 +10,11 @@ import {
 import { user } from "./users";
 import { workspace } from "./workspaces";
 
-export const mediaPurposes = ["claim_evidence", "order_receipt"] as const;
+export const mediaPurposes = [
+  "claim_evidence",
+  "order_receipt",
+  "provider_logo",
+] as const;
 export const mediaVisibilities = ["private", "public"] as const;
 
 export const mediaAsset = sqliteTable(

@@ -20,7 +20,7 @@ export async function GET(request: Request, context: RouteContext) {
     const result = await getMediaAssetForRead({ ctx, id });
     return new Response(Uint8Array.from(result.bytes), {
       headers: {
-        "Cache-Control": "private, no-store",
+        "Cache-Control": result.cacheControl,
         "Content-Length": String(result.asset.sizeBytes),
         "Content-Type": result.asset.mimeType,
         "X-Content-Type-Options": "nosniff",

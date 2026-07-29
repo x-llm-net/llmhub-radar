@@ -61,6 +61,7 @@ export type RadarPoolListItem = ReturnType<
 
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
   pageId: number | null;
+  logoUrl: string | null;
   homepageUrl: string | null;
   contactUrl: string | null;
   providers: Array<
@@ -479,6 +480,7 @@ export async function getRadarPool(args: {
         ? Promise.resolve(null)
         : db
             .select({
+              logoUrl: page.icon,
               homepageUrl: page.homepageUrl,
               contactUrl: page.contactUrl,
             })
@@ -530,6 +532,7 @@ export async function getRadarPool(args: {
 
   return {
     ...selectRadarPoolSchema.parse(row),
+    logoUrl: publicPage?.logoUrl || null,
     homepageUrl: publicPage?.homepageUrl ?? null,
     contactUrl: publicPage?.contactUrl ?? null,
     providers: await Promise.all(

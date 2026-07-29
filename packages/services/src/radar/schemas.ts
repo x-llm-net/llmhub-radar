@@ -337,6 +337,7 @@ export const UpdateRadarPoolInput = z.object({
   contactUrl: radarContactUrlSchema,
   redirectUrlTemplate: radarPublicUrlSchema,
   contactQq: radarContactQqSchema,
+  logoAssetId: z.string().uuid().nullable().optional(),
   publicPoolOptIn: z.boolean().optional().default(false),
 });
 export type UpdateRadarPoolInput = z.infer<typeof UpdateRadarPoolInput>;

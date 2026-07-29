@@ -95,7 +95,9 @@ export async function POST(request: Request) {
   const purpose = formData.get("purpose");
   const file = formData.get("file");
   if (
-    !["claim_evidence", "order_receipt"].includes(String(purpose)) ||
+    !["claim_evidence", "order_receipt", "provider_logo"].includes(
+      String(purpose),
+    ) ||
     !(file instanceof File)
   ) {
     return Response.json({ error: "Invalid media upload" }, { status: 400 });
@@ -105,7 +107,10 @@ export async function POST(request: Request) {
     const asset = await createMediaAsset({
       ctx,
       input: {
-        purpose: purpose as "claim_evidence" | "order_receipt",
+        purpose: purpose as
+          | "claim_evidence"
+          | "order_receipt"
+          | "provider_logo",
         originalFilename: file.name,
         declaredMimeType: file.type,
         bytes: new Uint8Array(await file.arrayBuffer()),

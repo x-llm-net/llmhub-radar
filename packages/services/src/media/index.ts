@@ -9,10 +9,22 @@ import {
 } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 
-import { and, count, db, eq, gt, inArray, isNull, lt } from "@openstatus/db";
+import {
+  and,
+  count,
+  db,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  like,
+  lt,
+  or,
+} from "@openstatus/db";
 import {
   mediaAsset,
   mediaPurposes,
+  page,
   radarClaimApplicationEvidence,
   radarOrder,
 } from "@openstatus/db/src/schema";
@@ -54,6 +66,12 @@ const MEDIA_POLICIES: Record<MediaPurpose, MediaPolicy> = {
     maxBytes: 5 * 1024 * 1024,
     allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
     visibility: "private",
+    temporaryLifetimeMs: 24 * 60 * 60 * 1000,
+  },
+  provider_logo: {
+    maxBytes: 5 * 1024 * 1024,
+    allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
+    visibility: "public",
     temporaryLifetimeMs: 24 * 60 * 60 * 1000,
   },
 };
@@ -150,6 +168,21 @@ function publicAsset(asset: typeof mediaAsset.$inferSelect) {
     mimeType: asset.mimeType,
     sizeBytes: asset.sizeBytes,
   };
+}
+
+export function getMediaAssetUrl(id: string) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() ||
+    process.env.DASHBOARD_URL?.trim() ||
+    process.env.NEXT_PUBLIC_URL?.trim() ||
+    (process.env.NODE_ENV === "production"
+      ? "https://app.llm-hub.store"
+      : "http://localhost:3000");
+  return new URL(`/api/media/${id}`, baseUrl).toString();
+}
+
+export function getMediaAssetIdFromUrl(url: string | null | undefined) {
+  return url?.match(/\/api\/media\/([0-9a-f-]{36})$/i)?.[1] ?? null;
 }
 
 async function removeStoredFile(storageKey: string) {
@@ -340,6 +373,10 @@ export async function getMediaAssetForRead(args: {
     return {
       asset: publicAsset(row.asset),
       bytes: await readFile(resolveStoragePath(row.asset.storageKey)),
+      cacheControl:
+        row.asset.visibility === "public" && row.asset.expiresAt == null
+          ? "public, max-age=31536000, immutable"
+          : "private, no-store",
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -384,6 +421,19 @@ export async function deleteMediaAsset(args: {
   }
   if (row.orderId != null) {
     throw new ConflictError("Media attached to an order cannot be deleted.");
+  }
+  const logoReference = await readDb
+    .select({ id: page.id })
+    .from(page)
+    .where(
+      or(
+        eq(page.icon, `/api/media/${row.asset.id}`),
+        like(page.icon, `%/api/media/${row.asset.id}`),
+      ),
+    )
+    .get();
+  if (logoReference) {
+    throw new ConflictError("Media used as a provider logo cannot be deleted.");
   }
 
   await withTransaction(args.ctx, async (tx) => {

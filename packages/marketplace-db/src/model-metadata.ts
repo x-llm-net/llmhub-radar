@@ -24,7 +24,7 @@ const familyOrder = new Map([
 const otherFamilyRank = 99;
 
 const lineOrderByFamily = {
-  Claude: ["sonnet", "opus", "fable", "haiku"],
+  Claude: ["opus", "sonnet", "fable", "haiku"],
   GPT: ["gpt", "codex", "o"],
   Gemini: ["flash", "pro"],
   Grok: ["grok"],

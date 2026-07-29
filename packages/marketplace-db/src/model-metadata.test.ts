@@ -73,9 +73,9 @@ describe("marketplace model metadata", () => {
     expect(
       slugs.map((slug) => ({ slug })).sort(compareMarketplaceModels),
     ).toEqual([
+      { slug: "claude-opus-4-8" },
       { slug: "claude-sonnet-5" },
       { slug: "claude-sonnet-4-6" },
-      { slug: "claude-opus-4-8" },
       { slug: "claude-fable-5" },
       { slug: "gpt-5-6-sol" },
       { slug: "gpt-5-5" },
