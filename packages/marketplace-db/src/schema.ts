@@ -332,7 +332,9 @@ export const providerModelStats = pgTable(
     currentStatus: currentStatus("current_status").default("unknown").notNull(),
     eligible: boolean("eligible").default(false).notNull(),
     eligibilityReason: text("eligibility_reason"),
+    firstTokenP50Ms: integer("first_token_p50_ms"),
     firstTokenP95Ms: integer("first_token_p95_ms"),
+    rankingScoreBps: integer("ranking_score_bps"),
     validBucketCount: smallint("valid_bucket_count").default(0).notNull(),
     lastCheckAt: timestamp("last_check_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -344,9 +346,17 @@ export const providerModelStats = pgTable(
       table.eligible,
       table.availabilityBps,
     ),
+    index("provider_model_stats_ranking_score_idx").on(
+      table.eligible,
+      table.rankingScoreBps,
+    ),
     check(
       "provider_model_stats_availability_check",
       sql`${table.availabilityBps} IS NULL OR ${table.availabilityBps} BETWEEN 0 AND 10000`,
+    ),
+    check(
+      "provider_model_stats_ranking_score_check",
+      sql`${table.rankingScoreBps} IS NULL OR ${table.rankingScoreBps} BETWEEN 0 AND 10000`,
     ),
     check(
       "provider_model_stats_coverage_check",

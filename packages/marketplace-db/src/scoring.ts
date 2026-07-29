@@ -9,6 +9,9 @@ export const MIN_RANKING_SAMPLES = 4;
 export const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 export const DEFAULT_SLOW_FIRST_TOKEN_MS = 15_000;
 export const DEFAULT_MIN_RANKING_AVAILABILITY_BPS = 0;
+export const RANKING_P50_ZERO_MS = 10_000;
+export const RANKING_P95_ZERO_MS = 20_000;
+export const RANKING_SAMPLE_FULL_COUNT = 700;
 
 export type ProbeOutcomeValue =
   | "success"
@@ -87,6 +90,74 @@ export function gradeAvailability(
   if (availabilityBps >= 9_000) return "B";
   if (availabilityBps >= 8_000) return "C";
   return "D";
+}
+
+export function percentile(values: number[], percentileValue: number) {
+  const sorted = values
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+  if (sorted.length === 0) return null;
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((percentileValue / 100) * sorted.length) - 1),
+  );
+  return Math.round(sorted[index] as number);
+}
+
+export function linearLatencyScoreBps(
+  latencyMs: number | null | undefined,
+  zeroAtMs: number,
+) {
+  if (latencyMs === null || latencyMs === undefined) return 0;
+  if (!Number.isFinite(latencyMs) || zeroAtMs <= 0) return 0;
+  return Math.max(
+    0,
+    Math.min(10_000, Math.round(((zeroAtMs - latencyMs) / zeroAtMs) * 10_000)),
+  );
+}
+
+export function confidenceScoreBps(args: {
+  sampleCount: number;
+  validBucketCount: number;
+}) {
+  const sampleScore = Math.min(
+    10_000,
+    Math.round((args.sampleCount / RANKING_SAMPLE_FULL_COUNT) * 10_000),
+  );
+  const bucketScore = Math.min(
+    10_000,
+    Math.round((args.validBucketCount / BUCKET_COUNT) * 10_000),
+  );
+  return Math.round(sampleScore * 0.4 + bucketScore * 0.6);
+}
+
+export function calculateRankingScoreBps(args: {
+  availabilityBps: number | null;
+  firstTokenP50Ms: number | null;
+  firstTokenP95Ms: number | null;
+  sampleCount: number;
+  validBucketCount: number;
+}) {
+  const availabilityScore = args.availabilityBps ?? 0;
+  const p50Score = linearLatencyScoreBps(
+    args.firstTokenP50Ms,
+    RANKING_P50_ZERO_MS,
+  );
+  const p95Score = linearLatencyScoreBps(
+    args.firstTokenP95Ms,
+    RANKING_P95_ZERO_MS,
+  );
+  const confidenceScore = confidenceScoreBps({
+    sampleCount: args.sampleCount,
+    validBucketCount: args.validBucketCount,
+  });
+
+  return Math.round(
+    availabilityScore * 0.8 +
+      p50Score * 0.07 +
+      p95Score * 0.08 +
+      confidenceScore * 0.05,
+  );
 }
 
 export function aggregateProbeSamples(

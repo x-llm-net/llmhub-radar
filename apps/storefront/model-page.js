@@ -41,6 +41,16 @@
       : `${(value / 100).toFixed(2)}%`;
   }
 
+  function latencyValueText(value) {
+    if (value === null || value === undefined) return "--";
+    const seconds = value / 1000;
+    return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`;
+  }
+
+  function latencyText(value) {
+    return `首字 ${latencyValueText(value)}`;
+  }
+
   function gradeForBps(value) {
     if (value === null || value === undefined) return null;
     if (value >= 9800) return "S";
@@ -152,9 +162,9 @@
     const grade = row.grade || gradeForBps(row.availabilityBps);
     return `<article class="${sponsored ? "model-sponsored-row" : "model-ranking-row"} model-data-row">
       ${providerIdentity(row, row.naturalRank || row.slot)}
-      <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong><span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span></div>
+      <div class="ranking-score"><span><strong>${scoreText(row.availabilityBps)}</strong><span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span></span><small>${escapeHtml(latencyText(row.firstTokenP50Ms))}</small></div>
       ${trendStrip(row, model)}
-      <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)}</span></div>
+      <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)} · P95 ${escapeHtml(latencyValueText(row.firstTokenP95Ms))}</span></div>
       <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 个时段有数据</span></div>
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}
@@ -175,9 +185,9 @@
   function observingRow(row, model) {
     return `<article class="model-ranking-row model-data-row">
       ${providerIdentity(row, 0, true, eligibilityText(row))}
-      <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong></div>
+      <div class="ranking-score"><span><strong>${scoreText(row.availabilityBps)}</strong></span><small>${escapeHtml(latencyText(row.firstTokenP50Ms))}</small></div>
       ${trendStrip(row, model)}
-      <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)}</span></div>
+      <div class="ranking-fact"><strong>${row.sampleCount} 次</strong><span>更新于 ${relativeTime(row.lastCheckAt)} · P95 ${escapeHtml(latencyValueText(row.firstTokenP95Ms))}</span></div>
       <div class="ranking-fact"><strong>${scoreText(row.coverageBps)}</strong><span>${row.validBucketCount}/56 个时段有数据</span></div>
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}

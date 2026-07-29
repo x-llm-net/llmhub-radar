@@ -142,6 +142,14 @@
       : `${(value / 100).toFixed(2)}%`;
   }
 
+  function latencyText(value) {
+    if (value === null || value === undefined) return "首字 --";
+    const seconds = value / 1000;
+    const text =
+      seconds < 10 ? seconds.toFixed(1) : String(Math.round(seconds));
+    return `首字 ${text}s`;
+  }
+
   function statusText(status) {
     return (
       {
@@ -453,7 +461,7 @@
     const rank = sponsored ? row.naturalRank || row.slot : row.naturalRank;
     return `<article class="${sponsored ? "model-sponsored-row" : "model-ranking-row"} model-data-row">
       ${providerIdentity(row, rank)}
-      <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong><span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span></div>
+      <div class="ranking-score"><span><strong>${scoreText(row.availabilityBps)}</strong><span class="grade grade-${String(grade).toLowerCase()}">${escapeHtml(grade)}</span></span><small>${escapeHtml(latencyText(row.firstTokenP50Ms))}</small></div>
       ${trendStrip(row, model)}
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}
@@ -474,7 +482,7 @@
   function observingRow(row, model) {
     return `<article class="model-observing-row model-data-row">
       ${providerIdentity(row, 0, true)}
-      <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong><span class="observation-badge">${escapeHtml(eligibilityText(row))}</span></div>
+      <div class="ranking-score"><span><strong>${scoreText(row.availabilityBps)}</strong><span class="observation-badge">${escapeHtml(eligibilityText(row))}</span></span><small>${escapeHtml(latencyText(row.firstTokenP50Ms))}</small></div>
       ${trendStrip(row, model)}
       <span class="status-line ${tone(row.currentStatus)}"><i></i>${statusText(row.currentStatus)}</span>
       ${rowAction(row)}

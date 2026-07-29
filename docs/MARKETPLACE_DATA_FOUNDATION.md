@@ -19,16 +19,20 @@ change the score.
 - Provider failures enter the denominator.
 - Configuration and observer errors do not enter the denominator.
 - Current configuration errors and stale data suspend natural-rank eligibility.
-- The public score uses the latest 56 completed UTC-aligned three-hour buckets.
+- Availability uses the latest 56 completed UTC-aligned three-hour buckets.
 - A provider/model pair enters the natural ranking after at least 4 scoreable
   probe samples. Successes and provider failures both count as scoreable
   samples; configuration and observer errors do not.
 - There is no minimum availability gate. Low-availability providers remain
-  visible and rank naturally by measured availability.
+  visible and rank naturally.
+- Natural ranking uses an internal score: 80% seven-day availability, 7% first
+  token P50, 8% first token P95, and 5% data confidence. Public responses expose
+  availability and latency fields, not this internal ranking score.
 - Grades are S >= 98%, A >= 95%, B >= 90%, C >= 80%, and D below 80%.
 
-Scores are stored as integer basis points. `9990` means `99.90%`. `0` is a
-measured zero score; `NULL` means there is not enough scoreable data.
+Availability and ranking scores are stored as integer basis points. `9990`
+means `99.90%`. `0` is a measured zero score; `NULL` means there is not enough
+scoreable data.
 
 ## Retention
 

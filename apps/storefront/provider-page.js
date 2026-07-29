@@ -60,6 +60,16 @@
       : `${(value / 100).toFixed(2)}%`;
   }
 
+  function latencyValueText(value) {
+    if (value === null || value === undefined) return "--";
+    const seconds = value / 1000;
+    return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`;
+  }
+
+  function latencyText(value) {
+    return `首字 ${latencyValueText(value)}`;
+  }
+
   function gradeForBps(value) {
     if (value === null || value === undefined) return null;
     if (value >= 9800) return "S";
@@ -190,9 +200,9 @@
         <span class="model-symbol ${modelTone(entry.model)}">${escapeHtml(modelMark(entry.model))}</span>
         <div><small>${escapeHtml(entry.model.vendor)} · ${escapeHtml(rankText)}</small><strong>${escapeHtml(entry.model.displayName)}</strong><small>${escapeHtml(row.providerModelName)}</small></div>
       </div>
-      <div class="ranking-score"><strong>${scoreText(row.availabilityBps)}</strong>${badge}</div>
+      <div class="ranking-score"><span><strong>${scoreText(row.availabilityBps)}</strong>${badge}</span><small>${escapeHtml(latencyText(row.firstTokenP50Ms))}</small></div>
       ${trendStrip(row, entry.model)}
-      <div class="ranking-fact"><strong>${row.sampleCount} 次有效测试</strong><span>${scoreText(row.coverageBps)} 数据完整度 · ${row.validBucketCount}/56 个时段有数据</span></div>
+      <div class="ranking-fact"><strong>${row.sampleCount} 次有效测试</strong><span>${scoreText(row.coverageBps)} 数据完整度 · ${row.validBucketCount}/56 个时段有数据 · P95 ${escapeHtml(latencyValueText(row.firstTokenP95Ms))}</span></div>
       <span class="status-line ${tone(status)}"><i></i>${statusText(status)}</span>
       <a class="row-action" href="./model.html?model=${encodeURIComponent(entry.model.slug)}">查看模型榜 <span aria-hidden="true">→</span></a>
     </article>`;

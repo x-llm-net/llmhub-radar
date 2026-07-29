@@ -493,6 +493,105 @@ describeDatabase("marketplace PostgreSQL integration", () => {
     expect(leaderboard?.observing).toHaveLength(0);
   });
 
+  test("orders tied availability by internal ranking score without exposing it", async () => {
+    const [model] = await db
+      .select({ id: models.id })
+      .from(models)
+      .where(eq(models.slug, "gpt-5-4"))
+      .limit(1);
+    expect(model).toBeDefined();
+    if (!model) return;
+
+    const providerRows = await db
+      .insert(providers)
+      .values([
+        {
+          slug: "rank-slow-provider",
+          name: "Rank Slow Provider",
+          status: "published" as const,
+        },
+        {
+          slug: "rank-fast-provider",
+          name: "Rank Fast Provider",
+          status: "published" as const,
+        },
+      ])
+      .returning({ id: providers.id, slug: providers.slug });
+    const listingRows = await db
+      .insert(providerModels)
+      .values(
+        providerRows.map((provider) => ({
+          providerId: provider.id,
+          modelId: model.id,
+          providerModelName: "gpt-5.4",
+          status: "ranked" as const,
+          createdAt: new Date(asOf.getTime() - 8 * 24 * 60 * 60 * 1000),
+        })),
+      )
+      .returning({
+        id: providerModels.id,
+        providerId: providerModels.providerId,
+      });
+    await db.insert(probeTargets).values(
+      listingRows.map((listing, index) => ({
+        providerModelId: listing.id,
+        name: `rank-score-target-${index}`,
+        source: "legacy_radar" as const,
+        sourceRef: `rank-score-target-${index}`,
+        enabled: true,
+        isScoring: true,
+      })),
+    );
+
+    const windowEnd = floorToBucket(asOf);
+    const providerSlugById = new Map(
+      providerRows.map((provider) => [provider.id, provider.slug]),
+    );
+    await db.insert(providerModelStats).values(
+      listingRows.map((listing) => {
+        const fast =
+          providerSlugById.get(listing.providerId) === "rank-fast-provider";
+        return {
+          providerModelId: listing.id,
+          windowStart: new Date(windowEnd.getTime() - BUCKET_COUNT * BUCKET_MS),
+          windowEnd,
+          expectedCount: 900,
+          successCount: 891,
+          providerFailureCount: 9,
+          sampleCount: 700,
+          availabilityBps: 9_900,
+          coverageBps: 10_000,
+          grade: "S" as const,
+          currentStatus: "normal" as const,
+          eligible: true,
+          firstTokenP50Ms: fast ? 900 : 5_000,
+          firstTokenP95Ms: fast ? 1_800 : 12_000,
+          rankingScoreBps: fast ? 9_785 : 9_000,
+          validBucketCount: 56,
+          lastCheckAt: new Date(asOf.getTime() - 5 * 60 * 1000),
+          updatedAt: asOf,
+        };
+      }),
+    );
+
+    const leaderboard = await getModelLeaderboard(db, "gpt-5-4", { asOf });
+
+    expect(leaderboard?.ranking.map((row) => row.provider.slug)).toEqual([
+      "rank-fast-provider",
+      "rank-slow-provider",
+    ]);
+    expect(leaderboard?.ranking.map((row) => row.naturalRank)).toEqual([1, 2]);
+    expect(leaderboard?.ranking[0]?.availabilityBps).toBe(9_900);
+    expect(leaderboard?.ranking[0]?.firstTokenP50Ms).toBe(900);
+    expect(leaderboard?.ranking[0]?.firstTokenP95Ms).toBe(1_800);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        leaderboard?.ranking[0] ?? {},
+        "rankingScoreBps",
+      ),
+    ).toBe(false);
+  });
+
   test("caps a tied natural leaderboard at ten providers", async () => {
     const [model] = await db
       .select({ id: models.id })

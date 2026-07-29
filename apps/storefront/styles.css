@@ -488,8 +488,10 @@ body { color: var(--ink); background: #fff; }
 .model-ranking-row { min-height: 88px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
 .model-ranking-row:last-child { border-bottom: 0; }
 .model-ranking-row:hover, .provider-model-row:hover { background: #f9fafb; }
-.ranking-score { display: flex; align-items: center; gap: 6px; }
+.ranking-score { display: flex; align-items: flex-start; flex-direction: column; gap: 3px; min-width: 0; }
+.ranking-score > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .ranking-score strong { font-size: 18px; }
+.ranking-score small { color: var(--muted); font-size: 9px; font-weight: 750; white-space: nowrap; }
 .ranking-fact { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .ranking-fact strong { font-size: 12px; }
 .ranking-fact span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }

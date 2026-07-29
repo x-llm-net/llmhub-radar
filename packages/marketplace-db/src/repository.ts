@@ -34,12 +34,14 @@ import {
   aggregateProbeSamples,
   BUCKET_HOURS,
   BUCKET_MS,
+  calculateRankingScoreBps,
   calculateSevenDayStats,
   DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
   deriveCurrentStatus,
   fillMissingBuckets,
   floorToBucket,
   getCompletedWindow,
+  percentile,
   type CurrentStatusValue,
 } from "./scoring";
 
@@ -61,6 +63,8 @@ export interface LeaderboardRow {
   availabilityBps: number;
   coverageBps: number;
   grade: "S" | "A" | "B" | "C" | "D";
+  firstTokenP50Ms: number | null;
+  firstTokenP95Ms: number | null;
   sampleCount: number;
   validBucketCount: number;
   currentStatus:
@@ -86,6 +90,8 @@ export interface ObservingRow {
   purchaseUrl: string | null;
   availabilityBps: number | null;
   coverageBps: number;
+  firstTokenP50Ms: number | null;
+  firstTokenP95Ms: number | null;
   sampleCount: number;
   currentStatus: CurrentStatusValue;
   lastCheckAt: string | null;
@@ -328,8 +334,36 @@ export async function refreshProviderModelStats(
     target.createdAt,
     minRankingAvailabilityBps,
   );
+  const firstTokenRows = await db
+    .select({ firstTokenMs: probeChecks.firstTokenMs })
+    .from(probeChecks)
+    .where(
+      and(
+        eq(probeChecks.providerModelId, providerModelId),
+        eq(probeChecks.attemptNo, 0),
+        eq(probeChecks.outcome, "success"),
+        isNotNull(probeChecks.firstTokenMs),
+        gte(probeChecks.scheduledAt, windowStart),
+        lt(probeChecks.scheduledAt, windowEnd),
+      ),
+    );
+  const firstTokenValues = firstTokenRows.flatMap((row) =>
+    row.firstTokenMs === null ? [] : [row.firstTokenMs],
+  );
+  const firstTokenP50Ms = percentile(firstTokenValues, 50);
+  const firstTokenP95Ms = percentile(firstTokenValues, 95);
+  const rankingScore = calculateRankingScoreBps({
+    availabilityBps: calculatedStats.availabilityBps,
+    firstTokenP50Ms,
+    firstTokenP95Ms,
+    sampleCount: calculatedStats.sampleCount,
+    validBucketCount: calculatedStats.validBucketCount,
+  });
   const stats = {
     ...calculatedStats,
+    firstTokenP50Ms,
+    firstTokenP95Ms,
+    rankingScoreBps: rankingScore,
     lastCheckAt: latestChecks[0]?.scheduledAt ?? calculatedStats.lastCheckAt,
   };
 
@@ -355,6 +389,9 @@ export async function refreshProviderModelStats(
         currentStatus: stats.currentStatus,
         eligible: stats.eligible,
         eligibilityReason: stats.eligibilityReason,
+        firstTokenP50Ms: stats.firstTokenP50Ms,
+        firstTokenP95Ms: stats.firstTokenP95Ms,
+        rankingScoreBps: stats.rankingScoreBps,
         validBucketCount: stats.validBucketCount,
         lastCheckAt: stats.lastCheckAt,
         updatedAt: asOf,
@@ -384,6 +421,9 @@ type RankedSourceRow = {
   availabilityBps: number | null;
   coverageBps: number;
   grade: "S" | "A" | "B" | "C" | "D" | null;
+  firstTokenP50Ms: number | null;
+  firstTokenP95Ms: number | null;
+  rankingScoreBps: number | null;
   sampleCount: number;
   validBucketCount: number;
   currentStatus: CurrentStatusValue;
@@ -401,9 +441,10 @@ function assignNaturalRanks(rows: RankedSourceRow[]) {
   let previousScore: number | null = null;
 
   return rows.map((row) => {
-    if (row.availabilityBps !== previousScore) {
+    const score = row.rankingScoreBps ?? row.availabilityBps;
+    if (score !== previousScore) {
       naturalRank += 1;
-      previousScore = row.availabilityBps;
+      previousScore = score;
     }
     return { row, naturalRank };
   });
@@ -464,6 +505,8 @@ function toObservingRow(
     purchaseUrl: source.purchaseUrl,
     availabilityBps: source.availabilityBps,
     coverageBps: source.coverageBps,
+    firstTokenP50Ms: source.firstTokenP50Ms,
+    firstTokenP95Ms: source.firstTokenP95Ms,
     sampleCount: source.sampleCount,
     currentStatus: source.currentStatus,
     lastCheckAt: source.lastCheckAt?.toISOString() ?? null,
@@ -494,6 +537,8 @@ function toLeaderboardRow(
     availabilityBps: source.availabilityBps,
     coverageBps: source.coverageBps,
     grade: source.grade,
+    firstTokenP50Ms: source.firstTokenP50Ms,
+    firstTokenP95Ms: source.firstTokenP95Ms,
     sampleCount: source.sampleCount,
     validBucketCount: source.validBucketCount,
     currentStatus: source.currentStatus,
@@ -530,6 +575,9 @@ export async function getModelLeaderboard(
       availabilityBps: providerModelStats.availabilityBps,
       coverageBps: providerModelStats.coverageBps,
       grade: providerModelStats.grade,
+      firstTokenP50Ms: providerModelStats.firstTokenP50Ms,
+      firstTokenP95Ms: providerModelStats.firstTokenP95Ms,
+      rankingScoreBps: providerModelStats.rankingScoreBps,
       sampleCount: providerModelStats.sampleCount,
       validBucketCount: providerModelStats.validBucketCount,
       currentStatus: providerModelStats.currentStatus,
@@ -552,7 +600,17 @@ export async function getModelLeaderboard(
         isNotNull(providerModelStats.grade),
       ),
     )
-    .orderBy(desc(providerModelStats.availabilityBps), asc(providers.slug));
+    .orderBy(
+      desc(
+        sql<number>`coalesce(${providerModelStats.rankingScoreBps}, ${providerModelStats.availabilityBps}, 0)`,
+      ),
+      desc(providerModelStats.availabilityBps),
+      asc(providerModelStats.firstTokenP95Ms),
+      asc(providerModelStats.firstTokenP50Ms),
+      desc(providerModelStats.validBucketCount),
+      desc(providerModelStats.sampleCount),
+      asc(providers.slug),
+    );
   const ranked = assignNaturalRanks(naturalSource);
   const providerSlugSet = options.providerSlugs
     ? new Set(options.providerSlugs)
@@ -574,6 +632,9 @@ export async function getModelLeaderboard(
         availabilityBps: providerModelStats.availabilityBps,
         coverageBps: providerModelStats.coverageBps,
         grade: providerModelStats.grade,
+        firstTokenP50Ms: providerModelStats.firstTokenP50Ms,
+        firstTokenP95Ms: providerModelStats.firstTokenP95Ms,
+        rankingScoreBps: providerModelStats.rankingScoreBps,
         sampleCount: providerModelStats.sampleCount,
         validBucketCount: providerModelStats.validBucketCount,
         currentStatus: providerModelStats.currentStatus,
@@ -616,6 +677,9 @@ export async function getModelLeaderboard(
       purchaseUrl: providerModels.purchaseUrl,
       availabilityBps: providerModelStats.availabilityBps,
       coverageBps: providerModelStats.coverageBps,
+      firstTokenP50Ms: providerModelStats.firstTokenP50Ms,
+      firstTokenP95Ms: providerModelStats.firstTokenP95Ms,
+      rankingScoreBps: providerModelStats.rankingScoreBps,
       sampleCount: providerModelStats.sampleCount,
       validBucketCount: providerModelStats.validBucketCount,
       currentStatus: providerModelStats.currentStatus,

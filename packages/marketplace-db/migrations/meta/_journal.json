@@ -36,6 +36,13 @@
       "when": 1785260027569,
       "tag": "0004_chemical_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785308009563,
+      "tag": "0005_steady_first_token_rank",
+      "breakpoints": true
     }
   ]
 }

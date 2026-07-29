@@ -8,10 +8,10 @@
     <meta name="application-name" content="LLMHub Marketplace" />
     <title>LLMHub | 挑选靠谱的中转站</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=13" />
+    <link rel="stylesheet" href="./styles.css?v=17" />
 
     <script src="./dashboard-links.js?v=1" defer></script>
-    <script src="./main.js?v=19" defer></script>
+    <script src="./main.js?v=20" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -39,7 +39,7 @@
             <p class="eyebrow">AI API 中转站实测榜</p>
             <h1 id="hero-title">挑选靠谱的中转站</h1>
             <p class="hero-lede">
-              持续测试不同中转站的主流模型，帮你比较近 7 天可用率、近期状态和数据更新时间，选择更有依据。
+              持续测试不同中转站的主流模型，帮你比较近 7 天可用率、首字速度和近期状态，选择更有依据。
             </p>
             <div class="hero-actions">
               <a class="primary-button" href="#leaderboards"
@@ -59,7 +59,7 @@
             </dl>
             <div class="hero-policy">
               <strong>推广位会单独标注，不参与榜单排序。</strong
-              ><span>Top 10 仅按近 7 天实测结果生成。</span>
+              ><span>Top 10 主要看近 7 天可用率，也参考首字速度和数据覆盖度。</span>
             </div>
           </div>
         </div>
@@ -82,7 +82,7 @@
             <div>
               <p class="section-kicker">MODEL LEADERBOARDS</p>
               <h2>按模型找靠谱中转站</h2>
-              <p>每个模型单独排名，推广推荐另行标注，不影响 Top 10 实测排名。</p>
+              <p>每个模型单独排名，推广推荐另行标注；Top 10 主要按实测稳定性排序，并参考首字速度。</p>
             </div>
             <span class="ranking-update" id="ranking-update"
               ><i aria-hidden="true"></i> 正在加载榜单数据</span
@@ -95,7 +95,7 @@
         <div class="rules-strip-heading">
           <p class="section-kicker">HOW TO READ</p>
           <h2 id="rules-title">榜单怎么看</h2>
-          <p>先选模型，再看可用率、有效测试数和更新时间。</p>
+          <p>先选模型，再看可用率、首字速度、有效测试数和更新时间。</p>
           <small class="sample-note">页面仅展示汇总结果，API 密钥等敏感信息不会公开。</small>
         </div>
         <div class="rules-strip-list">
@@ -105,11 +105,11 @@
           </div>
           <div>
             <span>02</span><strong>可用率怎么看</strong>
-            <p>展示近 7 天请求成功率；测试越多、更新时间越近，参考价值越高。</p>
+            <p>展示近 7 天请求成功率；排序会优先看可用率，也参考首字速度和数据覆盖度。</p>
           </div>
           <div>
             <span>03</span><strong>推广不影响排名</strong>
-            <p>推广位单独标注，Top 10 只按实际测试结果排序。</p>
+            <p>推广位单独标注，不参与 Top 10 的自然排序。</p>
           </div>
         </div>
       </section>

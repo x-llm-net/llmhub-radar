@@ -4,11 +4,15 @@ import {
   aggregateProbeSamples,
   BUCKET_COUNT,
   BUCKET_MS,
+  calculateRankingScoreBps,
   calculateSevenDayStats,
+  confidenceScoreBps,
   deriveCurrentStatus,
   fillMissingBuckets,
   floorToBucket,
   gradeAvailability,
+  linearLatencyScoreBps,
+  percentile,
   type HealthBucketInput,
 } from "./scoring";
 
@@ -168,5 +172,51 @@ describe("marketplace scoring", () => {
     }));
 
     expect(deriveCurrentStatus(samples, now)).toBe("down");
+  });
+
+  test("calculates first-token percentiles with nearest-rank buckets", () => {
+    expect(percentile([2_000, 100, 900, 1_000], 50)).toBe(900);
+    expect(percentile([2_000, 100, 900, 1_000], 95)).toBe(2_000);
+    expect(percentile([], 50)).toBeNull();
+  });
+
+  test("scores latency linearly until the zero point", () => {
+    expect(linearLatencyScoreBps(900, 10_000)).toBe(9_100);
+    expect(linearLatencyScoreBps(10_000, 10_000)).toBe(0);
+    expect(linearLatencyScoreBps(12_000, 10_000)).toBe(0);
+    expect(linearLatencyScoreBps(null, 10_000)).toBe(0);
+  });
+
+  test("balances sample count and bucket coverage for confidence", () => {
+    expect(confidenceScoreBps({ sampleCount: 350, validBucketCount: 28 })).toBe(
+      5_000,
+    );
+    expect(confidenceScoreBps({ sampleCount: 700, validBucketCount: 56 })).toBe(
+      10_000,
+    );
+    expect(
+      confidenceScoreBps({ sampleCount: 1_400, validBucketCount: 112 }),
+    ).toBe(10_000);
+  });
+
+  test("keeps ranking score internal with availability as the main weight", () => {
+    const fast = calculateRankingScoreBps({
+      availabilityBps: 9_900,
+      firstTokenP50Ms: 900,
+      firstTokenP95Ms: 1_800,
+      sampleCount: 700,
+      validBucketCount: 56,
+    });
+    const slow = calculateRankingScoreBps({
+      availabilityBps: 9_900,
+      firstTokenP50Ms: 5_000,
+      firstTokenP95Ms: 12_000,
+      sampleCount: 700,
+      validBucketCount: 56,
+    });
+
+    expect(fast).toBe(9_785);
+    expect(slow).toBeLessThan(fast);
+    expect(slow).toBeGreaterThan(9_000);
   });
 });
