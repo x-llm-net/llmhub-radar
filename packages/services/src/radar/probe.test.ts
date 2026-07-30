@@ -65,4 +65,24 @@ describe("runOpenAICompatibleProbe", () => {
     expect(result.success).toBe(false);
     expect(result.errorType).toBe("bad_response");
   });
+
+  test("classifies zero-balance provider responses as insufficient quota", async () => {
+    const result = await runOpenAICompatibleProbe({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test-secret",
+      model: "gpt-test",
+      stream: false,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error: { message: "账户可用余额不足，请充值后重试" },
+          }),
+          { status: 403 },
+        ),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.httpStatus).toBe(403);
+    expect(result.errorType).toBe("insufficient_quota");
+  });
 });

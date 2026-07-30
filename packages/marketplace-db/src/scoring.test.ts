@@ -189,7 +189,7 @@ describe("marketplace scoring", () => {
 
   test("balances sample count and bucket coverage for confidence", () => {
     expect(confidenceScoreBps({ sampleCount: 350, validBucketCount: 28 })).toBe(
-      5_000,
+      8_000,
     );
     expect(confidenceScoreBps({ sampleCount: 700, validBucketCount: 56 })).toBe(
       10_000,
@@ -218,5 +218,28 @@ describe("marketplace scoring", () => {
     expect(fast).toBe(9_785);
     expect(slow).toBeLessThan(fast);
     expect(slow).toBeGreaterThan(9_000);
+  });
+
+  test("keeps confidence as a bounded correction for higher sample data", () => {
+    const shortHistory = calculateRankingScoreBps({
+      availabilityBps: 10_000,
+      firstTokenP50Ms: 1_400,
+      firstTokenP95Ms: 5_500,
+      sampleCount: 119,
+      validBucketCount: 3,
+    });
+    const longerHistory = calculateRankingScoreBps({
+      availabilityBps: 9_828,
+      firstTokenP50Ms: 1_700,
+      firstTokenP95Ms: 6_000,
+      sampleCount: 813,
+      validBucketCount: 47,
+    });
+
+    expect(shortHistory).toBeGreaterThan(longerHistory);
+    expect(
+      confidenceScoreBps({ sampleCount: 813, validBucketCount: 47 }) -
+        confidenceScoreBps({ sampleCount: 119, validBucketCount: 3 }),
+    ).toBeLessThanOrEqual(3_300);
   });
 });

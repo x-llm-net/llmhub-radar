@@ -215,7 +215,25 @@ function classifyProbeFailure(
     text.includes("insufficient quota") ||
     text.includes("quota exceeded") ||
     text.includes("exceeded your current quota") ||
-    text.includes("billing")
+    text.includes("billing") ||
+    text.includes("insufficient balance") ||
+    text.includes("not enough balance") ||
+    text.includes("no balance") ||
+    text.includes("balance is 0") ||
+    text.includes("balance exhausted") ||
+    text.includes("insufficient credit") ||
+    text.includes("not enough credit") ||
+    text.includes("no credit") ||
+    text.includes("credits exhausted") ||
+    text.includes("recharge") ||
+    text.includes("top up") ||
+    text.includes("余额不足") ||
+    text.includes("余额为0") ||
+    text.includes("余额为 0") ||
+    text.includes("可用余额") ||
+    text.includes("额度不足") ||
+    text.includes("欠费") ||
+    text.includes("充值")
   ) {
     return "insufficient_quota";
   }

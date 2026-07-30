@@ -50,14 +50,16 @@ export type RadarPoolListItem = ReturnType<
   providerCount: number;
   targetCount: number;
   lastCheckAt: Date | null;
-  worstStatus:
-    | "unknown"
-    | "operational"
-    | "degraded"
-    | "down"
-    | "paused"
-    | "configuration_error";
+  worstStatus: RadarPoolStatus;
 };
+
+export type RadarPoolStatus =
+  | "unknown"
+  | "operational"
+  | "degraded"
+  | "down"
+  | "paused"
+  | "configuration_error";
 
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
   pageId: number | null;
@@ -109,17 +111,36 @@ function safeProvider(row: typeof radarProvider.$inferSelect) {
   return safe;
 }
 
-const statusRank = {
-  down: 5,
-  configuration_error: 4,
-  degraded: 3,
-  unknown: 2,
-  paused: 1,
-  operational: 0,
-} as const;
+export function aggregateRadarPoolStatus(
+  statuses: Array<RadarPoolStatus | null | undefined>,
+): RadarPoolStatus {
+  const normalized = statuses.map((status) => status ?? "unknown");
+  if (normalized.length === 0) return "unknown";
 
-function worseStatus<T extends keyof typeof statusRank>(left: T, right: T): T {
-  return statusRank[right] > statusRank[left] ? right : left;
+  const activeStatuses = normalized.filter((status) => status !== "paused");
+  if (activeStatuses.length === 0) return "paused";
+  if (activeStatuses.every((status) => status === "unknown")) {
+    return "unknown";
+  }
+  if (activeStatuses.some((status) => status === "operational")) {
+    return activeStatuses.some((status) => status !== "operational")
+      ? "degraded"
+      : "operational";
+  }
+  if (activeStatuses.every((status) => status === "configuration_error")) {
+    return "configuration_error";
+  }
+  if (activeStatuses.every((status) => status === "down")) {
+    return "down";
+  }
+  if (
+    activeStatuses.every(
+      (status) => status === "down" || status === "configuration_error",
+    )
+  ) {
+    return "down";
+  }
+  return "degraded";
 }
 
 function percentile(values: number[], percentileValue: number) {
@@ -242,18 +263,18 @@ export async function listRadarPools(args: {
   );
   const summaryByPool = new Map<
     number,
-    { worstStatus: RadarPoolListItem["worstStatus"]; lastCheckAt: Date | null }
+    {
+      statuses: Array<RadarPoolStatus | null>;
+      lastCheckAt: Date | null;
+    }
   >();
 
   for (const row of statuses) {
     const current = summaryByPool.get(row.poolId) ?? {
-      worstStatus: "operational" as RadarPoolListItem["worstStatus"],
+      statuses: [],
       lastCheckAt: null,
     };
-    current.worstStatus = worseStatus(
-      current.worstStatus,
-      row.status ?? "unknown",
-    );
+    current.statuses.push(row.status);
     if (
       row.lastCheckAt &&
       (!current.lastCheckAt || row.lastCheckAt > current.lastCheckAt)
@@ -274,7 +295,9 @@ export async function listRadarPools(args: {
           : (ownerByUserId.get(pool.ownerUserId) ?? null),
       providerCount: providerCountByPool.get(pool.id) ?? 0,
       targetCount: targetCountByPool.get(pool.id) ?? 0,
-      worstStatus: summary?.worstStatus ?? "unknown",
+      worstStatus: summary
+        ? aggregateRadarPoolStatus(summary.statuses)
+        : "unknown",
       lastCheckAt: summary?.lastCheckAt ?? null,
     };
   });
@@ -341,18 +364,18 @@ async function hydrateClaimablePools(
   );
   const summaryByPool = new Map<
     number,
-    { worstStatus: RadarPoolListItem["worstStatus"]; lastCheckAt: Date | null }
+    {
+      statuses: Array<RadarPoolStatus | null>;
+      lastCheckAt: Date | null;
+    }
   >();
 
   for (const row of statuses) {
     const current = summaryByPool.get(row.poolId) ?? {
-      worstStatus: "operational" as RadarPoolListItem["worstStatus"],
+      statuses: [],
       lastCheckAt: null,
     };
-    current.worstStatus = worseStatus(
-      current.worstStatus,
-      row.status ?? "unknown",
-    );
+    current.statuses.push(row.status);
     if (
       row.lastCheckAt &&
       (!current.lastCheckAt || row.lastCheckAt > current.lastCheckAt)
@@ -370,7 +393,9 @@ async function hydrateClaimablePools(
       owner: null,
       providerCount: providerCountByPool.get(pool.id) ?? 0,
       targetCount: targetCountByPool.get(pool.id) ?? 0,
-      worstStatus: summary?.worstStatus ?? "unknown",
+      worstStatus: summary
+        ? aggregateRadarPoolStatus(summary.statuses)
+        : "unknown",
       lastCheckAt: summary?.lastCheckAt ?? null,
     };
   });

@@ -12,6 +12,8 @@ export const DEFAULT_MIN_RANKING_AVAILABILITY_BPS = 0;
 export const RANKING_P50_ZERO_MS = 10_000;
 export const RANKING_P95_ZERO_MS = 20_000;
 export const RANKING_SAMPLE_FULL_COUNT = 700;
+export const RANKING_CONFIDENCE_FLOOR_BPS = 6_000;
+export const RANKING_CONFIDENCE_RANGE_BPS = 4_000;
 
 export type ProbeOutcomeValue =
   | "success"
@@ -128,7 +130,11 @@ export function confidenceScoreBps(args: {
     10_000,
     Math.round((args.validBucketCount / BUCKET_COUNT) * 10_000),
   );
-  return Math.round(sampleScore * 0.4 + bucketScore * 0.6);
+  const rawConfidenceScore = Math.round(sampleScore * 0.4 + bucketScore * 0.6);
+  return (
+    RANKING_CONFIDENCE_FLOOR_BPS +
+    Math.round((rawConfidenceScore / 10_000) * RANKING_CONFIDENCE_RANGE_BPS)
+  );
 }
 
 export function calculateRankingScoreBps(args: {
@@ -154,8 +160,8 @@ export function calculateRankingScoreBps(args: {
 
   return Math.round(
     availabilityScore * 0.8 +
-      p50Score * 0.07 +
-      p95Score * 0.08 +
+      p50Score * 0.1 +
+      p95Score * 0.05 +
       confidenceScore * 0.05,
   );
 }

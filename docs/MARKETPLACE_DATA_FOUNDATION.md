@@ -25,9 +25,12 @@ change the score.
   samples; configuration and observer errors do not.
 - There is no minimum availability gate. Low-availability providers remain
   visible and rank naturally.
-- Natural ranking uses an internal score: 80% seven-day availability, 7% first
-  token P50, 8% first token P95, and 5% data confidence. Public responses expose
-  availability and latency fields, not this internal ranking score.
+- Natural ranking uses an internal score: 80% seven-day availability, 10% first
+  token P50, 5% first token P95, and 5% data confidence. The confidence score
+  keeps a 60% baseline and uses sample count plus non-empty bucket coverage for
+  the remaining 40%, so higher sample data works as a bounded correction instead
+  of the main ranking driver. Public responses expose availability and latency
+  fields, not this internal ranking score.
 - Grades are S >= 98%, A >= 95%, B >= 90%, C >= 80%, and D below 80%.
 
 Availability and ranking scores are stored as integer basis points. `9990`
