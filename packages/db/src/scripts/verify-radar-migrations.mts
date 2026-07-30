@@ -47,6 +47,16 @@ async function verifyEmptyDatabaseMigration() {
       "radar_probe_target",
       "model_retired_at",
     );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "base_url_override_encrypted",
+    );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "base_url_override_host_hash",
+    );
     await assertIndexExists(
       db.client,
       "radar_target_openstatus_binding",
@@ -93,6 +103,16 @@ async function verifyExistingDatabaseMigration() {
       db.client,
       "radar_probe_target",
       "model_retired_at",
+    );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "base_url_override_encrypted",
+    );
+    await assertColumnExists(
+      db.client,
+      "radar_probe_target",
+      "base_url_override_host_hash",
     );
     await assertIndexExists(
       db.client,

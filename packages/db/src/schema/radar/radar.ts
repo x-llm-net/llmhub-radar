@@ -393,6 +393,10 @@ export const radarProbeTarget = sqliteTable(
     name: text("name", { length: 160 }).notNull(),
     displayName: text("display_name", { length: 160 }).notNull(),
     modelName: text("model_name", { length: 160 }).notNull(),
+    baseUrlOverrideEncrypted: text("base_url_override_encrypted"),
+    baseUrlOverrideHostHash: text("base_url_override_host_hash", {
+      length: 128,
+    }),
     endpointType: text("endpoint_type", { enum: radarEndpointTypes })
       .default("chat_completions")
       .notNull(),

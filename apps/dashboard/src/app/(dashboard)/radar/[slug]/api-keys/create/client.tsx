@@ -61,8 +61,10 @@ export function Client() {
   const [apiKeyName, setApiKeyName] = useState(() => t("demo.targetName"));
   const [probeModel, setProbeModel] = useState("");
   const [probeModelTouched, setProbeModelTouched] = useState(false);
+  const [baseUrlOverride, setBaseUrlOverride] = useState("");
   const [apiKey, setApiKey] = useState("");
   const debouncedApiKey = useDebounce(apiKey.trim(), 700);
+  const debouncedBaseUrlOverride = useDebounce(baseUrlOverride.trim(), 700);
   const discoveryEnabled =
     Boolean(defaultProvider) && debouncedApiKey.trim().length >= 8;
   const discoveredModels = useQuery(
@@ -70,6 +72,7 @@ export function Client() {
       {
         poolSlug: params.slug,
         apiKey: debouncedApiKey,
+        baseUrlOverride: debouncedBaseUrlOverride || undefined,
       },
       {
         enabled: discoveryEnabled,
@@ -143,6 +146,7 @@ export function Client() {
               modelType: selectedModelType,
               apiKey,
               probeModel: selectedProbeModel,
+              baseUrlOverride: baseUrlOverride.trim() || null,
               availableModels: discoveredModelOptions,
             });
           }}
@@ -206,6 +210,24 @@ export function Client() {
                 required
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="radar-token-base-url-override">
+              {t("targetBaseUrl")}
+            </Label>
+            <Input
+              id="radar-token-base-url-override"
+              value={baseUrlOverride}
+              onChange={(event) => {
+                setBaseUrlOverride(event.target.value);
+                setProbeModelTouched(false);
+              }}
+              inputMode="url"
+              placeholder={t("targetBaseUrlPlaceholder")}
+            />
+            <p className="text-muted-foreground text-xs">
+              {t("targetBaseUrlHelp")}
+            </p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">

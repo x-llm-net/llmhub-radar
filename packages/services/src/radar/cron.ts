@@ -557,15 +557,18 @@ async function probeTarget(row: DueRadarTarget): Promise<RadarProbeResult> {
     };
   }
 
-  const [baseUrl, apiKey] = await Promise.all([
+  const [providerBaseUrl, targetBaseUrlOverride, apiKey] = await Promise.all([
     decryptSecret(row.provider.baseUrlEncrypted),
+    row.target.baseUrlOverrideEncrypted
+      ? decryptSecret(row.target.baseUrlOverrideEncrypted)
+      : Promise.resolve(null),
     decryptSecret(row.credential.encryptedApiKey),
   ]);
 
   const config = getPriorityProbeConfig(row.pool.slug);
 
   return runProbeWithOptionalRetry({
-    baseUrl,
+    baseUrl: targetBaseUrlOverride ?? providerBaseUrl,
     apiKey,
     model: row.target.modelName,
     stream: row.target.streamEnabled,

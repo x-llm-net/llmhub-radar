@@ -61,6 +61,13 @@ export type RadarPoolStatus =
   | "paused"
   | "configuration_error";
 
+type SafeRadarProbeTarget = Omit<
+  ReturnType<typeof selectRadarProbeTargetSchema.parse>,
+  "baseUrlOverrideEncrypted" | "baseUrlOverrideHostHash"
+> & {
+  baseUrlOverride: string | null;
+};
+
 export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
   pageId: number | null;
   logoUrl: string | null;
@@ -81,7 +88,7 @@ export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
     >
   >;
   targets: Array<
-    ReturnType<typeof selectRadarProbeTargetSchema.parse> & {
+    SafeRadarProbeTarget & {
       recentRuns: Array<
         Pick<
           ReturnType<typeof selectRadarProbeRunSchema.parse>,
@@ -109,6 +116,20 @@ function safeProvider(row: typeof radarProvider.$inferSelect) {
   const { baseUrlEncrypted: _baseUrlEncrypted, ...safe } =
     selectRadarProviderSchema.parse(row);
   return safe;
+}
+
+async function safeTarget(row: typeof radarProbeTarget.$inferSelect) {
+  const {
+    baseUrlOverrideEncrypted,
+    baseUrlOverrideHostHash: _baseUrlOverrideHostHash,
+    ...safe
+  } = selectRadarProbeTargetSchema.parse(row);
+  return {
+    ...safe,
+    baseUrlOverride: baseUrlOverrideEncrypted
+      ? await decryptSecret(baseUrlOverrideEncrypted)
+      : null,
+  };
 }
 
 export function aggregateRadarPoolStatus(
@@ -521,10 +542,14 @@ export async function getRadarPool(args: {
     catalogByCredential.set(target.credentialId, models);
   }
 
-  const parsedTargets = targets.map((row) => ({
-    ...selectRadarProbeTargetSchema.parse(row.target),
-    status: row.status ? selectRadarTargetStatusSchema.parse(row.status) : null,
-  }));
+  const parsedTargets = await Promise.all(
+    targets.map(async (row) => ({
+      ...(await safeTarget(row.target)),
+      status: row.status
+        ? selectRadarTargetStatusSchema.parse(row.status)
+        : null,
+    })),
+  );
   const targetIds = parsedTargets.map((target) => target.id);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const runRows =

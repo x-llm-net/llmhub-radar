@@ -42,6 +42,11 @@ const radarPublicUrlSchema = z.preprocess(
     .optional(),
 );
 
+const radarOptionalBaseUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string().trim().url().max(256).nullable().optional(),
+);
+
 const radarContactUrlSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? null : value),
   z
@@ -351,6 +356,7 @@ export type DiscoverRadarModelsInput = z.infer<typeof DiscoverRadarModelsInput>;
 export const DiscoverRadarModelsForPoolInput = z.object({
   poolSlug: radarSlugSchema,
   apiKey: z.string().trim().min(8).max(4096),
+  baseUrlOverride: radarOptionalBaseUrlSchema,
 });
 export type DiscoverRadarModelsForPoolInput = z.infer<
   typeof DiscoverRadarModelsForPoolInput
@@ -403,6 +409,7 @@ export const CreateRadarTargetInput = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   displayName: z.string().trim().min(1).max(160).optional(),
   modelName: z.string().trim().min(1).max(160),
+  baseUrlOverride: radarOptionalBaseUrlSchema,
   endpointType: z
     .enum(radarEndpointTypes)
     .optional()
@@ -422,6 +429,7 @@ export const AddRadarTokenProbeInput = z.object({
   modelType: z.string().trim().min(1).max(120).default("General"),
   apiKey: z.string().trim().min(8).max(4096),
   probeModel: z.string().trim().min(1).max(160),
+  baseUrlOverride: radarOptionalBaseUrlSchema,
   availableModels: z
     .array(z.string().trim().min(1).max(160))
     .max(200)
@@ -442,6 +450,7 @@ export const UpdateRadarTokenProbeInput = z.object({
   apiKey: z.string().trim().min(8).max(4096).optional(),
   modelType: z.string().trim().min(1).max(120).default("General"),
   probeModel: z.string().trim().min(1).max(160),
+  baseUrlOverride: radarOptionalBaseUrlSchema,
   availableModels: z
     .array(z.string().trim().min(1).max(160))
     .max(200)

@@ -74,14 +74,17 @@ export function Client() {
   const [modelTypeTouched, setModelTypeTouched] = useState(false);
   const [probeModel, setProbeModel] = useState("");
   const [probeModelTouched, setProbeModelTouched] = useState(false);
+  const [baseUrlOverride, setBaseUrlOverride] = useState("");
   const [apiKey, setApiKey] = useState("");
   const debouncedApiKey = useDebounce(apiKey.trim(), 700);
+  const debouncedBaseUrlOverride = useDebounce(baseUrlOverride.trim(), 700);
   const discoveryEnabled = Boolean(pool) && debouncedApiKey.trim().length >= 8;
   const discoveredModels = useQuery(
     trpc.radar.discoverModelsForPool.queryOptions(
       {
         poolSlug: params.slug,
         apiKey: debouncedApiKey,
+        baseUrlOverride: debouncedBaseUrlOverride || undefined,
       },
       {
         enabled: discoveryEnabled,
@@ -95,10 +98,11 @@ export function Client() {
     setApiKeyName(credential.name);
     setModelType(credential.modelGroup || "OpenAI");
     setProbeModel(target?.modelName ?? credential.modelCatalog[0] ?? "");
+    setBaseUrlOverride(target?.baseUrlOverride ?? "");
     setModelTypeTouched(false);
     setProbeModelTouched(false);
     setApiKey("");
-  }, [credential, target?.modelName]);
+  }, [credential, target?.baseUrlOverride, target?.modelName]);
 
   useEffect(() => {
     const found = discoveredModels.data?.models;
@@ -205,6 +209,7 @@ export function Client() {
               apiKey: apiKey.trim() || undefined,
               modelType: selectedModelType,
               probeModel: selectedProbeModel,
+              baseUrlOverride: baseUrlOverride.trim() || null,
               availableModels: uniqueStrings([
                 selectedProbeModel,
                 ...modelOptions,
@@ -274,6 +279,24 @@ export function Client() {
               {isHandover
                 ? t("handoverApiKeyHelp")
                 : t("replacementApiKeyHelp")}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="radar-token-base-url-override">
+              {t("targetBaseUrl")}
+            </Label>
+            <Input
+              id="radar-token-base-url-override"
+              value={baseUrlOverride}
+              onChange={(event) => {
+                setBaseUrlOverride(event.target.value);
+                setProbeModelTouched(false);
+              }}
+              inputMode="url"
+              placeholder={t("targetBaseUrlPlaceholder")}
+            />
+            <p className="text-muted-foreground text-xs">
+              {t("targetBaseUrlHelp")}
             </p>
           </div>
           <div className="space-y-2">

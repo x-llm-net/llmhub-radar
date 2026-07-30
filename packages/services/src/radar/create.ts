@@ -54,6 +54,21 @@ function normalizeModelCatalog(models: string[], probeModel?: string | null) {
   return normalized.slice(0, 200);
 }
 
+async function getTargetBaseUrlOverrideValues(input?: string | null) {
+  if (!input) {
+    return {
+      baseUrlOverrideEncrypted: null,
+      baseUrlOverrideHostHash: null,
+    };
+  }
+
+  const baseUrl = normalizeRadarBaseUrl(input);
+  return {
+    baseUrlOverrideEncrypted: await encryptSecret(baseUrl),
+    baseUrlOverrideHostHash: await getBaseUrlHostHash(baseUrl),
+  };
+}
+
 function getDefaultTargetDisplayName(input: {
   targetName?: string;
   credential: NonNullable<CreateRadarPoolInput["credential"]>;
@@ -172,6 +187,15 @@ function safeProvider(row: typeof radarProvider.$inferSelect) {
 function safeCredential(row: typeof radarCredential.$inferSelect) {
   const { encryptedApiKey: _encryptedApiKey, ...safe } =
     selectRadarCredentialSchema.parse(row);
+  return safe;
+}
+
+function safeTarget(row: typeof radarProbeTarget.$inferSelect) {
+  const {
+    baseUrlOverrideEncrypted: _baseUrlOverrideEncrypted,
+    baseUrlOverrideHostHash: _baseUrlOverrideHostHash,
+    ...safe
+  } = selectRadarProbeTargetSchema.parse(row);
   return safe;
 }
 
@@ -869,6 +893,7 @@ export async function addRadarTokenProbe(args: {
         name: `${provider.displayName} / ${input.modelType} / ${input.apiKeyName}`,
         displayName: input.apiKeyName,
         modelName: input.probeModel,
+        ...(await getTargetBaseUrlOverrideValues(input.baseUrlOverride)),
         intervalSeconds: input.intervalSeconds,
         timeoutMs: input.timeoutMs,
         maxTokens: input.maxTokens,
@@ -898,7 +923,7 @@ export async function addRadarTokenProbe(args: {
       }),
     });
 
-    return selectRadarProbeTargetSchema.parse(target);
+    return safeTarget(target);
   });
 }
 
@@ -984,11 +1009,16 @@ export async function updateRadarTokenProbe(args: {
         ),
       )
       .get();
+    const targetBaseUrlOverrideValues =
+      input.baseUrlOverride === undefined
+        ? null
+        : await getTargetBaseUrlOverrideValues(input.baseUrlOverride);
 
     if (target) {
       const resetTargetStatus =
         Boolean(input.apiKey) ||
         target.modelName !== input.probeModel ||
+        targetBaseUrlOverrideValues !== null ||
         target.modelRetiredAt !== null;
       await tx
         .update(radarProbeTarget)
@@ -996,6 +1026,7 @@ export async function updateRadarTokenProbe(args: {
           name: `${row.provider.displayName} / ${input.modelType} / ${input.apiKeyName}`,
           displayName: input.apiKeyName,
           modelName: input.probeModel,
+          ...targetBaseUrlOverrideValues,
           enabled: true,
           modelNotFoundCount: 0,
           modelRetiredAt: null,
@@ -1034,6 +1065,7 @@ export async function updateRadarTokenProbe(args: {
           name: `${row.provider.displayName} / ${input.modelType} / ${input.apiKeyName}`,
           displayName: input.apiKeyName,
           modelName: input.probeModel,
+          ...targetBaseUrlOverrideValues,
           nextCheckAt: now,
           updatedAt: now,
         })
@@ -1207,6 +1239,7 @@ export async function createRadarTarget(args: {
         name,
         displayName,
         modelName: input.modelName,
+        ...(await getTargetBaseUrlOverrideValues(input.baseUrlOverride)),
         endpointType: input.endpointType,
         intervalSeconds: input.intervalSeconds,
         timeoutMs: input.timeoutMs,
@@ -1239,6 +1272,6 @@ export async function createRadarTarget(args: {
       }),
     });
 
-    return selectRadarProbeTargetSchema.parse(target);
+    return safeTarget(target);
   });
 }

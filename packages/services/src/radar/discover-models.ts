@@ -117,7 +117,9 @@ export async function discoverRadarModelsForPool(args: {
   return discoverRadarModels({
     ctx: args.ctx,
     input: {
-      baseUrl: await decryptSecret(provider.baseUrlEncrypted),
+      baseUrl:
+        input.baseUrlOverride ??
+        (await decryptSecret(provider.baseUrlEncrypted)),
       apiKey: input.apiKey,
     },
     fetch: args.fetch,
