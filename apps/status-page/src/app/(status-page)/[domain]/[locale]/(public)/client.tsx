@@ -698,9 +698,15 @@ function RadarStabilityOverview({
               <div className="flex min-w-0 items-center gap-2">
                 <div
                   className="truncate font-mono text-sm font-semibold"
-                  title={target.serviceGroupName || target.displayName}
+                  title={
+                    target.modelName ||
+                    target.serviceGroupName ||
+                    target.displayName
+                  }
                 >
-                  {target.serviceGroupName || target.displayName}
+                  {target.modelName ||
+                    target.serviceGroupName ||
+                    target.displayName}
                 </div>
                 <span
                   aria-label={copy.apiKeyInfo}
