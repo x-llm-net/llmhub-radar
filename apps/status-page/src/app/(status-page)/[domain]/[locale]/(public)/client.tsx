@@ -745,7 +745,7 @@ function RadarStabilityOverview({
           </div>
           <div className="space-y-2">
             <div
-              className="grid h-8 gap-px"
+              className="grid h-7 items-center gap-1"
               style={{
                 gridTemplateColumns: `repeat(${target.stabilityBuckets7d.length}, minmax(0, 1fr))`,
               }}
@@ -768,7 +768,7 @@ function RadarStabilityOverview({
                     locale,
                   )} - ${formatDateTime(bucket.to, locale)}`}
                   className={cn(
-                    "min-w-0 rounded-[2px]",
+                    "h-5 min-w-0 rounded-full transition-[transform,filter,box-shadow,opacity] duration-150 hover:z-10 hover:-translate-y-0.5 hover:scale-[1.16] hover:shadow-sm hover:brightness-110",
                     stabilityBucketTone(bucket),
                   )}
                 />
