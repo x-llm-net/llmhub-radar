@@ -120,7 +120,7 @@ export function RadarServiceCard({
           <span className="text-muted-foreground">{timeline.recentLabel}</span>
           <span className="text-muted-foreground">{timeline.samplesLabel}</span>
         </div>
-        <div className="flex h-5 min-w-0 items-center gap-0.5">
+        <div className="flex h-5 min-w-0 items-center gap-px">
           {timeline.runs.map((run, index) => (
             <span
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed historical slots can be empty.
@@ -132,7 +132,7 @@ export function RadarServiceCard({
               data-probe-result={run?.result}
               data-probe-time={run?.time}
               className={cn(
-                "h-3.5 min-w-0 flex-1 rounded-full transition-[transform,filter,box-shadow,opacity] duration-150 hover:z-10 hover:-translate-y-0.5 hover:scale-[1.18] hover:opacity-95 hover:shadow-sm hover:brightness-110",
+                "h-3.5 min-w-0 flex-1 rounded-[3px] transition-[transform,filter,box-shadow,opacity] duration-150 hover:z-10 hover:-translate-y-0.5 hover:scale-110 hover:opacity-95 hover:shadow-sm hover:brightness-110",
                 run?.toneClassName ?? "bg-muted",
               )}
             />
