@@ -81,6 +81,7 @@ type Status =
 
 type RecentRun = {
   errorType?: string | null;
+  safeErrorSummary?: string | null;
   httpStatus: number | null;
   success: boolean;
   firstTokenMs: number | null;
@@ -207,12 +208,20 @@ function healthTone(
 
 function runTone(run: RecentRun | null) {
   if (!run) return "bg-muted";
+  if (isQuotaRun(run)) return "bg-slate-300";
   if (!run.success) return "bg-red-500";
   if (run.firstTokenMs != null && run.firstTokenMs > 15_000)
     return "bg-amber-500";
   if (run.firstTokenMs != null && run.firstTokenMs > 5_000)
     return "bg-emerald-300";
   return "bg-emerald-500";
+}
+
+function isQuotaRun(run: RecentRun) {
+  const text = `${run.errorType ?? ""} ${run.safeErrorSummary ?? ""}`;
+  return /insufficient[_\s-]?quota|insufficient[_\s-]?balance|insufficient account balance|account balance insufficient|not enough balance|no balance|balance is 0|balance exhausted|余额不足|余额为\s*0|可用余额|额度不足|欠费|充值/i.test(
+    text,
+  );
 }
 
 function buildTimelineRuns(

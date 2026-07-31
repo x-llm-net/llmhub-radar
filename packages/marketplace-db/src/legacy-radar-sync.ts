@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
   getCompletedWindow,
+  hasInsufficientQuotaSignal,
 } from "./scoring";
 import { setMarketplaceMinRankingAvailabilityBps } from "./settings";
 
@@ -41,6 +42,7 @@ type LegacyRun = {
   success: boolean;
   httpStatus: number | null;
   errorType: string | null;
+  safeErrorSummary?: string | null;
   firstTokenMs: number | null;
   totalLatencyMs: number | null;
 };
@@ -105,8 +107,15 @@ export type LegacyRadarSyncResult = {
 export function mapLegacyOutcome(args: {
   success: boolean;
   errorType: string | null;
+  safeErrorSummary?: string | null;
 }) {
   if (args.success) return "success" as const;
+  if (
+    args.errorType === "insufficient_quota" ||
+    hasInsufficientQuotaSignal(args.safeErrorSummary)
+  ) {
+    return "configuration_error" as const;
+  }
   if (args.errorType && CONFIGURATION_ERRORS.has(args.errorType)) {
     return "configuration_error" as const;
   }
@@ -685,6 +694,7 @@ export async function syncLegacyRadar(args: {
         attemptNo: 0,
         outcome: mapLegacyOutcome(run),
         errorCode: run.errorType,
+        safeErrorSummary: run.safeErrorSummary ?? null,
         httpStatus: run.httpStatus,
         firstTokenMs: run.firstTokenMs,
         totalLatencyMs: run.totalLatencyMs,

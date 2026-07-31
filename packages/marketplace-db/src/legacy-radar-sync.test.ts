@@ -39,6 +39,17 @@ describe("legacy Radar outcome mapping", () => {
     }
   });
 
+  test("excludes legacy auth errors with balance summaries from availability", () => {
+    expect(
+      mapLegacyOutcome({
+        success: false,
+        errorType: "auth_error",
+        safeErrorSummary:
+          'HTTP 403: auth_error: {"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}',
+      }),
+    ).toBe("configuration_error");
+  });
+
   test("counts transient upstream failures against availability", () => {
     for (const errorType of [
       "timeout",

@@ -41,7 +41,9 @@ import {
   fillMissingBuckets,
   floorToBucket,
   getCompletedWindow,
+  getQuotaPauseStartedAt,
   percentile,
+  quotaPausePenaltyBps,
   type CurrentStatusValue,
 } from "./scoring";
 
@@ -221,6 +223,8 @@ export async function refreshHealthBucket(
       attemptNo: probeChecks.attemptNo,
       outcome: probeChecks.outcome,
       scheduledAt: probeChecks.scheduledAt,
+      errorCode: probeChecks.errorCode,
+      safeErrorSummary: probeChecks.safeErrorSummary,
       firstTokenMs: probeChecks.firstTokenMs,
     })
     .from(probeChecks)
@@ -315,6 +319,8 @@ export async function refreshProviderModelStats(
       attemptNo: probeChecks.attemptNo,
       outcome: probeChecks.outcome,
       scheduledAt: probeChecks.scheduledAt,
+      errorCode: probeChecks.errorCode,
+      safeErrorSummary: probeChecks.safeErrorSummary,
       firstTokenMs: probeChecks.firstTokenMs,
     })
     .from(probeChecks)
@@ -325,14 +331,18 @@ export async function refreshProviderModelStats(
       ),
     )
     .orderBy(desc(probeChecks.scheduledAt))
-    .limit(3);
-  const status = deriveCurrentStatus(latestChecks, asOf);
+    .limit(1000);
+  const quotaPauseStartedAt = getQuotaPauseStartedAt(latestChecks);
+  const status = quotaPauseStartedAt
+    ? ("configuration_error" as const)
+    : deriveCurrentStatus(latestChecks, asOf);
   const calculatedStats = calculateSevenDayStats(
     buckets,
     asOf,
     status,
     target.createdAt,
     minRankingAvailabilityBps,
+    quotaPauseStartedAt !== null,
   );
   const firstTokenRows = await db
     .select({ firstTokenMs: probeChecks.firstTokenMs })
@@ -358,6 +368,7 @@ export async function refreshProviderModelStats(
     firstTokenP95Ms,
     sampleCount: calculatedStats.sampleCount,
     validBucketCount: calculatedStats.validBucketCount,
+    pausePenaltyBps: quotaPausePenaltyBps(quotaPauseStartedAt, asOf),
   });
   const stats = {
     ...calculatedStats,
@@ -595,7 +606,10 @@ export async function getModelLeaderboard(
         eq(providerModels.status, "ranked"),
         eq(providers.status, "published"),
         eq(providerModelStats.eligible, true),
-        gte(providerModelStats.lastCheckAt, freshnessCutoff),
+        or(
+          gte(providerModelStats.lastCheckAt, freshnessCutoff),
+          eq(providerModelStats.currentStatus, "configuration_error"),
+        ),
         isNotNull(providerModelStats.availabilityBps),
         isNotNull(providerModelStats.grade),
       ),
@@ -660,7 +674,10 @@ export async function getModelLeaderboard(
         eq(providerModels.status, "ranked"),
         eq(providers.status, "published"),
         eq(providerModelStats.eligible, true),
-        gte(providerModelStats.lastCheckAt, freshnessCutoff),
+        or(
+          gte(providerModelStats.lastCheckAt, freshnessCutoff),
+          eq(providerModelStats.currentStatus, "configuration_error"),
+        ),
         isNotNull(providerModelStats.availabilityBps),
         isNotNull(providerModelStats.grade),
       ),

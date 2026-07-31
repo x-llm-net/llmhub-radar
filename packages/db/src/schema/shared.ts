@@ -224,6 +224,7 @@ export const selectPublicRadarSchema = z
             success: z.boolean(),
             httpStatus: z.number().nullable(),
             errorType: z.string().nullable(),
+            safeErrorSummary: z.string().nullable().optional(),
             firstTokenMs: z.number().nullable(),
             totalLatencyMs: z.number().nullable(),
           }),

@@ -10,7 +10,9 @@ import {
   deriveCurrentStatus,
   fillMissingBuckets,
   floorToBucket,
+  getQuotaPauseStartedAt,
   gradeAvailability,
+  quotaPausePenaltyBps,
   linearLatencyScoreBps,
   percentile,
   type HealthBucketInput,
@@ -100,6 +102,31 @@ describe("marketplace scoring", () => {
 
     expect(bucket.availabilityBps).toBe(5_000);
     expect(bucket.coverageBps).toBe(5_000);
+  });
+
+  test("keeps quota failures out of availability and coverage", () => {
+    const bucketStart = floorToBucket(AS_OF);
+    const bucket = aggregateProbeSamples(bucketStart, 4, [
+      { attemptNo: 0, outcome: "success", scheduledAt: bucketStart },
+      {
+        attemptNo: 0,
+        outcome: "configuration_error",
+        errorCode: "insufficient_quota",
+        scheduledAt: bucketStart,
+      },
+      {
+        attemptNo: 0,
+        outcome: "provider_failure",
+        safeErrorSummary:
+          'HTTP 403: auth_error: {"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}',
+        scheduledAt: bucketStart,
+      },
+    ]);
+
+    expect(bucket.successCount).toBe(1);
+    expect(bucket.providerFailureCount).toBe(0);
+    expect(bucket.availabilityBps).toBe(10_000);
+    expect(bucket.coverageBps).toBe(2_500);
   });
 
   test("keeps a real zero score eligible after enough samples", () => {
@@ -218,6 +245,80 @@ describe("marketplace scoring", () => {
     expect(fast).toBe(9_785);
     expect(slow).toBeLessThan(fast);
     expect(slow).toBeGreaterThan(9_000);
+  });
+
+  test("applies a gradual ranking penalty while quota paused", () => {
+    const baseline = calculateRankingScoreBps({
+      availabilityBps: 9_900,
+      firstTokenP50Ms: 900,
+      firstTokenP95Ms: 1_800,
+      sampleCount: 700,
+      validBucketCount: 56,
+    });
+    const halfPenalty = quotaPausePenaltyBps(
+      new Date(AS_OF.getTime() - 3.5 * 24 * 60 * 60 * 1000),
+      AS_OF,
+    );
+    const fullPenalty = quotaPausePenaltyBps(
+      new Date(AS_OF.getTime() - 8 * 24 * 60 * 60 * 1000),
+      AS_OF,
+    );
+
+    expect(halfPenalty).toBe(500);
+    expect(fullPenalty).toBe(1_000);
+    expect(
+      calculateRankingScoreBps({
+        availabilityBps: 9_900,
+        firstTokenP50Ms: 900,
+        firstTokenP95Ms: 1_800,
+        sampleCount: 700,
+        validBucketCount: 56,
+        pausePenaltyBps: fullPenalty,
+      }),
+    ).toBe(baseline - 1_000);
+  });
+
+  test("keeps quota-paused targets eligible when they still have scoreable samples", () => {
+    const stats = calculateSevenDayStats(
+      completeBuckets(),
+      AS_OF,
+      "configuration_error",
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(stats.eligible).toBe(true);
+    expect(stats.eligibilityReason).toBeNull();
+  });
+
+  test("derives quota pause start from leading quota failures", () => {
+    const latest = new Date(AS_OF.getTime() - 60_000);
+    const started = new Date(AS_OF.getTime() - 6 * 60 * 60_000);
+    const recoveredBefore = new Date(AS_OF.getTime() - 24 * 60 * 60_000);
+
+    expect(
+      getQuotaPauseStartedAt([
+        {
+          attemptNo: 0,
+          outcome: "configuration_error",
+          errorCode: "insufficient_quota",
+          scheduledAt: latest,
+        },
+        {
+          attemptNo: 0,
+          outcome: "provider_failure",
+          safeErrorSummary:
+            'HTTP 403: auth_error: {"code":"INSUFFICIENT_BALANCE"}',
+          scheduledAt: started,
+        },
+        {
+          attemptNo: 0,
+          outcome: "success",
+          scheduledAt: recoveredBefore,
+        },
+      ]),
+    ).toEqual(started);
   });
 
   test("keeps confidence as a bounded correction for higher sample data", () => {

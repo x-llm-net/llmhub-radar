@@ -32,6 +32,7 @@ import { type DB, getReadDb, type ServiceContext } from "../context";
 import { NotFoundError } from "../errors";
 import { getRadarActorAccess, type RadarVerificationStatus } from "./access";
 import { decryptSecret } from "./crypto";
+import { hasInsufficientQuotaSignal } from "./probe";
 import {
   GetRadarPoolInput,
   ListClaimableRadarPoolsInput,
@@ -97,6 +98,7 @@ export type RadarPoolDetail = ReturnType<typeof selectRadarPoolSchema.parse> & {
           | "success"
           | "httpStatus"
           | "errorType"
+          | "safeErrorSummary"
           | "firstTokenMs"
           | "totalLatencyMs"
         >
@@ -169,6 +171,18 @@ function percentile(values: number[], percentileValue: number) {
   const sorted = [...values].sort((left, right) => left - right);
   const index = Math.ceil((percentileValue / 100) * sorted.length) - 1;
   return sorted[Math.max(0, Math.min(index, sorted.length - 1))] ?? null;
+}
+
+function isQuotaProbeRun(
+  run: Pick<
+    ReturnType<typeof selectRadarProbeRunSchema.parse>,
+    "errorType" | "safeErrorSummary"
+  >,
+) {
+  return (
+    run.errorType === "insufficient_quota" ||
+    hasInsufficientQuotaSignal(run.safeErrorSummary ?? "")
+  );
 }
 
 export async function listRadarPools(args: {
@@ -607,7 +621,8 @@ export async function getRadarPool(args: {
     }),
     targets: parsedTargets.map((target) => {
       const runs = runsByTarget.get(target.id) ?? [];
-      const successCount = runs.filter((run) => run.success).length;
+      const scoreableRuns = runs.filter((run) => !isQuotaProbeRun(run));
+      const successCount = scoreableRuns.filter((run) => run.success).length;
       const firstTokenValues = runs
         .map((run) => run.firstTokenMs)
         .filter((value): value is number => typeof value === "number");
@@ -620,15 +635,16 @@ export async function getRadarPool(args: {
           success: run.success,
           httpStatus: run.httpStatus,
           errorType: run.errorType,
+          safeErrorSummary: run.safeErrorSummary,
           firstTokenMs: run.firstTokenMs,
           totalLatencyMs: run.totalLatencyMs,
         })),
         stats7d: {
-          sampleCount: runs.length,
+          sampleCount: scoreableRuns.length,
           successRate:
-            runs.length === 0
+            scoreableRuns.length === 0
               ? null
-              : Math.round((successCount / runs.length) * 10_000),
+              : Math.round((successCount / scoreableRuns.length) * 10_000),
           p50FirstTokenMs: percentile(firstTokenValues, 50),
           p95FirstTokenMs: percentile(firstTokenValues, 95),
         },

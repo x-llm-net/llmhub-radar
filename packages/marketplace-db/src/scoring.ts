@@ -14,6 +14,8 @@ export const RANKING_P95_ZERO_MS = 20_000;
 export const RANKING_SAMPLE_FULL_COUNT = 700;
 export const RANKING_CONFIDENCE_FLOOR_BPS = 6_000;
 export const RANKING_CONFIDENCE_RANGE_BPS = 4_000;
+export const RANKING_PAUSE_PENALTY_MAX_BPS = 1_000;
+export const RANKING_PAUSE_PENALTY_FULL_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type ProbeOutcomeValue =
   | "success"
@@ -35,6 +37,8 @@ export interface ProbeSample {
   attemptNo: number;
   outcome: ProbeOutcomeValue;
   scheduledAt: Date;
+  errorCode?: string | null;
+  safeErrorSummary?: string | null;
   firstTokenMs?: number | null;
 }
 
@@ -72,6 +76,50 @@ export interface SevenDayStats {
 function ratioToBps(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
   return Math.min(10_000, Math.round((numerator / denominator) * 10_000));
+}
+
+export function hasInsufficientQuotaSignal(value: unknown) {
+  const text = String(value ?? "").toLowerCase();
+  const quotaSignals = [
+    "insufficient_quota",
+    "insufficient quota",
+    "quota exceeded",
+    "exceeded your current quota",
+    "insufficient_balance",
+    "billing",
+    "insufficient balance",
+    "insufficient account balance",
+    "account balance insufficient",
+    "not enough balance",
+    "no balance",
+    "balance is 0",
+    "balance exhausted",
+    "insufficient credit",
+    "not enough credit",
+    "no credit",
+    "credits exhausted",
+    "recharge",
+    "top up",
+    "\u4f59\u989d\u4e0d\u8db3",
+    "\u4f59\u989d\u4e3a0",
+    "\u4f59\u989d\u4e3a 0",
+    "\u53ef\u7528\u4f59\u989d",
+    "\u989d\u5ea6\u4e0d\u8db3",
+    "\u6b20\u8d39",
+    "\u5145\u503c",
+  ];
+
+  return quotaSignals.some((signal) => text.includes(signal));
+}
+
+export function isQuotaProbeSample(sample: {
+  errorCode?: string | null;
+  safeErrorSummary?: string | null;
+}) {
+  return (
+    hasInsufficientQuotaSignal(sample.errorCode) ||
+    hasInsufficientQuotaSignal(sample.safeErrorSummary)
+  );
 }
 
 export function floorToBucket(value: Date) {
@@ -143,6 +191,7 @@ export function calculateRankingScoreBps(args: {
   firstTokenP95Ms: number | null;
   sampleCount: number;
   validBucketCount: number;
+  pausePenaltyBps?: number;
 }) {
   const availabilityScore = args.availabilityBps ?? 0;
   const p50Score = linearLatencyScoreBps(
@@ -158,11 +207,24 @@ export function calculateRankingScoreBps(args: {
     validBucketCount: args.validBucketCount,
   });
 
-  return Math.round(
+  const rawScore = Math.round(
     availabilityScore * 0.8 +
       p50Score * 0.1 +
       p95Score * 0.05 +
       confidenceScore * 0.05,
+  );
+  return Math.max(0, rawScore - Math.max(0, args.pausePenaltyBps ?? 0));
+}
+
+export function quotaPausePenaltyBps(pausedSince: Date | null, asOf: Date) {
+  if (!pausedSince || pausedSince > asOf) return 0;
+  return Math.min(
+    RANKING_PAUSE_PENALTY_MAX_BPS,
+    Math.round(
+      ((asOf.getTime() - pausedSince.getTime()) /
+        RANKING_PAUSE_PENALTY_FULL_AFTER_MS) *
+        RANKING_PAUSE_PENALTY_MAX_BPS,
+    ),
   );
 }
 
@@ -172,7 +234,9 @@ export function aggregateProbeSamples(
   samples: ProbeSample[],
   slowFirstTokenMs = DEFAULT_SLOW_FIRST_TOKEN_MS,
 ): HealthBucketInput {
-  const primarySamples = samples.filter((sample) => sample.attemptNo === 0);
+  const primarySamples = samples.filter(
+    (sample) => sample.attemptNo === 0 && !isQuotaProbeSample(sample),
+  );
   let successCount = 0;
   let providerFailureCount = 0;
   let configurationErrorCount = 0;
@@ -251,12 +315,29 @@ export function deriveCurrentStatus(
     : "degraded";
 }
 
+export function getQuotaPauseStartedAt(samples: ProbeSample[]) {
+  const primarySamples = samples
+    .filter((sample) => sample.attemptNo === 0)
+    .sort((a, b) => b.scheduledAt.getTime() - a.scheduledAt.getTime());
+  if (!primarySamples[0] || !isQuotaProbeSample(primarySamples[0])) {
+    return null;
+  }
+
+  let pausedSince = primarySamples[0].scheduledAt;
+  for (const sample of primarySamples) {
+    if (!isQuotaProbeSample(sample)) break;
+    pausedSince = sample.scheduledAt;
+  }
+  return pausedSince;
+}
+
 export function calculateSevenDayStats(
   buckets: HealthBucketInput[],
   asOf: Date,
   currentStatus: CurrentStatusValue,
   _observationStartedAt?: Date,
   _minRankingAvailabilityBps = DEFAULT_MIN_RANKING_AVAILABILITY_BPS,
+  quotaPaused = false,
 ): SevenDayStats {
   const { windowStart, windowEnd } = getCompletedWindow(asOf);
   const windowBuckets = buckets.filter(
@@ -296,9 +377,12 @@ export function calculateSevenDayStats(
     eligibilityReason = "no_scoreable_samples";
   } else if (sampleCount < MIN_RANKING_SAMPLES) {
     eligibilityReason = "insufficient_samples";
-  } else if (currentStatus === "configuration_error") {
+  } else if (currentStatus === "configuration_error" && !quotaPaused) {
     eligibilityReason = "configuration_error";
-  } else if (currentStatus === "stale" || currentStatus === "unknown") {
+  } else if (
+    (currentStatus === "stale" || currentStatus === "unknown") &&
+    !quotaPaused
+  ) {
     eligibilityReason = "stale";
   }
 

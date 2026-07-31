@@ -139,6 +139,7 @@ function buildRadarStabilityBuckets(
     firstTokenMs: number | null;
     totalLatencyMs: number | null;
     errorType: string | null;
+    safeErrorSummary?: string | null;
   }>,
 ) {
   const currentBucketStart =
@@ -160,6 +161,8 @@ function buildRadarStabilityBuckets(
   );
 
   for (const run of runs) {
+    if (isQuotaRadarRun(run)) continue;
+
     const index = Math.floor(
       (run.startedAt.getTime() - firstBucketStart) / RADAR_STABILITY_BUCKET_MS,
     );
@@ -196,6 +199,16 @@ function buildRadarStabilityBuckets(
         total === 0 ? null : Math.round((available / total) * 10_000),
     };
   });
+}
+
+function isQuotaRadarRun(run: {
+  errorType?: string | null;
+  safeErrorSummary?: string | null;
+}) {
+  const text = `${run.errorType ?? ""} ${run.safeErrorSummary ?? ""}`;
+  return /insufficient[_\s-]?quota|insufficient[_\s-]?balance|insufficient account balance|account balance insufficient|not enough balance|no balance|balance is 0|balance exhausted|余额不足|余额为\s*0|可用余额|额度不足|欠费|充值/i.test(
+    text,
+  );
 }
 
 async function getPublicRadarByPageId(args: {
@@ -262,6 +275,7 @@ async function getPublicRadarByPageId(args: {
             success: radarProbeRun.success,
             httpStatus: radarProbeRun.httpStatus,
             errorType: radarProbeRun.errorType,
+            safeErrorSummary: radarProbeRun.safeErrorSummary,
             firstTokenMs: radarProbeRun.firstTokenMs,
             totalLatencyMs: radarProbeRun.totalLatencyMs,
           })
@@ -290,8 +304,9 @@ async function getPublicRadarByPageId(args: {
       row.status?.currentStatus ?? row.target.currentStatus ?? "unknown";
     targetStatuses.push(currentStatus);
     const runs = runsByTargetId.get(row.target.id) ?? [];
-    const successCount = runs.filter((run) => run.success).length;
-    const firstTokenValues = runs
+    const scoreableRuns = runs.filter((run) => !isQuotaRadarRun(run));
+    const successCount = scoreableRuns.filter((run) => run.success).length;
+    const firstTokenValues = scoreableRuns
       .map((run) => run.firstTokenMs)
       .filter((value): value is number => typeof value === "number");
     const modelCatalog = uniqueModels([
@@ -325,11 +340,11 @@ async function getPublicRadarByPageId(args: {
       lastSuccessAt: row.status?.lastSuccessAt ?? null,
       lastFailureAt: row.status?.lastFailureAt ?? null,
       stats7d: {
-        sampleCount: runs.length,
+        sampleCount: scoreableRuns.length,
         successRate:
-          runs.length === 0
+          scoreableRuns.length === 0
             ? null
-            : Math.round((successCount / runs.length) * 10_000),
+            : Math.round((successCount / scoreableRuns.length) * 10_000),
         p50FirstTokenMs: percentile(firstTokenValues, 50),
         p95FirstTokenMs: percentile(firstTokenValues, 95),
       },
@@ -573,6 +588,7 @@ export const statusPageRouter = createTRPCRouter({
             startedAt: radarProbeRun.startedAt,
             success: radarProbeRun.success,
             errorType: radarProbeRun.errorType,
+            safeErrorSummary: radarProbeRun.safeErrorSummary,
             firstTokenMs: radarProbeRun.firstTokenMs,
             totalLatencyMs: radarProbeRun.totalLatencyMs,
           })
@@ -619,13 +635,18 @@ export const statusPageRouter = createTRPCRouter({
         const poolCredentials = credentialsByPool.get(row.poolId) ?? [];
         const poolTargets = targetsByPool.get(row.poolId) ?? [];
         const poolRuns = runsByPool.get(row.poolId) ?? [];
+        const scoreablePoolRuns = poolRuns.filter(
+          (run) => !isQuotaRadarRun(run),
+        );
         const statuses = poolTargets.map(
           (target) => target.status ?? target.targetStatus ?? "unknown",
         );
-        const firstTokenValues = poolRuns
+        const firstTokenValues = scoreablePoolRuns
           .map((run) => run.firstTokenMs)
           .filter((value): value is number => typeof value === "number");
-        const successCount = poolRuns.filter((run) => run.success).length;
+        const successCount = scoreablePoolRuns.filter(
+          (run) => run.success,
+        ).length;
         const modelFamilies = Array.from(
           new Set(
             poolCredentials
@@ -649,7 +670,7 @@ export const statusPageRouter = createTRPCRouter({
         const dailyStatusByDate = new Map(
           dailyStatus7d.map((day) => [day.date, day]),
         );
-        for (const run of poolRuns) {
+        for (const run of scoreablePoolRuns) {
           const bucket = dailyStatusByDate.get(dayKey(run.startedAt));
           if (!bucket) continue;
           if (run.success) {
@@ -688,11 +709,11 @@ export const statusPageRouter = createTRPCRouter({
           ).size,
           targetCount: poolTargets.length,
           modelFamilies,
-          sampleCount7d: poolRuns.length,
+          sampleCount7d: scoreablePoolRuns.length,
           availability7d:
-            poolRuns.length === 0
+            scoreablePoolRuns.length === 0
               ? null
-              : Math.round((successCount / poolRuns.length) * 10_000),
+              : Math.round((successCount / scoreablePoolRuns.length) * 10_000),
           p50FirstTokenMs: percentile(firstTokenValues, 50),
           p95FirstTokenMs: percentile(firstTokenValues, 95),
           lastCheckAt,
