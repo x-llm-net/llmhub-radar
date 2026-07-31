@@ -84,6 +84,20 @@ describe("shouldAutoPauseRadarCredential", () => {
     ).toBe(true);
   });
 
+  test("pauses when older auth errors contain quota summaries", () => {
+    expect(
+      shouldAutoPauseRadarCredential([
+        { success: false, errorType: "insufficient_quota" },
+        {
+          success: false,
+          errorType: "auth_error",
+          safeErrorSummary:
+            'HTTP 403: auth_error: {"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}',
+        },
+      ]),
+    ).toBe(true);
+  });
+
   test("does not pause when a successful probe interrupts the failures", () => {
     expect(
       shouldAutoPauseRadarCredential([

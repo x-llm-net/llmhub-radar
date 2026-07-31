@@ -18,6 +18,7 @@ import {
   severityForRadarEvent,
   type RadarNotificationEventType,
 } from "./notification-policy";
+import { hasInsufficientQuotaSignal } from "./probe";
 import { RecordRadarProbeRunInput } from "./schemas";
 
 type TargetStatus =
@@ -99,13 +100,27 @@ function countLeading<T>(items: T[], predicate: (item: T) => boolean) {
 }
 
 export function shouldAutoPauseRadarCredential(
-  recentResults: Array<{ success: boolean; errorType?: string | null }>,
+  recentResults: Array<{
+    success: boolean;
+    errorType?: string | null;
+    safeErrorSummary?: string | null;
+  }>,
 ) {
   return (
     countLeading(
       recentResults,
-      (item) => !item.success && item.errorType === "insufficient_quota",
+      (item) => !item.success && isInsufficientQuotaProbeFailure(item),
     ) >= RADAR_QUOTA_FAILURES_BEFORE_PAUSE
+  );
+}
+
+function isInsufficientQuotaProbeFailure(item: {
+  errorType?: string | null;
+  safeErrorSummary?: string | null;
+}) {
+  return (
+    item.errorType === "insufficient_quota" ||
+    hasInsufficientQuotaSignal(item.safeErrorSummary ?? "")
   );
 }
 

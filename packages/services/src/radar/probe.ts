@@ -210,6 +210,10 @@ function classifyProbeFailure(
     return "timeout";
   }
 
+  if (hasInsufficientQuotaSignal(text)) {
+    return "insufficient_quota";
+  }
+
   if (
     text.includes("insufficient_quota") ||
     text.includes("insufficient quota") ||
@@ -296,6 +300,40 @@ function redactProbeSummary(value: unknown, maxLength = 240) {
   }
 
   return summary;
+}
+
+export function hasInsufficientQuotaSignal(value: unknown) {
+  const text = redactProbeSummary(value).toLowerCase();
+  const quotaSignals = [
+    "insufficient_quota",
+    "insufficient quota",
+    "quota exceeded",
+    "exceeded your current quota",
+    "insufficient_balance",
+    "billing",
+    "insufficient balance",
+    "insufficient account balance",
+    "account balance insufficient",
+    "not enough balance",
+    "no balance",
+    "balance is 0",
+    "balance exhausted",
+    "insufficient credit",
+    "not enough credit",
+    "no credit",
+    "credits exhausted",
+    "recharge",
+    "top up",
+    "\u4f59\u989d\u4e0d\u8db3",
+    "\u4f59\u989d\u4e3a0",
+    "\u4f59\u989d\u4e3a 0",
+    "\u53ef\u7528\u4f59\u989d",
+    "\u989d\u5ea6\u4e0d\u8db3",
+    "\u6b20\u8d39",
+    "\u5145\u503c",
+  ];
+
+  return quotaSignals.some((signal) => text.includes(signal));
 }
 
 function clampMaxTokens(value?: number) {
