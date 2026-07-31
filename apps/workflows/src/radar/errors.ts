@@ -54,8 +54,11 @@ export function classifyProbeFailure(
     text.includes("insufficient quota") ||
     text.includes("quota exceeded") ||
     text.includes("exceeded your current quota") ||
+    text.includes("insufficient_balance") ||
     text.includes("billing") ||
     text.includes("insufficient balance") ||
+    text.includes("insufficient account balance") ||
+    text.includes("account balance insufficient") ||
     text.includes("not enough balance") ||
     text.includes("no balance") ||
     text.includes("balance is 0") ||

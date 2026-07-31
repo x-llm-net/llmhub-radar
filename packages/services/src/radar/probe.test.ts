@@ -85,4 +85,25 @@ describe("runOpenAICompatibleProbe", () => {
     expect(result.httpStatus).toBe(403);
     expect(result.errorType).toBe("insufficient_quota");
   });
+
+  test("classifies insufficient account balance responses as insufficient quota", async () => {
+    const result = await runOpenAICompatibleProbe({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test-secret",
+      model: "gpt-test",
+      stream: false,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            code: "INSUFFICIENT_BALANCE",
+            message: "Insufficient account balance",
+          }),
+          { status: 403 },
+        ),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.httpStatus).toBe(403);
+    expect(result.errorType).toBe("insufficient_quota");
+  });
 });

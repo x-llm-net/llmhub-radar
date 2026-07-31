@@ -22,6 +22,13 @@ describe("Radar probe error classification", () => {
     expect(
       classifyProbeFailure({
         httpStatus: 403,
+        bodyText:
+          '{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}',
+      }),
+    ).toBe("insufficient_quota");
+    expect(
+      classifyProbeFailure({
+        httpStatus: 403,
         bodyText: "账户可用余额不足，请充值后重试",
       }),
     ).toBe("insufficient_quota");
