@@ -317,7 +317,7 @@ export function Client() {
               locale={locale}
             />
           </StatusContent>
-        ) : page.trackers.length > 0 ? (
+        ) : !page.radar && page.trackers.length > 0 ? (
           <StatusContent className="gap-5">
             {page.trackers.map((tracker) => {
               if (tracker.type === "component") {
@@ -469,6 +469,7 @@ type RadarTarget = {
     success: boolean;
     httpStatus: number | null;
     errorType: string | null;
+    safeErrorSummary?: string | null;
     firstTokenMs: number | null;
     totalLatencyMs: number | null;
   }>;
@@ -744,7 +745,7 @@ function RadarStabilityOverview({
           </div>
           <div className="space-y-2">
             <div
-              className="grid h-12 gap-px"
+              className="grid h-8 gap-px"
               style={{
                 gridTemplateColumns: `repeat(${target.stabilityBuckets7d.length}, minmax(0, 1fr))`,
               }}
@@ -786,6 +787,7 @@ function RadarStabilityOverview({
 
 function runTone(run: RadarTarget["recentRuns"][number] | null) {
   if (!run) return "bg-muted";
+  if (isQuotaRun(run)) return "bg-muted";
   if (!run.success) return "bg-red-500";
   if (run.firstTokenMs != null && run.firstTokenMs > 15_000) {
     return "bg-amber-500";
@@ -794,6 +796,16 @@ function runTone(run: RadarTarget["recentRuns"][number] | null) {
     return "bg-emerald-300";
   }
   return "bg-emerald-500";
+}
+
+function isQuotaRun(run: {
+  errorType?: string | null;
+  safeErrorSummary?: string | null;
+}) {
+  const text = `${run.errorType ?? ""} ${run.safeErrorSummary ?? ""}`;
+  return /insufficient[_\s-]?quota|insufficient[_\s-]?balance|insufficient account balance|account balance insufficient|not enough balance|no balance|balance is 0|balance exhausted|余额不足|余额为\s*0|可用余额|额度不足|欠费|充值/i.test(
+    text,
+  );
 }
 
 function buildTimelineRuns(
