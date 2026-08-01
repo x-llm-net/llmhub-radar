@@ -4,11 +4,16 @@
 llm-hub.store {
 	encode zstd gzip
 
+	@marketplace_seo path /robots.txt /sitemap.xml /llms.txt
+	handle @marketplace_seo {
+		reverse_proxy 127.0.0.1:3010
+	}
+
 	handle /v1/* {
 		reverse_proxy 127.0.0.1:3010
 	}
 
-	@storefront path / /index.html /model.html /provider.html /styles.css /main.js /model-page.js /provider-page.js /dashboard-links.js /favicon.svg
+	@storefront path / /index.html /model.html /provider.html /styles.css /main.js /model-page.js /provider-page.js /dashboard-links.js /favicon.svg /llmhub-radar-logo.png
 	handle @storefront {
 		root * /opt/llmhub-radar/storefront/current
 		file_server

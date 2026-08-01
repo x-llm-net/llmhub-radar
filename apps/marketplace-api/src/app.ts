@@ -7,6 +7,7 @@ import {
   getModelLeaderboard,
   getProviderRankings,
   listPublicMarketplaceModels,
+  listPublicMarketplaceProviders,
   presentMarketplaceModel,
   type MarketplaceDb,
 } from "@llmhub/marketplace-db";
@@ -16,6 +17,9 @@ import { cors } from "hono/cors";
 
 const PUBLIC_CACHE_INTERVAL_MS = 10 * 60 * 1000;
 const PUBLIC_CACHE_MAX_ENTRIES = 256;
+const PUBLIC_ORIGIN = (
+  process.env.MARKETPLACE_PUBLIC_ORIGIN || "https://llm-hub.store"
+).replace(/\/+$/, "");
 
 type PublicCacheEntry = {
   bucketStartMs: number;
@@ -23,6 +27,65 @@ type PublicCacheEntry = {
   etag: string;
   status: number;
 };
+
+function escapeXml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function singleLine(value: string) {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+function markdownLinkLabel(value: string) {
+  return singleLine(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+}
+
+function textDocument(
+  body: string,
+  contentType: "application/xml" | "text/plain",
+) {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "cache-control":
+        "public, max-age=300, s-maxage=600, stale-while-revalidate=3600, stale-if-error=86400",
+      "content-type": `${contentType}; charset=UTF-8`,
+    },
+  });
+}
+
+function marketplaceUrl(pathname: string) {
+  return `${PUBLIC_ORIGIN}${pathname}`;
+}
+
+function sitemapEntry(args: {
+  pathname: string;
+  lastModified?: Date;
+  changeFrequency: "hourly" | "daily" | "weekly";
+  priority: string;
+}) {
+  const values = [
+    "  <url>",
+    `    <loc>${escapeXml(marketplaceUrl(args.pathname))}</loc>`,
+  ];
+  if (args.lastModified) {
+    values.push(`    <lastmod>${args.lastModified.toISOString()}</lastmod>`);
+  }
+  values.push(
+    `    <changefreq>${args.changeFrequency}</changefreq>`,
+    `    <priority>${args.priority}</priority>`,
+    "  </url>",
+  );
+  return values.join("\n");
+}
 
 function getPublicCacheAsOf(now = new Date()) {
   return new Date(
@@ -128,11 +191,125 @@ export function createMarketplaceApp(db: MarketplaceDb) {
     return context.json({ ok: true });
   });
 
+  app.get("/robots.txt", () =>
+    textDocument(
+      [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /api/auth/",
+        "Disallow: /*/login",
+        "Disallow: /*/manage/",
+        "Disallow: /*/unsubscribe/",
+        "Disallow: /*/verify/",
+        "Disallow: /*?*embed=",
+        "",
+        `Sitemap: ${marketplaceUrl("/sitemap.xml")}`,
+        "",
+      ].join("\n"),
+      "text/plain",
+    ),
+  );
+
+  app.get("/sitemap.xml", async () => {
+    const [catalog, publicProviders] = await Promise.all([
+      listPublicMarketplaceModels(db),
+      listPublicMarketplaceProviders(db),
+    ]);
+    const entries = [
+      sitemapEntry({
+        pathname: "/",
+        changeFrequency: "hourly",
+        priority: "1.0",
+      }),
+      sitemapEntry({
+        pathname: "/developers/api",
+        changeFrequency: "weekly",
+        priority: "0.6",
+      }),
+      ...catalog.map((model) =>
+        sitemapEntry({
+          pathname: `/model.html?model=${encodeURIComponent(model.slug)}`,
+          lastModified: model.updatedAt,
+          changeFrequency: "hourly",
+          priority: "0.8",
+        }),
+      ),
+      ...publicProviders.flatMap((provider) => [
+        sitemapEntry({
+          pathname: `/provider.html?slug=${encodeURIComponent(provider.slug)}`,
+          lastModified: provider.updatedAt,
+          changeFrequency: "hourly",
+          priority: "0.7",
+        }),
+        sitemapEntry({
+          pathname: `/${encodeURIComponent(provider.slug)}`,
+          lastModified: provider.updatedAt,
+          changeFrequency: "hourly",
+          priority: "0.7",
+        }),
+      ]),
+    ];
+
+    return textDocument(
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        ...entries,
+        "</urlset>",
+        "",
+      ].join("\n"),
+      "application/xml",
+    );
+  });
+
+  app.get("/llms.txt", async () => {
+    const [catalog, publicProviders] = await Promise.all([
+      listPublicMarketplaceModels(db),
+      listPublicMarketplaceProviders(db),
+    ]);
+    const lines = [
+      "# LLMHub Radar",
+      "",
+      "> Independent observations of AI API relay availability and first-token latency. Rankings are generated from recurring real API probes.",
+      "",
+      "## Main pages",
+      `- [Marketplace rankings](${marketplaceUrl("/")}): model-by-model provider rankings`,
+      `- [Ranking rules](${marketplaceUrl("/#rules")}): methodology, data source, and sponsorship policy`,
+      `- [Developer API](${marketplaceUrl("/developers/api")}): public provider stability API`,
+      "",
+      "## Machine-readable data",
+      `- [Homepage ranking data](${marketplaceUrl("/v1/homepage")}): all public model leaderboards`,
+      `- [Model catalog](${marketplaceUrl("/v1/models")}): public models and metadata`,
+      "",
+      "## Models",
+      ...catalog.map(
+        (model) =>
+          `- [${markdownLinkLabel(model.displayName)}](${marketplaceUrl(`/model.html?model=${encodeURIComponent(model.slug)}`)}): ${singleLine(model.vendor)} ${singleLine(model.family)} provider ranking`,
+      ),
+      "",
+      "## Providers",
+      ...publicProviders.map(
+        (provider) =>
+          `- [${markdownLinkLabel(provider.name)}](${marketplaceUrl(`/provider.html?slug=${encodeURIComponent(provider.slug)}`)}): model-level probe results and public status`,
+      ),
+      "",
+      "## Methodology notes",
+      "- The primary observation window is the most recent seven days.",
+      "- Rankings prioritize observed availability and also consider first-token latency and data coverage.",
+      "- Four valid probe samples are required before a provider-model pair enters a ranking.",
+      "- Sponsored placements are labeled separately and never alter organic ranking order.",
+      "- Results are observations, not an official SLA, model quality score, price ranking, or purchase recommendation.",
+      "- API keys and raw private probe evidence are never published.",
+      "",
+    ];
+    return textDocument(lines.join("\n"), "text/plain");
+  });
+
   app.get("/v1/models", (context) =>
     cachedRoute(context.req.raw, "models", async () => {
       const rows = await listPublicMarketplaceModels(db);
       const catalog = rows.map((row) => {
-        const { sortOrder: _sortOrder, ...model } = row;
+        const { sortOrder: _sortOrder, updatedAt: _updatedAt, ...model } = row;
         return presentMarketplaceModel(model);
       });
       return { payload: { data: catalog } };

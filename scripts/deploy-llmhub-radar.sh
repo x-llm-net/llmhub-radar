@@ -14,6 +14,10 @@ CADDY_HAD_PREVIOUS=0
 CADDY_SWITCHED=0
 STOREFRONT_PREVIOUS_TARGET=""
 STOREFRONT_SWITCHED=0
+COMPOSE_ENV_BACKUP_FILE=""
+COMPOSE_ENV_HAD_PREVIOUS=0
+APP_SERVICES_SWITCHED=0
+APP_SERVICE_NAMES=(dashboard status-page radar-probe-worker marketplace-api marketplace-maintenance)
 
 require_env() {
   local name="$1"
@@ -47,6 +51,13 @@ validate_image_tag() {
 }
 
 write_compose_env() {
+  local backup_dir="${LLMHUB_RADAR_BACKUP_DIR:-/opt/backups/llmhub-radar}"
+  install -d -m 700 "$backup_dir"
+  COMPOSE_ENV_BACKUP_FILE="$backup_dir/env-images-pre-$LLMHUB_RADAR_IMAGE_TAG-$(date -u +%Y%m%dT%H%M%SZ)"
+  if [ -f "$COMPOSE_ENV_FILE" ]; then
+    cp -a "$COMPOSE_ENV_FILE" "$COMPOSE_ENV_BACKUP_FILE"
+    COMPOSE_ENV_HAD_PREVIOUS=1
+  fi
   {
     printf 'LLMHUB_RADAR_IMAGE_REGISTRY=%s\n' "${LLMHUB_RADAR_IMAGE_REGISTRY:-ghcr.io}"
     printf 'LLMHUB_RADAR_IMAGE_OWNER=%s\n' "$LLMHUB_RADAR_IMAGE_OWNER"
@@ -159,7 +170,8 @@ validate_storefront_source() {
     model-page.js \
     provider-page.js \
     dashboard-links.js \
-    favicon.svg; do
+    favicon.svg \
+    llmhub-radar-logo.png; do
     if [ ! -s "$STOREFRONT_SOURCE_DIR/$file" ]; then
       echo "Missing storefront release file: $STOREFRONT_SOURCE_DIR/$file" >&2
       return 1
@@ -228,19 +240,37 @@ rollback_public_routing() {
   if [ "$CADDY_SWITCHED" = "1" ]; then
     if [ "$CADDY_HAD_PREVIOUS" = "1" ]; then
       install -m 644 "$CADDY_BACKUP_FILE" "$CADDY_CONFIG_TARGET"
-    elif [ -f "$CADDY_CONFIG_TARGET" ]; then
-      unlink "$CADDY_CONFIG_TARGET"
+      caddy validate --config "$CADDY_CONFIG_TARGET" --adapter caddyfile
+      systemctl reload caddy
+      echo "Restored previous Caddy config after deployment failure."
+    else
+      echo "No previous Caddy config existed; keeping the validated candidate config in place after deployment failure." >&2
     fi
-    caddy validate --config "$CADDY_CONFIG_TARGET" --adapter caddyfile
-    systemctl reload caddy
-    echo "Restored previous public routing after deployment failure."
+    echo "Finished public routing recovery after deployment failure."
   fi
+}
+
+rollback_application_services() {
+  if [ "$APP_SERVICES_SWITCHED" != "1" ]; then
+    return 0
+  fi
+  if [ "$COMPOSE_ENV_HAD_PREVIOUS" != "1" ]; then
+    echo "No previous image env found; cannot automatically roll back application containers." >&2
+    return 0
+  fi
+
+  install -m 600 "$COMPOSE_ENV_BACKUP_FILE" "$COMPOSE_ENV_FILE"
+  echo "Restored previous image env: $COMPOSE_ENV_BACKUP_FILE"
+  "${COMPOSE[@]}" pull "${APP_SERVICE_NAMES[@]}" || true
+  "${COMPOSE[@]}" up -d --no-build "${APP_SERVICE_NAMES[@]}"
+  echo "Restored previous application containers after deployment failure. Database migrations are not automatically rolled back."
 }
 
 handle_error() {
   local status="$1"
   trap - ERR
   rollback_public_routing || true
+  rollback_application_services || true
   exit "$status"
 }
 
@@ -259,11 +289,19 @@ smoke_test_public() {
   local marketplace_public_url="${LLMHUB_RADAR_PUBLIC_MARKETPLACE_URL:-https://llm-hub.store/v1/models}"
   local homepage_api_url="${LLMHUB_RADAR_PUBLIC_HOMEPAGE_API_URL:-https://llm-hub.store/v1/homepage}"
   local storefront_url="${LLMHUB_RADAR_PUBLIC_STOREFRONT_URL:-https://llm-hub.store/}"
+  local model_slug
+  local provider_slug
 
   smoke_test_url "$marketplace_public_url"
   smoke_test_url "$homepage_api_url"
-  smoke_test_url "${storefront_url%/}/model.html"
-  smoke_test_url "${storefront_url%/}/provider.html"
+  model_slug="$(smoke_test_json_value "$marketplace_public_url" 'data.0.slug')"
+  provider_slug="$(smoke_test_json_value "$homepage_api_url" 'data.0.ranking.0.provider.slug')"
+  smoke_test_url "${storefront_url%/}/model.html?model=${model_slug}"
+  smoke_test_url "${storefront_url%/}/provider.html?slug=${provider_slug}"
+  smoke_test_content "${storefront_url%/}/robots.txt" "Sitemap:"
+  smoke_test_content "${storefront_url%/}/sitemap.xml" "<urlset"
+  smoke_test_content "${storefront_url%/}/llms.txt" "# LLMHub Radar"
+  smoke_test_url "${storefront_url%/}/llmhub-radar-logo.png"
   smoke_test_content "$storefront_url" "LLMHub Marketplace"
   echo "Public smoke tests passed: $marketplace_public_url $homepage_api_url $storefront_url"
 }
@@ -302,6 +340,53 @@ smoke_test_content() {
   done
 
   echo "Content smoke test failed for $url after 24 attempts" >&2
+  return 1
+}
+
+smoke_test_json_value() {
+  local url="$1"
+  local path="$2"
+  local attempt
+  local value
+
+  if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+    echo "JSON smoke tests require python3 or python on the deployment host." >&2
+    return 1
+  fi
+
+  for attempt in $(seq 1 24); do
+    if command -v python3 >/dev/null 2>&1; then
+      value="$(curl -fsS "$url" 2>/dev/null | python3 -c '
+import json, re, sys
+value = json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    if value is None:
+        break
+    value = value[int(key)] if re.fullmatch(r"\d+", key) else value.get(key)
+if isinstance(value, str) and value:
+    sys.stdout.write(value)
+' "$path" 2>/dev/null || true)"
+    else
+      value="$(curl -fsS "$url" 2>/dev/null | python -c '
+import json, re, sys
+value = json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    if value is None:
+        break
+    value = value[int(key)] if re.match(r"^\d+$", key) else value.get(key)
+if isinstance(value, str) and value:
+    sys.stdout.write(value)
+' "$path" 2>/dev/null || true)"
+    fi
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+    echo "JSON smoke test waiting for $url path $path, attempt $attempt/24" >&2
+    sleep 5
+  done
+
+  echo "JSON smoke test failed for $url path $path after 24 attempts" >&2
   return 1
 }
 
@@ -352,6 +437,7 @@ wait_for_container_healthy "${LLMHUB_RADAR_MARKETPLACE_POSTGRES_CONTAINER:-llmhu
   --exit-code-from marketplace-migrate \
   marketplace-migrate
 "${COMPOSE[@]}" up -d --no-build dashboard status-page radar-probe-worker marketplace-api marketplace-maintenance
+APP_SERVICES_SWITCHED=1
 
 smoke_test_local
 prepare_storefront_release
@@ -360,6 +446,7 @@ smoke_test_public
 
 CADDY_SWITCHED=0
 STOREFRONT_SWITCHED=0
+APP_SERVICES_SWITCHED=0
 trap - ERR
 
 if [ "${RADAR_DEPLOY_NOTIFICATIONS:-0}" = "1" ]; then

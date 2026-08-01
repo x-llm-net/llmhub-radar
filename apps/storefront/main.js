@@ -565,6 +565,28 @@
     </section>`;
   }
 
+  function updateRankingStructuredData(rankings, generatedAt) {
+    const script = document.querySelector("#homepage-ranking-json-ld");
+    if (!script) return;
+    script.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "AI API 中转站模型实测榜",
+      description:
+        "按具体模型比较 AI API 中转站近 7 天可用率、首字速度和有效测试数。",
+      url: `${window.location.origin}/`,
+      itemListOrder: "https://schema.org/ItemListUnordered",
+      numberOfItems: rankings.length,
+      ...(generatedAt ? { dateModified: generatedAt } : {}),
+      itemListElement: rankings.map((board, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: `${board.model.displayName} 中转站榜单`,
+        url: `${window.location.origin}/model.html?model=${encodeURIComponent(board.model.slug)}`,
+      })),
+    });
+  }
+
   function render(rankings, providerCount, latestStatsAt) {
     const families = getFamilyOrder(rankings);
     renderFamilies(rankings, families);
@@ -592,6 +614,7 @@
       .filter(Boolean)
       .sort()
       .at(-1);
+    updateRankingStructuredData(rankings, generatedAt);
     if (elements.rankingUpdate && generatedAt) {
       elements.rankingUpdate.classList.remove("is-error");
       elements.rankingUpdate.innerHTML = `<i aria-hidden="true"></i> 数据更新于 ${relativeTime(generatedAt)}`;

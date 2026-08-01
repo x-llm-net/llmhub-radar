@@ -8,6 +8,13 @@ import { Link } from "@/components/common/link";
 export const metadata: Metadata = {
   title: "开发者 API | LLMHub Radar",
   description: "使用 LLMHub Radar 公共 API 批量查询服务商稳定性、状态和评分。",
+  alternates: {
+    canonical: "https://llm-hub.store/developers/api",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 const endpoint = "/api/radar/providers/query";
@@ -93,7 +100,10 @@ export default function Page() {
 
           <section className="grid gap-3 sm:grid-cols-3">
             {[
-              ["observedHealthScore", "等于 7 天观测可用率百分数，例如 96.77。"],
+              [
+                "observedHealthScore",
+                "等于 7 天观测可用率百分数，例如 96.77。",
+              ],
               ["grade", "S/A/B/C/D/F/unknown，适合做列表粗筛。"],
               [
                 "confidenceLevel",

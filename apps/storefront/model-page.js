@@ -26,6 +26,92 @@
     empty: document.querySelector("#model-empty"),
   };
 
+  function setMeta(selector, content) {
+    const element = document.querySelector(selector);
+    if (element) element.setAttribute("content", content);
+  }
+
+  function updateSeo(board) {
+    const { model } = board;
+    const canonicalUrl = new URL("/model.html", window.location.origin);
+    canonicalUrl.searchParams.set("model", model.slug);
+    const canonical = canonicalUrl.toString();
+    const title = `${model.displayName} 中转站榜单 | LLMHub Radar`;
+    const description = `${model.displayName} AI API 中转站实测榜：比较近 7 天可用率、首字速度、有效测试数和当前状态。`;
+    const canonicalElement = document.querySelector('link[rel="canonical"]');
+    if (canonicalElement) canonicalElement.setAttribute("href", canonical);
+    setMeta('meta[name="description"]', description);
+    setMeta('meta[property="og:title"]', title);
+    setMeta('meta[property="og:description"]', description);
+    setMeta('meta[property="og:url"]', canonical);
+    setMeta('meta[name="twitter:title"]', title);
+    setMeta('meta[name="twitter:description"]', description);
+
+    const graph = [
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "LLMHub Radar",
+            item: `${window.location.origin}/`,
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: `${model.displayName} 中转站榜单`,
+            item: canonical,
+          },
+        ],
+      },
+      {
+        "@type": "Dataset",
+        name: `${model.displayName} AI API 中转站实测数据`,
+        description,
+        url: canonical,
+        inLanguage: "zh-CN",
+        creator: {
+          "@type": "Organization",
+          name: "LLMHub Radar",
+          url: `${window.location.origin}/`,
+        },
+        measurementTechnique: "定时发起真实 API 请求并按近 7 天窗口汇总",
+        variableMeasured: [
+          "7 天可用率",
+          "首字响应时间 P50/P95",
+          "有效测试数",
+          "当前状态",
+        ],
+        distribution: {
+          "@type": "DataDownload",
+          encodingFormat: "application/json",
+          contentUrl: `${window.location.origin}/v1/models/${encodeURIComponent(model.slug)}/leaderboard`,
+        },
+        ...(board.generatedAt ? { dateModified: board.generatedAt } : {}),
+      },
+      {
+        "@type": "ItemList",
+        name: `${model.displayName} 中转站自然排名`,
+        itemListOrder: "https://schema.org/ItemListOrderAscending",
+        numberOfItems: board.ranking.length,
+        itemListElement: board.ranking.map((row, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: row.provider.name || row.provider.slug,
+          url: `${window.location.origin}/provider.html?slug=${encodeURIComponent(row.provider.slug)}`,
+        })),
+      },
+    ];
+    const script = document.querySelector("#seo-json-ld");
+    if (script) {
+      script.textContent = JSON.stringify({
+        "@context": "https://schema.org",
+        "@graph": graph,
+      });
+    }
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -222,7 +308,8 @@
       .filter((value) => value !== null);
     const best = scores.length ? Math.max(...scores) : null;
 
-    document.title = `${model.displayName} 中转站榜单 | LLMHub`;
+    document.title = `${model.displayName} 中转站榜单 | LLMHub Radar`;
+    updateSeo(board);
     elements.breadcrumb.textContent = model.displayName;
     elements.vendor.textContent = `${model.vendor.toUpperCase()} · MODEL RANKING`;
     elements.title.textContent = `${model.displayName} 中转站榜单`;

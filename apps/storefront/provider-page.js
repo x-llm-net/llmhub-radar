@@ -27,6 +27,103 @@
     profileDescription: document.querySelector("#provider-profile-description"),
   };
 
+  function setMeta(selector, content) {
+    const element = document.querySelector(selector);
+    if (element) element.setAttribute("content", content);
+  }
+
+  function updateSeo(data, name) {
+    const { provider } = data;
+    const canonicalUrl = new URL("/provider.html", window.location.origin);
+    canonicalUrl.searchParams.set("slug", provider.slug);
+    const canonical = canonicalUrl.toString();
+    const title = `${name} 模型实测 | LLMHub Radar`;
+    const description = `${name} AI API 中转站实测详情：查看各模型近 7 天可用率、首字速度、有效测试数和当前状态。`;
+    const canonicalElement = document.querySelector('link[rel="canonical"]');
+    if (canonicalElement) canonicalElement.setAttribute("href", canonical);
+    setMeta('meta[name="description"]', description);
+    setMeta('meta[property="og:title"]', title);
+    setMeta('meta[property="og:description"]', description);
+    setMeta('meta[property="og:url"]', canonical);
+    setMeta('meta[name="twitter:title"]', title);
+    setMeta('meta[name="twitter:description"]', description);
+    const logoUrl = safeExternalUrl(provider.logoUrl);
+    if (logoUrl) {
+      setMeta('meta[property="og:image"]', logoUrl);
+      setMeta('meta[name="twitter:image"]', logoUrl);
+    }
+
+    const script = document.querySelector("#seo-json-ld");
+    if (!script) return;
+    script.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            {
+              "@type": "ListItem",
+              position: 1,
+              name: "LLMHub Radar",
+              item: `${window.location.origin}/`,
+            },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name,
+              item: canonical,
+            },
+          ],
+        },
+        {
+          "@type": "Organization",
+          name,
+          url: safeExternalUrl(provider.websiteUrl) || canonical,
+          ...(logoUrl ? { logo: logoUrl } : {}),
+          ...(provider.description
+            ? { description: provider.description }
+            : {}),
+        },
+        {
+          "@type": "Dataset",
+          name: `${name} AI API 模型实测数据`,
+          description,
+          url: canonical,
+          inLanguage: "zh-CN",
+          creator: {
+            "@type": "Organization",
+            name: "LLMHub Radar",
+            url: `${window.location.origin}/`,
+          },
+          measurementTechnique: "定时发起真实 API 请求并按近 7 天窗口汇总",
+          variableMeasured: [
+            "7 天可用率",
+            "首字响应时间 P50/P95",
+            "有效测试数",
+            "当前状态",
+          ],
+          distribution: {
+            "@type": "DataDownload",
+            encodingFormat: "application/json",
+            contentUrl: `${window.location.origin}/v1/providers/${encodeURIComponent(provider.slug)}/rankings`,
+          },
+          ...(data.generatedAt ? { dateModified: data.generatedAt } : {}),
+        },
+        {
+          "@type": "ItemList",
+          name: `${name} 已实测模型`,
+          numberOfItems: data.models.length,
+          itemListElement: data.models.map((entry, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: entry.model.displayName,
+            url: `${window.location.origin}/model.html?model=${encodeURIComponent(entry.model.slug)}`,
+          })),
+        },
+      ],
+    });
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -249,7 +346,8 @@
     const primaryUrl = purchaseUrl || websiteUrl;
     const name = provider.name || provider.slug;
 
-    document.title = `${name} 模型实测 | LLMHub`;
+    document.title = `${name} 模型实测 | LLMHub Radar`;
+    updateSeo(data, name);
     elements.breadcrumb.textContent = name;
     elements.title.textContent = name;
     elements.description.textContent = entries.length

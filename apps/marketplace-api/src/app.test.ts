@@ -220,4 +220,32 @@ describeDatabase("marketplace public API", () => {
     expect(payload.meta.minRankingScore).toBe(0);
     await setMarketplaceMinRankingAvailabilityBps(db, 0);
   });
+
+  test("publishes crawler discovery documents from the public catalog", async () => {
+    const [robotsResponse, sitemapResponse, llmsResponse] = await Promise.all([
+      app.request("/robots.txt"),
+      app.request("/sitemap.xml"),
+      app.request("/llms.txt"),
+    ]);
+    const [robots, sitemap, llms] = await Promise.all([
+      robotsResponse.text(),
+      sitemapResponse.text(),
+      llmsResponse.text(),
+    ]);
+
+    expect(robotsResponse.status).toBe(200);
+    expect(robots).toContain("Sitemap: https://llm-hub.store/sitemap.xml");
+    expect(sitemapResponse.headers.get("content-type")).toContain(
+      "application/xml",
+    );
+    expect(sitemap).toContain("https://llm-hub.store/model.html?model=gpt-5-4");
+    expect(sitemap).not.toContain("unassociated-api-test-model");
+    expect(sitemap).toContain(
+      "https://llm-hub.store/provider.html?slug=marketplace-api-test-provider",
+    );
+    expect(llmsResponse.headers.get("content-type")).toContain("text/plain");
+    expect(llms).toContain("# LLMHub Radar");
+    expect(llms).toContain("GPT 5.4");
+    expect(llms).toContain("Marketplace API Test Provider");
+  });
 });

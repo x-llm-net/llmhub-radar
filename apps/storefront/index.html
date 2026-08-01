@@ -4,14 +4,66 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="LLMHub AI API 中转站近 7 天可用率实测榜单" />
+    <meta name="description" content="LLMHub Radar 持续实测 AI API 中转站，按具体模型比较近 7 天可用率、首字速度、有效测试数和当前状态。" />
     <meta name="application-name" content="LLMHub Marketplace" />
-    <title>LLMHub | 挑选靠谱的中转站</title>
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="LLMHub Radar" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="LLMHub Radar | AI API 中转站实测榜" />
+    <meta property="og:description" content="按具体模型比较 AI API 中转站近 7 天可用率、首字速度、有效测试数和当前状态。" />
+    <meta property="og:url" content="https://llm-hub.store/" />
+    <meta property="og:image" content="https://llm-hub.store/llmhub-radar-logo.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="LLMHub Radar | AI API 中转站实测榜" />
+    <meta name="twitter:description" content="按具体模型比较 AI API 中转站近 7 天可用率、首字速度和当前状态。" />
+    <meta name="twitter:image" content="https://llm-hub.store/llmhub-radar-logo.png" />
+    <title>LLMHub Radar | AI API 中转站实测榜</title>
+    <link rel="canonical" href="https://llm-hub.store/" />
+    <link rel="alternate" type="text/plain" href="https://llm-hub.store/llms.txt" title="LLMHub Radar for AI agents" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css?v=17" />
 
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://llm-hub.store/#organization",
+            "name": "LLMHub Radar",
+            "url": "https://llm-hub.store/",
+            "logo": "https://llm-hub.store/llmhub-radar-logo.png"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://llm-hub.store/#website",
+            "name": "LLMHub Radar",
+            "url": "https://llm-hub.store/",
+            "inLanguage": "zh-CN",
+            "publisher": { "@id": "https://llm-hub.store/#organization" }
+          },
+          {
+            "@type": "Dataset",
+            "@id": "https://llm-hub.store/#dataset",
+            "name": "AI API 中转站稳定性实测数据",
+            "description": "按具体模型持续观测 AI API 中转站近 7 天可用率、首字速度、有效测试数和当前状态。",
+            "url": "https://llm-hub.store/",
+            "inLanguage": "zh-CN",
+            "creator": { "@id": "https://llm-hub.store/#organization" },
+            "distribution": {
+              "@type": "DataDownload",
+              "encodingFormat": "application/json",
+              "contentUrl": "https://llm-hub.store/v1/homepage"
+            }
+          }
+        ]
+      }
+    </script>
+    <script id="homepage-ranking-json-ld" type="application/ld+json">{}</script>
+
     <script src="./dashboard-links.js?v=1" defer></script>
-    <script src="./main.js?v=20" defer></script>
+    <script src="./main.js?v=21" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -95,7 +147,7 @@
         <div class="rules-strip-heading">
           <p class="section-kicker">HOW TO READ</p>
           <h2 id="rules-title">榜单怎么看</h2>
-          <p>先选模型，再看可用率、首字速度、有效测试数和更新时间。</p>
+          <p>数据来自定时发起的真实 API 请求，按具体模型汇总近 7 天观测结果。</p>
           <small class="sample-note">页面仅展示汇总结果，API 密钥等敏感信息不会公开。</small>
         </div>
         <div class="rules-strip-list">

@@ -116,6 +116,7 @@ Caddy:
 | --- | --- |
 | `https://llm-hub.store/` and storefront assets | versioned static storefront served by Caddy |
 | `https://llm-hub.store/v1/*` | `marketplace-api` on `127.0.0.1:3010` |
+| `https://llm-hub.store/{robots.txt,sitemap.xml,llms.txt}` | dynamic Marketplace discovery documents on `127.0.0.1:3010` |
 | Other `https://llm-hub.store/*` routes | `status-page` on `127.0.0.1:3001` |
 | `https://app.llm-hub.store` | `dashboard` on `127.0.0.1:3000` |
 
@@ -364,7 +365,8 @@ Keep `restart_notifications=false` for normal releases. The deploy script:
 - validates and reloads Caddy only after local services are healthy
 - restores the previous storefront symlink and Caddy config if public smoke
   tests fail
-- smoke-tests local services, public Marketplace APIs, and the storefront
+- smoke-tests local services, public Marketplace APIs, and the storefront,
+  including the real model and provider query pages plus the public logo asset
 - leaves `radar-notification-worker` untouched by default
 
 The server-side deployment script can be run manually for emergency rollback or

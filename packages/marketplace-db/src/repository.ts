@@ -134,6 +134,12 @@ export interface ProviderRankings {
   }>;
 }
 
+export interface PublicMarketplaceProvider {
+  slug: string;
+  name: string;
+  updatedAt: Date;
+}
+
 export async function listPublicMarketplaceModels(
   db: MarketplaceDb,
   options: { modelSlug?: string; providerSlug?: string } = {},
@@ -171,6 +177,7 @@ export async function listPublicMarketplaceModels(
       shortName: models.shortName,
       description: models.description,
       sortOrder: models.sortOrder,
+      updatedAt: models.updatedAt,
     })
     .from(models)
     .where(
@@ -184,6 +191,32 @@ export async function listPublicMarketplaceModels(
 
   catalog.sort(compareMarketplaceModels);
   return catalog;
+}
+
+export async function listPublicMarketplaceProviders(
+  db: MarketplaceDb,
+): Promise<PublicMarketplaceProvider[]> {
+  return db
+    .selectDistinct({
+      slug: providers.slug,
+      name: providers.name,
+      updatedAt: providers.updatedAt,
+    })
+    .from(providers)
+    .innerJoin(providerModels, eq(providerModels.providerId, providers.id))
+    .innerJoin(
+      probeTargets,
+      eq(probeTargets.providerModelId, providerModels.id),
+    )
+    .where(
+      and(
+        eq(providers.status, "published"),
+        inArray(providerModels.status, ["observing", "ranked"]),
+        eq(probeTargets.enabled, true),
+        eq(probeTargets.isScoring, true),
+      ),
+    )
+    .orderBy(asc(providers.name), asc(providers.slug));
 }
 
 const LEADERBOARD_FRESHNESS_MS = 30 * 60 * 1000;
