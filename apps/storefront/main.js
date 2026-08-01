@@ -571,9 +571,9 @@
     script.textContent = JSON.stringify({
       "@context": "https://schema.org",
       "@type": "ItemList",
-      name: "AI API 中转站模型实测榜",
+      name: "AI API 中转站稳定性与速度实测榜",
       description:
-        "按具体模型比较 AI API 中转站近 7 天可用率、首字速度和有效测试数。",
+        "基于持续真实 API 探测，比较 Claude、GPT、Gemini 中转站近 7 天可用率、首字速度和有效测试数。",
       url: `${window.location.origin}/`,
       itemListOrder: "https://schema.org/ItemListUnordered",
       numberOfItems: rankings.length,
