@@ -18,6 +18,7 @@ import {
   hubProbeTargets,
   hubProviderGroups,
   hubProviders,
+  replaceHubModelPrice,
   setMarketplaceMinRankingAvailabilityBps,
 } from "@llmhub/marketplace-db";
 import { encryptSecret } from "@openstatus/services/radar/runtime";
@@ -110,9 +111,30 @@ describeDatabase("marketplace public API", () => {
       .set({ lifecycleStatus: "ready", listingStatus: "listed" })
       .where(inArray(hubProviderGroups.id, groupIds));
 
+    const [catalogModel] = await db
+      .select({ id: hubModels.id })
+      .from(hubModels)
+      .where(eq(hubModels.slug, "gpt-5-4"))
+      .limit(1);
+    if (!catalogModel)
+      throw new Error("Marketplace test model was not created");
+    await replaceHubModelPrice(db, {
+      modelId: catalogModel.id,
+      components: [
+        { component: "input_text", amountMicros: "2000000" },
+        { component: "output_text", amountMicros: "10000000" },
+      ],
+      changedByUserId: "marketplace-api-test",
+      changeReason: "Marketplace API test fixture",
+    });
+
     const groupModels = await db
       .select({ id: hubGroupModels.id })
       .from(hubGroupModels)
+      .where(inArray(hubGroupModels.groupId, groupIds));
+    await db
+      .update(hubGroupModels)
+      .set({ trafficEnabled: true })
       .where(inArray(hubGroupModels.groupId, groupIds));
     const now = new Date();
     for (let index = 0; index < groupModels.length; index += 1) {
@@ -169,6 +191,46 @@ describeDatabase("marketplace public API", () => {
     expect(sharedMaxAge).toBeGreaterThan(0);
     expect(sharedMaxAge).toBeLessThanOrEqual(600);
     expect(response.headers.get("etag")).toBeTruthy();
+  });
+
+  test("serves priced and routable model offers for the authenticated market", async () => {
+    const response = await app.request("/v1/manage/market-models", {
+      headers: managementHeaders(),
+    });
+    const payload = (await response.json()) as {
+      data: Array<{
+        slug: string;
+        officialInputPriceMicros: string;
+        offers: Array<{
+          groupName: string;
+          multiplierBps: number;
+          inputPriceMicros: string;
+          outputPriceMicros: string;
+        }>;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    const model = payload.data.find((item) => item.slug === "gpt-5-4");
+    expect(model).toEqual(
+      expect.objectContaining({
+        officialInputPriceMicros: "2000000",
+        offers: [
+          expect.objectContaining({
+            groupName: "Plus",
+            multiplierBps: 6_000,
+            inputPriceMicros: "1200000",
+            outputPriceMicros: "6000000",
+          }),
+          expect.objectContaining({
+            groupName: "Pro",
+            multiplierBps: 8_000,
+            inputPriceMicros: "1600000",
+            outputPriceMicros: "8000000",
+          }),
+        ],
+      }),
+    );
   });
 
   test("reuses the in-process response cache within a ten-minute bucket", async () => {

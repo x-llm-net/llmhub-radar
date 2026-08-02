@@ -212,7 +212,7 @@
     "dev:status-page": "turbo run dev --filter='./apps/status-page' --filter='./packages/db'",
     "dev:dashboard": "turbo run dev --filter='./apps/dashboard' --filter='./packages/db'",
     "dev:radar": "node scripts/dev-radar.mjs",
-    "dev:radar:prepare": "docker compose -f docker-compose.radar.yaml up -d libsql db-migrate radar-probe-worker && docker compose -f docker-compose.marketplace.yaml up -d postgres && docker compose -f docker-compose.radar.yaml stop dashboard status-page",
+    "dev:radar:prepare": "node scripts/dev-radar-prepare.mjs",
     "dev:radar:stop-web": "docker compose -f docker-compose.radar.yaml stop dashboard status-page",
     "dx": "turbo run dx",
     "tsc": "tsc",

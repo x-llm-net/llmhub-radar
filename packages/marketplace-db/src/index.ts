@@ -2,6 +2,7 @@ export * from "./db";
 export * from "./groups";
 export * from "./hub-billing";
 export * from "./hub-config-outbox";
+export * from "./hub-market";
 export * from "./hub-pricing";
 export * from "./hub-probes";
 export * from "./hub-rankings";

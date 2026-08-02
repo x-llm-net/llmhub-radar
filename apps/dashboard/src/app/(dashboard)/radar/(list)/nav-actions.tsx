@@ -8,6 +8,7 @@ import {
   KeyRound,
   Plus,
   ReceiptText,
+  ShoppingBag,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -36,6 +37,12 @@ export function NavActions() {
           </Button>
         </>
       )}
+      <Button size="sm" variant="outline" asChild>
+        <Link href="/radar/market">
+          <ShoppingBag className="size-3.5" />
+          模型市场
+        </Link>
+      </Button>
       <Button size="sm" variant="outline" asChild>
         <Link href="/radar/tokens">
           <KeyRound className="size-3.5" />

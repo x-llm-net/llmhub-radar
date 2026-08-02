@@ -22,6 +22,7 @@ import {
   CircleUserRound,
   LayoutGrid,
   ReceiptText,
+  ShoppingBag,
   Store,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -40,6 +41,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const workbench = [
     { name: t("overview"), url: "/overview", icon: LayoutGrid },
     { name: t("myProviders"), url: "/radar", icon: Store },
+    { name: t("modelMarket"), url: "/radar/market", icon: ShoppingBag },
     {
       name: t("dataRankings"),
       url: "/rankings",

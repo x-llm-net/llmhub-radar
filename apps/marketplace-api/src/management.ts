@@ -21,6 +21,7 @@ import {
   listHubGroupProbeRuns,
   listHubGroups,
   listHubListingReviews,
+  listHubMarketModels,
   listHubModelPrices,
   mapHubGroupModel,
   requestHubGroupListing,
@@ -233,6 +234,12 @@ export function createManagementApp(db: MarketplaceDb) {
   app.get("/available-groups", async (context) =>
     runManagementRequest(context, async () => ({
       data: await listHubAvailableGroups(db),
+    })),
+  );
+
+  app.get("/market-models", async (context) =>
+    runManagementRequest(context, async () => ({
+      data: await listHubMarketModels(db),
     })),
   );
 

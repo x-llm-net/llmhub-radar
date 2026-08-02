@@ -71,6 +71,10 @@ export type HubAvailableGroup = {
   balanceStatus: "unknown" | "available" | "low" | "exhausted" | "error";
 };
 
+export type HubAvailableGroupModel = HubAvailableGroup & {
+  groupModelId: string;
+};
+
 export type HubRoutePlanItem = {
   groupModelId: string;
   relayChannelBindingId: string;
@@ -302,6 +306,7 @@ export async function listHubAvailableGroups(db: MarketplaceExecutor) {
     .innerJoin(hubProviders, eq(hubProviders.id, hubProviderGroups.providerId))
     .where(
       and(
+        eq(hubProviders.status, "active"),
         eq(hubProviderGroups.lifecycleStatus, "ready"),
         eq(hubProviderGroups.desiredStatus, "active"),
         eq(hubProviderGroups.listingStatus, "listed"),
@@ -324,6 +329,50 @@ export async function listHubAvailableGroups(db: MarketplaceExecutor) {
     )
     .orderBy(asc(hubProviders.displayName), asc(hubProviderGroups.name));
   return rows;
+}
+
+export async function listHubAvailableGroupModels(db: MarketplaceExecutor) {
+  return db
+    .select({
+      groupModelId: hubGroupModels.id,
+      groupId: hubProviderGroups.id,
+      providerName: hubProviders.displayName,
+      groupName: hubProviderGroups.name,
+      description: hubProviderGroups.description,
+      balanceStatus: hubProviderGroups.balanceStatus,
+    })
+    .from(hubGroupModels)
+    .innerJoin(
+      hubProviderGroups,
+      eq(hubProviderGroups.id, hubGroupModels.groupId),
+    )
+    .innerJoin(hubProviders, eq(hubProviders.id, hubProviderGroups.providerId))
+    .where(
+      and(
+        eq(hubGroupModels.discoveryStatus, "active"),
+        eq(hubGroupModels.trafficEnabled, true),
+        eq(hubGroupModels.probeEnabled, true),
+        eq(hubProviders.status, "active"),
+        eq(hubProviderGroups.lifecycleStatus, "ready"),
+        eq(hubProviderGroups.desiredStatus, "active"),
+        eq(hubProviderGroups.listingStatus, "listed"),
+        ne(hubProviderGroups.balanceStatus, "exhausted"),
+        not(
+          exists(
+            db
+              .select({ id: hubGroupBlocks.id })
+              .from(hubGroupBlocks)
+              .where(
+                and(
+                  eq(hubGroupBlocks.groupId, hubProviderGroups.id),
+                  isNull(hubGroupBlocks.resolvedAt),
+                  eq(hubGroupBlocks.stopsTraffic, true),
+                ),
+              ),
+          ),
+        ),
+      ),
+    );
 }
 
 export async function replaceHubTokenGroupPreferences(

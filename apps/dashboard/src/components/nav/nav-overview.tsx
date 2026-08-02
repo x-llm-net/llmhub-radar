@@ -34,7 +34,13 @@ export function NavOverview({
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   const t = useTranslations("nav");
-  const currentTop = topSegment(pathname);
+  const activeUrl = items
+    .flatMap((item) =>
+      item.url && (pathname === item.url || pathname.startsWith(`${item.url}/`))
+        ? [item.url]
+        : [],
+    )
+    .sort((left, right) => right.length - left.length)[0];
 
   return (
     <SidebarGroup>
@@ -56,8 +62,9 @@ export function NavOverview({
               <SidebarMenuButton
                 isActive={
                   !!item.url &&
-                  currentTop !== "" &&
-                  currentTop === topSegment(item.url)
+                  (activeUrl
+                    ? item.url === activeUrl
+                    : topSegment(pathname) === topSegment(item.url))
                 }
                 asChild={!item.disabled && !!item.url}
                 disabled={item.disabled}

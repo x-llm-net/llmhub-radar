@@ -202,6 +202,41 @@ const availableGroupSchema = z.object({
   balanceStatus: z.enum(["unknown", "available", "low", "exhausted", "error"]),
 });
 
+const marketModelSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  vendor: z.string(),
+  family: z.string(),
+  canonicalName: z.string(),
+  displayName: z.string(),
+  officialInputPriceMicros: z.string().regex(/^\d+$/),
+  officialOutputPriceMicros: z.string().regex(/^\d+$/),
+  offers: z.array(
+    z.object({
+      groupModelId: z.string().uuid(),
+      groupId: z.string().uuid(),
+      providerName: z.string(),
+      groupName: z.string(),
+      description: z.string(),
+      multiplierBps: z.number().int().nonnegative(),
+      inputPriceMicros: z.string().regex(/^\d+$/),
+      outputPriceMicros: z.string().regex(/^\d+$/),
+      availabilityBps: z.number().int().nullable(),
+      firstTokenP50Ms: z.number().int().nullable(),
+      sampleCount: z.number().int().nonnegative(),
+      currentStatus: z.enum([
+        "unknown",
+        "normal",
+        "degraded",
+        "down",
+        "configuration_error",
+        "stale",
+      ]),
+      naturalRank: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
 const userActivitySchema = z.object({
   ownerUserId: z.string(),
   currency: z.string(),
@@ -301,6 +336,14 @@ export const hubRouter = createTRPCRouter({
       "/available-groups",
       { method: "GET" },
       z.array(availableGroupSchema),
+    ),
+  ),
+
+  marketModels: protectedProcedure.query(() =>
+    managementRequest(
+      "/market-models",
+      { method: "GET" },
+      z.array(marketModelSchema),
     ),
   ),
 

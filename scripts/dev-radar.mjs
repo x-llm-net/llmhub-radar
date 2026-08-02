@@ -65,6 +65,15 @@ const childEnv = {
     process.env.MARKETPLACE_DATABASE_URL ??
     envFromFile.MARKETPLACE_DATABASE_URL ??
     "postgres://llmhub:llmhub@127.0.0.1:55432/llmhub_marketplace",
+  MARKETPLACE_API_INTERNAL_URL: marketplaceApiOrigin,
+  MARKETPLACE_MANAGEMENT_TOKEN:
+    process.env.MARKETPLACE_MANAGEMENT_TOKEN ??
+    envFromFile.MARKETPLACE_MANAGEMENT_TOKEN ??
+    "llmhub-local-management-token",
+  RADAR_CREDENTIAL_SECRET:
+    process.env.RADAR_CREDENTIAL_SECRET ??
+    envFromFile.RADAR_CREDENTIAL_SECRET ??
+    "llmhub-local-credential-secret-at-least-32-characters",
   NEXT_PUBLIC_MARKETPLACE_API_URL: marketplaceApiOrigin,
   NEXT_PUBLIC_MARKETPLACE_URL:
     process.env.NEXT_PUBLIC_MARKETPLACE_URL ??
@@ -78,7 +87,9 @@ const childEnv = {
 };
 
 const isWindows = process.platform === "win32";
-const pnpm = isWindows ? "cmd.exe" : "pnpm";
+const pnpm = isWindows
+  ? (process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe")
+  : "pnpm";
 const processes = [
   {
     name: "dashboard",
