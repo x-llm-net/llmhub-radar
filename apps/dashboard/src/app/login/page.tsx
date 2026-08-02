@@ -9,6 +9,7 @@ import { LanguageSwitcher } from "@/components/i18n/language-switcher";
 import { signIn } from "@/lib/auth";
 
 import { LoginButton } from "./_components/login-button";
+import { DevEmailLoginForm } from "./_components/dev-email-login-form";
 import MagicLinkForm from "./_components/magic-link-form";
 import { searchParamsCache } from "./search-params";
 
@@ -65,6 +66,12 @@ export default async function Page(props: {
           <MagicLinkForm redirectTo={redirectTo ?? undefined} />
           <Separator />
         </div>
+        {process.env.NODE_ENV === "development" ? (
+          <>
+            <DevEmailLoginForm redirectTo={redirectTo ?? undefined} />
+            <Separator />
+          </>
+        ) : null}
         <form
           action={async () => {
             "use server";

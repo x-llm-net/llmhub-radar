@@ -2,12 +2,16 @@ import { timingSafeEqual } from "node:crypto";
 
 import {
   createHubGroup,
+  createHubProvider,
   createHubApiToken,
   getHubGroup,
   getHubGroupEncryptedConfig,
   getHubLedgerBalance,
   HubGroupNotFoundError,
   HubGroupStateError,
+  HubProviderConflictError,
+  HubProviderLimitError,
+  HubProviderNotFoundError,
   HubApiTokenNotFoundError,
   HubApiTokenRevokedError,
   HubRoutingError,
@@ -20,6 +24,7 @@ import {
   listHubUserRequestActivity,
   listHubGroupProbeRuns,
   listHubGroups,
+  listHubProviders,
   listHubListingReviews,
   listHubMarketModels,
   listHubModelPrices,
@@ -59,11 +64,20 @@ const workspaceSchema = z.object({
 
 const createGroupSchema = z.object({
   workspace: workspaceSchema,
+  providerId: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).default(""),
   baseUrl: z.string().trim().url(),
   apiKey: z.string().trim().min(1).max(4096),
   multiplierBps: z.number().int().min(0).max(1_000_000),
+});
+
+const createProviderSchema = z.object({
+  workspace: workspaceSchema,
+  name: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(500).default(""),
+  websiteUrl: z.string().trim().url().nullable().optional(),
+  providerLimit: z.number().int().min(1).max(3),
 });
 
 const updateGroupSchema = z.object({
@@ -193,6 +207,32 @@ export function createManagementApp(db: MarketplaceDb) {
       .parse(context.req.query("workspaceId"));
     return runManagementRequest(context, async () => ({
       data: await presentGroups(db, workspaceId),
+    }));
+  });
+
+  app.get("/providers", async (context) => {
+    const workspaceId = z
+      .string()
+      .min(1)
+      .parse(context.req.query("workspaceId"));
+    return runManagementRequest(context, async () => ({
+      data: (await listHubProviders(db, workspaceId)).map(presentProvider),
+    }));
+  });
+
+  app.post("/providers", async (context) => {
+    const input = createProviderSchema.parse(await context.req.json());
+    return runManagementRequest(context, async () => ({
+      data: presentProvider(
+        await createHubProvider(db, {
+          ownerWorkspaceId: input.workspace.id,
+          slugBase: input.workspace.slug,
+          name: input.name,
+          description: input.description,
+          websiteUrl: input.websiteUrl,
+          providerLimit: input.providerLimit,
+        }),
+      ),
     }));
   });
 
@@ -381,6 +421,10 @@ export function createManagementApp(db: MarketplaceDb) {
   app.post("/groups", async (context) => {
     const input = createGroupSchema.parse(await context.req.json());
     return runManagementRequest(context, async () => {
+      const providers = await listHubProviders(db, input.workspace.id);
+      if (!providers.some((provider) => provider.id === input.providerId)) {
+        throw new HubProviderNotFoundError();
+      }
       const baseUrl = normalizeRadarBaseUrl(input.baseUrl);
       const discovery = await discoverOpenAiCompatibleModels({
         baseUrl,
@@ -388,6 +432,7 @@ export function createManagementApp(db: MarketplaceDb) {
       });
       const created = await createHubGroup(db, {
         ownerWorkspaceId: input.workspace.id,
+        providerId: input.providerId,
         providerSlug: input.workspace.slug,
         providerName: input.workspace.name,
         name: input.name,
@@ -717,6 +762,24 @@ async function runManagementRequest(
         404,
       );
     }
+    if (error instanceof HubProviderNotFoundError) {
+      return context.json(
+        { error: { code: "provider_not_found", message: error.message } },
+        404,
+      );
+    }
+    if (error instanceof HubProviderLimitError) {
+      return context.json(
+        { error: { code: "provider_limit", message: error.message } },
+        409,
+      );
+    }
+    if (error instanceof HubProviderConflictError) {
+      return context.json(
+        { error: { code: "provider_conflict", message: error.message } },
+        409,
+      );
+    }
     if (error instanceof HubModelNotFoundError) {
       return context.json(
         { error: { code: "model_not_found", message: error.message } },
@@ -786,6 +849,18 @@ function presentToken(
     createdAt: token.createdAt.toISOString(),
     updatedAt: token.updatedAt.toISOString(),
     ...("token" in token ? { token: token.token } : {}),
+  };
+}
+
+function presentProvider(
+  provider:
+    | Awaited<ReturnType<typeof createHubProvider>>
+    | Awaited<ReturnType<typeof listHubProviders>>[number],
+) {
+  return {
+    ...provider,
+    createdAt: provider.createdAt.toISOString(),
+    updatedAt: provider.updatedAt.toISOString(),
   };
 }
 

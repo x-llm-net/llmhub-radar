@@ -13,6 +13,7 @@ if (!databaseUrl) {
 }
 
 const port = Number(process.env.PORT ?? 3010);
+const hostname = process.env.MARKETPLACE_HOST ?? "0.0.0.0";
 const { db } = createMarketplaceDb(databaseUrl);
 const fakeRouterEnabled = process.env.LLMHUB_ROUTER_FAKE === "true";
 if (fakeRouterEnabled && process.env.NODE_ENV === "production") {
@@ -40,7 +41,8 @@ const app = createMarketplaceApp(db, { trafficAdapter });
 
 serve({
   port,
+  hostname,
   fetch: app.fetch,
 });
 
-console.log(`Marketplace API listening on http://127.0.0.1:${port}`);
+console.log(`Marketplace API listening on http://${hostname}:${port}`);

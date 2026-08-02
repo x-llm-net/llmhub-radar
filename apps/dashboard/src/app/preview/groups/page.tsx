@@ -81,7 +81,7 @@ export default function SupplyLinesPreviewPage() {
         </header>
 
         <main>
-          <Client />
+          <Client preview />
         </main>
       </div>
     </div>

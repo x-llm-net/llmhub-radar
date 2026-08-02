@@ -39,6 +39,29 @@ type MarketplaceTx = Parameters<Parameters<MarketplaceDb["transaction"]>[0]>[0];
 
 export type HubGroupStateAction = "pause" | "resume" | "retire";
 
+export type HubProviderSummary = {
+  id: string;
+  ownerWorkspaceId: string;
+  slug: string;
+  name: string;
+  displayName: string;
+  description: string;
+  websiteUrl: string | null;
+  logoAssetId: string | null;
+  status: "draft" | "active" | "suspended" | "retired";
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateHubProviderRecord = {
+  ownerWorkspaceId: string;
+  slugBase: string;
+  name: string;
+  description?: string;
+  websiteUrl?: string | null;
+  providerLimit: number;
+};
+
 export type HubGroupSummary = {
   id: string;
   providerId: string;
@@ -89,6 +112,7 @@ export type HubGroupSummary = {
 
 export type CreateHubGroupRecord = {
   ownerWorkspaceId: string;
+  providerId?: string;
   providerSlug: string;
   providerName: string;
   name: string;
@@ -130,8 +154,120 @@ export class HubGroupStateError extends Error {
   }
 }
 
+export class HubProviderNotFoundError extends Error {
+  constructor() {
+    super("Provider not found");
+    this.name = "HubProviderNotFoundError";
+  }
+}
+
+export class HubProviderLimitError extends Error {
+  constructor(limit: number) {
+    super(`Provider limit reached (${limit})`);
+    this.name = "HubProviderLimitError";
+  }
+}
+
+export class HubProviderConflictError extends Error {
+  constructor() {
+    super("Provider address is already in use");
+    this.name = "HubProviderConflictError";
+  }
+}
+
 export function normalizeHubModelName(value: string) {
   return value.trim().toLowerCase();
+}
+
+export async function listHubProviders(
+  db: MarketplaceDb,
+  ownerWorkspaceId: string,
+): Promise<HubProviderSummary[]> {
+  const providers = await db
+    .select({
+      id: hubProviders.id,
+      ownerWorkspaceId: hubProviders.ownerWorkspaceId,
+      slug: hubProviders.slug,
+      name: hubProviders.name,
+      displayName: hubProviders.displayName,
+      description: hubProviders.description,
+      websiteUrl: hubProviders.websiteUrl,
+      logoAssetId: hubProviders.logoAssetId,
+      status: hubProviders.status,
+      createdAt: hubProviders.createdAt,
+      updatedAt: hubProviders.updatedAt,
+    })
+    .from(hubProviders)
+    .where(
+      and(
+        eq(hubProviders.ownerWorkspaceId, ownerWorkspaceId),
+        sql`${hubProviders.status} <> 'retired'`,
+      ),
+    )
+    .orderBy(asc(hubProviders.createdAt));
+  return providers.map((provider) => {
+    if (!provider.ownerWorkspaceId) {
+      throw new Error("Owned provider is missing its workspace");
+    }
+    return { ...provider, ownerWorkspaceId: provider.ownerWorkspaceId };
+  });
+}
+
+export async function createHubProvider(
+  db: MarketplaceDb,
+  input: CreateHubProviderRecord,
+): Promise<HubProviderSummary> {
+  const existing = await db
+    .select({ id: hubProviders.id })
+    .from(hubProviders)
+    .where(
+      and(
+        eq(hubProviders.ownerWorkspaceId, input.ownerWorkspaceId),
+        sql`${hubProviders.status} <> 'retired'`,
+      ),
+    );
+  if (existing.length >= input.providerLimit) {
+    throw new HubProviderLimitError(input.providerLimit);
+  }
+
+  const slug = providerSlug(input.slugBase, existing.length);
+  const [slugOwner] = await db
+    .select({ id: hubProviders.id })
+    .from(hubProviders)
+    .where(eq(hubProviders.slug, slug))
+    .limit(1);
+  if (slugOwner) throw new HubProviderConflictError();
+
+  const [created] = await db
+    .insert(hubProviders)
+    .values({
+      ownerWorkspaceId: input.ownerWorkspaceId,
+      managementMode: "provider_managed",
+      slug,
+      name: input.name,
+      displayName: input.name,
+      description: input.description ?? "",
+      websiteUrl: input.websiteUrl ?? null,
+      claimable: false,
+      status: "active",
+    })
+    .returning({
+      id: hubProviders.id,
+      ownerWorkspaceId: hubProviders.ownerWorkspaceId,
+      slug: hubProviders.slug,
+      name: hubProviders.name,
+      displayName: hubProviders.displayName,
+      description: hubProviders.description,
+      websiteUrl: hubProviders.websiteUrl,
+      logoAssetId: hubProviders.logoAssetId,
+      status: hubProviders.status,
+      createdAt: hubProviders.createdAt,
+      updatedAt: hubProviders.updatedAt,
+    });
+  if (!created || !created.ownerWorkspaceId) {
+    throw new Error("Failed to create provider");
+  }
+  return { ...created, ownerWorkspaceId: created.ownerWorkspaceId };
 }
 
 export async function listHubGroups(
@@ -385,7 +521,9 @@ export async function createHubGroup(
   input: CreateHubGroupRecord,
 ) {
   return db.transaction(async (tx) => {
-    const provider = await ensureWorkspaceProvider(tx, input);
+    const provider = input.providerId
+      ? await requireOwnedProvider(tx, input.ownerWorkspaceId, input.providerId)
+      : await ensureWorkspaceProvider(tx, input);
     const now = new Date();
     const [group] = await tx
       .insert(hubProviderGroups)
@@ -1128,6 +1266,39 @@ async function ensureWorkspaceProvider(
     throw new HubGroupStateError("Provider slug is already in use");
   }
   return existing;
+}
+
+async function requireOwnedProvider(
+  tx: MarketplaceTx,
+  ownerWorkspaceId: string,
+  providerId: string,
+) {
+  const [provider] = await tx
+    .select({ id: hubProviders.id })
+    .from(hubProviders)
+    .where(
+      and(
+        eq(hubProviders.id, providerId),
+        eq(hubProviders.ownerWorkspaceId, ownerWorkspaceId),
+      ),
+    )
+    .limit(1);
+  if (!provider) throw new HubProviderNotFoundError();
+  return provider;
+}
+
+function providerSlug(slugBase: string, existingCount: number) {
+  const normalized = slugBase
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 110);
+  const base =
+    normalized ||
+    `provider-${createHash("sha256").update(slugBase).digest("hex").slice(0, 10)}`;
+  return existingCount === 0 ? base : `${base}-${existingCount + 1}`;
 }
 
 async function requireOwnedGroup(

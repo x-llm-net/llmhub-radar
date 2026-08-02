@@ -64,6 +64,8 @@ import {
 import { useTRPC } from "@/lib/trpc/client";
 import { cn } from "@/lib/utils";
 
+import { ProviderOnboarding } from "./provider-onboarding";
+
 type HubGroup = RouterOutputs["hub"]["groups"][number];
 type SupplyStatus =
   | "listed"
@@ -87,6 +89,155 @@ const emptyForm: GroupFormState = {
   apiKey: "",
   multiplier: "1.00",
 };
+
+const previewGroups: HubGroup[] = [
+  {
+    id: "2ee83d9b-f11d-4d39-8b1c-e24b91bc7e74",
+    providerId: "01ec6ff6-32dc-4713-a644-75c3bd8b2c89",
+    providerName: "X-LLM",
+    name: "X-LLM Pro",
+    description: "Primary lower-latency route",
+    baseUrl: "https://api.x-llm.example/v1",
+    apiKeyLastFour: "7f2a",
+    lifecycleStatus: "ready",
+    desiredStatus: "active",
+    listingStatus: "listed",
+    listingSubmittedAt: "2026-08-01T08:00:00.000Z",
+    listingReviewedAt: "2026-08-01T09:00:00.000Z",
+    listingReviewedBy: "platform-admin",
+    listingReviewNote: null,
+    configVersion: 3,
+    multiplierBps: 11000,
+    balanceMicros: "6350000",
+    balanceCurrency: "USD",
+    balanceStatus: "available",
+    balanceCheckedAt: "2026-08-02T07:45:00.000Z",
+    models: [
+      {
+        id: "7d7c6897-2e8e-47b4-bd2f-fb4a63af13ce",
+        modelId: "6cf26409-3fa1-46cd-bc27-1c0f4b4470e4",
+        upstreamName: "claude-sonnet-4-6",
+        discoveryStatus: "active",
+        trafficEnabled: true,
+        probeEnabled: true,
+        baseUrlOverride: null,
+        canonicalName: "claude-sonnet-4-6",
+        displayName: "Claude Sonnet 4.6",
+        availabilityBps: 9975,
+        firstTokenP50Ms: 820,
+        firstTokenP95Ms: 1480,
+        sampleCount: 486,
+        currentStatus: "normal",
+        lastCheckAt: "2026-08-02T07:50:00.000Z",
+      },
+      {
+        id: "4dd824b4-b1dd-4a78-b220-ecb5d12f92f6",
+        modelId: "af45d25c-3c10-458d-8c8d-d3dc267d6f8e",
+        upstreamName: "gpt-5.5",
+        discoveryStatus: "active",
+        trafficEnabled: true,
+        probeEnabled: true,
+        baseUrlOverride: null,
+        canonicalName: "gpt-5-5",
+        displayName: "GPT-5.5",
+        availabilityBps: 9920,
+        firstTokenP50Ms: 960,
+        firstTokenP95Ms: 1890,
+        sampleCount: 471,
+        currentStatus: "normal",
+        lastCheckAt: "2026-08-02T07:50:00.000Z",
+      },
+    ],
+    createdAt: "2026-07-22T08:00:00.000Z",
+    updatedAt: "2026-08-02T07:50:00.000Z",
+  },
+  {
+    id: "af18667f-7e29-406c-aef2-cfd3e5bd6673",
+    providerId: "869823b5-8d9b-4e7b-a4be-f8a7e8576448",
+    providerName: "X-LLM",
+    name: "Claude Value",
+    description: "Lower-price supply group",
+    baseUrl: "https://value.x-llm.example/v1",
+    apiKeyLastFour: "e91c",
+    lifecycleStatus: "ready",
+    desiredStatus: "active",
+    listingStatus: "private",
+    listingSubmittedAt: null,
+    listingReviewedAt: null,
+    listingReviewedBy: null,
+    listingReviewNote: null,
+    configVersion: 1,
+    multiplierBps: 8600,
+    balanceMicros: "1900000",
+    balanceCurrency: "USD",
+    balanceStatus: "low",
+    balanceCheckedAt: "2026-08-02T07:45:00.000Z",
+    models: [
+      {
+        id: "66f16a34-e0cf-4f4d-8f63-bf7ab5494c2a",
+        modelId: "ee436d8a-e280-42f3-9b1f-440cc99c5aea",
+        upstreamName: "claude-opus-4-6",
+        discoveryStatus: "active",
+        trafficEnabled: true,
+        probeEnabled: true,
+        baseUrlOverride: null,
+        canonicalName: "claude-opus-4-6",
+        displayName: "Claude Opus 4.6",
+        availabilityBps: 9880,
+        firstTokenP50Ms: 1210,
+        firstTokenP95Ms: 2400,
+        sampleCount: 328,
+        currentStatus: "degraded",
+        lastCheckAt: "2026-08-02T07:50:00.000Z",
+      },
+    ],
+    createdAt: "2026-07-29T08:00:00.000Z",
+    updatedAt: "2026-08-02T07:50:00.000Z",
+  },
+  {
+    id: "9433a1ce-4054-4177-aa04-1c982fb356e6",
+    providerId: "ebb0c5e3-4af0-4f12-982e-f7f00cdcd0a2",
+    providerName: "X-LLM",
+    name: "Gemini Reserve",
+    description: "Paused reserve route",
+    baseUrl: "https://reserve.x-llm.example/v1",
+    apiKeyLastFour: "44b8",
+    lifecycleStatus: "ready",
+    desiredStatus: "paused",
+    listingStatus: "private",
+    listingSubmittedAt: null,
+    listingReviewedAt: null,
+    listingReviewedBy: null,
+    listingReviewNote: null,
+    configVersion: 2,
+    multiplierBps: 9500,
+    balanceMicros: "0",
+    balanceCurrency: "USD",
+    balanceStatus: "exhausted",
+    balanceCheckedAt: "2026-08-02T07:45:00.000Z",
+    models: [
+      {
+        id: "d876f3c5-fd5f-4304-b0e3-b83172526a4d",
+        modelId: "26f61c90-1c83-4f28-87bb-d083dff6cfe9",
+        upstreamName: "gemini-2.5-pro",
+        discoveryStatus: "active",
+        trafficEnabled: false,
+        probeEnabled: false,
+        baseUrlOverride: "https://gemini.x-llm.example/v1",
+        canonicalName: "gemini-2-5-pro",
+        displayName: "Gemini 2.5 Pro",
+        availabilityBps: 9840,
+        firstTokenP50Ms: 1560,
+        firstTokenP95Ms: 2890,
+        sampleCount: 254,
+        currentStatus: "unknown",
+        lastCheckAt: "2026-08-01T18:20:00.000Z",
+      },
+    ],
+    createdAt: "2026-07-31T08:00:00.000Z",
+    updatedAt: "2026-08-01T18:20:00.000Z",
+  },
+];
 
 const filters: Array<{ value: "all" | SupplyStatus; label: string }> = [
   { value: "all", label: "全部" },
@@ -251,13 +402,16 @@ function LineMenu({
   onEdit,
   onTogglePause,
   onRetire,
+  readOnly = false,
 }: {
   group: HubGroup;
   onInspect: () => void;
   onEdit: () => void;
   onTogglePause: () => void;
   onRetire: () => void;
+  readOnly?: boolean;
 }) {
+  if (readOnly) return null;
   const status = groupStatus(group);
   const retired = status === "retired";
   const paused = status === "paused";
@@ -316,13 +470,26 @@ function LineMenu({
   );
 }
 
-export function Client() {
+export function Client({ preview = false }: { preview?: boolean }) {
   const router = useRouter();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const providersOptions = trpc.hub.providers.queryOptions();
+  const providersQuery = useQuery({ ...providersOptions, enabled: !preview });
+  const providers = useMemo(
+    () => (preview ? [] : (providersQuery.data ?? [])),
+    [preview, providersQuery.data],
+  );
+  const activeProvider = providers[0] ?? null;
   const groupsOptions = trpc.hub.groups.queryOptions();
-  const groupsQuery = useQuery(groupsOptions);
-  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const groupsQuery = useQuery({
+    ...groupsOptions,
+    enabled: !preview && Boolean(activeProvider),
+  });
+  const groups = useMemo(
+    () => (preview ? previewGroups : (groupsQuery.data ?? [])),
+    [groupsQuery.data, preview],
+  );
   const [activeFilter, setActiveFilter] = useState<"all" | SupplyStatus>("all");
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -431,6 +598,10 @@ export function Client() {
 
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
+    if (!activeProvider) {
+      toast.error("请先创建渠道商");
+      return;
+    }
     const multiplier = Number(form.multiplier);
     if (!Number.isFinite(multiplier) || multiplier < 0) {
       toast.error("请输入有效的分组倍率");
@@ -451,6 +622,7 @@ export function Client() {
       });
     } else {
       createMutation.mutate({
+        providerId: activeProvider.id,
         name: form.name,
         description: form.description,
         baseUrl: form.baseUrl,
@@ -474,6 +646,38 @@ export function Client() {
   };
 
   const formPending = createMutation.isPending || updateMutation.isPending;
+
+  if (!preview && providersQuery.isLoading) {
+    return (
+      <div className="text-muted-foreground flex min-h-72 items-center justify-center">
+        <LoaderCircle className="mr-2 size-4 animate-spin" />
+        正在加载渠道商
+      </div>
+    );
+  }
+
+  if (!preview && providersQuery.isError) {
+    return (
+      <div className="flex min-h-72 flex-col items-center justify-center px-4 text-center">
+        <Activity className="text-destructive size-5" />
+        <p className="mt-3 text-sm font-medium">渠道商加载失败</p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {providersQuery.error.message}
+        </p>
+        <Button
+          className="mt-4"
+          size="sm"
+          variant="outline"
+          onClick={() => providersQuery.refetch()}
+        >
+          <RefreshCw />
+          重试
+        </Button>
+      </div>
+    );
+  }
+
+  if (!preview && !activeProvider) return <ProviderOnboarding />;
 
   return (
     <SectionGroup className="max-w-7xl space-y-7 px-4 py-6 lg:px-6 lg:py-8">
@@ -588,7 +792,7 @@ export function Client() {
           </div>
         </div>
 
-        {groupsQuery.isLoading ? (
+        {!preview && groupsQuery.isLoading ? (
           <div className="text-muted-foreground mt-4 flex min-h-52 items-center justify-center rounded-md border">
             <LoaderCircle className="mr-2 size-4 animate-spin" />
             正在加载分组
@@ -673,6 +877,7 @@ export function Client() {
                           onEdit={() => openEdit(group)}
                           onTogglePause={() => togglePause(group)}
                           onRetire={() => retireGroup(group)}
+                          readOnly={preview}
                         />
                       </TableCell>
                     </TableRow>
@@ -695,6 +900,7 @@ export function Client() {
                       onEdit={() => openEdit(group)}
                       onTogglePause={() => togglePause(group)}
                       onRetire={() => retireGroup(group)}
+                      readOnly={preview}
                     />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">

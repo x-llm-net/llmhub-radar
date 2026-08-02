@@ -170,6 +170,34 @@ describeDatabase("marketplace public API", () => {
       .onConflictDoNothing({ target: hubModels.slug });
   });
 
+  test("rejects group creation before probing an unowned provider", async () => {
+    const response = await app.request("/v1/manage/groups", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer llmhub-marketplace-local-management",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspace: {
+          id: workspaceId,
+          slug: "marketplace-api-test",
+          name: "Marketplace API Test",
+        },
+        providerId: crypto.randomUUID(),
+        name: "Invalid group",
+        description: "",
+        baseUrl: "https://should-not-be-requested.invalid/v1",
+        apiKey: "sk-not-used",
+        multiplierBps: 10_000,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "provider_not_found", message: "Provider not found" },
+    });
+  });
+
   afterAll(async () => {
     await cleanupApiTestData();
     await client.close();

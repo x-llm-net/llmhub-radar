@@ -36,6 +36,7 @@ function parseEnvFile(path) {
 const dashboardPort = process.env.DASHBOARD_PORT ?? "3000";
 const statusPagePort = process.env.STATUS_PAGE_PORT ?? "3001";
 const marketplacePort = process.env.MARKETPLACE_PORT ?? "3010";
+const devHost = process.env.RADAR_DEV_HOST ?? "127.0.0.1";
 const envFromFile = parseEnvFile(envFile);
 const statusPageOrigin = `http://127.0.0.1:${statusPagePort}`;
 const marketplaceApiOrigin = `http://127.0.0.1:${marketplacePort}`;
@@ -83,6 +84,7 @@ const childEnv = {
   NEXT_PUBLIC_DASHBOARD_URL: `http://localhost:${dashboardPort}`,
   NEXT_PUBLIC_URL: `http://localhost:${dashboardPort}`,
   NODE_ENV: "development",
+  MARKETPLACE_HOST: devHost,
   STATUS_PAGE_URL: statusPageOrigin,
 };
 
@@ -93,7 +95,15 @@ const pnpm = isWindows
 const processes = [
   {
     name: "dashboard",
-    args: ["--filter", "@openstatus/dashboard", "dev", "--port", dashboardPort],
+    args: [
+      "--filter",
+      "@openstatus/dashboard",
+      "dev",
+      "--port",
+      dashboardPort,
+      "--hostname",
+      devHost,
+    ],
   },
   {
     name: "status-page",
@@ -103,6 +113,8 @@ const processes = [
       "dev",
       "--port",
       statusPagePort,
+      "--hostname",
+      devHost,
     ],
   },
   {

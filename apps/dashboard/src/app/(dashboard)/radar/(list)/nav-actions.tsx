@@ -17,7 +17,9 @@ import { useTRPC } from "@/lib/trpc/client";
 export function NavActions() {
   const trpc = useTRPC();
   const accessQuery = useQuery(trpc.hub.access.queryOptions());
+  const providersQuery = useQuery(trpc.hub.providers.queryOptions());
   const isPlatformAdmin = accessQuery.data?.isPlatformAdmin === true;
+  const hasProvider = (providersQuery.data?.length ?? 0) > 0;
 
   return (
     <div className="flex items-center gap-2 text-sm">
@@ -55,13 +57,15 @@ export function NavActions() {
           用量与账单
         </Link>
       </Button>
-      <Button
-        size="sm"
-        onClick={() => window.dispatchEvent(new Event("hub:create-group"))}
-      >
-        <Plus className="size-3.5" />
-        新增分组
-      </Button>
+      {hasProvider && (
+        <Button
+          size="sm"
+          onClick={() => window.dispatchEvent(new Event("hub:create-group"))}
+        >
+          <Plus className="size-3.5" />
+          新增分组
+        </Button>
+      )}
     </div>
   );
 }

@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 
 import { desc, eq } from "drizzle-orm";
 
 import { createMarketplaceDb } from "./db";
 import {
   createHubGroup,
+  createHubProvider,
   HubGroupNotFoundError,
+  HubProviderNotFoundError,
   listHubGroups,
   mapHubGroupModel,
   requestHubGroupListing,
@@ -47,7 +49,9 @@ const describeDatabase = databaseUrl ? describe : describe.skip;
 
 describeDatabase("LLMHub v2 group repository", () => {
   if (!databaseUrl) return;
-  const { db } = createMarketplaceDb(databaseUrl);
+  const { client, db } = createMarketplaceDb(databaseUrl);
+
+  afterAll(() => client.close());
 
   beforeEach(async () => {
     await clearHubRoutingAndBillingTestData(db);
@@ -67,6 +71,60 @@ describeDatabase("LLMHub v2 group repository", () => {
     await db.delete(hubModelPriceVersions);
     await db.delete(hubModels);
     await db.delete(hubProviders);
+  });
+
+  test("binds groups only to providers owned by the workspace", async () => {
+    const provider = await createHubProvider(db, {
+      ownerWorkspaceId: "workspace-test",
+      slugBase: "workspace-test",
+      name: "Workspace Provider",
+      providerLimit: 1,
+    });
+    const otherProvider = await createHubProvider(db, {
+      ownerWorkspaceId: "workspace-other",
+      slugBase: "workspace-other",
+      name: "Other Provider",
+      providerLimit: 1,
+    });
+
+    const created = await createHubGroup(db, {
+      ownerWorkspaceId: "workspace-test",
+      providerId: provider.id,
+      providerSlug: "unused",
+      providerName: "unused",
+      name: "Pro",
+      baseUrlCiphertext: "encrypted-base-url",
+      baseUrlHostHash: "base-url-host-hash",
+      apiKeyCiphertext: "encrypted-api-key",
+      keyFingerprint: "api-key-fingerprint",
+      apiKeyLastFour: "test",
+      multiplierBps: 7_500,
+      discoveredModels: [],
+    });
+    expect((await listHubGroups(db, "workspace-test"))[0]).toEqual(
+      expect.objectContaining({ id: created.id, providerId: provider.id }),
+    );
+
+    let ownershipError: unknown;
+    try {
+      await createHubGroup(db, {
+        ownerWorkspaceId: "workspace-test",
+        providerId: otherProvider.id,
+        providerSlug: "unused",
+        providerName: "unused",
+        name: "Invalid",
+        baseUrlCiphertext: "encrypted-base-url",
+        baseUrlHostHash: "base-url-host-hash",
+        apiKeyCiphertext: "encrypted-api-key",
+        keyFingerprint: "api-key-fingerprint-other",
+        apiKeyLastFour: "test",
+        multiplierBps: 7_500,
+        discoveredModels: [],
+      });
+    } catch (error) {
+      ownershipError = error;
+    }
+    expect(ownershipError).toBeInstanceOf(HubProviderNotFoundError);
   });
 
   test("creates catalog records for newly discovered models", async () => {

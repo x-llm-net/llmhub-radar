@@ -59,6 +59,20 @@ const groupSchema = z.object({
   updatedAt: z.string(),
 });
 
+const providerSchema = z.object({
+  id: z.string().uuid(),
+  ownerWorkspaceId: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  websiteUrl: z.string().nullable(),
+  logoAssetId: z.string().nullable(),
+  status: z.enum(["draft", "active", "suspended", "retired"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 const catalogModelSchema = z.object({
   id: z.string().uuid(),
   canonicalName: z.string(),
@@ -89,6 +103,7 @@ const probeRunSchema = z.object({
 });
 
 const createGroupInput = z.object({
+  providerId: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).default(""),
   baseUrl: z.string().trim().url(),
@@ -293,6 +308,40 @@ export const hubRouter = createTRPCRouter({
       z.array(groupSchema),
     );
   }),
+
+  providers: protectedProcedure.query(async ({ ctx }) => {
+    const query = new URLSearchParams({
+      workspaceId: String(ctx.workspace.id),
+    });
+    return managementRequest(
+      `/providers?${query}`,
+      { method: "GET" },
+      z.array(providerSchema),
+    );
+  }),
+
+  createProvider: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(160),
+        description: z.string().trim().max(500).default(""),
+        websiteUrl: z.string().trim().url().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      managementRequest(
+        "/providers",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...input,
+            providerLimit: ctx.workspace.plan === "free" ? 1 : 3,
+            workspace: workspacePayload(ctx.workspace),
+          }),
+        },
+        providerSchema,
+      ),
+    ),
 
   group: protectedProcedure
     .input(z.object({ groupId: z.string().uuid() }))
