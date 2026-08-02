@@ -1,1 +1,0 @@
-ALTER TABLE `page` ADD `force_theme` text DEFAULT 'system' NOT NULL;

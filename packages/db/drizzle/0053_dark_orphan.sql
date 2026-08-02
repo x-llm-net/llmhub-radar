@@ -1,1 +1,0 @@
-ALTER TABLE `page_subscriber` ADD `unsubscribed_at` integer;

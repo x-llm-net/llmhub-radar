@@ -1,1 +1,0 @@
-ALTER TABLE `workspace` ADD `limits` text DEFAULT '{}' NOT NULL;

@@ -1,9 +1,0 @@
-{
-  "extends": "@openstatus/tsconfig/base.json",
-  "include": ["src"],
-  "compilerOptions": {
-    "moduleResolution": "bundler",
-    "target": "ES2022",
-    "types": ["bun-types"]
-  }
-}

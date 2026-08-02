@@ -1,3 +1,0 @@
-# Apps
-
-All openstatus apps

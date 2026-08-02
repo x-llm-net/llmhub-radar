@@ -1,1 +1,0 @@
-UPDATE `monitor` SET `job_type` = 'http' ;

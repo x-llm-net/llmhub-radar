@@ -1,1 +1,0 @@
-ALTER TABLE `radar_credential` ADD `handover_expires_at` integer;

@@ -1,1 +1,0 @@
-ALTER TABLE `page` ADD `allowed_ip_ranges` text;

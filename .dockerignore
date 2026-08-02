@@ -1,105 +1,12 @@
-# Dependencies
-**/node_modules
-node_modules
-**/.pnpm-store
-.pnpm-store
-
-# Build outputs
-**/.next
-**/.turbo
-**/dist
-**/build
-**/.nuxt
-**/.output
-**/.cache
-
-# Environment files
-**/.env
-**/.env.*
-.env
-.env.*
-!.env.docker.example
-!.env.radar.example
-
-# Development files
-**/.vscode
-**/.idea
-**/.DS_Store
-.DS_Store
-**/*.log
-**/npm-debug.log
-**/yarn-debug.log
-**/yarn-error.log
-**/pnpm-debug.log
-
-# Testing
-**/coverage
-**/.nyc_output
-**/test-results
-**/__tests__
-**/tests
-**/*.test.ts
-**/*.test.tsx
-**/*.test.js
-**/*.spec.ts
-**/*.spec.tsx
-**/*.spec.js
-
-# Git
-**/.git
-**/.git.openstatus-shallow
-**/.gitignore
-**/.gitattributes
-.git
-.git.openstatus-shallow
-.gitignore
-
-# Documentation
-**/README.md
-**/CHANGELOG.md
-**/LICENSE
-**/*.md
-!packages/**/README.md
-
-# CI/CD
-**/.github
 .github
-**/.gitlab
-**/.circleci
-**/.drone.yml
-**/.travis.yml
-
-# Docker
-**/.dockerignore
-**/Dockerfile
-**/docker-compose*.yml
-**/docker-compose*.yaml
-.dockerignore
-docker-compose*.yml
-docker-compose*.yaml
-
-# Database files
-openstatus.db
-**/*.db
-**/*.db-shm
-**/*.db-wal
-
-# Temporary files
-**/tmp
-**/temp
-**/.temp
-**/.tmp
-
-# IDE
-**/.vscode
-**/.idea
-**/.fleet
-
-# OS
-.DS_Store
-**/Thumbs.db
-
-# Other build artifacts
-**/.contentlayer
-**/public/build
-**/.svelte-kit
+.git
+*.md
+.vscode
+.gitignore
+Makefile
+docs
+.eslintcache
+.gocache
+/web/node_modules
+/web/dist
+!THIRD-PARTY-LICENSES.md

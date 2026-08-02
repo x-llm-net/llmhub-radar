@@ -1,1 +1,0 @@
-ALTER TABLE "hub_billing_authorizations" ADD COLUMN "settlement_payload" jsonb;
