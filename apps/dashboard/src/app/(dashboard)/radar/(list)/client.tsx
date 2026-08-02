@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@openstatus/ui/components/ui/alert-dialog";
+import type { RouterOutputs } from "@openstatus/api";
 import { Badge } from "@openstatus/ui/components/ui/badge";
 import { Button } from "@openstatus/ui/components/ui/button";
 import {
@@ -21,6 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@openstatus/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@openstatus/ui/components/ui/dropdown-menu";
+import { Input } from "@openstatus/ui/components/ui/input";
 import { Label } from "@openstatus/ui/components/ui/label";
 import {
   Table,
@@ -30,25 +28,31 @@ import {
   TableHeader,
   TableRow,
 } from "@openstatus/ui/components/ui/table";
+import { Textarea } from "@openstatus/ui/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Handshake,
-  History,
+  Activity,
+  Check,
+  Copy,
+  Eye,
+  KeyRound,
+  LoaderCircle,
+  MoreHorizontal,
+  Pause,
   Pencil,
-  RadioTower,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  ServerCog,
+  ShieldCheck,
   Trash2,
-  UserRoundCog,
+  Waypoints,
 } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  EmptyStateContainer,
-  EmptyStateDescription,
-  EmptyStateTitle,
-} from "@/components/content/empty-state";
 import {
   Section,
   SectionDescription,
@@ -57,520 +61,817 @@ import {
   SectionHeaderRow,
   SectionTitle,
 } from "@/components/content/section";
-import {
-  MetricCard,
-  MetricCardGroup,
-  MetricCardHeader,
-  MetricCardTitle,
-  MetricCardValue,
-} from "@/components/metric/metric-card";
-import {
-  RadarOwnerPicker,
-  type RadarOwnerCandidate,
-} from "@/components/radar/owner-picker";
 import { useTRPC } from "@/lib/trpc/client";
+import { cn } from "@/lib/utils";
 
-type OwnershipPool = {
-  id: number;
-  name: string;
-  ownerUserId: number | null;
-  claimable: boolean;
-  ownerLabel?: string;
-};
-
-type Status =
-  | "unknown"
-  | "operational"
-  | "degraded"
-  | "down"
+type HubGroup = RouterOutputs["hub"]["groups"][number];
+type SupplyStatus =
+  | "listed"
+  | "monitoring"
   | "paused"
-  | "configuration_error";
+  | "verifying"
+  | "retired";
 
-const statusKey: Record<Status, string> = {
-  unknown: "unknown",
-  operational: "operational",
-  degraded: "degraded",
-  down: "down",
-  paused: "paused",
-  configuration_error: "configurationError",
+type GroupFormState = {
+  name: string;
+  description: string;
+  baseUrl: string;
+  apiKey: string;
+  multiplier: string;
 };
 
-function statusVariant(
-  status: Status,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "down" || status === "configuration_error")
-    return "destructive";
-  if (status === "operational") return "default";
-  if (status === "degraded") return "secondary";
-  return "outline";
+const emptyForm: GroupFormState = {
+  name: "",
+  description: "",
+  baseUrl: "",
+  apiKey: "",
+  multiplier: "1.00",
+};
+
+const filters: Array<{ value: "all" | SupplyStatus; label: string }> = [
+  { value: "all", label: "全部" },
+  { value: "listed", label: "已上架" },
+  { value: "monitoring", label: "仅监控" },
+  { value: "verifying", label: "验证中" },
+  { value: "paused", label: "已暂停" },
+  { value: "retired", label: "已退役" },
+];
+
+const supplyStatusLabel: Record<SupplyStatus, string> = {
+  listed: "已上架",
+  monitoring: "仅监控",
+  paused: "已暂停",
+  verifying: "验证中",
+  retired: "已退役",
+};
+
+const supplyStatusClass: Record<SupplyStatus, string> = {
+  listed:
+    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+  monitoring:
+    "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+  paused:
+    "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+  verifying:
+    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+  retired:
+    "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400",
+};
+
+const accents = [
+  "bg-emerald-500",
+  "bg-blue-500",
+  "bg-amber-500",
+  "bg-violet-500",
+  "bg-rose-500",
+];
+
+function groupStatus(group: HubGroup): SupplyStatus {
+  if (
+    group.lifecycleStatus === "retired" ||
+    group.desiredStatus === "retired"
+  ) {
+    return "retired";
+  }
+  if (group.desiredStatus === "paused") return "paused";
+  if (
+    group.lifecycleStatus === "draft" ||
+    group.lifecycleStatus === "verifying"
+  ) {
+    return "verifying";
+  }
+  return group.listingStatus === "listed" ? "listed" : "monitoring";
 }
 
-function formatDate(
-  date: Date | string | null | undefined,
-  locale: string,
-  emptyLabel: string,
-) {
-  if (!date) return emptyLabel;
-  return new Intl.DateTimeFormat(locale, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date));
+function StatusBadge({ group }: { group: HubGroup }) {
+  const status = groupStatus(group);
+  return (
+    <Badge variant="outline" className={supplyStatusClass[status]}>
+      {supplyStatusLabel[status]}
+    </Badge>
+  );
+}
+
+function LineIdentity({ group }: { group: HubGroup }) {
+  const accent = accents[hashString(group.id) % accents.length];
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <div
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-white shadow-xs",
+          accent,
+        )}
+      >
+        {group.name.slice(0, 1).toUpperCase()}
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium">{group.name}</div>
+        <div className="text-muted-foreground mt-0.5 max-w-64 truncate font-mono text-xs">
+          {group.baseUrl.replace(/^https?:\/\//, "")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HealthMetric({ group }: { group: HubGroup }) {
+  return (
+    <div className="text-muted-foreground text-sm">
+      <span
+        className={cn(
+          "mr-2 inline-block size-2 rounded-full",
+          group.desiredStatus === "paused" ? "bg-slate-300" : "bg-amber-400",
+        )}
+      />
+      {group.desiredStatus === "paused" ? "探测已暂停" : "等待探测数据"}
+    </div>
+  );
+}
+
+function ModelSummary({ group }: { group: HubGroup }) {
+  const activeModels = group.models.filter(
+    (model) => model.discoveryStatus !== "retired",
+  );
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium">{activeModels.length} 个模型</div>
+      <div className="text-muted-foreground max-w-52 truncate text-xs">
+        {activeModels.length > 0
+          ? activeModels
+              .slice(0, 2)
+              .map((model) => model.upstreamName)
+              .join(" · ")
+          : "尚未发现模型"}
+      </div>
+    </div>
+  );
+}
+
+function PriceSummary({ group }: { group: HubGroup }) {
+  if (group.multiplierBps == null) {
+    return <span className="text-muted-foreground text-sm">未定价</span>;
+  }
+  return (
+    <div className="space-y-0.5 tabular-nums">
+      <div className="text-sm font-medium">
+        {(group.multiplierBps / 10_000).toFixed(2)}×
+      </div>
+      <div className="text-muted-foreground text-xs">模型目录价 × 倍率</div>
+    </div>
+  );
+}
+
+function BalanceSummary({ group }: { group: HubGroup }) {
+  if (group.balanceMicros == null) {
+    return <span className="text-muted-foreground text-sm">未获取</span>;
+  }
+  const value = Number(group.balanceMicros) / 1_000_000;
+  return (
+    <div className="space-y-0.5 tabular-nums">
+      <div
+        className={cn(
+          "text-sm font-medium",
+          group.balanceStatus === "exhausted" && "text-destructive",
+        )}
+      >
+        {formatMoney(value, group.balanceCurrency)}
+      </div>
+      <div className="text-muted-foreground text-xs">
+        {group.balanceCheckedAt
+          ? new Date(group.balanceCheckedAt).toLocaleString("zh-CN")
+          : "尚未检查"}
+      </div>
+    </div>
+  );
+}
+
+function LineMenu({
+  group,
+  onInspect,
+  onEdit,
+  onTogglePause,
+  onRetire,
+}: {
+  group: HubGroup;
+  onInspect: () => void;
+  onEdit: () => void;
+  onTogglePause: () => void;
+  onRetire: () => void;
+}) {
+  const status = groupStatus(group);
+  const retired = status === "retired";
+  const paused = status === "paused";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`管理 ${group.name}`}
+          title={`管理 ${group.name}`}
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onSelect={onInspect}>
+          <Eye />
+          查看分组
+        </DropdownMenuItem>
+        {!retired && (
+          <DropdownMenuItem onSelect={onEdit}>
+            <Pencil />
+            编辑分组
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onSelect={() =>
+            void navigator.clipboard
+              .writeText(group.baseUrl)
+              .then(() => toast.success("Base URL 已复制"))
+          }
+        >
+          <Copy />
+          复制 Base URL
+        </DropdownMenuItem>
+        {!retired && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onTogglePause}>
+              {paused ? <Play /> : <Pause />}
+              {paused ? "恢复分组" : "暂停分组"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={onRetire}
+            >
+              <Trash2 />
+              退役分组
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function Client() {
-  const t = useTranslations("radar");
-  const statusT = useTranslations("status");
-  const commonT = useTranslations("common");
-  const locale = useLocale();
+  const router = useRouter();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [ownershipPool, setOwnershipPool] = useState<OwnershipPool | null>(
-    null,
-  );
-  const [ownerSelection, setOwnerSelection] = useState("platform");
-  const [selectedOwner, setSelectedOwner] =
-    useState<RadarOwnerCandidate | null>(null);
-  const { data, isLoading } = useQuery(trpc.radar.listPools.queryOptions({}));
+  const groupsOptions = trpc.hub.groups.queryOptions();
+  const groupsQuery = useQuery(groupsOptions);
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const [activeFilter, setActiveFilter] = useState<"all" | SupplyStatus>("all");
+  const [query, setQuery] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [form, setForm] = useState<GroupFormState>(emptyForm);
 
-  const access = data?.access;
-  const pools = useMemo(() => data?.items ?? [], [data?.items]);
-  const selectedOwnerAtLimit =
-    selectedOwner?.providerLimit != null &&
-    selectedOwner.providerUsage >= selectedOwner.providerLimit &&
-    selectedOwner.userId !== ownershipPool?.ownerUserId;
-  const transferOwnership = useMutation(
-    trpc.radar.transferOwnership.mutationOptions({
+  const refreshGroups = () => queryClient.invalidateQueries(groupsOptions);
+  const createMutation = useMutation(
+    trpc.hub.createGroup.mutationOptions({
       onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries(trpc.radar.listPools.queryOptions({})),
-          queryClient.invalidateQueries({
-            queryKey: trpc.radar.ownerCandidates.queryKey(),
-          }),
-        ]);
-        toast.success(t("ownershipUpdated"));
-        setOwnershipPool(null);
-        setSelectedOwner(null);
+        await refreshGroups();
+        setFormOpen(false);
+        toast.success("分组已创建，模型目录已刷新");
       },
-      onError: (error) => {
-        toast.error(error.message);
-      },
+      onError: (error) => toast.error(error.message),
     }),
   );
-  const deletePool = useMutation(
-    trpc.radar.deletePool.mutationOptions({
+  const updateMutation = useMutation(
+    trpc.hub.updateGroup.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(
-          trpc.radar.listPools.queryOptions({}),
+        await refreshGroups();
+        setFormOpen(false);
+        toast.success("分组已更新");
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
+  const stateMutation = useMutation(
+    trpc.hub.setGroupState.mutationOptions({
+      onSuccess: async (_data, input) => {
+        await refreshGroups();
+        toast.success(
+          input.action === "pause"
+            ? "分组已暂停"
+            : input.action === "resume"
+              ? "分组已恢复"
+              : "分组已退役",
         );
-        toast.success(t("poolDeleted"));
       },
-      onError: (error) => {
-        toast.error(error.message);
-      },
+      onError: (error) => toast.error(error.message),
     }),
   );
-  const metrics = useMemo(() => {
-    const targets = pools.reduce((sum, pool) => sum + pool.targetCount, 0);
-    const unhealthy = pools.filter(
-      (pool) =>
-        pool.worstStatus === "down" ||
-        pool.worstStatus === "degraded" ||
-        pool.worstStatus === "configuration_error",
-    ).length;
 
-    if (access?.isAdmin) {
-      return [
-        {
-          title: t("allProviders"),
-          value: String(data?.totalSize ?? 0),
-          description: t("allProvidersDescription"),
-        },
-        {
-          title: t("platformManaged"),
-          value: String(pools.filter((pool) => pool.claimable).length),
-          description: t("claimableDescription"),
-        },
-        {
-          title: t("probeTargets"),
-          value: String(targets),
-          description: t("providerModelChecks"),
-        },
-        {
-          title: t("unhealthy"),
-          value: String(unhealthy),
-          description: t("needsAttention"),
-        },
-      ];
+  const openCreate = () => {
+    setEditingGroupId(null);
+    setForm(emptyForm);
+    setFormOpen(true);
+  };
+  const openEdit = (group: HubGroup) => {
+    setEditingGroupId(group.id);
+    setForm({
+      name: group.name,
+      description: group.description,
+      baseUrl: group.baseUrl,
+      apiKey: "",
+      multiplier:
+        group.multiplierBps == null
+          ? "1.00"
+          : (group.multiplierBps / 10_000).toFixed(2),
+    });
+    setFormOpen(true);
+  };
+
+  useEffect(() => {
+    window.addEventListener("hub:create-group", openCreate);
+    return () => window.removeEventListener("hub:create-group", openCreate);
+  }, []);
+
+  const filteredGroups = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return groups.filter((group) => {
+      const status = groupStatus(group);
+      const matchesStatus = activeFilter === "all" || status === activeFilter;
+      const matchesQuery =
+        normalizedQuery.length === 0 ||
+        [
+          group.name,
+          group.description,
+          group.baseUrl,
+          ...group.models.map((model) => model.upstreamName),
+        ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      return matchesStatus && matchesQuery;
+    });
+  }, [activeFilter, groups, query]);
+
+  const listedCount = groups.filter(
+    (group) => groupStatus(group) === "listed",
+  ).length;
+  const runningCount = groups.filter(
+    (group) =>
+      group.desiredStatus === "active" && group.lifecycleStatus !== "retired",
+  ).length;
+  const totalModels = new Set(
+    groups.flatMap((group) =>
+      group.models
+        .filter((model) => model.discoveryStatus !== "retired")
+        .map((model) => model.upstreamName),
+    ),
+  ).size;
+  const attentionCount = groups.filter(
+    (group) =>
+      group.desiredStatus === "paused" ||
+      group.balanceStatus === "exhausted" ||
+      group.models.some((model) => model.discoveryStatus === "unmapped"),
+  ).length;
+
+  const submitForm = (event: FormEvent) => {
+    event.preventDefault();
+    const multiplier = Number(form.multiplier);
+    if (!Number.isFinite(multiplier) || multiplier < 0) {
+      toast.error("请输入有效的分组倍率");
+      return;
     }
+    const multiplierBps = Math.round(multiplier * 10_000);
+    if (editingGroupId) {
+      const current = groups.find((group) => group.id === editingGroupId);
+      if (!current) return;
+      updateMutation.mutate({
+        groupId: editingGroupId,
+        name: form.name,
+        description: form.description,
+        baseUrl: form.baseUrl === current.baseUrl ? undefined : form.baseUrl,
+        apiKey: form.apiKey || undefined,
+        multiplierBps,
+        rediscover: false,
+      });
+    } else {
+      createMutation.mutate({
+        name: form.name,
+        description: form.description,
+        baseUrl: form.baseUrl,
+        apiKey: form.apiKey,
+        multiplierBps,
+      });
+    }
+  };
 
-    return [
-      {
-        title: t("monitorPools"),
-        value: String(access?.providerUsage ?? pools.length),
-        description: t("privatePools"),
-      },
-      {
-        title: t("providerQuota"),
-        value:
-          access?.providerLimit == null
-            ? t("unlimited")
-            : `${access.providerUsage}/${access.providerLimit}`,
-        description:
-          access?.verificationStatus === "verified"
-            ? t("verifiedQuota")
-            : t("standardQuota"),
-      },
-      {
-        title: t("probeTargets"),
-        value: String(targets),
-        description: t("providerModelChecks"),
-      },
-      {
-        title: t("unhealthy"),
-        value: String(unhealthy),
-        description: t("needsAttention"),
-      },
-    ];
-  }, [access, data?.totalSize, pools, t]);
+  const togglePause = (group: HubGroup) => {
+    stateMutation.mutate({
+      groupId: group.id,
+      action: group.desiredStatus === "paused" ? "resume" : "pause",
+    });
+  };
+
+  const retireGroup = (group: HubGroup) => {
+    if (!window.confirm(`确认退役“${group.name}”？退役后不能自动恢复。`))
+      return;
+    stateMutation.mutate({ groupId: group.id, action: "retire" });
+  };
+
+  const formPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <SectionGroup>
+    <SectionGroup className="max-w-7xl space-y-7 px-4 py-6 lg:px-6 lg:py-8">
       <Section>
-        <SectionHeaderRow>
+        <SectionHeaderRow className="items-start sm:items-start">
           <SectionHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <SectionTitle>
-                {access?.isAdmin ? t("providerManagement") : t("myProviders")}
-              </SectionTitle>
-              {access && (
-                <Badge variant={access.isAdmin ? "default" : "secondary"}>
-                  {access.isAdmin
-                    ? t("adminUnlimited")
-                    : t("quotaUsed", {
-                        used: access.providerUsage,
-                        limit: access.providerLimit ?? 0,
-                      })}
-                </Badge>
-              )}
+            <div className="flex items-center gap-2">
+              <SectionTitle className="text-xl">分组管理</SectionTitle>
+              <Badge variant="secondary">{groups.length}</Badge>
             </div>
             <SectionDescription>
-              {access?.isAdmin
-                ? t("providerManagementDescription")
-                : t("myProvidersDescription")}
+              每个分组包含 Base URL、API Key、可用模型和统一倍率。
             </SectionDescription>
           </SectionHeader>
-          {access?.isAdmin && (
-            <div className="flex items-center gap-2">
-              <Button asChild variant="outline" size="sm">
-                <Link href="/radar/claim">
-                  <Handshake />
-                  {t("claimReviewAction")}
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/settings/audit-logs">
-                  <History />
-                  {t("operationHistory")}
-                </Link>
-              </Button>
-            </div>
-          )}
+          <Button size="sm" onClick={openCreate}>
+            <Plus />
+            新增分组
+          </Button>
         </SectionHeaderRow>
-        <MetricCardGroup className="md:grid-cols-4 lg:grid-cols-4">
-          {metrics.map((metric) => (
-            <MetricCard key={metric.title}>
-              <MetricCardHeader>
-                <MetricCardTitle>{metric.title}</MetricCardTitle>
-              </MetricCardHeader>
-              <MetricCardValue>{metric.value}</MetricCardValue>
-              <p className="text-muted-foreground font-commit-mono text-xs tracking-tight">
-                {metric.description}
-              </p>
-            </MetricCard>
+
+        <div className="bg-card mt-5 grid grid-cols-2 overflow-hidden rounded-md border xl:grid-cols-4">
+          {[
+            {
+              label: "正在供给",
+              value: listedCount,
+              suffix: "个分组",
+              icon: Waypoints,
+              tone: "text-emerald-600 dark:text-emerald-400",
+            },
+            {
+              label: "运行中",
+              value: runningCount,
+              suffix: `共 ${groups.length} 个`,
+              icon: ShieldCheck,
+              tone: "text-blue-600 dark:text-blue-400",
+            },
+            {
+              label: "已发现模型",
+              value: totalModels,
+              suffix: "去重统计",
+              icon: ServerCog,
+              tone: "text-violet-600 dark:text-violet-400",
+            },
+            {
+              label: "需要处理",
+              value: attentionCount,
+              suffix: "暂停、余额或映射",
+              icon: Activity,
+              tone: "text-amber-600 dark:text-amber-400",
+            },
+          ].map((metric, index) => (
+            <div
+              key={metric.label}
+              className={cn(
+                "flex min-h-24 items-start justify-between gap-4 px-4 py-4",
+                index % 2 === 1 && "border-l",
+                index >= 2 && "border-t",
+                index === 2 && "xl:border-t-0 xl:border-l",
+                index === 3 && "xl:border-t-0",
+              )}
+            >
+              <div>
+                <p className="text-muted-foreground text-xs">{metric.label}</p>
+                <p className="mt-2 text-2xl font-semibold tabular-nums">
+                  {metric.value}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {metric.suffix}
+                </p>
+              </div>
+              <metric.icon className={cn("mt-0.5 size-4", metric.tone)} />
+            </div>
           ))}
-        </MetricCardGroup>
+        </div>
       </Section>
 
       <Section>
-        <SectionHeader>
-          <SectionTitle>
-            {access?.isAdmin ? t("allProviders") : t("monitorPools")}
-          </SectionTitle>
-          <SectionDescription>{t("poolListDescription")}</SectionDescription>
-        </SectionHeader>
-        {isLoading ? (
-          <EmptyStateContainer className="min-h-32">
-            <EmptyStateTitle>{t("loadingPools")}</EmptyStateTitle>
-          </EmptyStateContainer>
-        ) : pools.length === 0 ? (
-          <EmptyStateContainer className="min-h-36">
-            <div className="border-border bg-muted flex size-8 items-center justify-center rounded-md border">
-              <RadioTower className="size-4" />
-            </div>
-            <EmptyStateTitle>{t("emptyTitle")}</EmptyStateTitle>
-            <EmptyStateDescription>
-              {t("emptyDescription")}
-            </EmptyStateDescription>
-          </EmptyStateContainer>
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("pool")}</TableHead>
-                  <TableHead>{commonT("status")}</TableHead>
-                  {access?.isAdmin && (
-                    <>
-                      <TableHead>{t("owner")}</TableHead>
-                      <TableHead>{t("ownership")}</TableHead>
-                    </>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="bg-muted flex w-full gap-1 overflow-x-auto rounded-md p-1 lg:w-auto">
+            {filters.map((filter) => {
+              const count =
+                filter.value === "all"
+                  ? groups.length
+                  : groups.filter(
+                      (group) => groupStatus(group) === filter.value,
+                    ).length;
+              return (
+                <button
+                  key={filter.value}
+                  type="button"
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground flex h-8 shrink-0 items-center gap-1.5 rounded px-3 text-sm transition-colors",
+                    activeFilter === filter.value &&
+                      "bg-background text-foreground shadow-xs",
                   )}
-                  <TableHead>{t("targets")}</TableHead>
-                  <TableHead>{t("lastCheck")}</TableHead>
-                  <TableHead className="text-right">
-                    {commonT("action")}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pools.map((pool) => {
-                  const canEdit =
-                    !access?.isAdmin || pool.ownerUserId === access.userId;
+                  onClick={() => setActiveFilter(filter.value)}
+                >
+                  {filter.label}
+                  <span className="text-xs tabular-nums">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative w-full lg:w-72">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索分组、模型或 Base URL"
+              className="pl-9"
+            />
+          </div>
+        </div>
 
-                  return (
-                    <TableRow key={pool.id}>
+        {groupsQuery.isLoading ? (
+          <div className="text-muted-foreground mt-4 flex min-h-52 items-center justify-center rounded-md border">
+            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            正在加载分组
+          </div>
+        ) : groupsQuery.isError ? (
+          <div className="mt-4 flex min-h-52 flex-col items-center justify-center rounded-md border border-dashed px-4 text-center">
+            <Activity className="text-destructive size-5" />
+            <p className="mt-3 text-sm font-medium">分组加载失败</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {groupsQuery.error.message}
+            </p>
+            <Button
+              className="mt-4"
+              size="sm"
+              variant="outline"
+              onClick={() => groupsQuery.refetch()}
+            >
+              <RefreshCw />
+              重试
+            </Button>
+          </div>
+        ) : filteredGroups.length === 0 ? (
+          <div className="mt-4 flex min-h-52 flex-col items-center justify-center rounded-md border border-dashed px-4 text-center">
+            <Search className="text-muted-foreground size-5" />
+            <p className="mt-3 text-sm font-medium">
+              {groups.length === 0 ? "还没有分组" : "没有找到匹配的分组"}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {groups.length === 0
+                ? "创建第一个分组后会自动获取模型。"
+                : "尝试更换状态或搜索关键词。"}
+            </p>
+            {groups.length === 0 && (
+              <Button className="mt-4" size="sm" onClick={openCreate}>
+                <Plus />
+                新增分组
+              </Button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 hidden overflow-hidden rounded-md border lg:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableHead className="w-[26%]">分组</TableHead>
+                    <TableHead>供给状态</TableHead>
+                    <TableHead>7 日质量</TableHead>
+                    <TableHead>模型</TableHead>
+                    <TableHead>分组倍率</TableHead>
+                    <TableHead>上游余额</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredGroups.map((group) => (
+                    <TableRow key={group.id} className="group h-[76px]">
                       <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium">{pool.name}</div>
-                          <div className="text-muted-foreground font-commit-mono text-xs">
-                            /{pool.slug}
-                          </div>
-                        </div>
+                        <LineIdentity group={group} />
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(pool.worstStatus)}>
-                          {statusT(statusKey[pool.worstStatus])}
-                        </Badge>
+                        <StatusBadge group={group} />
                       </TableCell>
-                      {access?.isAdmin && (
-                        <>
-                          <TableCell>
-                            <div className="max-w-48 space-y-1">
-                              <div className="truncate text-sm font-medium">
-                                {pool.claimable
-                                  ? t("platformOwner")
-                                  : pool.owner?.name ||
-                                    pool.owner?.email ||
-                                    t("ownerUnknown")}
-                              </div>
-                              {!pool.claimable && pool.owner?.name && (
-                                <div className="text-muted-foreground truncate text-xs">
-                                  {pool.owner.email}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={pool.claimable ? "secondary" : "outline"}
-                            >
-                              {pool.claimable
-                                ? t("platformManaged")
-                                : pool.owner?.verificationStatus === "verified"
-                                  ? t("verifiedOwner")
-                                  : t("assignedOwner")}
-                            </Badge>
-                          </TableCell>
-                        </>
-                      )}
-                      <TableCell>{pool.targetCount}</TableCell>
                       <TableCell>
-                        {formatDate(pool.lastCheckAt, locale, commonT("never"))}
+                        <HealthMetric group={group} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {access?.isAdmin && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setOwnershipPool({
-                                  id: pool.id,
-                                  name: pool.name,
-                                  ownerUserId: pool.ownerUserId,
-                                  claimable: pool.claimable,
-                                  ownerLabel: pool.owner
-                                    ? pool.owner.name
-                                      ? `${pool.owner.name} · ${pool.owner.email}`
-                                      : pool.owner.email
-                                    : undefined,
-                                });
-                                setSelectedOwner(null);
-                                setOwnerSelection(
-                                  pool.claimable || pool.ownerUserId == null
-                                    ? "platform"
-                                    : String(pool.ownerUserId),
-                                );
-                              }}
-                            >
-                              <UserRoundCog className="size-3.5" />
-                              {t("ownershipAction")}
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <>
-                              <Button size="sm" variant="outline" asChild>
-                                <Link href={`/radar/${pool.slug}/edit`}>
-                                  <Pencil className="size-3.5" />
-                                  {t("editPoolShort")}
-                                </Link>
-                              </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button size="sm" variant="outline">
-                                    <Trash2 className="text-destructive size-3.5" />
-                                    {t("deletePoolShort")}
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>
-                                      {t("deletePoolTitle")}
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      {t("deletePoolDescription", {
-                                        name: pool.name,
-                                      })}
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>
-                                      {commonT("cancel")}
-                                    </AlertDialogCancel>
-                                    <AlertDialogAction
-                                      className="bg-destructive hover:bg-destructive/90 text-white"
-                                      disabled={deletePool.isPending}
-                                      onClick={() =>
-                                        deletePool.mutate({
-                                          poolSlug: pool.slug,
-                                        })
-                                      }
-                                    >
-                                      {deletePool.isPending
-                                        ? commonT("deleting")
-                                        : commonT("delete")}
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </>
-                          )}
-                          <Button size="sm" variant="outline" asChild>
-                            <Link href={`/radar/${pool.slug}`}>
-                              {commonT("open")}
-                            </Link>
-                          </Button>
-                        </div>
+                      <TableCell>
+                        <ModelSummary group={group} />
+                      </TableCell>
+                      <TableCell>
+                        <PriceSummary group={group} />
+                      </TableCell>
+                      <TableCell>
+                        <BalanceSummary group={group} />
+                      </TableCell>
+                      <TableCell className="pr-3 text-right">
+                        <LineMenu
+                          group={group}
+                          onInspect={() =>
+                            router.push(`/radar/groups/${group.id}`)
+                          }
+                          onEdit={() => openEdit(group)}
+                          onTogglePause={() => togglePause(group)}
+                          onRetire={() => retireGroup(group)}
+                        />
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:hidden">
+              {filteredGroups.map((group) => (
+                <article
+                  key={group.id}
+                  className="bg-card rounded-md border p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <LineIdentity group={group} />
+                    <LineMenu
+                      group={group}
+                      onInspect={() => router.push(`/radar/groups/${group.id}`)}
+                      onEdit={() => openEdit(group)}
+                      onTogglePause={() => togglePause(group)}
+                      onRetire={() => retireGroup(group)}
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <StatusBadge group={group} />
+                    <Badge variant="outline">
+                      <KeyRound className="mr-1 size-3" />
+                      ••••{group.apiKeyLastFour}
+                    </Badge>
+                    <Badge variant="outline">
+                      {group.models.length} 个模型
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-3 border-t pt-4">
+                    <div>
+                      <p className="text-muted-foreground text-xs">7 日质量</p>
+                      <div className="mt-1.5">
+                        <HealthMetric group={group} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">价格</p>
+                      <div className="mt-1.5">
+                        <PriceSummary group={group} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">余额</p>
+                      <div className="mt-1.5">
+                        <BalanceSummary group={group} />
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </Section>
 
-      {access && !access.isAdmin && (
-        <div className="flex flex-col gap-4 rounded-md border border-l-4 border-l-slate-400 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:bg-slate-950/30">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t("claimTipTitle")}</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {t("claimTipDescription")}
-            </p>
-          </div>
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href="/radar/claim">
-              <Handshake />
-              {t("claimTipAction")}
-            </Link>
-          </Button>
-        </div>
-      )}
-
-      <Dialog
-        open={ownershipPool != null}
-        onOpenChange={(open) => {
-          if (!open && !transferOwnership.isPending) {
-            setOwnershipPool(null);
-            setSelectedOwner(null);
-          }
-        }}
-      >
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t("manageOwnership")}</DialogTitle>
-            <DialogDescription>
-              {t("manageOwnershipDescription", {
-                name: ownershipPool?.name ?? "",
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="radar-ownership-owner">
-              {t("ownershipTarget")}
-            </Label>
-            <RadarOwnerPicker
-              id="radar-ownership-owner"
-              value={ownerSelection}
-              onValueChange={setOwnerSelection}
-              onCandidateChange={setSelectedOwner}
-              currentOwnerUserId={ownershipPool?.ownerUserId}
-              selectedLabel={ownershipPool?.ownerLabel}
-              disabled={transferOwnership.isPending}
-            />
-            <p className="text-muted-foreground text-xs">
-              {ownerSelection === "platform"
-                ? t("platformManagedHelp")
-                : selectedOwnerAtLimit
-                  ? t("selectedOwnerQuotaReached")
-                  : t("assignedOwnerHelp")}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOwnershipPool(null)}
-              disabled={transferOwnership.isPending}
-            >
-              {commonT("cancel")}
-            </Button>
-            <Button
-              disabled={
-                ownershipPool == null ||
-                selectedOwnerAtLimit ||
-                transferOwnership.isPending
-              }
-              onClick={() => {
-                if (!ownershipPool) return;
-                transferOwnership.mutate({
-                  poolId: ownershipPool.id,
-                  ownerUserId:
-                    ownerSelection === "platform"
-                      ? null
-                      : Number(ownerSelection),
-                });
-              }}
-            >
-              {transferOwnership.isPending
-                ? t("savingOwnership")
-                : t("saveOwnership")}
-            </Button>
-          </DialogFooter>
+          <form onSubmit={submitForm}>
+            <DialogHeader>
+              <DialogTitle>
+                {editingGroupId ? "编辑分组" : "新增分组"}
+              </DialogTitle>
+              <DialogDescription>
+                保存时会验证凭证并同步上游模型目录。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-5">
+              <div className="grid gap-2">
+                <Label htmlFor="hub-group-name">分组名称</Label>
+                <Input
+                  id="hub-group-name"
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  required
+                  maxLength={120}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="hub-group-description">说明</Label>
+                <Textarea
+                  id="hub-group-description"
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                  maxLength={500}
+                  rows={2}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="hub-group-base-url">Base URL</Label>
+                <Input
+                  id="hub-group-base-url"
+                  type="url"
+                  value={form.baseUrl}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      baseUrl: event.target.value,
+                    }))
+                  }
+                  placeholder="https://api.example.com/v1"
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="hub-group-api-key">API Key</Label>
+                <Input
+                  id="hub-group-api-key"
+                  type="password"
+                  autoComplete="off"
+                  value={form.apiKey}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      apiKey: event.target.value,
+                    }))
+                  }
+                  placeholder={editingGroupId ? "留空则不修改" : "sk-..."}
+                  required={!editingGroupId}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="hub-group-multiplier">分组倍率</Label>
+                  <Input
+                    id="hub-group-multiplier"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={form.multiplier}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        multiplier: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFormOpen(false)}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={formPending}>
+                {formPending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Check />
+                )}
+                {editingGroupId ? "保存" : "创建分组"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </SectionGroup>
   );
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function formatMoney(value: number, currency: string | null) {
+  if (!currency) return value.toFixed(2);
+  try {
+    return new Intl.NumberFormat("zh-CN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(2)}`;
+  }
 }

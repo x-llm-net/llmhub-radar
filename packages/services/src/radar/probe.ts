@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import type { radarErrorTypes } from "@openstatus/db/src/schema";
 
+import { safeUpstreamFetch, UnsafeUpstreamUrlError } from "./safe-fetch";
+
 export const RADAR_PROBE_PROMPT = "hi";
 
 export type RadarProbeErrorType = (typeof radarErrorTypes)[number];
@@ -80,23 +82,27 @@ export async function runOpenAICompatibleProbe(
   const stream = config.stream ?? true;
 
   try {
-    const response = await doFetch(buildChatCompletionsUrl(validatedUrl.url), {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "cache-control": "no-store",
-        "content-type": "application/json",
-        pragma: "no-cache",
-        authorization: `Bearer ${config.apiKey}`,
+    const response = await safeUpstreamFetch(
+      buildChatCompletionsUrl(validatedUrl.url),
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          pragma: "no-cache",
+          authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: "user", content: RADAR_PROBE_PROMPT }],
+          temperature: 0,
+          max_tokens: clampMaxTokens(config.maxTokens),
+          stream,
+        }),
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: "user", content: RADAR_PROBE_PROMPT }],
-        temperature: 0,
-        max_tokens: clampMaxTokens(config.maxTokens),
-        stream,
-      }),
-    });
+      doFetch,
+    );
 
     const ttfbMs = elapsedMs(startedAt);
 
@@ -127,6 +133,14 @@ export async function runOpenAICompatibleProbe(
 
     return await parseJsonProbeResponse(response, startedAt, ttfbMs);
   } catch (error) {
+    if (error instanceof UnsafeUpstreamUrlError) {
+      return {
+        success: false,
+        errorType: "bad_response",
+        totalLatencyMs: elapsedMs(startedAt),
+        safeErrorSummary: error.message,
+      };
+    }
     const errorType = classifyProbeFailure({ error });
 
     return {

@@ -35,6 +35,7 @@ The first version does not do API proxying, automatic routing, traffic switching
 
 Project design lives in the parent workspace:
 
+- `docs/LLMHUB_V2_DATA_MODEL.md`
 - `../docs/llmhub-radar-tech-design.md`
 - `docs/CODEMAP.md`
 - `docs/SETUP_NOTES.md`

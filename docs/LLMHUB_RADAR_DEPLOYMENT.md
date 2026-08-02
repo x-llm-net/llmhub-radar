@@ -12,6 +12,12 @@ For day-to-day product and UI iteration, use local hot reload instead of rebuild
 | `status-page` | public provider status pages | yes | on |
 | `radar-probe-worker` | scheduled LLM API probes | no | on |
 | `radar-notification-worker` | email/webhook subscriber delivery | no | off |
+| `marketplace-api` | public catalog, management API, and LLMHub gateway | yes | on |
+| `marketplace-probe-worker` | v2 group-model probes | no | on |
+| `marketplace-catalog-refresh-worker` | upstream model catalog refresh | no | on |
+| `marketplace-relay-config-sync` | projects active groups into New API | no | on |
+| `marketplace-maintenance` | legacy sync, retention, expired billing release | no | on |
+| `marketplace-postgres` | v2 routing and billing fact database | no | on |
 | `libsql` | application database | no | on |
 | `db-migrate` | one-shot database migration | no | on during deploy |
 
@@ -61,16 +67,23 @@ ghcr.io/{owner}/llmhub-radar-marketplace-api:{tag}
 
 Normal release order:
 
-1. Push the release commit to GitHub.
-2. Confirm `LLMHub Radar CI` is green.
-3. Run `LLMHub Radar Build Images`.
-4. Record the image tag from the workflow summary.
-5. Run `LLMHub Radar Deploy` with that image tag and
+1. Deploy the matching X-LLM New API build and verify its two internal endpoints.
+2. Configure independent sync/request tokens in New API and the matching four
+   `LLMHUB_RELAY_*` URL/token values in LLMHub.
+3. Push the LLMHub release commit to GitHub.
+4. Confirm `LLMHub Radar CI` is green.
+5. Run `LLMHub Radar Build Images` and record the image tag.
+6. Run `LLMHub Radar Deploy` with that image tag and
    `restart_notifications=false`.
-6. Smoke test dashboard and public pages.
-7. Restart notifications only after preflight is reviewed.
+7. Smoke test config projection, one non-streaming gateway request, usage,
+   billing authorization, ledger balance, dashboard, and public pages.
+8. Restart notifications only after preflight is reviewed.
 
 Rollback is the same deploy workflow with a previous known-good image tag.
+The deploy script also authenticates `GET /api/internal/xllm/health/sync` and
+`GET /api/internal/xllm/health/request`; a wrong relay URL, either wrong token,
+or a missing New API runtime token blocks the release before public routing is
+switched.
 
 `docker-compose.radar.images.yaml` uses Docker Compose `!reset` to remove local
 `build` blocks when images are supplied by GHCR. The production server must run
@@ -360,7 +373,8 @@ Keep `restart_notifications=false` for normal releases. The deploy script:
 - runs `db-migrate` as a one-shot container
 - starts `dashboard`, `status-page`, and `radar-probe-worker`
 - starts Marketplace PostgreSQL, runs Marketplace migrations, and starts the
-  Marketplace API and maintenance loop
+  Marketplace API, probe worker, catalog refresh worker, relay config sync,
+  and maintenance loop
 - installs the static storefront under a versioned release directory
 - validates and reloads Caddy only after local services are healthy
 - restores the previous storefront symlink and Caddy config if public smoke
@@ -436,6 +450,14 @@ Marketplace PostgreSQL volume unless its data is known to be corrupt. After the
 first successful Marketplace release, normal tag-based rollback is available
 again.
 
+Migration `0011_spooky_black_bird.sql` only adds the billing authorization enum,
+table, foreign keys, and indexes. Tag rollback may leave that unused table in
+place. Migration `0012_chilly_black_tarantula.sql` only adds the nullable
+settlement payload used by maintenance retries. Do not drop either object during
+an application rollback. Roll New API back to its
+previous image only after LLMHub traffic has been stopped or rolled back, so the
+internal route contract is not removed while LLMHub is still sending requests.
+
 The deploy script writes `.env.images` with the current image registry, owner,
 and tag. It contains no runtime secrets. Use it for manual inspection, restart,
 rollback, or notification commands after the first Actions deploy.
@@ -449,6 +471,7 @@ docker compose --env-file .env.radar --env-file .env.images -f docker-compose.ra
 docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 status-page
 docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 radar-probe-worker
 docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 marketplace-api marketplace-maintenance
+docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml logs --tail=200 marketplace-probe-worker marketplace-catalog-refresh-worker marketplace-relay-config-sync
 ```
 
 Notification worker:

@@ -5,14 +5,18 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "catalog-refresh-worker": "bun src/run-catalog-refresh-worker.ts",
+    "relay-config-sync": "bun src/run-relay-config-sync.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "1.19.9",
     "@llmhub/marketplace-db": "workspace:*",
+    "@openstatus/services": "workspace:*",
     "drizzle-orm": "catalog:",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@openstatus/tsconfig": "workspace:*",

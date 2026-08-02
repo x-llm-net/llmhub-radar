@@ -1,14 +1,13 @@
 "use client";
 
-import { Radar } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { Waypoints } from "lucide-react";
 
 import { NavBreadcrumb } from "@/components/nav/nav-breadcrumb";
 
 export function Breadcrumb() {
-  const t = useTranslations("radar");
-
   return (
-    <NavBreadcrumb items={[{ type: "page", label: t("title"), icon: Radar }]} />
+    <NavBreadcrumb
+      items={[{ type: "page", label: "分组管理", icon: Waypoints }]}
+    />
   );
 }

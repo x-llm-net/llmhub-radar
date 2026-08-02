@@ -8,6 +8,7 @@ import { SessionProvider } from "next-auth/react";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import LocalFont from "next/font/local";
+import { headers } from "next/headers";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { TailwindIndicator } from "@/components/tailwind-indicator";
@@ -66,7 +67,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth();
+  const requestHeaders = await headers();
+  const isDevelopmentPreview =
+    process.env.NODE_ENV === "development" &&
+    requestHeaders.get("x-llmhub-development-preview") === "1";
+  const session = isDevelopmentPreview ? null : await auth();
   const locale = await getLocale();
   const messages = await getMessages();
 

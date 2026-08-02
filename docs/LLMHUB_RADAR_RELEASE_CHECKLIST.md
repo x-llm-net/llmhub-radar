@@ -24,6 +24,10 @@ pages.
 - [ ] Production database backup exists before deployment.
 - [ ] Marketplace PostgreSQL backup exists before deployment, except on its
   first creation.
+- [ ] Marketplace migration `0011_spooky_black_bird.sql` is confirmed to add
+  only billing authorization objects after `0010_route_binding_map.sql`.
+- [ ] Migration `0012_chilly_black_tarantula.sql` adds only the nullable
+  settlement payload used for automatic capture retry.
 - [ ] Migration verification passes locally:
   `pnpm --filter @openstatus/db verify:radar-migrations`
 - [ ] Empty database path is verified.
@@ -53,6 +57,10 @@ pages.
   Docker, for example `http://status-page:3000`.
 - [ ] Marketplace PostgreSQL credentials, public source URL, sync interval, and
   cleanup interval are configured.
+- [ ] `LLMHUB_ROUTER_FAKE=false` in production.
+- [ ] `LLMHUB_RELAY_SYNC_URL`, `LLMHUB_RELAY_SYNC_TOKEN`,
+  `LLMHUB_RELAY_REQUEST_URL`, and `LLMHUB_RELAY_REQUEST_TOKEN` are non-empty
+  and match the deployed New API internal endpoints.
 - [ ] Docker build args for `dashboard` and `status-page` use the same
   production public URLs, not localhost placeholders.
 - [ ] `CRON_SECRET` is set to a random production value.
@@ -113,11 +121,23 @@ pages.
 - [ ] `docker compose --env-file .env.radar --env-file .env.images -f docker-compose.radar.yaml -f docker-compose.radar.images.yaml ps`
   shows healthy/running `dashboard`, `status-page`, `libsql`,
   `marketplace-postgres`, `marketplace-api`, `marketplace-maintenance`, and
-  `radar-probe-worker`.
+  `radar-probe-worker`, `marketplace-probe-worker`,
+  `marketplace-catalog-refresh-worker`, and `marketplace-relay-config-sync`.
 - [ ] `db-migrate` exits successfully.
 - [ ] `marketplace-migrate` exits successfully without seeding a built-in
   model catalog.
 - [ ] `marketplace-maintenance` logs show a successful legacy sync and cleanup.
+- [ ] Relay config sync creates an active New API binding and repeated sync is
+  idempotent.
+- [ ] New API sync/request health endpoints accept their own token and reject
+  missing or mismatched credentials.
+- [ ] One non-streaming LLMHub request succeeds through the bound channel;
+  `hub_billing_authorizations.status` is `captured`, usage is persisted, and
+  the ledger balance decreases by the actual charge rather than the reserve.
+- [ ] A failed request releases its billing authorization; an expired reserve
+  is released by `marketplace-maintenance`.
+- [ ] A staged settlement left in `reserved` is captured by
+  `marketplace-maintenance` and is not refunded as an ordinary expiry.
 - [ ] `/opt/llmhub-radar/storefront/current` points to the deployed image tag.
 - [ ] `radar-probe-worker` logs show regular ticks and no credential decrypt
   failures.

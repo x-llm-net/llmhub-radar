@@ -1,16 +1,64 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import {
+  createHubGroup,
   createMarketplaceDb,
-  models,
-  probeTargets,
-  providerModels,
-  providers,
+  hubGroupBlocks,
+  hubGroupModels,
+  hubGroupModelStats,
+  hubGroupPriceVersions,
+  hubGroupSecrets,
+  hubHealthBuckets3h,
+  hubModelAliases,
+  hubModelPriceComponents,
+  hubModelPriceVersions,
+  hubModels,
+  hubProbeCycles,
+  hubProbeRuns,
+  hubProbeTargets,
+  hubProviderGroups,
+  hubProviders,
   setMarketplaceMinRankingAvailabilityBps,
 } from "@llmhub/marketplace-db";
-import { eq } from "drizzle-orm";
+import { encryptSecret } from "@openstatus/services/radar/runtime";
+import { eq, inArray } from "drizzle-orm";
 
 import { createMarketplaceApp } from "./app";
+
+describe("marketplace management API", () => {
+  test("rejects browser requests without the internal management token", async () => {
+    const app = createMarketplaceApp(
+      {} as ReturnType<typeof createMarketplaceDb>["db"],
+    );
+    const response = await app.request(
+      "/v1/manage/groups?workspaceId=workspace-test",
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "unauthorized", message: "Unauthorized" },
+    });
+  });
+
+  test("returns a structured 400 for invalid management input", async () => {
+    const app = createMarketplaceApp(
+      {} as ReturnType<typeof createMarketplaceDb>["db"],
+    );
+    const response = await app.request(
+      "/v1/manage/groups/not-a-uuid?workspaceId=workspace-test",
+      {
+        headers: {
+          authorization: "Bearer llmhub-marketplace-local-management",
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: { code: "invalid_request", message: "Invalid request" },
+    });
+  });
+});
 
 const databaseUrl = process.env.MARKETPLACE_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe : describe.skip;
@@ -26,82 +74,82 @@ describeDatabase("marketplace public API", () => {
 
   const { client, db } = createMarketplaceDb(databaseUrl);
   const app = createMarketplaceApp(db);
+  const workspaceId = "workspace-marketplace-api-test";
+  const providerSlug = "marketplace-api-test-provider";
+  const apiKey = "sk-marketplace-api-test";
+  let groupIds: string[] = [];
+  let apiKeyCiphertext = "";
 
   beforeAll(async () => {
-    const [model] = await db
-      .insert(models)
-      .values({
-        slug: "gpt-5-4",
-        vendor: "OpenAI",
-        family: "GPT",
-        displayName: "GPT 5.4",
-        shortName: "GPT 5.4",
-        aliases: ["gpt-5.4", "gpt-5-4"],
-        visibility: "auto",
-      })
-      .onConflictDoUpdate({
-        target: models.slug,
-        set: { visibility: "auto", enabled: true },
-      })
-      .returning({ id: models.id });
-    const [provider] = await db
-      .insert(providers)
-      .values({
-        slug: "marketplace-api-test-provider",
-        name: "Marketplace API Test Provider",
-        status: "published",
-      })
-      .onConflictDoUpdate({
-        target: providers.slug,
-        set: { status: "published" },
-      })
-      .returning({ id: providers.id });
-    if (!model || !provider) throw new Error("Unable to create API test data");
-    const [listing] = await db
-      .insert(providerModels)
-      .values({
-        providerId: provider.id,
-        modelId: model.id,
-        providerModelName: "gpt-5.4",
-        status: "observing",
-      })
-      .onConflictDoUpdate({
-        target: [providerModels.providerId, providerModels.modelId],
-        set: { status: "observing" },
-      })
-      .returning({ id: providerModels.id });
-    if (!listing) throw new Error("Unable to create API test listing");
-    await db
-      .insert(probeTargets)
-      .values({
-        providerModelId: listing.id,
-        name: "marketplace-api-test-target",
-        source: "legacy_radar",
-        sourceRef: "marketplace-api-test-target",
-        enabled: true,
-        isScoring: true,
-      })
-      .onConflictDoUpdate({
-        target: [probeTargets.source, probeTargets.sourceRef],
-        set: { enabled: true, isScoring: true },
+    await cleanupApiTestData();
+    const baseUrlCiphertext = await encryptSecret(
+      "https://marketplace-api-test.example/v1",
+    );
+    apiKeyCiphertext = await encryptSecret(apiKey);
+    for (const [name, multiplierBps] of [
+      ["Plus", 6_000],
+      ["Pro", 8_000],
+    ] as const) {
+      const group = await createHubGroup(db, {
+        ownerWorkspaceId: workspaceId,
+        providerSlug,
+        providerName: "Marketplace API Test Provider",
+        name,
+        baseUrlCiphertext,
+        baseUrlHostHash: "marketplace-api-test-host-hash",
+        apiKeyCiphertext,
+        keyFingerprint: "marketplace-api-test-key-fingerprint",
+        apiKeyLastFour: "test",
+        multiplierBps,
+        discoveredModels: ["gpt-5.4"],
       });
+      groupIds.push(group.id);
+    }
     await db
-      .insert(models)
+      .update(hubProviderGroups)
+      .set({ lifecycleStatus: "ready", listingStatus: "listed" })
+      .where(inArray(hubProviderGroups.id, groupIds));
+
+    const groupModels = await db
+      .select({ id: hubGroupModels.id })
+      .from(hubGroupModels)
+      .where(inArray(hubGroupModels.groupId, groupIds));
+    const now = new Date();
+    for (let index = 0; index < groupModels.length; index += 1) {
+      const groupModel = groupModels[index];
+      if (!groupModel) continue;
+      await db.insert(hubGroupModelStats).values({
+        groupModelId: groupModel.id,
+        windowStart: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+        windowEnd: now,
+        availabilityBps: 9_900 - index * 100,
+        coverageBps: 10_000,
+        grade: "S",
+        firstTokenP50Ms: 900 + index * 100,
+        firstTokenP95Ms: 1_500 + index * 100,
+        sampleCount: 10,
+        validBucketCount: 4,
+        rankingScoreBps: 9_500 - index * 100,
+        currentStatus: "normal",
+        eligible: true,
+        lastCheckAt: now,
+      });
+    }
+    await db
+      .insert(hubModels)
       .values({
         slug: "unassociated-api-test-model",
         vendor: "Other",
         family: "Other",
+        canonicalName: "unassociated-api-test-model",
         displayName: "Unassociated API Test Model",
         shortName: "Unassociated API Test Model",
-        visibility: "auto",
       })
-      .onConflictDoUpdate({
-        target: models.slug,
-        set: { visibility: "auto", enabled: true },
-      });
+      .onConflictDoNothing({ target: hubModels.slug });
   });
 
   afterAll(async () => {
+    await cleanupApiTestData();
     await client.close();
   });
 
@@ -136,9 +184,9 @@ describeDatabase("marketplace public API", () => {
     if (!original) return;
 
     await db
-      .update(models)
+      .update(hubModels)
       .set({ description: "cache-mutation" })
-      .where(eq(models.slug, "gpt-5-4"));
+      .where(eq(hubModels.slug, "gpt-5-4"));
     const second = await isolatedApp.request("/v1/models");
     const secondPayload = (await second.json()) as {
       data: Array<{ slug: string; description: string }>;
@@ -148,9 +196,9 @@ describeDatabase("marketplace public API", () => {
     ).toBe(original.description);
 
     await db
-      .update(models)
+      .update(hubModels)
       .set({ description: original.description })
-      .where(eq(models.slug, "gpt-5-4"));
+      .where(eq(hubModels.slug, "gpt-5-4"));
   });
 
   test("supports conditional requests through ETag", async () => {
@@ -187,6 +235,73 @@ describeDatabase("marketplace public API", () => {
     expect(payload.meta.minRankingScore).toBeGreaterThanOrEqual(0);
     expect(payload.meta.minRankingScore).toBeLessThanOrEqual(100);
     expect(second.status).toBe(304);
+  });
+
+  test("returns both groups from one provider for the same model", async () => {
+    const homepage = await app.request("/v1/homepage");
+    const homepagePayload = (await homepage.json()) as {
+      data: Array<{
+        model: { slug: string };
+        ranking: Array<{ provider: { slug: string }; group: { name: string } }>;
+      }>;
+    };
+    const board = homepagePayload.data.find(
+      (entry) => entry.model.slug === "gpt-5-4",
+    );
+    expect(
+      board?.ranking
+        .filter((row) => row.provider.slug === providerSlug)
+        .map((row) => row.group.name)
+        .sort(),
+    ).toEqual(["Plus", "Pro"]);
+
+    const provider = await app.request(
+      `/v1/providers/${providerSlug}/rankings`,
+    );
+    const providerPayload = (await provider.json()) as {
+      data: {
+        models: Array<{
+          ranking: { group: { name: string } } | null;
+          observing: { group: { name: string } } | null;
+        }>;
+      };
+    };
+    expect(
+      providerPayload.data.models
+        .map(
+          (entry) => entry.ranking?.group.name ?? entry.observing?.group.name,
+        )
+        .sort(),
+    ).toEqual(["Plus", "Pro"]);
+  });
+
+  test("protects group details and never returns key material", async () => {
+    const groupId = groupIds[0];
+    expect(groupId).toBeDefined();
+    if (!groupId) return;
+
+    const unauthorized = await app.request(
+      `/v1/manage/groups/${groupId}?workspaceId=${workspaceId}`,
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const denied = await app.request(
+      `/v1/manage/groups/${groupId}?workspaceId=another-workspace`,
+      { headers: managementHeaders() },
+    );
+    expect(denied.status).toBe(404);
+
+    const response = await app.request(
+      `/v1/manage/groups/${groupId}?workspaceId=${workspaceId}`,
+      { headers: managementHeaders() },
+    );
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain(apiKey);
+    expect(serialized).not.toContain(apiKeyCiphertext);
+    expect(serialized).not.toContain("marketplace-api-test-key-fingerprint");
+    expect(serialized).not.toContain("baseUrlCiphertext");
   });
 
   test("returns a structured 404 for unknown models", async () => {
@@ -248,4 +363,102 @@ describeDatabase("marketplace public API", () => {
     expect(llms).toContain("GPT 5.4");
     expect(llms).toContain("Marketplace API Test Provider");
   });
+
+  function managementHeaders() {
+    return { authorization: "Bearer llmhub-marketplace-local-management" };
+  }
+
+  async function cleanupApiTestData() {
+    const providerRows = await db
+      .select({ id: hubProviders.id })
+      .from(hubProviders)
+      .where(eq(hubProviders.ownerWorkspaceId, workspaceId));
+    const providerIds = providerRows.map((provider) => provider.id);
+    if (providerIds.length > 0) {
+      const groups = await db
+        .select({ id: hubProviderGroups.id })
+        .from(hubProviderGroups)
+        .where(inArray(hubProviderGroups.providerId, providerIds));
+      const ids = groups.map((group) => group.id);
+      if (ids.length > 0) {
+        const groupModels = await db
+          .select({ id: hubGroupModels.id })
+          .from(hubGroupModels)
+          .where(inArray(hubGroupModels.groupId, ids));
+        const groupModelIds = groupModels.map((model) => model.id);
+        if (groupModelIds.length > 0) {
+          const targets = await db
+            .select({ id: hubProbeTargets.id })
+            .from(hubProbeTargets)
+            .where(inArray(hubProbeTargets.groupModelId, groupModelIds));
+          const targetIds = targets.map((target) => target.id);
+          await db
+            .delete(hubProbeRuns)
+            .where(inArray(hubProbeRuns.groupModelId, groupModelIds));
+          if (targetIds.length > 0) {
+            await db
+              .delete(hubProbeCycles)
+              .where(inArray(hubProbeCycles.targetId, targetIds));
+          }
+          await db
+            .delete(hubGroupModelStats)
+            .where(inArray(hubGroupModelStats.groupModelId, groupModelIds));
+          await db
+            .delete(hubHealthBuckets3h)
+            .where(inArray(hubHealthBuckets3h.groupModelId, groupModelIds));
+          await db
+            .delete(hubProbeTargets)
+            .where(inArray(hubProbeTargets.groupModelId, groupModelIds));
+        }
+        await db
+          .delete(hubGroupBlocks)
+          .where(inArray(hubGroupBlocks.groupId, ids));
+        await db
+          .delete(hubGroupModels)
+          .where(inArray(hubGroupModels.groupId, ids));
+        await db
+          .delete(hubGroupPriceVersions)
+          .where(inArray(hubGroupPriceVersions.groupId, ids));
+        await db
+          .delete(hubGroupSecrets)
+          .where(inArray(hubGroupSecrets.groupId, ids));
+        await db
+          .delete(hubProviderGroups)
+          .where(inArray(hubProviderGroups.id, ids));
+      }
+      await db
+        .delete(hubProviders)
+        .where(inArray(hubProviders.id, providerIds));
+    }
+
+    const testModels = await db
+      .select({ id: hubModels.id })
+      .from(hubModels)
+      .where(
+        inArray(hubModels.slug, ["gpt-5-4", "unassociated-api-test-model"]),
+      );
+    const modelIds = testModels.map((model) => model.id);
+    if (modelIds.length > 0) {
+      const priceVersions = await db
+        .select({ id: hubModelPriceVersions.id })
+        .from(hubModelPriceVersions)
+        .where(inArray(hubModelPriceVersions.modelId, modelIds));
+      const priceVersionIds = priceVersions.map((version) => version.id);
+      if (priceVersionIds.length > 0) {
+        await db
+          .delete(hubModelPriceComponents)
+          .where(
+            inArray(hubModelPriceComponents.priceVersionId, priceVersionIds),
+          );
+      }
+      await db
+        .delete(hubModelPriceVersions)
+        .where(inArray(hubModelPriceVersions.modelId, modelIds));
+      await db
+        .delete(hubModelAliases)
+        .where(inArray(hubModelAliases.modelId, modelIds));
+      await db.delete(hubModels).where(inArray(hubModels.id, modelIds));
+    }
+    groupIds = [];
+  }
 });

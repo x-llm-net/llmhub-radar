@@ -17,7 +17,7 @@ STOREFRONT_SWITCHED=0
 COMPOSE_ENV_BACKUP_FILE=""
 COMPOSE_ENV_HAD_PREVIOUS=0
 APP_SERVICES_SWITCHED=0
-APP_SERVICE_NAMES=(dashboard status-page radar-probe-worker marketplace-api marketplace-maintenance)
+APP_SERVICE_NAMES=(dashboard status-page radar-probe-worker marketplace-api marketplace-probe-worker marketplace-catalog-refresh-worker marketplace-relay-config-sync marketplace-maintenance)
 
 require_env() {
   local name="$1"
@@ -30,7 +30,7 @@ require_env() {
 require_env_file_value() {
   local name="$1"
   local value
-  value="$(sed -n "s/^${name}=//p" .env.radar | tail -n 1)"
+  value="$(env_file_value "$name")"
   if [ -z "$value" ]; then
     echo "Missing $name in .env.radar" >&2
     exit 2
@@ -41,6 +41,11 @@ require_env_file_value() {
       exit 2
       ;;
   esac
+}
+
+env_file_value() {
+  local name="$1"
+  sed -n "s/^${name}=//p" .env.radar | tail -n 1
 }
 
 validate_image_tag() {
@@ -155,6 +160,38 @@ wait_for_container_healthy() {
   return 1
 }
 
+wait_for_container_stable() {
+  local container="$1"
+  local attempt
+  local restart_count
+  local previous_restart_count=""
+  local stable_checks=0
+  local status
+
+  for attempt in $(seq 1 15); do
+    status="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    restart_count="$(docker inspect -f '{{.RestartCount}}' "$container" 2>/dev/null || true)"
+    if [ "$status" = "running" ] && [ -n "$restart_count" ]; then
+      if [ "$restart_count" = "$previous_restart_count" ]; then
+        stable_checks=$((stable_checks + 1))
+      else
+        stable_checks=1
+      fi
+      if [ "$stable_checks" -ge 5 ]; then
+        return 0
+      fi
+    else
+      stable_checks=0
+    fi
+    previous_restart_count="$restart_count"
+    echo "Waiting for $container to remain stable, attempt $attempt/15, status=${status:-missing}, restarts=${restart_count:-unknown}"
+    sleep 2
+  done
+
+  echo "Container $container did not remain stable" >&2
+  return 1
+}
+
 validate_compose() {
   "${COMPOSE[@]}" config --quiet
 }
@@ -259,18 +296,31 @@ rollback_application_services() {
     return 0
   fi
 
-  install -m 600 "$COMPOSE_ENV_BACKUP_FILE" "$COMPOSE_ENV_FILE"
-  echo "Restored previous image env: $COMPOSE_ENV_BACKUP_FILE"
+  restore_compose_env
   "${COMPOSE[@]}" pull "${APP_SERVICE_NAMES[@]}" || true
   "${COMPOSE[@]}" up -d --no-build "${APP_SERVICE_NAMES[@]}"
   echo "Restored previous application containers after deployment failure. Database migrations are not automatically rolled back."
+}
+
+restore_compose_env() {
+  if [ "$COMPOSE_ENV_HAD_PREVIOUS" = "1" ]; then
+    install -m 600 "$COMPOSE_ENV_BACKUP_FILE" "$COMPOSE_ENV_FILE"
+    echo "Restored previous image env: $COMPOSE_ENV_BACKUP_FILE"
+  elif [ -f "$COMPOSE_ENV_FILE" ]; then
+    rm -f "$COMPOSE_ENV_FILE"
+    echo "Removed candidate image env because no previous release existed."
+  fi
 }
 
 handle_error() {
   local status="$1"
   trap - ERR
   rollback_public_routing || true
-  rollback_application_services || true
+  if [ "$APP_SERVICES_SWITCHED" = "1" ]; then
+    rollback_application_services || true
+  else
+    restore_compose_env || true
+  fi
   exit "$status"
 }
 
@@ -283,6 +333,41 @@ smoke_test_local() {
   smoke_test_url "$status_page_url"
   smoke_test_url "$marketplace_health_url"
   echo "Local smoke tests passed: $dashboard_url $status_page_url $marketplace_health_url"
+}
+
+smoke_test_relay_auth() {
+  local sync_url
+  local sync_token
+  local request_url
+  local request_token
+
+  sync_url="$(env_file_value LLMHUB_RELAY_SYNC_URL)"
+  sync_token="$(env_file_value LLMHUB_RELAY_SYNC_TOKEN)"
+  request_url="$(env_file_value LLMHUB_RELAY_REQUEST_URL)"
+  request_token="$(env_file_value LLMHUB_RELAY_REQUEST_TOKEN)"
+
+  smoke_test_authenticated_url "${sync_url%/}/health/sync" "$sync_token"
+  smoke_test_authenticated_url "${request_url%/}/health/request" "$request_token"
+  echo "New API relay authentication smoke tests passed."
+}
+
+smoke_test_authenticated_url() {
+  local url="$1"
+  local token="$2"
+  local attempt
+  local code
+
+  for attempt in $(seq 1 12); do
+    code="$(curl -sS -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$url" 2>/dev/null || true)"
+    if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+      return 0
+    fi
+    echo "Authenticated smoke test waiting for $url, attempt $attempt/12, code=${code:-curl_failed}"
+    sleep 5
+  done
+
+  echo "Authenticated smoke test failed for $url" >&2
+  return 1
 }
 
 smoke_test_public() {
@@ -403,6 +488,10 @@ fi
 
 require_env_file_value MARKETPLACE_POSTGRES_PASSWORD
 require_env_file_value MARKETPLACE_DATABASE_URL
+require_env_file_value LLMHUB_RELAY_SYNC_URL
+require_env_file_value LLMHUB_RELAY_SYNC_TOKEN
+require_env_file_value LLMHUB_RELAY_REQUEST_URL
+require_env_file_value LLMHUB_RELAY_REQUEST_TOKEN
 
 validate_storefront_source
 write_compose_env
@@ -414,7 +503,7 @@ fi
 
 echo "Deploying LLMHub Radar image tag: ${LLMHUB_RADAR_IMAGE_TAG}"
 
-"${COMPOSE[@]}" pull dashboard status-page radar-probe-worker db-migrate marketplace-api marketplace-migrate marketplace-maintenance
+"${COMPOSE[@]}" pull dashboard status-page radar-probe-worker db-migrate marketplace-api marketplace-migrate marketplace-probe-worker marketplace-catalog-refresh-worker marketplace-relay-config-sync marketplace-maintenance
 
 backup_database
 backup_media
@@ -436,10 +525,19 @@ wait_for_container_healthy "${LLMHUB_RADAR_MARKETPLACE_POSTGRES_CONTAINER:-llmhu
   --abort-on-container-exit \
   --exit-code-from marketplace-migrate \
   marketplace-migrate
-"${COMPOSE[@]}" up -d --no-build dashboard status-page radar-probe-worker marketplace-api marketplace-maintenance
 APP_SERVICES_SWITCHED=1
+"${COMPOSE[@]}" up -d --no-build dashboard status-page radar-probe-worker marketplace-api marketplace-probe-worker marketplace-catalog-refresh-worker marketplace-relay-config-sync marketplace-maintenance
+
+for worker in \
+  llmhub-radar-marketplace-probe-worker \
+  llmhub-radar-marketplace-catalog-refresh-worker \
+  llmhub-radar-marketplace-relay-config-sync \
+  llmhub-radar-marketplace-maintenance; do
+  wait_for_container_stable "$worker"
+done
 
 smoke_test_local
+smoke_test_relay_auth
 prepare_storefront_release
 install_caddy_config
 smoke_test_public

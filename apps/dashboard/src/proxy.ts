@@ -1,11 +1,11 @@
 import { db, eq } from "@openstatus/db";
 import { user, usersToWorkspaces, workspace } from "@openstatus/db/src/schema";
 import { getCurrency } from "@openstatus/db/src/schema/plan/utils";
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 
-export default auth(async (req) => {
+const authenticatedProxy = auth(async (req) => {
   const url = req.nextUrl.clone();
   const response = NextResponse.next();
 
@@ -112,6 +112,20 @@ export default auth(async (req) => {
 
   return response;
 });
+
+export default function proxy(req: NextRequest) {
+  const isDevelopmentPreview =
+    process.env.NODE_ENV === "development" &&
+    req.nextUrl.pathname.startsWith("/preview/");
+
+  if (isDevelopmentPreview) {
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("x-llmhub-development-preview", "1");
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  return authenticatedProxy(req, { params: Promise.resolve({}) });
+}
 
 export const config = {
   matcher: [

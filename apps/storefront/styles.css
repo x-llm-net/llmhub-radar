@@ -816,7 +816,7 @@ body, .hero, .protocol-ranking-section, .bottom-band { background: #fff; }
 .model-leaderboard .model-data-row { min-height: 82px; }
 .model-leaderboard .model-data-row > .ranking-fact { display: none; }
 .model-leaderboard .model-data-row > .status-line { display: inline-flex; }
-.model-leaderboard .provider-name > span { display: none; }
+.model-leaderboard .provider-name > span { display: block; }
 .model-leaderboard .ranking-trend small { display: flex; justify-content: space-between; gap: 12px; }
 
 @media (max-width: 1100px) {

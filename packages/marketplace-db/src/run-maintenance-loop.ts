@@ -1,4 +1,8 @@
-import { runCleanupFromEnv, runLegacySyncFromEnv } from "./maintenance-tasks";
+import {
+  runCleanupFromEnv,
+  runHubBillingMaintenanceFromEnv,
+  runLegacySyncFromEnv,
+} from "./maintenance-tasks";
 
 const DEFAULT_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const DEFAULT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -58,6 +62,15 @@ async function runMaintenanceLoop() {
       console.log("Marketplace sync completed", result);
     } catch (error) {
       console.error("Marketplace sync failed", error);
+    }
+
+    try {
+      const result = await runHubBillingMaintenanceFromEnv();
+      if (result.captured > 0 || result.failed > 0 || result.released > 0) {
+        console.log("Marketplace billing maintenance completed", result);
+      }
+    } catch (error) {
+      console.error("Marketplace billing maintenance failed", error);
     }
 
     if (Date.now() >= nextCleanupAt) {

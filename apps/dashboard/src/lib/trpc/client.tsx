@@ -16,6 +16,8 @@ const SENSITIVE_TRPC_PATHS = new Set([
   "radar.updateTokenProbe",
   "radar.discoverModels",
   "radar.discoverModelsForPool",
+  "hub.createGroup",
+  "hub.updateGroup",
 ]);
 
 function getLoggerPath(opts: unknown) {

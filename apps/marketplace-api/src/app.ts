@@ -1,19 +1,22 @@
 import { createHash } from "node:crypto";
 
 import {
-  getHomepageRankings,
-  getMarketplaceOverview,
+  getHubHomepageRankings,
+  getHubMarketplaceOverview,
+  getHubModelLeaderboard,
+  getHubProviderRankings,
   getMarketplaceMinRankingAvailabilityBps,
-  getModelLeaderboard,
-  getProviderRankings,
-  listPublicMarketplaceModels,
-  listPublicMarketplaceProviders,
+  listPublicHubModels,
+  listPublicHubProviders,
   presentMarketplaceModel,
   type MarketplaceDb,
 } from "@llmhub/marketplace-db";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+
+import { createHubGatewayApp, type HubTrafficAdapter } from "./gateway";
+import { createManagementApp } from "./management";
 
 const PUBLIC_CACHE_INTERVAL_MS = 10 * 60 * 1000;
 const PUBLIC_CACHE_MAX_ENTRIES = 256;
@@ -129,7 +132,10 @@ function responseFromCache(request: Request, entry: PublicCacheEntry) {
   return new Response(entry.body, { status: entry.status, headers });
 }
 
-export function createMarketplaceApp(db: MarketplaceDb) {
+export function createMarketplaceApp(
+  db: MarketplaceDb,
+  options: { trafficAdapter?: HubTrafficAdapter } = {},
+) {
   const app = new Hono();
   const publicCache = new Map<string, PublicCacheEntry>();
   const pendingLoads = new Map<string, Promise<PublicCacheEntry>>();
@@ -181,7 +187,8 @@ export function createMarketplaceApp(db: MarketplaceDb) {
     "/v1/*",
     cors({
       origin: "*",
-      allowMethods: ["GET", "HEAD", "OPTIONS"],
+      allowHeaders: ["authorization", "content-type"],
+      allowMethods: ["GET", "HEAD", "OPTIONS", "POST"],
       maxAge: 600,
     }),
   );
@@ -190,6 +197,9 @@ export function createMarketplaceApp(db: MarketplaceDb) {
     await db.execute(sql`SELECT 1`);
     return context.json({ ok: true });
   });
+
+  app.route("/v1/manage", createManagementApp(db));
+  app.route("/v1", createHubGatewayApp(db, options));
 
   app.get("/robots.txt", () =>
     textDocument(
@@ -212,8 +222,8 @@ export function createMarketplaceApp(db: MarketplaceDb) {
 
   app.get("/sitemap.xml", async () => {
     const [catalog, publicProviders] = await Promise.all([
-      listPublicMarketplaceModels(db),
-      listPublicMarketplaceProviders(db),
+      listPublicHubModels(db),
+      listPublicHubProviders(db),
     ]);
     const entries = [
       sitemapEntry({
@@ -264,8 +274,8 @@ export function createMarketplaceApp(db: MarketplaceDb) {
 
   app.get("/llms.txt", async () => {
     const [catalog, publicProviders] = await Promise.all([
-      listPublicMarketplaceModels(db),
-      listPublicMarketplaceProviders(db),
+      listPublicHubModels(db),
+      listPublicHubProviders(db),
     ]);
     const lines = [
       "# LLMHub Radar",
@@ -307,7 +317,7 @@ export function createMarketplaceApp(db: MarketplaceDb) {
 
   app.get("/v1/models", (context) =>
     cachedRoute(context.req.raw, "models", async () => {
-      const rows = await listPublicMarketplaceModels(db);
+      const rows = await listPublicHubModels(db);
       const catalog = rows.map((row) => {
         const { sortOrder: _sortOrder, updatedAt: _updatedAt, ...model } = row;
         return presentMarketplaceModel(model);
@@ -320,7 +330,7 @@ export function createMarketplaceApp(db: MarketplaceDb) {
     const slug = context.req.param("slug");
     return cachedRoute(context.req.raw, `model:${slug}`, async (asOf) => {
       const [result, minRankingAvailabilityBps] = await Promise.all([
-        getModelLeaderboard(db, slug, { asOf }),
+        getHubModelLeaderboard(db, slug, { asOf }),
         getMarketplaceMinRankingAvailabilityBps(db),
       ]);
       if (!result) {
@@ -344,7 +354,7 @@ export function createMarketplaceApp(db: MarketplaceDb) {
     const slug = context.req.param("slug");
     return cachedRoute(context.req.raw, `provider:${slug}`, async (asOf) => {
       const [result, minRankingAvailabilityBps] = await Promise.all([
-        getProviderRankings(db, slug, { asOf }),
+        getHubProviderRankings(db, slug, { asOf }),
         getMarketplaceMinRankingAvailabilityBps(db),
       ]);
       if (!result) {
@@ -370,8 +380,8 @@ export function createMarketplaceApp(db: MarketplaceDb) {
   app.get("/v1/homepage", (context) =>
     cachedRoute(context.req.raw, "homepage", async (asOf) => {
       const [rankings, meta, minRankingAvailabilityBps] = await Promise.all([
-        getHomepageRankings(db, { asOf }),
-        getMarketplaceOverview(db),
+        getHubHomepageRankings(db, { asOf }),
+        getHubMarketplaceOverview(db),
         getMarketplaceMinRankingAvailabilityBps(db),
       ]);
       return {

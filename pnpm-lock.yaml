@@ -855,12 +855,18 @@ importers:
       '@llmhub/marketplace-db':
         specifier: workspace:*
         version: link:../../packages/marketplace-db
+      '@openstatus/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@upstash/redis@1.38.0)(bun-types@1.3.14)(postgres@3.4.7)
       hono:
         specifier: 'catalog:'
         version: 4.12.21
+      zod:
+        specifier: 'catalog:'
+        version: 4.1.13
     devDependencies:
       '@openstatus/tsconfig':
         specifier: workspace:*

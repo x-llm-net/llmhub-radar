@@ -106,4 +106,24 @@ describe("runOpenAICompatibleProbe", () => {
     expect(result.httpStatus).toBe(403);
     expect(result.errorType).toBe("insufficient_quota");
   });
+
+  test("blocks cross-origin redirects without forwarding credentials", async () => {
+    let calls = 0;
+    const result = await runOpenAICompatibleProbe({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test-secret",
+      model: "gpt-test",
+      fetch: async () => {
+        calls += 1;
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://127.0.0.1/private" },
+        });
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(result.success).toBe(false);
+    expect(result.errorType).toBe("bad_response");
+  });
 });

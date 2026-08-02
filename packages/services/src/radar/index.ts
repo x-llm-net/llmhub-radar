@@ -33,6 +33,7 @@ export {
 export {
   decryptSecret,
   encryptSecret,
+  getSecretLastFour,
   hashPrivateIdentifier,
   hashSecret,
 } from "./crypto";
@@ -40,6 +41,12 @@ export {
   discoverRadarModels,
   discoverRadarModelsForPool,
 } from "./discover-models";
+export { discoverOpenAiCompatibleModels } from "./openai-compatible-models";
+export {
+  getBaseUrlHostHash,
+  maskBaseUrl,
+  normalizeRadarBaseUrl,
+} from "./base-url";
 export {
   getRadarPool,
   listClaimableRadarPools,
