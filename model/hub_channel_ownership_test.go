@@ -12,8 +12,8 @@ func TestHubChannelOwnershipQueriesAndFilters(t *testing.T) {
 	db := useHubSupplyGroupMigrationDB(t)
 	require.NoError(t, db.AutoMigrate(&Channel{}, &HubProvider{}, &HubSupplyGroup{}))
 
-	providerA := HubProvider{OwnerUserId: 101, Slot: 1, Name: "Provider A"}
-	providerB := HubProvider{OwnerUserId: 102, Slot: 1, Name: "Provider B"}
+	providerA := HubProvider{OwnerUserId: 101, Slot: 1, Name: "Provider A", Slug: "provider-a"}
+	providerB := HubProvider{OwnerUserId: 102, Slot: 1, Name: "Provider B", Slug: "provider-b"}
 	require.NoError(t, db.Create(&providerA).Error)
 	require.NoError(t, db.Create(&providerB).Error)
 

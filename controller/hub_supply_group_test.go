@@ -44,6 +44,11 @@ import (
 
 func setupHubSupplyGroupControllerTestDB(t *testing.T) {
 	t.Helper()
+	savedModelRatios := ratio_setting.ModelRatio2JSONString()
+	ratio_setting.InitRatioSettings()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedModelRatios))
+	})
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
 		&model.HubProvider{},
@@ -373,7 +378,7 @@ func TestUpdateHubProviderChannelModelsPublicationChecksBatchAndOwnership(t *tes
 	seedHubProvider(t, 43)
 	baseURL := "https://upstream.example"
 	group := &model.HubSupplyGroup{
-		ProviderId: provider.Id, PriceMultiplier: 1,
+		ProviderId: provider.Id, PriceMultiplier: 0.8,
 		TextProbeMinutes: 10, ImageProbeMinutes: 30,
 	}
 	channel := &model.Channel{

@@ -17,7 +17,7 @@ import (
 
 func TestHubProviderPayoutAccountsValidateMethodsAndMaintainDefault(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 20, OwnerUserId: 120, Slot: 1, Name: "Payout Provider", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 20, OwnerUserId: 120, Slot: 1, Name: "Payout Provider", Slug: "payout-provider", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 
 	alipay, err := CreateHubProviderPayoutAccount(provider.OwnerUserId, HubProviderPayoutAccountInput{
@@ -55,7 +55,7 @@ func TestHubProviderPayoutAccountsValidateMethodsAndMaintainDefault(t *testing.T
 
 func TestHubProviderPayoutAccountRejectsIncompleteDetails(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 21, OwnerUserId: 121, Slot: 1, Name: "Validation Provider", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 21, OwnerUserId: 121, Slot: 1, Name: "Validation Provider", Slug: "validation-provider", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 
 	_, err := CreateHubProviderPayoutAccount(provider.OwnerUserId, HubProviderPayoutAccountInput{
@@ -83,7 +83,7 @@ func TestHubProviderPayoutAccountRejectsIncompleteDetails(t *testing.T) {
 
 func TestHubProviderWithdrawalKeepsPayoutAccountSnapshotAfterAccountUpdate(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 22, OwnerUserId: 122, Slot: 1, Name: "Snapshot Provider", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 22, OwnerUserId: 122, Slot: 1, Name: "Snapshot Provider", Slug: "snapshot-provider", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	account := seedSettlementPayoutAccount(t, provider)
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")

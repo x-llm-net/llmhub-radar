@@ -126,7 +126,7 @@ func TestCancelledHubProviderEarningCanBePreparedAgainForSameRequest(t *testing.
 
 func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 1, OwnerUserId: 101, Slot: 1, Name: "Provider", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 1, OwnerUserId: 101, Slot: 1, Name: "Provider", Slug: "provider-one", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
 
@@ -204,7 +204,7 @@ func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *te
 
 func TestHubProviderWithdrawalCanBePaidDirectly(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 2, OwnerUserId: 102, Slot: 1, Name: "Provider 2", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 2, OwnerUserId: 102, Slot: 1, Name: "Provider 2", Slug: "provider-two", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
@@ -236,7 +236,7 @@ func TestHubProviderWithdrawalCanBePaidDirectly(t *testing.T) {
 
 func TestHubProviderWithdrawalRejectsInsufficientBalanceAndInvalidTransition(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 3, OwnerUserId: 103, Slot: 1, Name: "Provider 3", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 3, OwnerUserId: 103, Slot: 1, Name: "Provider 3", Slug: "provider-three", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
 	_, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 1, payoutAccount.Id)
@@ -275,7 +275,7 @@ func TestHubProviderWithdrawalRejectsInsufficientBalanceAndInvalidTransition(t *
 
 func TestHubProviderWithdrawalRequiresExistingPayoutAccount(t *testing.T) {
 	truncateTables(t)
-	provider := HubProvider{Id: 4, OwnerUserId: 104, Slot: 1, Name: "Provider 4", Status: HubProviderStatusActive}
+	provider := HubProvider{Id: 4, OwnerUserId: 104, Slot: 1, Name: "Provider 4", Slug: "provider-four", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)

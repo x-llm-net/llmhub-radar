@@ -282,7 +282,7 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 	provider := seedHubProvider(t, 42)
 	baseURL := "https://upstream.example"
 	group := &model.HubSupplyGroup{
-		ProviderId: provider.Id, PriceMultiplier: 1, PublishedModels: "gpt-5",
+		ProviderId: provider.Id, PriceMultiplier: 0.8, PublishedModels: "gpt-5",
 		TextProbeMinutes: 10, ImageProbeMinutes: 30,
 	}
 	channel := &model.Channel{
