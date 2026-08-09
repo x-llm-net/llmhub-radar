@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -312,7 +313,9 @@ func Register(c *gin.Context) {
 			UnlimitedQuota:     true,
 			ModelLimitsEnabled: false,
 		}
-		if setting.DefaultUseAutoGroup {
+		if hub_routing_setting.Snapshot().Enabled {
+			token.Group = hub_routing_setting.ServiceTierMedium
+		} else if setting.DefaultUseAutoGroup {
 			token.Group = "auto"
 		}
 		if err := token.Insert(); err != nil {

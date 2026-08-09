@@ -59,6 +59,7 @@ const (
 	MsgTokenAutoGroupsTooMany    = "token.auto_groups_too_many"
 	MsgTokenAutoGroupsDuplicate  = "token.auto_groups_duplicate"
 	MsgTokenAutoGroupsInvalid    = "token.auto_groups_invalid"
+	MsgTokenServiceTierRequired  = "token.service_tier_required"
 )
 
 // Redemption related messages

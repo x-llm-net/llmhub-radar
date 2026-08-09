@@ -521,7 +521,7 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 		"unlimited_quota":      true,
 		"model_limits_enabled": false,
 		"model_limits":         "",
-		"group":                "default",
+		"group":                "medium",
 		"cross_group_retry":    false,
 	}
 

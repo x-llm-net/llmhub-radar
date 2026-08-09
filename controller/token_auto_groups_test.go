@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +19,9 @@ import (
 
 func configureTokenAutoGroupsTest(t *testing.T, maxCount string, autoGroups string) {
 	t.Helper()
+	originalRoutingSetting := hub_routing_setting.Snapshot()
+	legacyRoutingSetting := originalRoutingSetting
+	legacyRoutingSetting.Enabled = false
 	originalMax := setting.GetMaxTokenAutoGroups()
 	originalAutoGroups := setting.AutoGroups2JsonString()
 	originalUsableGroups := setting.UserUsableGroups2JSONString()
@@ -26,7 +30,9 @@ func configureTokenAutoGroupsTest(t *testing.T, maxCount string, autoGroups stri
 	require.NoError(t, setting.UpdateAutoGroupsByJsonString(autoGroups))
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1}`))
+	require.NoError(t, hub_routing_setting.Publish(legacyRoutingSetting))
 	t.Cleanup(func() {
+		require.NoError(t, hub_routing_setting.Publish(originalRoutingSetting))
 		require.NoError(t, setting.UpdateMaxTokenAutoGroups(stringInt(originalMax)))
 		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
 		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))

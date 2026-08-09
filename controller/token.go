@@ -285,6 +285,10 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	}
+	if !service.IsTokenGroupAllowedForWrite(token.Group) {
+		common.ApiErrorI18n(c, i18n.MsgTokenServiceTierRequired)
+		return
+	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
 	count, err := model.CountUserTokens(c.GetInt("id"))
@@ -397,6 +401,10 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if !service.IsTokenGroupAllowedForWrite(token.Group) {
+			common.ApiErrorI18n(c, i18n.MsgTokenServiceTierRequired)
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime

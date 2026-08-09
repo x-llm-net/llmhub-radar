@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +51,15 @@ func IsUserSelectableGroup(userGroup, groupName string) bool {
 		return false
 	}
 	return GroupInUserUsableGroups(userGroup, groupName) && ratio_setting.ContainsGroupRatio(groupName)
+}
+
+// IsTokenGroupAllowedForWrite preserves legacy group writes when marketplace
+// routing is disabled and requires an explicit service tier when it is enabled.
+func IsTokenGroupAllowedForWrite(groupName string) bool {
+	if !hub_routing_setting.Snapshot().Enabled {
+		return true
+	}
+	return hub_routing_setting.IsServiceTier(groupName)
 }
 
 // GetUserAutoGroup 根据用户分组获取自动分组设置
