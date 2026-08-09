@@ -39,15 +39,15 @@ type HubRoutingSetting struct {
 }
 
 var defaultFamilyTierCeilings = map[string]FamilyTierCeilings{
-	"anthropic": {Special: 0.20, Low: 0.40, Medium: 0.80, High: 100},
-	"openai":    {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"google":    {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"xai":       {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"deepseek":  {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"alibaba":   {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"bytedance": {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"zhipu":     {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
-	"other":     {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
+	"anthropic": {Special: 0.20, Low: 0.40, Medium: 0.80, High: 1.00},
+	"openai":    {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"google":    {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"xai":       {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"deepseek":  {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"alibaba":   {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"bytedance": {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"zhipu":     {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
+	"other":     {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
 }
 
 var hubRoutingSetting = HubRoutingSetting{
@@ -81,6 +81,7 @@ func IsServiceTier(group string) bool {
 func GetFamilyTierCeilings() map[string]FamilyTierCeilings {
 	result := cloneFamilyTierCeilings(defaultFamilyTierCeilings)
 	for family, ceilings := range hubRoutingSetting.FamilyTierCeilings {
+		ceilings = normalizeLegacyFamilyTierCeilings(ceilings)
 		if validFamilyTierCeilings(ceilings) {
 			result[family] = ceilings
 		}
@@ -88,29 +89,31 @@ func GetFamilyTierCeilings() map[string]FamilyTierCeilings {
 	return result
 }
 
-func ResolveServiceTier(family string, multiplier float64, providerID int) (string, bool) {
+func ResolveEligibleServiceTiers(family string, multiplier float64, providerID int) []string {
 	if !hubRoutingSetting.Enabled || multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
-		return "", false
+		return nil
 	}
 	if family == "other" && !hubRoutingSetting.AllowOtherFamily {
-		return "", false
+		return nil
 	}
 	ceilings, ok := GetFamilyTierCeilings()[family]
 	if !ok || !validFamilyTierCeilings(ceilings) {
-		return "", false
+		return nil
 	}
+
+	tiers := make([]string, 0, 2)
 	switch {
 	case multiplier <= ceilings.Special:
-		return ServiceTierSpecial, true
+		tiers = append(tiers, ServiceTierSpecial)
 	case multiplier <= ceilings.Low:
-		return ServiceTierLow, true
+		tiers = append(tiers, ServiceTierLow)
 	case multiplier <= ceilings.Medium:
-		return ServiceTierMedium, true
-	case multiplier <= ceilings.High && IsHighQualityProvider(providerID):
-		return ServiceTierHigh, true
-	default:
-		return "", false
+		tiers = append(tiers, ServiceTierMedium)
 	}
+	if multiplier <= ceilings.High && IsHighQualityProvider(providerID) {
+		tiers = append(tiers, ServiceTierHigh)
+	}
+	return tiers
 }
 
 func IsHighQualityProvider(providerID int) bool {
@@ -162,11 +165,23 @@ func ValidateOption(key, value string) error {
 }
 
 func validFamilyTierCeilings(value FamilyTierCeilings) bool {
-	return value.Special > 0 &&
-		value.Special <= value.Low &&
-		value.Low <= value.Medium &&
-		value.Medium <= value.High &&
-		!math.IsNaN(value.High) && !math.IsInf(value.High, 0)
+	return finitePositive(value.Special) &&
+		finitePositive(value.Low) &&
+		finitePositive(value.Medium) &&
+		finitePositive(value.High) &&
+		value.Special < value.Low &&
+		value.Low < value.Medium
+}
+
+func finitePositive(value float64) bool {
+	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func normalizeLegacyFamilyTierCeilings(value FamilyTierCeilings) FamilyTierCeilings {
+	if value.High == 100 {
+		value.High = 1
+	}
+	return value
 }
 
 func cloneFamilyTierCeilings(source map[string]FamilyTierCeilings) map[string]FamilyTierCeilings {

@@ -366,15 +366,14 @@ func buildChannelAbilities(tx *gorm.DB, channel *Channel) ([]Ability, error) {
 				continue
 			}
 			family := ClassifyHubPublicModelFamily(modelName)
-			tier, eligible := hub_routing_setting.ResolveServiceTier(
+			groups = hub_routing_setting.ResolveEligibleServiceTiers(
 				family,
 				supplyGroup.PriceMultiplier,
 				supplyGroup.ProviderId,
 			)
-			if !eligible {
+			if len(groups) == 0 {
 				continue
 			}
-			groups = []string{tier}
 		}
 		for _, group := range groups {
 			key := group + "|" + modelName

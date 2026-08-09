@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -54,15 +54,15 @@ type TierCeilings = {
 type FamilyTierCeilings = Record<FamilyKey, TierCeilings>
 
 const DEFAULT_CEILINGS: FamilyTierCeilings = {
-  anthropic: { special: 0.2, low: 0.4, medium: 0.8, high: 100 },
-  openai: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  google: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  xai: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  deepseek: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  alibaba: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  bytedance: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  zhipu: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
-  other: { special: 0.1, low: 0.3, medium: 0.8, high: 100 },
+  anthropic: { special: 0.2, low: 0.4, medium: 0.8, high: 1 },
+  openai: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  google: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  xai: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  deepseek: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  alibaba: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  bytedance: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  zhipu: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
+  other: { special: 0.1, low: 0.3, medium: 0.8, high: 1 },
 }
 
 type ServiceTierRoutingSectionProps = {
@@ -78,10 +78,11 @@ function parseCeilings(value: string): FamilyTierCeilings {
   try {
     const parsed = JSON.parse(value || '{}') as Partial<FamilyTierCeilings>
     return Object.fromEntries(
-      FAMILY_ORDER.map((family) => [
-        family,
-        { ...DEFAULT_CEILINGS[family], ...(parsed[family] || {}) },
-      ])
+      FAMILY_ORDER.map((family) => {
+        const row = { ...DEFAULT_CEILINGS[family], ...parsed[family] }
+        if (row.high === 100) row.high = 1
+        return [family, row]
+      })
     ) as FamilyTierCeilings
   } catch {
     return structuredClone(DEFAULT_CEILINGS)
@@ -92,14 +93,14 @@ function parseProviderIDs(value: string): number[] {
   try {
     const parsed = JSON.parse(value || '[]')
     if (!Array.isArray(parsed)) return []
-    return Array.from(
-      new Set(
+    return [
+      ...new Set(
         parsed.filter(
           (providerID): providerID is number =>
             Number.isInteger(providerID) && providerID > 0
         )
-      )
-    ).sort((left, right) => left - right)
+      ),
+    ].sort((left, right) => left - right)
   } catch {
     return []
   }
@@ -112,12 +113,11 @@ function normalizeCeilings(value: FamilyTierCeilings) {
 function validateCeilings(value: FamilyTierCeilings): FamilyKey | null {
   for (const family of FAMILY_ORDER) {
     const row = value[family]
+    const values = [row.special, row.low, row.medium, row.high]
     if (
-      !Number.isFinite(row.special) ||
-      row.special <= 0 ||
-      row.special > row.low ||
-      row.low > row.medium ||
-      row.medium > row.high
+      values.some((boundary) => !Number.isFinite(boundary) || boundary <= 0) ||
+      row.special >= row.low ||
+      row.low >= row.medium
     ) {
       return family
     }
@@ -188,7 +188,7 @@ export function ServiceTierRoutingSection({
       const next = checked
         ? [...current, providerID]
         : current.filter((id) => id !== providerID)
-      return Array.from(new Set(next)).sort((left, right) => left - right)
+      return [...new Set(next)].sort((left, right) => left - right)
     })
   }
 
@@ -241,6 +241,47 @@ export function ServiceTierRoutingSection({
     baselineRef.current = normalized
   }
 
+  let providerOptions: ReactNode
+  if (providersQuery.isLoading) {
+    providerOptions = (
+      <div className='text-muted-foreground flex h-24 items-center justify-center gap-2 text-sm'>
+        <Loader2 className='size-4 animate-spin' />
+        {t('Loading...')}
+      </div>
+    )
+  } else if (providers.length === 0) {
+    providerOptions = (
+      <div className='text-muted-foreground flex h-24 items-center justify-center text-sm'>
+        {t('No providers found')}
+      </div>
+    )
+  } else {
+    providerOptions = providers.map((provider) => (
+      <label
+        key={provider.id}
+        className='hover:bg-muted/35 flex min-h-11 cursor-pointer items-center gap-3 border-b px-3 py-2 last:border-b-0'
+      >
+        <Checkbox
+          checked={approvedProviderIDs.includes(provider.id)}
+          onCheckedChange={(checked) =>
+            toggleProvider(provider.id, checked === true)
+          }
+        />
+        <span className='min-w-0 flex-1'>
+          <span className='block truncate text-sm font-medium'>
+            {provider.name}
+          </span>
+          <span className='text-muted-foreground block truncate text-xs'>
+            {provider.owner_username} · {provider.channel_count} {t('channels')}
+          </span>
+        </span>
+        <span className='text-muted-foreground text-xs tabular-nums'>
+          #{provider.id}
+        </span>
+      </label>
+    ))
+  }
+
   return (
     <SettingsSection title={t('Service Tiers & Routing')}>
       <SettingsPageFormActions
@@ -281,7 +322,9 @@ export function ServiceTierRoutingSection({
         <div>
           <h4 className='text-sm font-medium'>{t('Multiplier boundaries')}</h4>
           <p className='text-muted-foreground text-sm'>
-            {t('Each supply model enters exactly one tier')}
+            {t(
+              'Price tiers are exclusive; approved supply may also enter high quality'
+            )}
           </p>
         </div>
         <div className='overflow-x-auto rounded-md border'>
@@ -301,7 +344,10 @@ export function ServiceTierRoutingSection({
                   {t('Standard')}
                 </th>
                 <th className='h-10 px-3 text-left font-medium'>
-                  {t('High quality')}
+                  <span className='block'>{t('High quality')}</span>
+                  <span className='block text-xs font-normal'>
+                    {t('Maximum approved multiplier')}
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -314,16 +360,21 @@ export function ServiceTierRoutingSection({
                   {(['special', 'low', 'medium', 'high'] as const).map(
                     (tier) => (
                       <td key={tier} className='px-3 py-2'>
-                        <Input
-                          className='h-8 w-28 tabular-nums'
-                          type='number'
-                          min='0.0001'
-                          step='0.01'
-                          value={ceilings[family][tier]}
-                          onChange={(event) =>
-                            updateCeiling(family, tier, event.target.value)
-                          }
-                        />
+                        <div className='relative w-28'>
+                          <Input
+                            className='h-8 w-full pr-7 tabular-nums'
+                            type='number'
+                            min='0.0001'
+                            step='0.01'
+                            value={ceilings[family][tier]}
+                            onChange={(event) =>
+                              updateCeiling(family, tier, event.target.value)
+                            }
+                          />
+                          <span className='text-muted-foreground pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs'>
+                            x
+                          </span>
+                        </div>
                       </td>
                     )
                   )}
@@ -346,42 +397,7 @@ export function ServiceTierRoutingSection({
           </p>
         </div>
         <div className='max-h-64 overflow-y-auto rounded-md border'>
-          {providersQuery.isLoading ? (
-            <div className='text-muted-foreground flex h-24 items-center justify-center gap-2 text-sm'>
-              <Loader2 className='size-4 animate-spin' />
-              {t('Loading...')}
-            </div>
-          ) : providers.length === 0 ? (
-            <div className='text-muted-foreground flex h-24 items-center justify-center text-sm'>
-              {t('No providers found')}
-            </div>
-          ) : (
-            providers.map((provider) => (
-              <label
-                key={provider.id}
-                className='hover:bg-muted/35 flex min-h-11 cursor-pointer items-center gap-3 border-b px-3 py-2 last:border-b-0'
-              >
-                <Checkbox
-                  checked={approvedProviderIDs.includes(provider.id)}
-                  onCheckedChange={(checked) =>
-                    toggleProvider(provider.id, checked === true)
-                  }
-                />
-                <span className='min-w-0 flex-1'>
-                  <span className='block truncate text-sm font-medium'>
-                    {provider.name}
-                  </span>
-                  <span className='text-muted-foreground block truncate text-xs'>
-                    {provider.owner_username} · {provider.channel_count}{' '}
-                    {t('channels')}
-                  </span>
-                </span>
-                <span className='text-muted-foreground text-xs tabular-nums'>
-                  #{provider.id}
-                </span>
-              </label>
-            ))
-          )}
+          {providerOptions}
         </div>
       </div>
     </SettingsSection>
