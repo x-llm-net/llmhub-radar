@@ -112,6 +112,10 @@ func TestDistributeServiceTierUnavailableRecoversWithoutChangingToken(t *testing
 			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 			assert.Equal(t, "service_tier_unavailable", response.Error.Code)
 			assert.Contains(t, response.Error.Message, "request id: service-tier-request-id")
+			assert.Contains(t, response.Error.Message, "standard service tier")
+			assert.Contains(t, response.Error.Message, "Cross-tier fallback was not used")
+			assert.NotContains(t, response.Error.Message, "distributor")
+			assert.NotContains(t, response.Error.Message, "under group")
 
 			priority := int64(0)
 			channel := &model.Channel{

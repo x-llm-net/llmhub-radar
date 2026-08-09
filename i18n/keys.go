@@ -332,8 +332,17 @@ const (
 	MsgDistributorGroupAccessDenied       = "distributor.group_access_denied"
 	MsgDistributorGetChannelFailed        = "distributor.get_channel_failed"
 	MsgDistributorNoAvailableChannel      = "distributor.no_available_channel"
+	MsgDistributorServiceTierUnavailable  = "distributor.service_tier_unavailable"
 	MsgDistributorInvalidMidjourney       = "distributor.invalid_midjourney_request"
 	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
+)
+
+// Service tier labels
+const (
+	MsgServiceTierSpecial = "service_tier.special"
+	MsgServiceTierLow     = "service_tier.low"
+	MsgServiceTierMedium  = "service_tier.medium"
+	MsgServiceTierHigh    = "service_tier.high"
 )
 
 // Custom OAuth provider related messages

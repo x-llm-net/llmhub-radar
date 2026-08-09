@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -90,6 +91,7 @@ func getUnavailableTestChannel(t *testing.T, group string) (*gin.Context, *types
 
 func TestGetChannelReturnsStableServiceTierUnavailableError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
 	setupRelayServiceTierTestDB(t)
 
 	ctx, apiErr := getUnavailableTestChannel(t, hub_routing_setting.ServiceTierMedium)
@@ -103,6 +105,9 @@ func TestGetChannelReturnsStableServiceTierUnavailableError(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, taskErr.StatusCode)
 	assert.True(t, taskErr.LocalError)
 	assert.Contains(t, taskErr.Message, "request id: relay-service-tier-request-id")
+	assert.Contains(t, taskErr.Message, "standard service tier")
+	assert.NotContains(t, taskErr.Message, "distributor")
+	assert.NotContains(t, taskErr.Message, "under group")
 }
 
 func TestGetChannelPreservesLegacyGroupErrorContract(t *testing.T) {

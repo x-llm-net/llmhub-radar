@@ -273,8 +273,14 @@ distributor.invalid_playground_request: "Invalid playground request: {{.Error}}"
 distributor.group_access_denied: "No permission to access this group"
 distributor.get_channel_failed: "Failed to get available channel for model {{.Model}} under group {{.Group}} (distributor): {{.Error}}"
 distributor.no_available_channel: "No available channel for model {{.Model}} under group {{.Group}} (distributor)"
+distributor.service_tier_unavailable: "Model {{.Model}} is temporarily unavailable in the {{.Tier}} service tier. Cross-tier fallback was not used. Please try again later."
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
+
+service_tier.special: "special"
+service_tier.low: "economy"
+service_tier.medium: "standard"
+service_tier.high: "high-quality"
 
 # Custom OAuth provider messages
 custom_oauth.not_found: "Custom OAuth provider not found"

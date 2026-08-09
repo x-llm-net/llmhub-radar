@@ -14,11 +14,13 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -159,6 +161,10 @@ func Distribute() func(c *gin.Context) {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 						}
 						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+						if service.IsHubServiceTierRequest(c) {
+							logger.LogError(c.Request.Context(), fmt.Sprintf("service tier %s unavailable for model %s: %s", showGroup, modelRequest.Model, err.Error()))
+							message = ServiceTierUnavailableMessage(c, showGroup, modelRequest.Model)
+						}
 						// 如果错误，但是渠道不为空，说明是数据库一致性问题
 						//if channel != nil {
 						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
@@ -168,7 +174,11 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), unavailableChannelErrorCode(c))
+						message := i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model})
+						if service.IsHubServiceTierRequest(c) {
+							message = ServiceTierUnavailableMessage(c, usingGroup, modelRequest.Model)
+						}
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, unavailableChannelErrorCode(c))
 						return
 					}
 				}
@@ -181,6 +191,25 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+// ServiceTierUnavailableMessage returns the public error for an exhausted
+// service tier without exposing internal group or distributor terminology.
+func ServiceTierUnavailableMessage(c *gin.Context, group, modelName string) string {
+	tierKey := map[string]string{
+		hub_routing_setting.ServiceTierSpecial: i18n.MsgServiceTierSpecial,
+		hub_routing_setting.ServiceTierLow:     i18n.MsgServiceTierLow,
+		hub_routing_setting.ServiceTierMedium:  i18n.MsgServiceTierMedium,
+		hub_routing_setting.ServiceTierHigh:    i18n.MsgServiceTierHigh,
+	}[group]
+	tier := group
+	if tierKey != "" {
+		tier = i18n.T(c, tierKey)
+	}
+	return i18n.T(c, i18n.MsgDistributorServiceTierUnavailable, map[string]any{
+		"Tier":  tier,
+		"Model": modelName,
+	})
 }
 
 func unavailableChannelErrorCode(c *gin.Context) types.ErrorCode {

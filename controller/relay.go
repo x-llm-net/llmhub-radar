@@ -346,10 +346,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
-		return nil, newChannelSelectionError(c, fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()))
+		selectionErr := fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error())
+		return nil, newChannelSelectionError(c, selectionErr, selectGroup, info.OriginModelName)
 	}
 	if channel == nil {
-		return nil, newChannelSelectionError(c, fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName))
+		selectionErr := fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName)
+		return nil, newChannelSelectionError(c, selectionErr, selectGroup, info.OriginModelName)
 	}
 
 	groupRatioInfo := helper.HandleGroupRatio(c, info)
@@ -371,10 +373,11 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
-func newChannelSelectionError(c *gin.Context, err error) *types.NewAPIError {
+func newChannelSelectionError(c *gin.Context, err error, group, modelName string) *types.NewAPIError {
 	if service.IsHubServiceTierRequest(c) {
+		logger.LogError(c, fmt.Sprintf("service tier %s unavailable for model %s: %s", group, modelName, err.Error()))
 		return types.NewErrorWithStatusCode(
-			err,
+			errors.New(middleware.ServiceTierUnavailableMessage(c, group, modelName)),
 			types.ErrorCodeServiceTierUnavailable,
 			http.StatusServiceUnavailable,
 			types.ErrOptionWithSkipRetry(),
