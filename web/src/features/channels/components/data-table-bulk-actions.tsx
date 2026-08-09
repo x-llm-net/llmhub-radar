@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { type Table } from '@tanstack/react-table'
+import type { Table } from '@tanstack/react-table'
 import { Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -77,6 +77,9 @@ export function DataTableBulkActions<TData>({
 
     return ids
   }, [])
+  const selectedProviderChannelCount = selectedRows.filter(
+    (row) => (row.original as Channel).ownership === 'provider'
+  ).length
 
   const handleClearSelection = () => {
     table.resetRowSelection()
@@ -259,11 +262,21 @@ export function DataTableBulkActions<TData>({
         onOpenChange={setShowDeleteConfirm}
         title={t('Delete Channels?')}
         description={
-          <>
-            {t('Are you sure you want to delete')}
-            {selectedIds.length}{' '}
-            {t('channel(s)? This action cannot be undone.')}
-          </>
+          <div className='space-y-2'>
+            <p>
+              {t('Are you sure you want to delete')}
+              {selectedIds.length}{' '}
+              {t('channel(s)? This action cannot be undone.')}
+            </p>
+            {selectedProviderChannelCount > 0 && (
+              <p>
+                {t(
+                  '{{count}} selected channel(s) are provider supplied. Their supply configuration will also be removed.',
+                  { count: selectedProviderChannelCount }
+                )}
+              </p>
+            )}
+          </div>
         }
         contentHeight='auto'
         footer={

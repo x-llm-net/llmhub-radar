@@ -71,6 +71,9 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  ownership: z.enum(['platform', 'provider', 'mixed']).default('platform'),
+  hub_provider_id: z.number().optional(),
+  hub_provider_name: z.string().optional(),
 })
 
 export type Channel = z.infer<typeof channelSchema>
@@ -154,6 +157,20 @@ export interface GetChannelsResponse {
     page: number
     page_size: number
     type_counts?: Record<string, number>
+  }
+}
+
+export interface ChannelOwnershipOptionsResponse {
+  success: boolean
+  message?: string
+  data?: {
+    platform_channel_count: number
+    provider_channel_count: number
+    providers: Array<{
+      id: number
+      name: string
+      channel_count: number
+    }>
   }
 }
 
@@ -271,6 +288,7 @@ export interface GetChannelsParams {
   status?: string // 'enabled', 'disabled', or empty for all
   type?: number
   group?: string
+  ownership?: string
   id_sort?: boolean
   tag_mode?: boolean
   sort_by?: ChannelSortBy
@@ -280,6 +298,7 @@ export interface GetChannelsParams {
 export interface SearchChannelsParams {
   keyword?: string
   group?: string
+  ownership?: string
   model?: string
   status?: string
   type?: number

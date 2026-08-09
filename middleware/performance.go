@@ -40,11 +40,14 @@ func SystemPerformanceCheck() gin.HandlerFunc {
 // checkSystemPerformance 检查系统性能是否超过阈值
 func checkSystemPerformance() *types.NewAPIError {
 	config := common.GetPerformanceMonitorConfig()
+	status := common.GetSystemStatus()
+	return checkSystemPerformanceStatus(config, status)
+}
+
+func checkSystemPerformanceStatus(config common.PerformanceMonitorConfig, status common.SystemStatus) *types.NewAPIError {
 	if !config.Enabled {
 		return nil
 	}
-
-	status := common.GetSystemStatus()
 
 	// 检查 CPU
 	if config.CPUThreshold > 0 && int(status.CPUUsage) > config.CPUThreshold {

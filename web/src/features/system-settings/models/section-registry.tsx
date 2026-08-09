@@ -25,6 +25,7 @@ import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
 import { RoutingReliabilitySection } from './routing-reliability-section'
+import { ServiceTierRoutingSection } from './service-tier-routing-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -61,6 +62,23 @@ const MODELS_SECTIONS = [
             ping_interval_seconds:
               settings['general_setting.ping_interval_seconds'],
           },
+        }}
+      />
+    ),
+  },
+  {
+    id: 'service-tiers-routing',
+    titleKey: 'Service Tiers & Routing',
+    build: (settings: ModelSettings) => (
+      <ServiceTierRoutingSection
+        defaultValues={{
+          enabled: settings['hub_routing_setting.enabled'],
+          allowOtherFamily:
+            settings['hub_routing_setting.allow_other_family'],
+          familyTierCeilings:
+            settings['hub_routing_setting.family_tier_ceilings'],
+          highQualityProviderIDs:
+            settings['hub_routing_setting.high_quality_provider_ids'],
         }}
       />
     ),

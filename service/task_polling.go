@@ -593,6 +593,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	if shouldSettle {
 		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+		FinalizeTaskProviderEarning(ctx, task)
 	}
 	if shouldRefund {
 		RefundTaskQuota(ctx, task, task.FailReason)

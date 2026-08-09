@@ -33,6 +33,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	hubRelayAttemptStartedAtKey        = string(constant.ContextKeyHubRelayAttemptStartedAt)
+	hubRelayAttemptRetryIndexKey       = string(constant.ContextKeyHubRelayAttemptRetry)
+	hubRelayAttemptProviderIdKey       = string(constant.ContextKeyHubRelayAttemptProvider)
+	hubRelayAttemptSupplyGroupIdKey    = string(constant.ContextKeyHubRelayAttemptSupply)
+	hubRelayAttemptSupplyMultiplierKey = string(constant.ContextKeyHubRelayAttemptMultiplier)
+	hubRelayAttemptBillingRatioKey     = string(constant.ContextKeyHubRelayAttemptBillingRatio)
+)
+
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -200,10 +209,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		addUsedChannel(c, channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+		if billingErr := service.PrepareBillingForSelectedChannel(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
 		}
+		setHubRelayAttemptContext(c, relayInfo)
 
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
@@ -235,12 +245,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		service.AppendHubRelayAttemptFailure(c, relayInfo, newAPIError)
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		retryParam.ExcludeChannel(channel.Id)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -249,6 +261,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
+		recordHubFinalRelayError(c, relayInfo, newAPIError)
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
@@ -266,6 +279,26 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func setHubRelayAttemptContext(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
+	beginHubRelayAttemptContext(c, relayInfo)
+	setHubRelayAttemptPricingContext(c, relayInfo)
+}
+
+func beginHubRelayAttemptContext(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
+	c.Set(hubRelayAttemptStartedAtKey, time.Now())
+	c.Set(hubRelayAttemptRetryIndexKey, relayInfo.RetryIndex)
+	c.Set(common.UpstreamRequestIdKey, "")
+	relayInfo.FirstResponseTime = time.Time{}
+}
+
+func setHubRelayAttemptPricingContext(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
+	pricing := relayInfo.PriceData.GroupRatioInfo
+	c.Set(hubRelayAttemptProviderIdKey, pricing.SupplyProviderId)
+	c.Set(hubRelayAttemptSupplyGroupIdKey, pricing.SupplyGroupId)
+	c.Set(hubRelayAttemptSupplyMultiplierKey, pricing.SupplyMultiplier)
+	c.Set(hubRelayAttemptBillingRatioKey, pricing.GroupRatio)
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -319,7 +352,17 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+	groupRatioInfo := helper.HandleGroupRatio(c, info)
+	groupRatioInfo, pricingErr := helper.ApplyHubSupplyPricing(groupRatioInfo, channel.Id)
+	if pricingErr != nil {
+		return nil, types.NewErrorWithStatusCode(
+			pricingErr,
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	info.PriceData.GroupRatioInfo = groupRatioInfo
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
 	if newAPIError != nil {
@@ -332,7 +375,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
 	if types.IsChannelError(openaiErr) {
@@ -390,6 +433,24 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["channel_type"] = c.GetInt("channel_type")
 		adminInfo := make(map[string]interface{})
 		adminInfo["use_channel"] = c.GetStringSlice("use_channel")
+		adminInfo["retry_index"] = c.GetInt(hubRelayAttemptRetryIndexKey)
+		if requestedProviderID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId); requestedProviderID > 0 {
+			adminInfo["hub_requested_provider_id"] = requestedProviderID
+			adminInfo["hub_requested_provider_slug"] = common.GetContextKeyString(c, constant.ContextKeyHubRequestedProviderSlug)
+			adminInfo["hub_routing_phase"] = common.GetContextKeyString(c, constant.ContextKeyHubRoutingPhase)
+			adminInfo["hub_provider_fallback"] = common.GetContextKeyBool(c, constant.ContextKeyHubRoutingFallback)
+		}
+		if startedAtValue, ok := c.Get(hubRelayAttemptStartedAtKey); ok {
+			if startedAt, ok := startedAtValue.(time.Time); ok {
+				adminInfo["attempt_duration_ms"] = time.Since(startedAt).Milliseconds()
+			}
+		}
+		if providerId := c.GetInt(hubRelayAttemptProviderIdKey); providerId > 0 {
+			adminInfo["hub_provider_id"] = providerId
+			adminInfo["hub_supply_group_id"] = c.GetInt(hubRelayAttemptSupplyGroupIdKey)
+			adminInfo["supply_multiplier"] = c.GetFloat64(hubRelayAttemptSupplyMultiplierKey)
+			adminInfo["billing_ratio"] = c.GetFloat64(hubRelayAttemptBillingRatioKey)
+		}
 		isMultiKey := common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey)
 		if isMultiKey {
 			adminInfo["is_multi_key"] = true
@@ -397,6 +458,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
+		service.AttachHubRelayLogInfo(c, nil, other, false)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
 			startTime = time.Now()
@@ -405,6 +467,41 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
+}
+
+func recordHubFinalRelayError(c *gin.Context, relayInfo *relaycommon.RelayInfo, relayErr *types.NewAPIError) {
+	if relayErr == nil || !service.IsHubServiceTierRequest(c) {
+		return
+	}
+	if constant.ErrorLogEnabled && len(service.GetHubRelayAttempts(c)) > 0 {
+		return
+	}
+	other := map[string]interface{}{
+		"error_type":  string(relayErr.GetErrorType()),
+		"error_code":  string(relayErr.GetErrorCode()),
+		"status_code": relayErr.StatusCode,
+	}
+	if c.Request != nil && c.Request.URL != nil {
+		other["request_path"] = c.Request.URL.Path
+	}
+	service.AttachHubRelayLogInfo(c, relayInfo, other, false)
+	startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
+	model.RecordErrorLog(
+		c,
+		c.GetInt("id"),
+		c.GetInt("channel_id"),
+		c.GetString("original_model"),
+		c.GetString("token_name"),
+		relayErr.MaskSensitiveErrorWithStatusCode(),
+		c.GetInt("token_id"),
+		int(time.Since(startTime).Seconds()),
+		common.GetContextKeyBool(c, constant.ContextKeyIsStream),
+		c.GetString("group"),
+		other,
+	)
 }
 
 func RelayMidjourney(c *gin.Context) {
@@ -522,6 +619,7 @@ func RelayTask(c *gin.Context) {
 	}
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		relayInfo.RetryIndex = retryParam.GetRetry()
 		var channel *model.Channel
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
@@ -543,6 +641,7 @@ func RelayTask(c *gin.Context) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		beginHubRelayAttemptContext(c, relayInfo)
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
@@ -555,11 +654,13 @@ func RelayTask(c *gin.Context) {
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		setHubRelayAttemptPricingContext(c, relayInfo)
 		if taskErr == nil {
 			break
 		}
 
 		if !taskErr.LocalError {
+			service.AppendHubRelayAttemptFailure(c, relayInfo, types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
@@ -569,6 +670,7 @@ func RelayTask(c *gin.Context) {
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		retryParam.ExcludeChannel(channel.Id)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -579,7 +681,7 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
-		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+		if settleErr := service.SettleTaskBillingAndPrepareProviderEarning(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
 		}
 		service.LogTaskConsumption(c, relayInfo)
@@ -590,19 +692,38 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
+		task.PrivateData.RequestId = relayInfo.RequestId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios(),
-			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ModelPrice:        relayInfo.PriceData.ModelPrice,
+			GroupRatio:        relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			BaseGroupRatio:    relayInfo.PriceData.GroupRatioInfo.BaseGroupRatio,
+			SupplyMultiplier:  relayInfo.PriceData.GroupRatioInfo.SupplyMultiplier,
+			HasSupplyPricing:  relayInfo.PriceData.GroupRatioInfo.HasSupplyPricing,
+			SupplyGroupId:     relayInfo.PriceData.GroupRatioInfo.SupplyGroupId,
+			SupplyProviderId:  relayInfo.PriceData.GroupRatioInfo.SupplyProviderId,
+			SupplyOwnerUserId: relayInfo.PriceData.GroupRatioInfo.SupplyOwnerUserId,
+			ModelRatio:        relayInfo.PriceData.ModelRatio,
+			OtherRatios:       relayInfo.PriceData.OtherRatios(),
+			OriginModelName:   relayInfo.OriginModelName,
+			PerCallBilling:    common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
 		if insertErr := task.Insert(); insertErr != nil {
-			common.SysError("insert task error: " + insertErr.Error())
+			common.SysError(fmt.Sprintf(
+				"insert task error, refunding accepted task (task_id=%s, upstream_task_id=%s): %s",
+				task.TaskID,
+				result.UpstreamTaskID,
+				insertErr.Error(),
+			))
+			if !service.RefundTaskQuota(c.Request.Context(), task, "task persistence failed") {
+				common.SysError(fmt.Sprintf(
+					"refund after task insert failure needs reconciliation (task_id=%s, request_id=%s)",
+					task.TaskID,
+					relayInfo.RequestId,
+				))
+			}
 		}
 	}
 
@@ -623,7 +744,7 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *taskdto.TaskEr
 	if taskErr == nil {
 		return false
 	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
 	if retryTimes <= 0 {

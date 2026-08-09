@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -91,6 +93,35 @@ func TestRedisUserRateLimiterUsesSharedFixedWindow(t *testing.T) {
 	key := redisUserRateLimitKey("USER", 42)
 	assert.True(t, redisServer.Exists(key))
 	assert.Equal(t, 23*time.Second, redisServer.TTL(key))
+}
+
+func TestHubSupplyPublicationRateLimitUsesDedicatedPerUserBucket(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+
+	router := gin.New()
+	router.GET(
+		"/publication/:user",
+		func(c *gin.Context) {
+			userID, err := strconv.Atoi(c.Param("user"))
+			require.NoError(t, err)
+			c.Set("id", userID)
+		},
+		HubSupplyPublicationRateLimit(),
+		func(c *gin.Context) { c.Status(http.StatusNoContent) },
+	)
+
+	for index := range hubSupplyPublicationRateLimitRequests {
+		remoteAddr := fmt.Sprintf("192.0.2.%d:12345", index%200+1)
+		assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/publication/42", remoteAddr).Code)
+	}
+	limited := performRateLimitRequest(router, "/publication/42", "198.51.100.10:12345")
+	assert.Equal(t, http.StatusTooManyRequests, limited.Code)
+	assert.Equal(t, strconv.FormatInt(hubSupplyPublicationRateLimitDuration, 10), limited.Header().Get("Retry-After"))
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/publication/43", "198.51.100.10:12345").Code)
+
+	assert.True(t, redisServer.Exists(redisUserRateLimitKey("HSPUB", 42)))
+	assert.False(t, redisServer.Exists(redisUserRateLimitKey("CT", 42)))
 }
 
 func TestRedisEmailVerificationRateLimiterPreservesResponseAndTTL(t *testing.T) {

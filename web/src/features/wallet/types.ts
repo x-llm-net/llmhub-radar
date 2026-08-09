@@ -287,3 +287,111 @@ export interface BillingHistoryResponse {
 export interface CompleteOrderRequest {
   trade_no: string
 }
+
+export type HubProviderEarningStatus = 'pending' | 'settled' | 'cancelled'
+export type HubProviderEarningType = 'usage' | 'adjustment'
+export type HubProviderWithdrawalStatus =
+  | 'pending'
+  | 'approved'
+  | 'paid'
+  | 'rejected'
+
+export type HubProviderPayoutMethod = 'alipay' | 'wechat' | 'bank'
+export type HubProviderPayoutAccountType = 'personal' | 'business'
+
+export interface HubProviderPayoutAccountDetails {
+  version: number
+  recipient_name: string
+  account?: string
+  account_type?: HubProviderPayoutAccountType
+  bank_name?: string
+  bank_branch?: string
+}
+
+export interface HubProviderPayoutAccountSnapshot {
+  method: HubProviderPayoutMethod
+  details: HubProviderPayoutAccountDetails
+  qr_code_asset_id?: number
+  masked_summary: string
+}
+
+export interface HubProviderPayoutAccount {
+  id: number
+  provider_id: number
+  method: HubProviderPayoutMethod
+  details: HubProviderPayoutAccountDetails
+  qr_code_asset_id: number
+  qr_code_available: boolean
+  masked_summary: string
+  is_default: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface HubProviderSettlementSummary {
+  provider_id: number
+  gross_quota: number
+  platform_fee_quota: number
+  settled_income_quota: number
+  pending_income_quota: number
+  reserved_withdrawal_quota: number
+  paid_withdrawal_quota: number
+  withdrawable_quota: number
+  platform_fee_basis_points: number
+}
+
+export interface HubProviderEarning {
+  id: number
+  request_id: string
+  entry_type: HubProviderEarningType
+  status: HubProviderEarningStatus
+  provider_id: number
+  owner_user_id: number
+  consumer_user_id: number
+  token_id: number
+  supply_group_id: number
+  channel_id: number
+  model_name: string
+  billing_source: string
+  gross_quota: number
+  platform_fee_basis_points: number
+  platform_fee_quota: number
+  provider_income_quota: number
+  base_group_ratio: number
+  supply_multiplier: number
+  billing_ratio: number
+  operator_user_id: number
+  remark: string
+  settled_at: number
+  cancelled_at: number
+  created_at: number
+  updated_at: number
+}
+
+export interface HubProviderWithdrawal {
+  id: number
+  provider_id: number
+  owner_user_id: number
+  amount_quota: number
+  status: HubProviderWithdrawalStatus
+  payout_account_id: number
+  payout_method: HubProviderPayoutMethod | ''
+  payout_account?: HubProviderPayoutAccountSnapshot
+  applicant_note: string
+  payout_currency: string
+  payout_amount_minor: number
+  exchange_rate: string
+  admin_remark: string
+  admin_user_id: number
+  reviewed_at: number
+  paid_at: number
+  created_at: number
+  updated_at: number
+}
+
+export interface PagedApiData<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}

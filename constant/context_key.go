@@ -43,6 +43,19 @@ const (
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"
 
+	ContextKeyHubRequestedProviderId      ContextKey = "hub_requested_provider_id"
+	ContextKeyHubRequestedProviderSlug    ContextKey = "hub_requested_provider_slug"
+	ContextKeyHubRoutingPhase             ContextKey = "hub_routing_phase"
+	ContextKeyHubRoutingFallback          ContextKey = "hub_provider_fallback"
+	ContextKeyHubFallbackStartRetry       ContextKey = "hub_fallback_start_retry"
+	ContextKeyHubRelayAttempts            ContextKey = "hub_relay_attempts"
+	ContextKeyHubRelayAttemptStartedAt    ContextKey = "hub_relay_attempt_started_at"
+	ContextKeyHubRelayAttemptRetry        ContextKey = "hub_relay_attempt_retry_index"
+	ContextKeyHubRelayAttemptProvider     ContextKey = "hub_relay_attempt_provider_id"
+	ContextKeyHubRelayAttemptSupply       ContextKey = "hub_relay_attempt_supply_group_id"
+	ContextKeyHubRelayAttemptMultiplier   ContextKey = "hub_relay_attempt_supply_multiplier"
+	ContextKeyHubRelayAttemptBillingRatio ContextKey = "hub_relay_attempt_billing_ratio"
+
 	/* user related keys */
 	ContextKeyUserId      ContextKey = "id"
 	ContextKeyUserSetting ContextKey = "user_setting"

@@ -262,6 +262,15 @@ func migrateDB() error {
 		&Channel{},
 		&Token{},
 		&User{},
+		&HubProvider{},
+		&HubSupplyGroup{},
+		&HubProviderEarning{},
+		&HubProviderPayoutAsset{},
+		&HubProviderPayoutAccount{},
+		&HubProviderWithdrawal{},
+		&HubSupplyGroupRevision{},
+		&HubSupplyGroupProbeTarget{},
+		&HubSupplyGroupProbeSample{},
 		&UserSession{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
@@ -296,6 +305,12 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateHubSupplyGroupLegacyColumns(); err != nil {
+		return err
+	}
+	if err := migrateHubProviderSlugs(); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -325,6 +340,15 @@ func migrateDBFast() error {
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
+		{&HubProvider{}, "HubProvider"},
+		{&HubSupplyGroup{}, "HubSupplyGroup"},
+		{&HubProviderEarning{}, "HubProviderEarning"},
+		{&HubProviderPayoutAsset{}, "HubProviderPayoutAsset"},
+		{&HubProviderPayoutAccount{}, "HubProviderPayoutAccount"},
+		{&HubProviderWithdrawal{}, "HubProviderWithdrawal"},
+		{&HubSupplyGroupRevision{}, "HubSupplyGroupRevision"},
+		{&HubSupplyGroupProbeTarget{}, "HubSupplyGroupProbeTarget"},
+		{&HubSupplyGroupProbeSample{}, "HubSupplyGroupProbeSample"},
 		{&UserSession{}, "UserSession"},
 		{&AuthFlow{}, "AuthFlow"},
 		{&ExternalIdentityClaim{}, "ExternalIdentityClaim"},
@@ -376,6 +400,12 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateHubSupplyGroupLegacyColumns(); err != nil {
+		return err
+	}
+	if err := migrateHubProviderSlugs(); err != nil {
+		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

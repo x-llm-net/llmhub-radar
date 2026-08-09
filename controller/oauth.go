@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -20,13 +22,64 @@ import (
 const oauthAuthFlowTTL = 10 * time.Minute
 
 type oauthStateRequest struct {
-	Provider string `json:"provider"`
-	Intent   string `json:"intent"`
-	Aff      string `json:"aff,omitempty"`
+	Provider     string `json:"provider"`
+	Intent       string `json:"intent"`
+	Aff          string `json:"aff,omitempty"`
+	ReturnOrigin string `json:"return_origin,omitempty"`
+	ReturnPath   string `json:"return_path,omitempty"`
 }
 
 type oauthFlowPayload struct {
 	AffiliateCode string `json:"affiliate_code,omitempty"`
+	ReturnOrigin  string `json:"return_origin,omitempty"`
+	ReturnPath    string `json:"return_path,omitempty"`
+}
+
+const oauthReturnOriginContextKey = "oauth_return_origin"
+const oauthReturnPathContextKey = "oauth_return_path"
+
+func validateOAuthReturnPath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "/dashboard", nil
+	}
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, "\\") {
+		return "", errors.New("invalid oauth return path")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return "", errors.New("invalid oauth return path")
+	}
+	return value, nil
+}
+
+func validateOAuthReturnOrigin(c *gin.Context, value string) (string, error) {
+	normalized, err := common.NormalizeOrigin(value)
+	if err != nil {
+		return "", err
+	}
+	target, err := url.Parse(normalized)
+	if err != nil {
+		return "", err
+	}
+	if rootOrigin, rootErr := common.NormalizeOrigin(system_setting.ServerAddress); rootErr == nil {
+		if normalized == rootOrigin {
+			return normalized, nil
+		}
+		rootURL, _ := url.Parse(rootOrigin)
+		if rootURL != nil && target.Scheme != rootURL.Scheme {
+			return "", errors.New("oauth return origin scheme does not match the platform")
+		}
+	}
+	resolution, err := model.ResolveHubProviderHost(target.Host)
+	if err != nil || !resolution.IsProviderHost || resolution.Provider.Status != model.HubProviderStatusActive {
+		return "", errors.New("oauth return origin is not an active provider domain")
+	}
+	requestURL, _ := url.Parse("//" + c.Request.Host)
+	if requestURL != nil && requestURL.Port() != target.Port() {
+		return "", errors.New("oauth return origin port does not match the current service")
+	}
+	return normalized, nil
 }
 
 // providerParams returns map with Provider key for i18n templates
@@ -44,12 +97,28 @@ func GenerateOAuthCode(c *gin.Context) {
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Aff = strings.TrimSpace(request.Aff)
+	request.ReturnOrigin = strings.TrimSpace(request.ReturnOrigin)
+	request.ReturnPath = strings.TrimSpace(request.ReturnPath)
 	if oauth.GetProvider(request.Provider) == nil ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind) ||
 		len(request.Aff) > 32 ||
 		(request.Intent == model.AuthFlowIntentBind && request.Aff != "") {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
+	}
+	if request.Intent == model.AuthFlowIntentLogin && request.ReturnOrigin != "" {
+		normalizedOrigin, err := validateOAuthReturnOrigin(c, request.ReturnOrigin)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		returnPath, err := validateOAuthReturnPath(request.ReturnPath)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		request.ReturnOrigin = normalizedOrigin
+		request.ReturnPath = returnPath
 	}
 	userID := 0
 	sessionID := ""
@@ -62,7 +131,11 @@ func GenerateOAuthCode(c *gin.Context) {
 		userID = identity.UserID
 		sessionID = identity.SessionID
 	}
-	payload, err := common.Marshal(oauthFlowPayload{AffiliateCode: request.Aff})
+	payload, err := common.Marshal(oauthFlowPayload{
+		AffiliateCode: request.Aff,
+		ReturnOrigin:  request.ReturnOrigin,
+		ReturnPath:    request.ReturnPath,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -219,6 +292,10 @@ func HandleOAuth(c *gin.Context) {
 	}
 
 	// 9. Setup login
+	if payload.ReturnOrigin != "" {
+		c.Set(oauthReturnOriginContextKey, payload.ReturnOrigin)
+		c.Set(oauthReturnPathContextKey, payload.ReturnPath)
+	}
 	setupLogin(user, c)
 }
 

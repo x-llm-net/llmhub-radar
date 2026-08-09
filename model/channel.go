@@ -55,6 +55,11 @@ type Channel struct {
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
+	// Hub ownership is attached for administrator-facing channel responses.
+	Ownership       string `json:"ownership,omitempty" gorm:"-"`
+	HubProviderId   int    `json:"hub_provider_id,omitempty" gorm:"-"`
+	HubProviderName string `json:"hub_provider_name,omitempty" gorm:"-"`
+
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
 }
@@ -376,7 +381,7 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 	return channels, err
 }
 
-func SearchChannels(keyword string, group string, model string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+func SearchChannels(keyword string, group string, model string, ownership string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	modelsCol := "`models`"
 
@@ -400,6 +405,7 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
 	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
+	baseQuery = ApplyHubChannelOwnershipFilter(baseQuery, ownership)
 
 	// 执行查询
 	err := order.Apply(baseQuery).Find(&channels).Error
@@ -423,33 +429,25 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	return channel, nil
 }
 
-func BatchInsertChannels(channels []Channel) error {
+func insertChannelsTx(tx *gorm.DB, channels []Channel) error {
 	if len(channels) == 0 {
 		return nil
 	}
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
+	if err := tx.CreateInBatches(&channels, 50).Error; err != nil {
+		return err
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	for _, chunk := range lo.Chunk(channels, 50) {
-		if err := tx.Create(&chunk).Error; err != nil {
-			tx.Rollback()
+	for i := range channels {
+		if err := channels[i].AddAbilities(tx); err != nil {
 			return err
 		}
-		for _, channel_ := range chunk {
-			if err := channel_.AddAbilities(tx); err != nil {
-				tx.Rollback()
-				return err
-			}
-		}
 	}
-	return tx.Commit().Error
+	return nil
+}
+
+func BatchInsertChannels(channels []Channel) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return insertChannelsTx(tx, channels)
+	})
 }
 
 func BatchDeleteChannels(ids []int) (int64, error) {
@@ -463,6 +461,10 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	}
 	var deletedCount int64
 	for _, chunk := range lo.Chunk(ids, 200) {
+		if err := deleteHubSupplyGroupsByChannelIDsTx(tx, chunk); err != nil {
+			tx.Rollback()
+			return 0, err
+		}
 		result := tx.Where("id in (?)", chunk).Delete(&Channel{})
 		if result.Error != nil {
 			tx.Rollback()
@@ -520,16 +522,17 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
-	var err error
-	err = DB.Create(channel).Error
-	if err != nil {
+	channels := []Channel{*channel}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return insertChannelsTx(tx, channels)
+	}); err != nil {
 		return err
 	}
-	err = channel.AddAbilities(nil)
-	return err
+	*channel = channels[0]
+	return nil
 }
 
-func (channel *Channel) Update() error {
+func (channel *Channel) prepareUpdate() {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -568,14 +571,34 @@ func (channel *Channel) Update() error {
 			}
 		}
 	}
-	var err error
-	err = DB.Model(channel).Updates(channel).Error
-	if err != nil {
+
+	return
+}
+
+// updateTx is the single persistence path for Channel edits. Callers that need
+// to update an extension atomically can reuse it inside their own transaction.
+func (channel *Channel) updateTx(tx *gorm.DB) error {
+	var before Channel
+	if err := tx.First(&before, channel.Id).Error; err != nil {
 		return err
 	}
-	DB.Model(channel).First(channel, "id = ?", channel.Id)
-	err = channel.UpdateAbilities(nil)
-	return err
+	if err := tx.Model(channel).Updates(channel).Error; err != nil {
+		return err
+	}
+	if err := tx.First(channel, channel.Id).Error; err != nil {
+		return err
+	}
+	if err := syncHubSupplyGroupFromChannelTx(tx, &before, channel); err != nil {
+		return err
+	}
+	return channel.UpdateAbilities(tx)
+}
+
+func (channel *Channel) Update() error {
+	channel.prepareUpdate()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return channel.updateTx(tx)
+	})
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
@@ -599,13 +622,15 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	var err error
-	err = DB.Delete(channel).Error
-	if err != nil {
-		return err
-	}
-	err = channel.DeleteAbilities()
-	return err
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteHubSupplyGroupsByChannelIDsTx(tx, []int{channel.Id}); err != nil {
+			return err
+		}
+		if err := tx.Delete(channel).Error; err != nil {
+			return err
+		}
+		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
+	})
 }
 
 var channelStatusLock sync.Mutex
@@ -874,13 +899,21 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	var ids []int
+	if err := DB.Model(&Channel{}).Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	return BatchDeleteChannels(ids)
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	var ids []int
+	if err := DB.Model(&Channel{}).
+		Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	return BatchDeleteChannels(ids)
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {
@@ -899,7 +932,7 @@ func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, 
 	return tags, err
 }
 
-func SearchTags(keyword string, group string, model string, idSort bool) ([]*string, error) {
+func SearchTags(keyword string, group string, model string, ownership string, idSort bool) ([]*string, error) {
 	var tags []*string
 	modelsCol := "`models`"
 
@@ -926,6 +959,7 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
 	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
+	baseQuery = ApplyHubChannelOwnershipFilter(baseQuery, ownership)
 
 	subQuery := baseQuery.
 		Select("tag").

@@ -14,6 +14,15 @@ import (
 
 const redisRateLimitNamespace = "rateLimit:v2"
 
+const (
+	authRefreshRateLimitRequests          = 60
+	authRefreshRateLimitDuration          = int64(20 * 60)
+	hubSupplyProbeRateLimitRequests       = 60
+	hubSupplyProbeRateLimitDuration       = int64(60)
+	hubSupplyPublicationRateLimitRequests = 120
+	hubSupplyPublicationRateLimitDuration = int64(60)
+)
+
 // Redis rate limiting intentionally uses a fixed window. The single Lua script
 // makes increment, expiry, and the limit decision atomic, while retaining the
 // simple fixed-window behavior: traffic at a window boundary can burst up to
@@ -176,6 +185,18 @@ func CriticalRateLimit() func(c *gin.Context) {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
+}
+
+func AuthRefreshRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(authRefreshRateLimitRequests, authRefreshRateLimitDuration, "AR")
+}
+
+func HubSupplyProbeRateLimit() func(c *gin.Context) {
+	return userRateLimitFactory(hubSupplyProbeRateLimitRequests, hubSupplyProbeRateLimitDuration, "HSP")
+}
+
+func HubSupplyPublicationRateLimit() func(c *gin.Context) {
+	return userRateLimitFactory(hubSupplyPublicationRateLimitRequests, hubSupplyPublicationRateLimitDuration, "HSPUB")
 }
 
 func DownloadRateLimit() func(c *gin.Context) {

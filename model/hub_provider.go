@@ -1,0 +1,410 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+package model
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
+)
+
+const (
+	HubProviderStatusActive   = "active"
+	HubProviderStatusDisabled = "disabled"
+	hubProviderSlugMinLength  = 3
+	hubProviderSlugMaxLength  = 63
+)
+
+var ErrHubProviderAlreadyExists = errors.New("hub provider already exists")
+var ErrHubProviderNotFound = errors.New("hub provider not found")
+var ErrHubProviderSlugInvalid = errors.New("hub provider slug is invalid")
+var ErrHubProviderSlugAlreadyExists = errors.New("hub provider slug already exists")
+
+var hubProviderReservedSlugs = map[string]struct{}{
+	"admin": {}, "api": {}, "app": {}, "auth": {}, "billing": {},
+	"cdn": {}, "console": {}, "dashboard": {}, "docs": {}, "mail": {},
+	"oauth": {}, "provider": {}, "providers": {}, "static": {},
+	"status": {}, "support": {}, "www": {},
+}
+
+// HubProvider is the provider profile owned by a New API user. Supply groups
+// and their New API channels will reference this profile in later steps.
+type HubProvider struct {
+	Id          int    `json:"id" gorm:"primaryKey"`
+	OwnerUserId int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
+	Slot        int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
+	Name        string `json:"name" gorm:"type:varchar(80);not null"`
+	Slug        string `json:"slug" gorm:"type:varchar(63)"`
+	Website     string `json:"website" gorm:"type:varchar(512);not null"`
+	Description string `json:"description" gorm:"type:varchar(1000);not null"`
+	LogoURL     string `json:"logo_url" gorm:"type:varchar(1024);not null"`
+	Status      string `json:"status" gorm:"type:varchar(24);not null;index"`
+	CreatedAt   int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt   int64  `json:"updated_at" gorm:"bigint"`
+}
+
+type HubProviderAdminListItem struct {
+	HubProvider
+	OwnerID             int    `json:"owner_user_id" gorm:"column:owner_id"`
+	OwnerUsername       string `json:"owner_username" gorm:"column:owner_username"`
+	OwnerDisplayName    string `json:"owner_display_name" gorm:"column:owner_display_name"`
+	OwnerEmail          string `json:"owner_email" gorm:"column:owner_email"`
+	OwnerStatus         int    `json:"owner_status" gorm:"column:owner_status"`
+	ChannelCount        int64  `json:"channel_count" gorm:"-"`
+	OnlineChannelCount  int64  `json:"online_channel_count" gorm:"-"`
+	AvailableModelCount int64  `json:"available_model_count" gorm:"-"`
+	ErrorModelCount     int64  `json:"error_model_count" gorm:"-"`
+	LastProbeAt         int64  `json:"last_probe_at" gorm:"-"`
+}
+
+func (HubProvider) TableName() string {
+	return "hub_providers"
+}
+
+func (p *HubProvider) BeforeCreate(tx *gorm.DB) error {
+	slug, err := NormalizeHubProviderSlug(p.Slug)
+	if err != nil {
+		return err
+	}
+	p.Slug = slug
+	now := common.GetTimestamp()
+	if p.Slot == 0 {
+		p.Slot = 1
+	}
+	if p.Status == "" {
+		p.Status = HubProviderStatusActive
+	}
+	p.CreatedAt = now
+	p.UpdatedAt = now
+	return nil
+}
+
+func (p *HubProvider) BeforeUpdate(tx *gorm.DB) error {
+	p.UpdatedAt = common.GetTimestamp()
+	return nil
+}
+
+func GetHubProviderByOwnerUserID(ownerUserID int) (*HubProvider, error) {
+	var provider HubProvider
+	err := DB.Where("owner_user_id = ?", ownerUserID).Order("slot asc").First(&provider).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
+
+func NormalizeHubProviderSlug(value string) (string, error) {
+	slug := strings.ToLower(strings.TrimSpace(value))
+	if len(slug) < hubProviderSlugMinLength || len(slug) > hubProviderSlugMaxLength {
+		return "", ErrHubProviderSlugInvalid
+	}
+	if slug[0] == '-' || slug[len(slug)-1] == '-' || strings.HasPrefix(slug, "xn--") {
+		return "", ErrHubProviderSlugInvalid
+	}
+	if _, reserved := hubProviderReservedSlugs[slug]; reserved {
+		return "", ErrHubProviderSlugInvalid
+	}
+	for _, char := range slug {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+			continue
+		}
+		return "", ErrHubProviderSlugInvalid
+	}
+	return slug, nil
+}
+
+func hubProviderSlugFromName(name string) string {
+	var builder strings.Builder
+	lastWasHyphen := false
+	for _, char := range strings.ToLower(strings.TrimSpace(name)) {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			builder.WriteRune(char)
+			lastWasHyphen = false
+			continue
+		}
+		if builder.Len() > 0 && !lastWasHyphen {
+			builder.WriteByte('-')
+			lastWasHyphen = true
+		}
+	}
+	slug := strings.Trim(builder.String(), "-")
+	if len(slug) > hubProviderSlugMaxLength {
+		slug = strings.TrimRight(slug[:hubProviderSlugMaxLength], "-")
+	}
+	if normalized, err := NormalizeHubProviderSlug(slug); err == nil {
+		return normalized
+	}
+	return "provider-" + strings.ToLower(common.GetRandomString(8))
+}
+
+func hubProviderSlugWithSuffix(base, suffix string) string {
+	maxBaseLength := hubProviderSlugMaxLength - len(suffix) - 1
+	if maxBaseLength < hubProviderSlugMinLength {
+		return "provider-" + strings.ToLower(common.GetRandomString(8))
+	}
+	base = strings.TrimRight(base[:min(len(base), maxBaseLength)], "-")
+	return fmt.Sprintf("%s-%s", base, suffix)
+}
+
+func hubProviderSlugTaken(slug string, excludeProviderID int) (bool, error) {
+	query := DB.Model(&HubProvider{}).Where("slug = ?", slug)
+	if excludeProviderID > 0 {
+		query = query.Where("id <> ?", excludeProviderID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func prepareHubProviderSlug(requestedSlug, providerName string, excludeProviderID int) (string, error) {
+	requestedSlug = strings.TrimSpace(requestedSlug)
+	candidate := requestedSlug
+	if candidate == "" {
+		candidate = hubProviderSlugFromName(providerName)
+	}
+	normalized, err := NormalizeHubProviderSlug(candidate)
+	if err != nil {
+		return "", err
+	}
+	taken, err := hubProviderSlugTaken(normalized, excludeProviderID)
+	if err != nil {
+		return "", err
+	}
+	if !taken {
+		return normalized, nil
+	}
+	if requestedSlug != "" {
+		return "", ErrHubProviderSlugAlreadyExists
+	}
+	for range 10 {
+		candidate = hubProviderSlugWithSuffix(normalized, strings.ToLower(common.GetRandomString(5)))
+		taken, err = hubProviderSlugTaken(candidate, excludeProviderID)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+	return "", ErrHubProviderSlugAlreadyExists
+}
+
+func CreateHubProvider(provider *HubProvider) error {
+	if provider == nil || provider.OwnerUserId <= 0 {
+		return errors.New("invalid hub provider")
+	}
+
+	existing, err := GetHubProviderByOwnerUserID(provider.OwnerUserId)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return ErrHubProviderAlreadyExists
+	}
+	slug, err := prepareHubProviderSlug(provider.Slug, provider.Name, 0)
+	if err != nil {
+		return err
+	}
+	provider.Slug = slug
+
+	provider.Slot = 1
+	if err := DB.Create(provider).Error; err != nil {
+		existing, lookupErr := GetHubProviderByOwnerUserID(provider.OwnerUserId)
+		if lookupErr == nil && existing != nil {
+			return ErrHubProviderAlreadyExists
+		}
+		slugTaken, lookupErr := hubProviderSlugTaken(provider.Slug, 0)
+		if lookupErr == nil && slugTaken {
+			return ErrHubProviderSlugAlreadyExists
+		}
+		return err
+	}
+	if err := RefreshHubSupplyPricingCache(); err != nil {
+		common.SysError("failed to refresh hub provider routing cache: " + err.Error())
+	}
+	return nil
+}
+
+// UpdateHubProviderProfile changes only the public profile owned by the user.
+// Status and ownership remain administrator-controlled fields.
+func UpdateHubProviderProfile(ownerUserID int, slug, name, website, description, logoURL string) (*HubProvider, error) {
+	if ownerUserID <= 0 {
+		return nil, errors.New("invalid hub provider owner")
+	}
+
+	var provider HubProvider
+	if err := DB.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrHubProviderNotFound
+		}
+		return nil, err
+	}
+	normalizedSlug, err := prepareHubProviderSlug(slug, name, provider.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	result := DB.Model(&HubProvider{}).
+		Where("id = ? AND owner_user_id = ?", provider.Id, ownerUserID).
+		Updates(map[string]any{
+			"name":        name,
+			"slug":        normalizedSlug,
+			"website":     website,
+			"description": description,
+			"logo_url":    logoURL,
+			"updated_at":  common.GetTimestamp(),
+		})
+	if result.Error != nil {
+		slugTaken, lookupErr := hubProviderSlugTaken(normalizedSlug, provider.Id)
+		if lookupErr == nil && slugTaken {
+			return nil, ErrHubProviderSlugAlreadyExists
+		}
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	if err := DB.First(&provider, provider.Id).Error; err != nil {
+		return nil, err
+	}
+	if err := RefreshHubSupplyPricingCache(); err != nil {
+		common.SysError("failed to refresh hub provider routing cache: " + err.Error())
+	}
+	return &provider, nil
+}
+
+func IsValidHubProviderStatus(status string) bool {
+	return status == HubProviderStatusActive || status == HubProviderStatusDisabled
+}
+
+func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
+	query := DB.Table("hub_providers AS providers").
+		Joins("JOIN users ON users.id = providers.owner_user_id")
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		pattern := "%" + strings.ToLower(keyword) + "%"
+		query = query.Where(
+			"LOWER(providers.name) LIKE ? OR LOWER(providers.website) LIKE ? OR LOWER(users.username) LIKE ? OR LOWER(users.display_name) LIKE ? OR LOWER(users.email) LIKE ?",
+			pattern, pattern, pattern, pattern, pattern,
+		)
+	}
+	if IsValidHubProviderStatus(status) {
+		query = query.Where("providers.status = ?", status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	providers := make([]HubProviderAdminListItem, 0)
+	listQuery := query.Select(
+		"providers.*, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status",
+	).Order("providers.id DESC")
+	if limit > 0 {
+		listQuery = listQuery.Limit(limit).Offset(offset)
+	}
+	if err := listQuery.Scan(&providers).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(providers) == 0 {
+		return providers, total, nil
+	}
+
+	providerIDs := make([]int, 0, len(providers))
+	for i := range providers {
+		providerIDs = append(providerIDs, providers[i].Id)
+	}
+	type providerMetrics struct {
+		ProviderId          int   `gorm:"column:provider_id"`
+		ChannelCount        int64 `gorm:"column:channel_count"`
+		OnlineChannelCount  int64 `gorm:"column:online_channel_count"`
+		AvailableModelCount int64 `gorm:"column:available_model_count"`
+		ErrorModelCount     int64 `gorm:"column:error_model_count"`
+		LastProbeAt         int64 `gorm:"column:last_probe_at"`
+	}
+	metrics := make([]providerMetrics, 0, len(providers))
+	if err := DB.Table("hub_supply_groups AS supply_groups").
+		Select(
+			"supply_groups.provider_id, COUNT(*) AS channel_count, "+
+				"SUM(CASE WHEN channels.status = ? THEN 1 ELSE 0 END) AS online_channel_count, "+
+				"SUM(supply_groups.available_model_count) AS available_model_count, "+
+				"SUM(supply_groups.error_model_count) AS error_model_count, "+
+				"MAX(supply_groups.last_probe_at) AS last_probe_at",
+			common.ChannelStatusEnabled,
+		).
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Where("supply_groups.provider_id IN ?", providerIDs).
+		Group("supply_groups.provider_id").
+		Scan(&metrics).Error; err != nil {
+		return nil, 0, err
+	}
+	metricsByProvider := make(map[int]providerMetrics, len(metrics))
+	for _, item := range metrics {
+		metricsByProvider[item.ProviderId] = item
+	}
+	for i := range providers {
+		item := metricsByProvider[providers[i].Id]
+		providers[i].ChannelCount = item.ChannelCount
+		providers[i].OnlineChannelCount = item.OnlineChannelCount
+		providers[i].AvailableModelCount = item.AvailableModelCount
+		providers[i].ErrorModelCount = item.ErrorModelCount
+		providers[i].LastProbeAt = item.LastProbeAt
+	}
+
+	return providers, total, nil
+}
+
+func UpdateHubProviderStatus(providerID int, status string) ([]int, error) {
+	if providerID <= 0 || !IsValidHubProviderStatus(status) {
+		return nil, errors.New("invalid hub provider status update")
+	}
+	var groupIDs []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&HubProvider{}).
+			Where("id = ?", providerID).
+			Updates(map[string]any{
+				"status":     status,
+				"updated_at": common.GetTimestamp(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Model(&HubSupplyGroup{}).
+			Where("provider_id = ?", providerID).
+			Pluck("id", &groupIDs).Error
+	})
+	if err == nil {
+		if refreshErr := RefreshHubSupplyPricingCache(); refreshErr != nil {
+			common.SysError("failed to refresh hub provider routing cache: " + refreshErr.Error())
+		}
+	}
+	return groupIDs, err
+}

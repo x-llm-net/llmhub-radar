@@ -47,6 +47,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
 		other["user_group_ratio"] = info.PriceData.GroupRatioInfo.GroupSpecialRatio
 	}
+	appendBillingInfo(info, other)
+	appendHubRoutingInfo(c, other)
+	AttachHubRelayLogInfo(c, info, other, true)
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
@@ -127,6 +130,15 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			other["model_ratio"] = bc.ModelRatio
 		}
 		other["group_ratio"] = bc.GroupRatio
+		if bc.HasSupplyPricing {
+			other["group_ratio"] = bc.BaseGroupRatio
+			other["supply_multiplier"] = bc.SupplyMultiplier
+			other["billing_ratio"] = bc.GroupRatio
+			other["hub_supply_group_id"] = bc.SupplyGroupId
+			other["hub_provider_id"] = bc.SupplyProviderId
+			other["platform_fee_basis_points"] = model.HubProviderPlatformFeeBasisPoints
+			other["provider_share_basis_points"] = 10000 - model.HubProviderPlatformFeeBasisPoints
+		}
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {
 				other[k] = v
@@ -166,6 +178,7 @@ func taskModelName(task *model.Task) string {
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
 	quota := task.Quota
 	if quota == 0 {
+		CancelTaskProviderEarning(ctx, task)
 		return true
 	}
 
@@ -197,9 +210,12 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	// 4. 资金退款完成后再清除持久化标记。
 	// 回写失败必须显式告警，避免漏掉潜在的重复退款风险。
 	task.Quota = 0
-	if err := task.UpdateQuota(); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("退款成功但清除 task quota 失败 task %s: %s", task.TaskID, err.Error()))
+	if task.ID > 0 {
+		if err := task.UpdateQuota(); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("退款成功但清除 task quota 失败 task %s: %s", task.TaskID, err.Error()))
+		}
 	}
+	CancelTaskProviderEarning(ctx, task)
 	return true
 }
 
@@ -303,14 +319,17 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return
 	}
 
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
 	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
+	if billingContext := task.PrivateData.BillingContext; billingContext != nil {
+		finalGroupRatio = billingContext.GroupRatio
 	} else {
-		finalGroupRatio = groupRatio
+		groupRatio := ratio_setting.GetGroupRatio(group)
+		userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
+		if hasUserGroupRatio {
+			finalGroupRatio = userGroupRatio
+		} else {
+			finalGroupRatio = groupRatio
+		}
 	}
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）

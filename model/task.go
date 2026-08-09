@@ -109,17 +109,24 @@ type TaskPrivateData struct {
 	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
 	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
 	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	RequestId      string              `json:"request_id,omitempty"`      // 原始请求 ID，用于渠道商收益幂等结算
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
 type TaskBillingContext struct {
-	ModelPrice      float64            `json:"model_price,omitempty"`       // 模型单价
-	GroupRatio      float64            `json:"group_ratio,omitempty"`       // 分组倍率
-	ModelRatio      float64            `json:"model_ratio,omitempty"`       // 模型倍率
-	OtherRatios     map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
-	OriginModelName string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
-	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	ModelPrice        float64            `json:"model_price,omitempty"` // 模型单价
+	GroupRatio        float64            `json:"group_ratio,omitempty"` // 用户组与供给渠道的综合计费倍率
+	BaseGroupRatio    float64            `json:"base_group_ratio,omitempty"`
+	SupplyMultiplier  float64            `json:"supply_multiplier,omitempty"`
+	HasSupplyPricing  bool               `json:"has_supply_pricing,omitempty"`
+	SupplyGroupId     int                `json:"supply_group_id,omitempty"`
+	SupplyProviderId  int                `json:"supply_provider_id,omitempty"`
+	SupplyOwnerUserId int                `json:"supply_owner_user_id,omitempty"`
+	ModelRatio        float64            `json:"model_ratio,omitempty"`       // 模型倍率
+	OtherRatios       map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
+	OriginModelName   string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
+	PerCallBilling    bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）

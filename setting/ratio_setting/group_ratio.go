@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -60,23 +61,45 @@ func GetGroupRatioSetting() *GroupRatioSetting {
 }
 
 func GetGroupRatioCopy() map[string]float64 {
-	return groupRatioMap.ReadAll()
+	ratios := groupRatioMap.ReadAll()
+	for _, tier := range hub_routing_setting.ServiceTiers() {
+		ratios[tier] = 1
+	}
+	return ratios
 }
 
 func ContainsGroupRatio(name string) bool {
+	if hub_routing_setting.IsServiceTier(name) {
+		return true
+	}
 	_, ok := groupRatioMap.Get(name)
 	return ok
 }
 
 func GroupRatio2JSONString() string {
-	return groupRatioMap.MarshalJSONString()
+	data, _ := json.Marshal(GetGroupRatioCopy())
+	return string(data)
 }
 
 func UpdateGroupRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(groupRatioMap, jsonStr)
+	updated := make(map[string]float64)
+	if err := json.Unmarshal([]byte(jsonStr), &updated); err != nil {
+		return err
+	}
+	for _, tier := range hub_routing_setting.ServiceTiers() {
+		updated[tier] = 1
+	}
+	data, err := json.Marshal(updated)
+	if err != nil {
+		return err
+	}
+	return types.LoadFromJsonString(groupRatioMap, string(data))
 }
 
 func GetGroupRatio(name string) float64 {
+	if hub_routing_setting.IsServiceTier(name) {
+		return 1
+	}
 	ratio, ok := groupRatioMap.Get(name)
 	if !ok {
 		common.SysLog("group ratio not found: " + name)

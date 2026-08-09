@@ -62,6 +62,8 @@ func isAllowedSessionOrigin(request *http.Request, origin string) bool {
 	requestScheme := "http"
 	if request.TLS != nil {
 		requestScheme = "https"
+	} else if forwardedProto := strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")); isTrustedImmediateProxy(request.RemoteAddr) && (forwardedProto == "http" || forwardedProto == "https") {
+		requestScheme = forwardedProto
 	}
 	requestOrigin, err := common.NormalizeOrigin(requestScheme + "://" + request.Host)
 	if err == nil && subtle.ConstantTimeCompare([]byte(origin), []byte(requestOrigin)) == 1 {

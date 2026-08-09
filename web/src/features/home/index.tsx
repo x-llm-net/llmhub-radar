@@ -16,118 +16,266 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowRight, RefreshCw } from 'lucide-react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { PublicLayout } from '@/components/layout'
-import { Footer } from '@/components/layout/components/footer'
-import { RichContent } from '@/components/rich-content'
-import { useTheme } from '@/context/theme-provider'
-import { isLikelyHtml } from '@/lib/content-format'
-import { useAuthStore } from '@/stores/auth-store'
+import { getPublicHome } from './api'
+import { PublicHomeFamilyNav } from './components/public-home-family-nav'
+import { PublicHomeHeader } from './components/public-home-header'
+import { PublicHomeLeaderboards } from './components/public-home-leaderboards'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
-import { useHomePageContent } from './hooks'
+import './public-home.css'
+
+function PublicHomeLoading() {
+  const { t } = useTranslation()
+  return (
+    <div className='llmhub-home'>
+      <PublicHomeHeader />
+      <main
+        className='hub-shell hub-loading'
+        aria-label={t('Loading rankings')}
+      >
+        <div className='hub-loading-line is-short' />
+        <div className='hub-loading-line is-title' />
+        <div className='hub-loading-line is-copy' />
+        <div className='hub-loading-stats'>
+          <div />
+          <div />
+        </div>
+        <div className='hub-loading-cards'>
+          <div />
+          <div />
+          <div />
+          <div />
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function PublicHomeError(props: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className='llmhub-home'>
+      <PublicHomeHeader />
+      <main className='hub-shell hub-error-state'>
+        <span>{t('Rankings are temporarily unavailable')}</span>
+        <h1>{t('Probe data could not be loaded')}</h1>
+        <p>
+          {t(
+            'The public rankings endpoint did not return usable data. Please try again.'
+          )}
+        </p>
+        <button type='button' onClick={props.onRetry}>
+          <RefreshCw aria-hidden='true' />
+          {t('Retry')}
+        </button>
+      </main>
+    </div>
+  )
+}
 
 export function Home() {
-  const { i18n, t } = useTranslation()
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const { resolvedTheme } = useTheme()
-  const { auth } = useAuthStore()
-  const isAuthenticated = !!auth.user
-  const { content, isLoaded, isUrl } = useHomePageContent()
-
-  const syncIframePreferences = useCallback(() => {
-    try {
-      iframeRef.current?.contentWindow?.postMessage(
-        { themeMode: resolvedTheme },
-        '*'
-      )
-      iframeRef.current?.contentWindow?.postMessage(
-        { lang: i18n.language },
-        '*'
-      )
-    } catch {
-      // Cross-origin frames may reject access while navigating.
-    }
-  }, [i18n.language, resolvedTheme])
+  const { t } = useTranslation()
+  const query = useQuery({
+    queryKey: ['hub-public-home'],
+    queryFn: getPublicHome,
+    retry: false,
+    staleTime: 60 * 1000,
+  })
 
   useEffect(() => {
-    if (isUrl) {
-      syncIframePreferences()
-    }
-  }, [isUrl, syncIframePreferences])
-
-  if (!isLoaded) {
-    return (
-      <PublicLayout showMainContainer={false}>
-        <main className='flex min-h-screen items-center justify-center'>
-          <div className='text-muted-foreground'>{t('Loading...')}</div>
-        </main>
-      </PublicLayout>
+    document.title = 'LLMHub | AI API 中转站实测榜'
+    let description = document.querySelector<HTMLMetaElement>(
+      'meta[name="description"]'
     )
+    if (!description) {
+      description = document.createElement('meta')
+      description.name = 'description'
+      document.head.appendChild(description)
+    }
+    description.content =
+      '持续测试不同 AI API 中转站的模型可用率、响应延迟与近期状态。'
+  }, [])
+
+  if (query.isLoading) return <PublicHomeLoading />
+  if (query.isError || !query.data?.data) {
+    return <PublicHomeError onRetry={() => void query.refetch()} />
   }
 
-  if (content) {
-    if (isUrl) {
-      return (
-        <PublicLayout showMainContainer={false}>
-          {/*
-            allow-top-navigation-by-user-activation: the custom home page URL is
-            admin-configured (trusted); this lets its target="_top" nav/menu links
-            navigate the top-level window on user click. The default sandbox blocks
-            this on desktop, while some mobile browsers allow it via allow-popups,
-            causing inconsistent behavior. This token only permits user-activated
-            top-level navigation and does NOT grant same-origin access.
-          */}
-          <iframe
-            ref={iframeRef}
-            src={content}
-            className='h-screen w-full border-none'
-            title={t('Custom Home Page')}
-            sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts allow-top-navigation-by-user-activation'
-            onLoad={syncIframePreferences}
-          />
-        </PublicLayout>
-      )
-    }
-
-    const contentIsHtml = isLikelyHtml(content)
-
-    if (contentIsHtml) {
-      return (
-        <PublicLayout showMainContainer={false}>
-          <RichContent
-            mode='html'
-            htmlVariant='isolated'
-            content={content}
-            className='custom-home-content'
-          />
-        </PublicLayout>
-      )
-    }
-
-    return (
-      <PublicLayout>
-        <div className='mx-auto max-w-6xl px-4 py-8'>
-          <RichContent
-            mode='markdown'
-            content={content}
-            className='custom-home-content'
-          />
-        </div>
-      </PublicLayout>
-    )
-  }
+  const home = query.data.data
+  const hasRankings = home.families.length > 0
 
   return (
-    <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
-      <Footer />
-    </PublicLayout>
+    <div className='llmhub-home'>
+      <PublicHomeHeader />
+
+      <main id='top'>
+        <section className='hub-hero'>
+          <div className='hub-shell'>
+            <p className='hub-hero-eyebrow'>
+              {t('STABILITY AND LATENCY, CONTINUOUSLY TESTED')}
+            </p>
+            <h1>{t('AI API relay field-test rankings')}</h1>
+            <p className='hub-hero-lede'>
+              {t(
+                'Continuously test mainstream models from different providers, comparing seven-day availability, first-token latency, and current status so every choice has evidence.'
+              )}
+            </p>
+            <div className='hub-hero-actions'>
+              <a className='hub-primary-button' href='#model-rankings'>
+                {t('View model rankings')}
+                <ArrowRight aria-hidden='true' />
+              </a>
+              <a className='hub-secondary-button' href='#ranking-rules'>
+                {t('How rankings work')}
+              </a>
+            </div>
+
+            <dl className='hub-hero-facts'>
+              <div>
+                <dt>{t('Covered providers')}</dt>
+                <dd>
+                  {t('{{count}} providers', { count: home.provider_count })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('Published models')}</dt>
+                <dd>
+                  {t('{{count}} models', { count: home.published_model_count })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('Probe frequency')}</dt>
+                <dd>{t('10 min text · 30 min image')}</dd>
+              </div>
+            </dl>
+
+            <div className='hub-ranking-note'>
+              <strong>{t('Only real probe data is used.')}</strong>
+              <span>
+                {t(
+                  'Unpublished models are hidden. Published models remain visible when they are currently failing.'
+                )}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {hasRankings ? (
+          <>
+            <PublicHomeFamilyNav families={home.families} />
+            <PublicHomeLeaderboards
+              families={home.families}
+              lastProbeAt={home.last_probe_at}
+            />
+          </>
+        ) : (
+          <section className='hub-empty-rankings'>
+            <div className='hub-shell'>
+              <p className='hub-section-kicker'>MODEL LEADERBOARDS</p>
+              <h2>{t('The first published model will appear here')}</h2>
+              <p>
+                {t(
+                  'Providers can publish a model after its connection has been tested successfully.'
+                )}
+              </p>
+            </div>
+          </section>
+        )}
+
+        <section
+          className='hub-rules'
+          id='ranking-rules'
+          aria-labelledby='ranking-rules-title'
+        >
+          <div className='hub-shell'>
+            <div className='hub-rules-heading'>
+              <p className='hub-section-kicker'>HOW TO READ</p>
+              <h2 id='ranking-rules-title'>{t('How to read the rankings')}</h2>
+              <p>
+                {t(
+                  'A comprehensive score combines availability, first-token speed, and evidence coverage; endpoints without TTFT use availability and confidence.'
+                )}
+              </p>
+            </div>
+            <div className='hub-rule-list'>
+              <article>
+                <span>01</span>
+                <h3>{t('Compare the exact model')}</h3>
+                <p>
+                  {t(
+                    'Each model is ranked independently instead of averaging an entire provider.'
+                  )}
+                </p>
+              </article>
+              <article>
+                <span>02</span>
+                <h3>{t('Comprehensive score')}</h3>
+                <p>
+                  {t(
+                    'Availability contributes 80%, TTFT P50 10%, TTFT P95 5%, and sample confidence 5%.'
+                  )}
+                </p>
+              </article>
+              <article>
+                <span>03</span>
+                <h3>{t('Balance pauses lose rank gradually')}</h3>
+                <p>
+                  {t(
+                    'Insufficient-quota probes do not reduce availability; a continuous pause ramps to a 10% penalty over seven days.'
+                  )}
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className='hub-provider-cta'
+          id='provider-onboarding'
+          aria-labelledby='provider-onboarding-title'
+        >
+          <div className='hub-shell'>
+            <div>
+              <p className='hub-section-kicker'>FOR PROVIDERS</p>
+              <h2 id='provider-onboarding-title'>
+                {t('Put your real service quality on the board')}
+              </h2>
+              <p>
+                {t(
+                  'Create a provider profile, connect supply channels, test models, and publish only the models you want to sell.'
+                )}
+              </p>
+            </div>
+            <a href='/provider/onboarding'>
+              {t('Become a channel provider')}
+              <ArrowRight aria-hidden='true' />
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer className='hub-footer'>
+        <div className='hub-shell'>
+          <div>
+            <strong>LLMHub</strong>
+            <span>{t('AI relay reliability rankings')}</span>
+          </div>
+          <nav aria-label={t('Footer navigation')}>
+            <a href='#model-rankings'>{t('Model rankings')}</a>
+            <a href='#ranking-rules'>{t('Ranking rules')}</a>
+            <a href='#provider-onboarding'>{t('Provider onboarding')}</a>
+          </nav>
+          <small>
+            {t(
+              'Probe results describe past observations and do not guarantee future availability.'
+            )}
+          </small>
+        </div>
+      </footer>
+    </div>
   )
 }

@@ -715,6 +715,20 @@ export function aggregateChannelsByTag(
     } else if (tagRow.status === undefined) {
       tagRow.status = channel.status
     }
+
+    // Preserve a provider only when every child has the same ownership.
+    if (childCount === 1) {
+      tagRow.ownership = channel.ownership
+      tagRow.hub_provider_id = channel.hub_provider_id
+      tagRow.hub_provider_name = channel.hub_provider_name
+    } else if (
+      tagRow.ownership !== channel.ownership ||
+      tagRow.hub_provider_id !== channel.hub_provider_id
+    ) {
+      tagRow.ownership = 'mixed'
+      tagRow.hub_provider_id = undefined
+      tagRow.hub_provider_name = undefined
+    }
   }
 
   return result

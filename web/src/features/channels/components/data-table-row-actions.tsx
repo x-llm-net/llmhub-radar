@@ -386,10 +386,28 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title={t('Delete Channel')}
-        desc={t(
-          'Are you sure you want to delete channel "{{name}}"? This action cannot be undone.',
-          { name: channel.name }
-        )}
+        desc={
+          channel.ownership === 'provider' ? (
+            <div className='space-y-2'>
+              <p>
+                {t('Channel "{{name}}" belongs to provider {{provider}}.', {
+                  name: channel.name,
+                  provider: channel.hub_provider_name || '-',
+                })}
+              </p>
+              <p>
+                {t(
+                  'Deleting it also removes its supply configuration and stops future provider earnings. This action cannot be undone.'
+                )}
+              </p>
+            </div>
+          ) : (
+            t(
+              'Are you sure you want to delete channel "{{name}}"? This action cannot be undone.',
+              { name: channel.name }
+            )
+          )
+        }
         confirmText={t('Delete')}
         destructive
         handleConfirm={() => {

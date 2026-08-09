@@ -18,14 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
 import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   AlertTriangle,
+  Building2,
   ChevronDown,
   ChevronRight,
   ListOrdered,
   Shuffle,
   SlidersHorizontal,
+  Store,
 } from 'lucide-react'
 import { useState, useMemo, useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -718,6 +721,60 @@ export function useChannelsColumns(
         },
         size: 260,
         minSize: 200,
+      },
+
+      // Business ownership column
+      {
+        id: 'ownership',
+        accessorFn: (channel) => channel.ownership,
+        header: t('Ownership'),
+        cell: ({ row }) => {
+          const channel = row.original
+          if (channel.ownership === 'mixed') {
+            return (
+              <StatusBadge
+                label={t('Mixed ownership')}
+                variant='warning'
+                size='sm'
+                copyable={false}
+                showDot={false}
+              />
+            )
+          }
+          if (
+            channel.ownership === 'provider' &&
+            channel.hub_provider_id &&
+            channel.hub_provider_name
+          ) {
+            return (
+              <Button
+                variant='link'
+                className='h-auto max-w-[180px] justify-start gap-1.5 p-0 text-left text-sm'
+                render={
+                  <Link
+                    to='/providers'
+                    search={{ filter: channel.hub_provider_name }}
+                  />
+                }
+              >
+                <Building2 className='size-3.5 shrink-0' />
+                <TruncatedText
+                  text={channel.hub_provider_name}
+                  maxWidth='max-w-[145px]'
+                />
+              </Button>
+            )
+          }
+          return (
+            <span className='text-muted-foreground flex items-center gap-1.5 text-sm'>
+              <Store className='size-3.5 shrink-0' />
+              {t('Platform operated')}
+            </span>
+          )
+        },
+        enableSorting: false,
+        size: 200,
+        meta: { mobileOrder: 20 },
       },
 
       // Type column

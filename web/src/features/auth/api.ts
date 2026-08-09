@@ -140,12 +140,23 @@ export async function githubOAuthStart(clientId: string, state: string) {
 // Get OAuth state for CSRF protection
 export async function createOAuthFlow(
   provider: string,
-  intent: 'login' | 'bind'
+  intent: 'login' | 'bind',
+  returnPath?: string
 ): Promise<string> {
   const aff = intent === 'login' ? getAffiliateCode() : ''
+  const returnOrigin =
+    intent === 'login' && typeof window !== 'undefined'
+      ? window.location.origin
+      : undefined
   const res = await api.post(
     '/api/oauth/state',
-    { provider, intent, aff: aff || undefined },
+    {
+      provider,
+      intent,
+      aff: aff || undefined,
+      return_origin: returnOrigin,
+      return_path: intent === 'login' ? returnPath || '/dashboard' : undefined,
+    },
     { skipAuthRefresh: intent === 'login' }
   )
   if (res.data?.success) {

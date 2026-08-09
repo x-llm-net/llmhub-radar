@@ -89,6 +89,27 @@ import {
 import { useApiKeys } from './api-keys-provider'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
+const SERVICE_TIER_ORDER = ['special', 'low', 'medium', 'high'] as const
+
+const SERVICE_TIER_I18N = {
+  special: {
+    label: 'Special price',
+    desc: 'Lowest-cost approved supply',
+  },
+  low: {
+    label: 'Economy',
+    desc: 'Budget routing within this price tier',
+  },
+  medium: {
+    label: 'Standard',
+    desc: 'Balanced routing within this price tier',
+  },
+  high: {
+    label: 'High quality',
+    desc: 'Admin-approved high-quality sources',
+  },
+} as const
+
 type ApiKeyMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -155,15 +176,39 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
-  const groups = useMemo<ApiKeyGroupOption[]>(
-    () =>
-      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
+  const groups = useMemo<ApiKeyGroupOption[]>(() => {
+    const allGroups = Object.entries(groupsData?.data || {}).map(
+      ([key, info]) => ({
         value: key,
         label: key,
         desc: info.desc || key,
         ratio: info.ratio,
-      })),
-    [groupsData]
+      })
+    )
+    const groupsByValue = new Map(
+      allGroups.map((group) => [group.value, group])
+    )
+    const serviceTiers = SERVICE_TIER_ORDER.flatMap((tier) => {
+      const group = groupsByValue.get(tier)
+      if (!group) return []
+      const meta = SERVICE_TIER_I18N[tier]
+      return [
+        {
+          ...group,
+          label: t(meta.label),
+          desc: t(meta.desc),
+          ratio: 1,
+        },
+      ]
+    })
+    return serviceTiers.length === SERVICE_TIER_ORDER.length
+      ? serviceTiers
+      : allGroups
+  }, [groupsData, t])
+  const usesServiceTiers = groups.every((group) =>
+    SERVICE_TIER_ORDER.includes(
+      group.value as (typeof SERVICE_TIER_ORDER)[number]
+    )
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(
@@ -264,10 +309,11 @@ export function ApiKeysMutateDrawer({
     if (groups.length === 0) return
     const currentGroup = selectedGroup
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
-      const fallback =
-        groups.find((g) => g.value === 'default')?.value ??
-        groups[0]?.value ??
-        ''
+      const fallback = usesServiceTiers
+        ? ''
+        : (groups.find((g) => g.value === 'default')?.value ??
+          groups[0]?.value ??
+          '')
       form.setValue('group', fallback)
       if (currentGroup === 'auto') {
         form.setValue('auto_groups', [])
@@ -275,7 +321,7 @@ export function ApiKeysMutateDrawer({
         form.setValue('cross_group_retry', false)
       }
     }
-  }, [groups, form, selectedGroup])
+  }, [groups, form, selectedGroup, usesServiceTiers])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
@@ -417,7 +463,9 @@ export function ApiKeysMutateDrawer({
                 name='group'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Group')}</FormLabel>
+                    <FormLabel>
+                      {usesServiceTiers ? t('Service tier') : t('Group')}
+                    </FormLabel>
                     <FormControl>
                       <ApiKeyGroupCombobox
                         options={groups}

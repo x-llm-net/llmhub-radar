@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -53,7 +54,7 @@ func setupAuthFlowControllerTest(t *testing.T) *authFlowTestOAuthProvider {
 	previousType := common.MainDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.AuthFlow{}))
+	require.NoError(t, db.AutoMigrate(&model.AuthFlow{}, &model.HubProvider{}, &model.HubSupplyGroup{}))
 	model.DB = db
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	provider := &authFlowTestOAuthProvider{}
@@ -62,6 +63,7 @@ func setupAuthFlowControllerTest(t *testing.T) *authFlowTestOAuthProvider {
 		oauth.Unregister("auth-flow-test")
 		model.DB = previousDB
 		common.SetMainDatabaseType(previousType)
+		require.NoError(t, model.RefreshHubSupplyPricingCache())
 	})
 	return provider
 }
@@ -93,6 +95,43 @@ func TestGenerateOAuthCodeCarriesAffiliateInLoginFlow(t *testing.T) {
 	assert.Equal(t, "invite-code", payload.AffiliateCode)
 	assert.Zero(t, flow.UserId)
 	assert.Empty(t, flow.SessionId)
+}
+
+func TestGenerateOAuthCodeCarriesValidatedProviderReturnLocation(t *testing.T) {
+	setupAuthFlowControllerTest(t)
+	previousAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "http://localhost:3100"
+	t.Cleanup(func() { system_setting.ServerAddress = previousAddress })
+	provider := &model.HubProvider{OwnerUserId: 42, Name: "LLM Routers", Slug: "llm-routers"}
+	require.NoError(t, model.CreateHubProvider(provider))
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"http://llm-routers.localhost:3100/api/oauth/state",
+		strings.NewReader(`{"provider":"auth-flow-test","intent":"login","return_origin":"http://llm-routers.localhost:3100","return_path":"/keys?from=provider"}`),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	GenerateOAuthCode(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			FlowToken string `json:"flow_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	flow, err := model.GetAuthFlow(response.Data.FlowToken, model.AuthFlowMatch{
+		Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
+	})
+	require.NoError(t, err)
+	var payload oauthFlowPayload
+	require.NoError(t, common.UnmarshalJsonStr(flow.Payload, &payload))
+	assert.Equal(t, "http://llm-routers.localhost:3100", payload.ReturnOrigin)
+	assert.Equal(t, "/keys?from=provider", payload.ReturnPath)
 }
 
 func TestGenerateOAuthCodeBindsFlowToAuthenticatedSession(t *testing.T) {

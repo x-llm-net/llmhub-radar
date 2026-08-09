@@ -1,24 +1,6 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Search, Info, ChevronDown } from 'lucide-react'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -46,12 +28,11 @@ import {
   normalizeModelName,
   parseModelsString,
 } from '../../lib'
-import { useChannels } from '../channels-provider'
+import type { Channel } from '../../types'
+import { useOptionalChannels } from '../channels-provider'
 
 function normalizeModelNameList(models: readonly string[]): string[] {
-  return Array.from(
-    new Set(models.map((m) => normalizeModelName(m)).filter(Boolean))
-  )
+  return [...new Set(models.map((m) => normalizeModelName(m)).filter(Boolean))]
 }
 
 type FetchModelsDialogProps = {
@@ -63,6 +44,12 @@ type FetchModelsDialogProps = {
   customFetcher?: () => Promise<string[]>
   existingModelsOverride?: string[]
   channelName?: string | null
+  activeChannelOverride?: Channel | null
+  storedFetcher?: (channelId: number) => Promise<{
+    success: boolean
+    message?: string
+    data?: string[]
+  }>
 }
 
 export function FetchModelsDialog({
@@ -74,10 +61,14 @@ export function FetchModelsDialog({
   customFetcher,
   existingModelsOverride,
   channelName,
+  activeChannelOverride,
+  storedFetcher,
 }: FetchModelsDialogProps) {
   const { t } = useTranslation()
-  const { currentRow } = useChannels()
-  const activeChannel = customFetcher ? null : currentRow
+  const channelsContext = useOptionalChannels()
+  const activeChannel = customFetcher
+    ? null
+    : (activeChannelOverride ?? channelsContext?.currentRow ?? null)
   const queryClient = useQueryClient()
   const [isFetching, setIsFetching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -141,7 +132,13 @@ export function FetchModelsDialog({
         setSelectedModels(existingModels)
         toast.success(t('Fetched {{count}} models', { count: list.length }))
       } else {
-        const response = await fetchUpstreamModels(activeChannel!.id)
+        const activeChannelId = activeChannel?.id
+        if (!activeChannelId) {
+          return
+        }
+        const response = await (storedFetcher ?? fetchUpstreamModels)(
+          activeChannelId
+        )
         if (response.success) {
           const list = Array.isArray(response.data) ? response.data : []
           setFetchedModels(list)
@@ -345,7 +342,7 @@ export function FetchModelsDialog({
                     <Tooltip>
                       <TooltipTrigger
                         render={<Info className='h-3.5 w-3.5 text-amber-500' />}
-                      ></TooltipTrigger>
+                      />
                       <TooltipContent>
                         {t('From model redirect, not yet added to models list')}
                       </TooltipContent>
@@ -365,24 +362,148 @@ export function FetchModelsDialog({
     !isFetching &&
     (fetchedModels.length > 0 || removedModels.length > 0)
 
+  let dialogDescription: ReactNode = t('Fetch available models from upstream')
+  if (channelName) {
+    dialogDescription = (
+      <>
+        {t('Channel:')} <strong>{channelName}</strong>
+      </>
+    )
+  }
+  if (activeChannel) {
+    dialogDescription = (
+      <>
+        {t('Channel:')} <strong>{activeChannel.name}</strong>
+      </>
+    )
+  }
+
+  let defaultTab = 'existing'
+  if (removedModels.length > 0) {
+    defaultTab = 'removed'
+  }
+  if (newModels.length > 0) {
+    defaultTab = 'new'
+  }
+
+  const renderDialogBody = () => {
+    if (!activeChannel && !customFetcher) {
+      return (
+        <div className='text-muted-foreground py-8 text-center'>
+          {t('No channel selected')}
+        </div>
+      )
+    }
+    if (isFetching) {
+      return (
+        <div className='flex items-center justify-center py-12'>
+          <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
+        </div>
+      )
+    }
+    if (fetchedModels.length === 0 && removedModels.length === 0) {
+      return (
+        <div className='text-muted-foreground py-8 text-center'>
+          <p>{t('No models fetched yet.')}</p>
+          <Button
+            className='mt-4'
+            onClick={handleFetchModels}
+            disabled={isFetching}
+          >
+            {t('Fetch Models')}
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className='space-y-4'>
+        {/* Search Bar */}
+        <div className='relative'>
+          <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
+          <Input
+            placeholder={t('Search models...')}
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            className='pl-9'
+          />
+        </div>
+
+        {/* Tabs for New vs Existing vs Removed */}
+        <Tabs
+          key={`${activeChannel?.id ?? 'custom'}-${fetchedModels.length}-${removedModels.length}`}
+          defaultValue={defaultTab}
+        >
+          <TabsList
+            className={`grid w-full ${removedModels.length > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}
+          >
+            <TabsTrigger value='new' disabled={newModels.length === 0}>
+              {t('New Models ({{count}})', { count: newModels.length })}
+            </TabsTrigger>
+            <TabsTrigger
+              value='existing'
+              disabled={existingFilteredModels.length === 0}
+            >
+              {t('Existing Models ({{count}})', {
+                count: existingFilteredModels.length,
+              })}
+            </TabsTrigger>
+            {removedModels.length > 0 && (
+              <TabsTrigger value='removed'>
+                {t('Removed Models ({{count}})', {
+                  count: removedModels.length,
+                })}
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent
+            value='new'
+            className='max-h-96 space-y-2 overflow-y-auto'
+          >
+            {getSortedCategoryEntries(newModelsByCategory).map(
+              ([category, models]) => renderModelCategory(category, models)
+            )}
+          </TabsContent>
+
+          <TabsContent
+            value='existing'
+            className='max-h-96 space-y-2 overflow-y-auto'
+          >
+            {getSortedCategoryEntries(existingModelsByCategory).map(
+              ([category, models]) => renderModelCategory(category, models)
+            )}
+          </TabsContent>
+
+          {removedModels.length > 0 && (
+            <TabsContent
+              value='removed'
+              className='max-h-96 space-y-2 overflow-y-auto'
+            >
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
+                )}
+              </p>
+              {renderModelCategory(t('Removed'), removedModels)}
+            </TabsContent>
+          )}
+        </Tabs>
+
+        {/* Selection Summary */}
+        <div className='bg-muted/50 rounded-lg border p-3 text-sm'>
+          {t('{{n}} model(s) selected', { n: selectedModels.length })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={handleClose}
       title={t('Fetch Models')}
-      description={
-        activeChannel ? (
-          <>
-            {t('Channel:')} <strong>{activeChannel.name}</strong>
-          </>
-        ) : channelName ? (
-          <>
-            {t('Channel:')} <strong>{channelName}</strong>
-          </>
-        ) : (
-          t('Fetch available models from upstream')
-        )
-      }
+      description={dialogDescription}
       contentClassName='max-w-3xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -400,113 +521,7 @@ export function FetchModelsDialog({
         ) : null
       }
     >
-      {!activeChannel && !customFetcher ? (
-        <div className='text-muted-foreground py-8 text-center'>
-          {t('No channel selected')}
-        </div>
-      ) : isFetching ? (
-        <div className='flex items-center justify-center py-12'>
-          <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
-        </div>
-      ) : fetchedModels.length === 0 && removedModels.length === 0 ? (
-        <div className='text-muted-foreground py-8 text-center'>
-          <p>{t('No models fetched yet.')}</p>
-          <Button
-            className='mt-4'
-            onClick={handleFetchModels}
-            disabled={isFetching}
-          >
-            {t('Fetch Models')}
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div className='space-y-4'>
-            {/* Search Bar */}
-            <div className='relative'>
-              <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
-              <Input
-                placeholder={t('Search models...')}
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-                className='pl-9'
-              />
-            </div>
-
-            {/* Tabs for New vs Existing vs Removed */}
-            <Tabs
-              key={`${activeChannel?.id ?? 'custom'}-${fetchedModels.length}-${removedModels.length}`}
-              defaultValue={
-                newModels.length > 0
-                  ? 'new'
-                  : removedModels.length > 0
-                    ? 'removed'
-                    : 'existing'
-              }
-            >
-              <TabsList
-                className={`grid w-full ${removedModels.length > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}
-              >
-                <TabsTrigger value='new' disabled={newModels.length === 0}>
-                  {t('New Models ({{count}})', { count: newModels.length })}
-                </TabsTrigger>
-                <TabsTrigger
-                  value='existing'
-                  disabled={existingFilteredModels.length === 0}
-                >
-                  {t('Existing Models ({{count}})', {
-                    count: existingFilteredModels.length,
-                  })}
-                </TabsTrigger>
-                {removedModels.length > 0 && (
-                  <TabsTrigger value='removed'>
-                    {t('Removed Models ({{count}})', {
-                      count: removedModels.length,
-                    })}
-                  </TabsTrigger>
-                )}
-              </TabsList>
-
-              <TabsContent
-                value='new'
-                className='max-h-96 space-y-2 overflow-y-auto'
-              >
-                {getSortedCategoryEntries(newModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )}
-              </TabsContent>
-
-              <TabsContent
-                value='existing'
-                className='max-h-96 space-y-2 overflow-y-auto'
-              >
-                {getSortedCategoryEntries(existingModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )}
-              </TabsContent>
-
-              {removedModels.length > 0 && (
-                <TabsContent
-                  value='removed'
-                  className='max-h-96 space-y-2 overflow-y-auto'
-                >
-                  <p className='text-muted-foreground text-xs'>
-                    {t(
-                      'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
-                    )}
-                  </p>
-                  {renderModelCategory(t('Removed'), removedModels)}
-                </TabsContent>
-              )}
-            </Tabs>
-
-            {/* Selection Summary */}
-            <div className='bg-muted/50 rounded-lg border p-3 text-sm'>
-              {t('{{n}} model(s) selected', { n: selectedModels.length })}
-            </div>
-          </div>
-        </>
-      )}
+      {renderDialogBody()}
     </Dialog>
   )
 }

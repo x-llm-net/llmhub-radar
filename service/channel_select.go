@@ -7,16 +7,18 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/gin-gonic/gin"
 )
 
 type RetryParam struct {
-	Ctx          *gin.Context
-	TokenGroup   string
-	ModelName    string
-	RequestPath  string
-	Retry        *int
-	resetNextTry bool
+	Ctx                *gin.Context
+	TokenGroup         string
+	ModelName          string
+	RequestPath        string
+	Retry              *int
+	resetNextTry       bool
+	excludedChannelIDs map[int]struct{}
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -43,6 +45,72 @@ func (p *RetryParam) IncreaseRetry() {
 
 func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
+}
+
+func (p *RetryParam) ExcludeChannel(channelID int) {
+	if channelID <= 0 {
+		return
+	}
+	if p.excludedChannelIDs == nil {
+		p.excludedChannelIDs = make(map[int]struct{})
+	}
+	p.excludedChannelIDs[channelID] = struct{}{}
+}
+
+func (p *RetryParam) ExcludedChannelIDs() map[int]struct{} {
+	return p.excludedChannelIDs
+}
+
+func cloneRetryParamAt(param *RetryParam, retry int) *RetryParam {
+	cloned := *param
+	cloned.Retry = common.GetPointer(retry)
+	cloned.resetNextTry = false
+	return &cloned
+}
+
+func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	providerID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyHubRequestedProviderId)
+	if providerID <= 0 {
+		if hub_routing_setting.IsServiceTier(param.TokenGroup) {
+			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingPhase, "public_pool")
+			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingFallback, false)
+		}
+		return cacheGetRandomSatisfiedChannelWithFilter(param, model.ChannelProviderFilter{})
+	}
+
+	retry := param.GetRetry()
+	isFallback := common.GetContextKeyBool(param.Ctx, constant.ContextKeyHubRoutingFallback)
+	if !isFallback && (common.RetryTimes == 0 || retry < common.RetryTimes) {
+		preferredParam := cloneRetryParamAt(param, retry)
+		channel, group, err := cacheGetRandomSatisfiedChannelWithFilter(preferredParam, model.ChannelProviderFilter{
+			ProviderID: providerID, Mode: model.ChannelProviderOnly, StrictExcludedChannels: true,
+		})
+		if err != nil {
+			return nil, group, err
+		}
+		if channel != nil {
+			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingPhase, "preferred")
+			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingFallback, false)
+			return channel, group, nil
+		}
+	}
+
+	if !isFallback {
+		common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingFallback, true)
+		common.SetContextKey(param.Ctx, constant.ContextKeyHubFallbackStartRetry, retry)
+		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, 0)
+		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)
+	}
+	common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingPhase, "platform_fallback")
+	fallbackStart := common.GetContextKeyInt(param.Ctx, constant.ContextKeyHubFallbackStartRetry)
+	phaseRetry := retry - fallbackStart
+	if phaseRetry < 0 {
+		phaseRetry = 0
+	}
+	fallbackParam := cloneRetryParamAt(param, phaseRetry)
+	return cacheGetRandomSatisfiedChannelWithFilter(fallbackParam, model.ChannelProviderFilter{
+		ProviderID: providerID, Mode: model.ChannelProviderExclude, StrictExcludedChannels: true,
+	})
 }
 
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
@@ -80,7 +148,7 @@ func (p *RetryParam) ResetRetryNextTry() {
 //
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
-func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter model.ChannelProviderFilter) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
@@ -115,7 +183,14 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			channel, _ = model.GetRandomSatisfiedChannelWithFilter(
+				autoGroup,
+				param.ModelName,
+				priorityRetry,
+				param.RequestPath,
+				param.ExcludedChannelIDs(),
+				providerFilter,
+			)
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -153,7 +228,14 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannelWithFilter(
+			param.TokenGroup,
+			param.ModelName,
+			param.GetRetry(),
+			param.RequestPath,
+			param.ExcludedChannelIDs(),
+			providerFilter,
+		)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}

@@ -190,16 +190,21 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 	service.WriteRefreshCookie(c, bundle.RefreshToken)
 	setAuthNoStore(c)
 	recordLoginAudit(user, c)
+	data := gin.H{
+		"access_token":      bundle.AccessToken,
+		"token_type":        bundle.TokenType,
+		"access_expires_at": bundle.AccessExpiresAt,
+		"session":           bundle.Session,
+		"user":              buildSelfUserData(currentUser),
+	}
+	if returnOrigin := c.GetString(oauthReturnOriginContextKey); returnOrigin != "" {
+		data["return_origin"] = returnOrigin
+		data["return_path"] = c.GetString(oauthReturnPathContextKey)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
-		"data": gin.H{
-			"access_token":      bundle.AccessToken,
-			"token_type":        bundle.TokenType,
-			"access_expires_at": bundle.AccessExpiresAt,
-			"session":           bundle.Session,
-			"user":              buildSelfUserData(currentUser),
-		},
+		"data":    data,
 	})
 }
 

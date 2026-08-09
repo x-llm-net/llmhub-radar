@@ -11,6 +11,12 @@ type GroupRatioInfo struct {
 	GroupRatio        float64
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
+	BaseGroupRatio    float64
+	SupplyMultiplier  float64
+	HasSupplyPricing  bool
+	SupplyGroupId     int
+	SupplyProviderId  int
+	SupplyOwnerUserId int
 }
 
 type PriceData struct {
@@ -30,6 +36,7 @@ type PriceData struct {
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
 	GroupRatioInfo       GroupRatioInfo
+	QuotaBeforeGroup     float64
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

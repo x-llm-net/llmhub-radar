@@ -1,0 +1,239 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import type {
+  AddChannelRequest,
+  Channel,
+  FetchModelsResponse,
+} from '@/features/channels/types'
+import { api } from '@/lib/api'
+
+import type {
+  HubProviderResponse,
+  HubProviderChannelCreateResponse,
+  HubProviderChannelListParams,
+  HubProviderChannelListResponse,
+  HubProviderChannelResponse,
+  HubProviderChannelProbeResponse,
+  HubSupplyProbeRequestResponse,
+  HubSupplyModelPublicationResponse,
+  HubSupplyModelsPublicationResponse,
+  HubSupplyProbeEndpointMode,
+  HubSupplySettings,
+  ProviderFormValues,
+} from './types'
+
+export async function getProviderSelf(): Promise<HubProviderResponse> {
+  const response = await api.get('/api/hub/provider/self')
+  const result = response.data as HubProviderResponse
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to load provider')
+  }
+  return result
+}
+
+export async function createProvider(
+  values: ProviderFormValues
+): Promise<HubProviderResponse> {
+  const response = await api.post('/api/hub/provider', values)
+  return response.data
+}
+
+export async function updateProvider(
+  values: ProviderFormValues
+): Promise<HubProviderResponse> {
+  const response = await api.put('/api/hub/provider', values)
+  return response.data
+}
+
+export async function getProviderChannels(
+  params: HubProviderChannelListParams = {}
+): Promise<HubProviderChannelListResponse> {
+  const response = await api.get('/api/hub/provider/channels', { params })
+  const result = response.data as HubProviderChannelListResponse
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to load supply channels')
+  }
+  return result
+}
+
+export async function getProviderChannel(
+  channelId: number
+): Promise<HubProviderChannelResponse> {
+  const response = await api.get(`/api/hub/provider/channels/${channelId}`)
+  const result = response.data as HubProviderChannelResponse
+  if (!result.success || !result.data) {
+    throw new Error(result.message || 'Failed to load supply channel')
+  }
+  return result
+}
+
+export async function createProviderChannel(
+  payload: AddChannelRequest,
+  supply: HubSupplySettings
+): Promise<HubProviderChannelCreateResponse> {
+  const response = await api.post('/api/hub/provider/channels', {
+    ...payload,
+    supply,
+  })
+  return response.data
+}
+
+export async function updateProviderChannel(
+  channelId: number,
+  channel: Partial<Channel>,
+  supply: HubSupplySettings
+): Promise<HubProviderChannelResponse> {
+  const response = await api.put(`/api/hub/provider/channels/${channelId}`, {
+    ...channel,
+    supply,
+  })
+  return response.data
+}
+
+export async function deleteProviderChannel(
+  channelId: number
+): Promise<{ success: boolean; message?: string }> {
+  const response = await api.delete(`/api/hub/provider/channels/${channelId}`)
+  return response.data
+}
+
+export async function fetchProviderChannelModels(
+  channelId: number
+): Promise<FetchModelsResponse> {
+  const response = await api.get(
+    `/api/hub/provider/channels/${channelId}/fetch-models`
+  )
+  return response.data
+}
+
+export async function previewProviderChannelModels(data: {
+  base_url: string
+  type: number
+  key?: string
+  channel_id?: number
+  advanced_custom?: string
+  header_override?: string
+  proxy?: string
+}): Promise<FetchModelsResponse> {
+  const response = await api.post(
+    '/api/hub/provider/channels/fetch-models',
+    data
+  )
+  return response.data
+}
+
+export async function getProviderChannelGroups() {
+  const response = await api.get('/api/hub/provider/channels/options/groups')
+  return response.data as {
+    success: boolean
+    message?: string
+    data?: string[]
+  }
+}
+
+export async function getProviderChannelModels() {
+  const response = await api.get('/api/hub/provider/channels/options/models')
+  return response.data as {
+    success: boolean
+    message?: string
+    data?: Array<{ id: string; [key: string]: unknown }>
+  }
+}
+
+export async function getProviderChannelPrefillGroups() {
+  const response = await api.get('/api/hub/provider/channels/options/prefill', {
+    params: { type: 'model' },
+  })
+  return response.data as {
+    success: boolean
+    message?: string
+    data?: Array<{ id: number; name: string; items: string | string[] }>
+  }
+}
+
+export async function requestProviderChannelProbe(
+  channelId: number
+): Promise<HubSupplyProbeRequestResponse> {
+  const response = await api.post(
+    `/api/hub/provider/channels/${channelId}/probe`
+  )
+  return response.data
+}
+
+export async function getProviderChannelProbes(
+  channelId: number
+): Promise<HubProviderChannelProbeResponse> {
+  const response = await api.get(
+    `/api/hub/provider/channels/${channelId}/probes`
+  )
+  const result = response.data as HubProviderChannelProbeResponse
+  if (!result.success || !result.data) {
+    throw new Error(result.message || 'Failed to load detection results')
+  }
+  return result
+}
+
+export async function requestProviderChannelModelProbe(
+  channelId: number,
+  modelName: string
+): Promise<HubSupplyProbeRequestResponse> {
+  const response = await api.post(
+    `/api/hub/provider/channels/${channelId}/probe-model`,
+    { model_name: modelName }
+  )
+  return response.data
+}
+
+export async function updateProviderChannelModelProbeEndpoint(
+  channelId: number,
+  modelName: string,
+  endpointType: HubSupplyProbeEndpointMode
+): Promise<HubSupplyProbeRequestResponse> {
+  const response = await api.put(
+    `/api/hub/provider/channels/${channelId}/probe-model-endpoint`,
+    { model_name: modelName, endpoint_type: endpointType }
+  )
+  return response.data
+}
+
+export async function updateProviderChannelModelPublication(
+  channelId: number,
+  modelName: string,
+  published: boolean
+): Promise<HubSupplyModelPublicationResponse> {
+  const response = await api.put(
+    `/api/hub/provider/channels/${channelId}/model-publication`,
+    { model_name: modelName, published },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function updateProviderChannelModelsPublication(
+  channelId: number,
+  modelNames: string[],
+  published: boolean
+): Promise<HubSupplyModelsPublicationResponse> {
+  const response = await api.put(
+    `/api/hub/provider/channels/${channelId}/model-publication/batch`,
+    { model_names: modelNames, published },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}

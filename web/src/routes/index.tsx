@@ -19,7 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute } from '@tanstack/react-router'
 
 import { Home } from '@/features/home'
+import { ProviderPublicPage } from '@/features/provider-public'
+import { getProviderSlugFromHostname } from '@/lib/provider-domain'
+
+function PublicRootPage() {
+  const providerSlug = getProviderSlugFromHostname()
+  if (providerSlug) {
+    return <ProviderPublicPage providerSlug={providerSlug} />
+  }
+  return <Home />
+}
 
 export const Route = createFileRoute('/')({
-  component: Home,
+  component: PublicRootPage,
 })

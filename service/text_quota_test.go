@@ -75,6 +75,41 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	require.Equal(t, 1488, chatSummary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryAppliesSupplyPricingForStreamAndNonStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
+	}
+
+	for _, isStream := range []bool{false, true} {
+		t.Run(map[bool]string{false: "non-stream", true: "stream"}[isStream], func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			relayInfo := &relaycommon.RelayInfo{
+				IsStream:        isStream,
+				OriginModelName: "gpt-supply-test",
+				PriceData: hosttypes.PriceData{
+					ModelRatio:      1,
+					CompletionRatio: 1,
+					GroupRatioInfo: hosttypes.GroupRatioInfo{
+						GroupRatio:       0.6,
+						BaseGroupRatio:   1.5,
+						SupplyMultiplier: 0.4,
+						HasSupplyPricing: true,
+					},
+				},
+				StartTime: time.Now(),
+			}
+
+			summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+			assert.InDelta(t, 0.6, summary.GroupRatio, 0.000001)
+			assert.Equal(t, 90, summary.Quota)
+		})
+	}
+}
+
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

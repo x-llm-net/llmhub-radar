@@ -33,6 +33,13 @@ import type {
   AffiliateTransferResponse,
   BillingHistoryResponse,
   CompleteOrderRequest,
+  HubProviderSettlementSummary,
+  HubProviderEarning,
+  HubProviderWithdrawal,
+  HubProviderPayoutAccount,
+  HubProviderPayoutAccountDetails,
+  HubProviderPayoutMethod,
+  PagedApiData,
   CreemPaymentRequest,
   CreemPaymentResponse,
   WaffoPaymentRequest,
@@ -51,6 +58,12 @@ import type {
 export function isApiSuccess(response: ApiResponse): boolean {
   return response.success === true || response.message === 'success'
 }
+
+export const providerEarningSummaryQueryKey = [
+  'hub-provider',
+  'earnings',
+  'summary',
+] as const
 
 /**
  * Get topup configuration info
@@ -244,5 +257,106 @@ export async function completeOrder(
   request: CompleteOrderRequest
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/topup/complete', request)
+  return res.data
+}
+
+export async function getProviderEarningSummary(): Promise<
+  ApiResponse<HubProviderSettlementSummary>
+> {
+  const res = await api.get('/api/hub/provider/earnings/summary')
+  return res.data
+}
+
+export async function getProviderEarnings(
+  page: number,
+  pageSize: number
+): Promise<ApiResponse<PagedApiData<HubProviderEarning>>> {
+  const res = await api.get('/api/hub/provider/earnings', {
+    params: { p: page, page_size: pageSize },
+  })
+  return res.data
+}
+
+export async function getProviderWithdrawals(
+  page: number,
+  pageSize: number
+): Promise<ApiResponse<PagedApiData<HubProviderWithdrawal>>> {
+  const res = await api.get('/api/hub/provider/withdrawals', {
+    params: { p: page, page_size: pageSize },
+  })
+  return res.data
+}
+
+export async function getProviderPayoutAccounts(): Promise<
+  ApiResponse<HubProviderPayoutAccount[]>
+> {
+  const res = await api.get('/api/hub/provider/payout-accounts')
+  return res.data
+}
+
+export async function createProviderPayoutAccount(payload: {
+  method: HubProviderPayoutMethod
+  details: HubProviderPayoutAccountDetails
+  qr_code_asset_id: number
+  is_default: boolean
+}): Promise<ApiResponse<HubProviderPayoutAccount>> {
+  const res = await api.post('/api/hub/provider/payout-accounts', payload, {
+    skipBusinessError: true,
+  })
+  return res.data
+}
+
+export async function updateProviderPayoutAccount(
+  id: number,
+  payload: {
+    method: HubProviderPayoutMethod
+    details: HubProviderPayoutAccountDetails
+    qr_code_asset_id: number
+    is_default: boolean
+  }
+): Promise<ApiResponse<HubProviderPayoutAccount>> {
+  const res = await api.put(
+    `/api/hub/provider/payout-accounts/${id}`,
+    payload,
+    { skipBusinessError: true }
+  )
+  return res.data
+}
+
+export async function deleteProviderPayoutAccount(
+  id: number
+): Promise<ApiResponse> {
+  const res = await api.delete(`/api/hub/provider/payout-accounts/${id}`, {
+    skipBusinessError: true,
+  })
+  return res.data
+}
+
+export async function uploadProviderPayoutQRCode(
+  file: File
+): Promise<ApiResponse<{ id: number; content_type: string }>> {
+  const payload = new FormData()
+  payload.append('file', file)
+  const res = await api.post('/api/hub/provider/payout-assets', payload, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    skipBusinessError: true,
+  })
+  return res.data
+}
+
+export async function getProviderPayoutAssetBlob(id: number): Promise<Blob> {
+  const res = await api.get(`/api/hub/provider/payout-assets/${id}`, {
+    responseType: 'blob',
+  })
+  return res.data
+}
+
+export async function createProviderWithdrawal(payload: {
+  amount_quota: number
+  payout_account_id: number
+}): Promise<ApiResponse<HubProviderWithdrawal>> {
+  const res = await api.post('/api/hub/provider/withdrawals', payload, {
+    skipBusinessError: true,
+  })
   return res.data
 }

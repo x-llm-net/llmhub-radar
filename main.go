@@ -99,6 +99,11 @@ func main() {
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
+	} else if err := model.RefreshHubSupplyPricingCache(); err != nil {
+		common.FatalLog("failed to initialize hub provider routing cache: " + err.Error())
+		return
+	} else {
+		go model.SyncChannelCache(common.SyncFrequency)
 	}
 
 	// Warm pricing after channel cache initialization so Advanced Custom

@@ -31,6 +31,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/about", controller.GetAbout)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
+		apiRouter.GET("/hub/public/providers/:slug", controller.GetPublicHubProvider)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
@@ -54,6 +55,7 @@ func SetApiRouter(router *gin.Engine) {
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
+		apiRouter.GET("/hub/public/home", controller.GetPublicHubHome)
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
@@ -67,7 +69,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		userRoute := apiRouter.Group("/user")
 		{
-			userRoute.POST("/auth/refresh", middleware.SessionCookieOriginGuard(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.RefreshAuth)
+			userRoute.POST("/auth/refresh", middleware.SessionCookieOriginGuard(), middleware.AuthRefreshRateLimit(), middleware.DisableCache(), controller.RefreshAuth)
 			userRoute.POST("/auth/logout", middleware.SessionCookieOriginGuard(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AuthLogout)
 			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Register)
 			userRoute.POST("/login", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Login)
@@ -150,6 +152,51 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		hubProviderRoute := apiRouter.Group("/hub/provider")
+		hubProviderRoute.Use(middleware.UserAuth())
+		{
+			hubProviderRoute.GET("/self", controller.GetHubProviderSelf)
+			hubProviderRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProvider)
+			hubProviderRoute.PUT("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderProfile)
+			hubProviderRoute.GET("/channels", controller.GetHubProviderChannels)
+			hubProviderRoute.GET("/channels/options/groups", controller.GetHubProviderChannelGroups)
+			hubProviderRoute.GET("/channels/options/models", controller.ChannelListModels)
+			hubProviderRoute.GET("/channels/options/prefill", controller.GetPrefillGroups)
+			hubProviderRoute.POST("/channels/fetch-models", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.PreviewHubProviderChannelModels)
+			hubProviderRoute.POST("/channels", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderChannel)
+			hubProviderRoute.GET("/channels/:id", controller.GetHubProviderChannel)
+			hubProviderRoute.PUT("/channels/:id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannel)
+			hubProviderRoute.DELETE("/channels/:id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.DeleteHubProviderChannel)
+			hubProviderRoute.GET("/channels/:id/fetch-models", middleware.DisableCache(), controller.FetchHubProviderChannelModels)
+			hubProviderRoute.GET("/channels/:id/probes", controller.GetHubProviderChannelProbes)
+			hubProviderRoute.POST("/channels/:id/probe", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.RequestHubProviderChannelProbe)
+			hubProviderRoute.POST("/channels/:id/probe-model", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.RequestHubProviderChannelModelProbe)
+			hubProviderRoute.PUT("/channels/:id/probe-model-endpoint", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelProbeEndpoint)
+			hubProviderRoute.PUT("/channels/:id/model-publication", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelPublication)
+			hubProviderRoute.PUT("/channels/:id/model-publication/batch", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelsPublication)
+			hubProviderRoute.GET("/earnings/summary", controller.GetHubProviderEarningSummary)
+			hubProviderRoute.GET("/earnings", controller.GetHubProviderEarnings)
+			hubProviderRoute.GET("/payout-accounts", controller.GetHubProviderPayoutAccounts)
+			hubProviderRoute.POST("/payout-accounts", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderPayoutAccount)
+			hubProviderRoute.PUT("/payout-accounts/:account_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderPayoutAccount)
+			hubProviderRoute.DELETE("/payout-accounts/:account_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.DeleteHubProviderPayoutAccount)
+			hubProviderRoute.POST("/payout-assets", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UploadHubProviderPayoutQRCode)
+			hubProviderRoute.GET("/payout-assets/:asset_id", middleware.DisableCache(), controller.GetHubProviderPayoutAsset)
+			hubProviderRoute.GET("/withdrawals", controller.GetHubProviderWithdrawals)
+			hubProviderRoute.POST("/withdrawals", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderWithdrawal)
+		}
+		hubProviderAdminRoute := apiRouter.Group("/hub/admin/providers")
+		hubProviderAdminRoute.Use(middleware.AdminAuth())
+		{
+			hubProviderAdminRoute.GET("", controller.AdminListHubProviders)
+			hubProviderAdminRoute.GET("/withdrawals", controller.AdminGetHubProviderWithdrawals)
+			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)
+			hubProviderAdminRoute.GET("/:id/earnings/summary", controller.AdminGetHubProviderEarningSummary)
+			hubProviderAdminRoute.GET("/:id/earnings", controller.AdminGetHubProviderEarnings)
+			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)
+			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

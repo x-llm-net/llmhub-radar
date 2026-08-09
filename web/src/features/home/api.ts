@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import type { HomePageContentResponse } from './types'
+import type { HomePageContentResponse, PublicHomeResponse } from './types'
 
 // ============================================================================
 // Home Page APIs
@@ -31,4 +31,15 @@ import type { HomePageContentResponse } from './types'
 export async function getHomePageContent(): Promise<HomePageContentResponse> {
   const res = await api.get('/api/home_page_content')
   return res.data
+}
+
+export async function getPublicHome(): Promise<PublicHomeResponse> {
+  const response = await api.get('/api/hub/public/home', {
+    skipErrorHandler: true,
+  })
+  const result = response.data as PublicHomeResponse
+  if (!result.success || !result.data) {
+    throw new Error(result.message || 'Failed to load public rankings')
+  }
+  return result
 }

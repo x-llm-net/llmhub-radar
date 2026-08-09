@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  Building2,
   CreditCard,
   FileText,
   FlaskConical,
@@ -29,6 +30,7 @@ import {
   Radio,
   ServerCog,
   Settings,
+  Store,
   Ticket,
   User,
   Users,
@@ -36,8 +38,10 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
+import type { SidebarData } from '@/components/layout/types'
+import { useProvider } from '@/features/provider/hooks/use-provider'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -47,6 +51,14 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const isAuthenticated = useAuthStore((state) => Boolean(state.auth.user))
+  const providerQuery = useProvider({ enabled: isAuthenticated })
+  const providerUrl = providerQuery.provider
+    ? '/provider'
+    : '/provider/onboarding'
+  const providerTitle = providerQuery.provider
+    ? t('Channel Supply')
+    : t('Become a Provider')
 
   return {
     navGroups: [
@@ -104,6 +116,11 @@ export function useSidebarData(): SidebarData {
         title: t('Personal'),
         items: [
           {
+            title: providerTitle,
+            url: providerUrl,
+            icon: Store,
+          },
+          {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
@@ -119,6 +136,11 @@ export function useSidebarData(): SidebarData {
         id: 'admin',
         title: t('Admin'),
         items: [
+          {
+            title: t('Providers'),
+            url: '/providers',
+            icon: Building2,
+          },
           {
             title: t('Channels'),
             url: '/channels',

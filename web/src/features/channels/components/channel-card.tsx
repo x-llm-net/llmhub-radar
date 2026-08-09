@@ -69,6 +69,7 @@ function ChannelCardComponent({
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
+  const ownershipCell = renderCell('ownership')
   const nameCell = renderCell('name')
   const statusCell = renderCell('status')
   const actionsCell = renderCell('actions')
@@ -101,6 +102,9 @@ function ChannelCardComponent({
               <span className='shrink-0'>{selectCell}</span>
             )}
             <div className='min-w-0 overflow-hidden'>{typeCell}</div>
+            {!isTagRow && (
+              <div className='min-w-0 overflow-hidden'>{ownershipCell}</div>
+            )}
           </div>
           <div className='flex shrink-0 items-center gap-1.5'>
             {showStatusBadge && statusCell}

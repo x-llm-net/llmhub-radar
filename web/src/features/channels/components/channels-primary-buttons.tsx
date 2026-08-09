@@ -160,7 +160,9 @@ export function ChannelsPrimaryButtons() {
               disabled={!canEditSensitive}
             >
               <Plus className='h-4 w-4' />
-              <span className='max-sm:hidden'>{t('Create Channel')}</span>
+              <span className='max-sm:hidden'>
+                {t('Create Platform Channel')}
+              </span>
               <span className='sm:hidden'>{t('Create')}</span>
             </Button>
           </TooltipTrigger>

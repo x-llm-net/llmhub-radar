@@ -44,13 +44,26 @@ func NormalizeOrigin(raw string) (string, error) {
 func InitSessionCookieSettings() error {
 	secureRaw := strings.TrimSpace(os.Getenv("SESSION_COOKIE_SECURE"))
 	trustedURLsRaw := strings.TrimSpace(os.Getenv("SESSION_COOKIE_TRUSTED_URL"))
+	domainRaw := strings.ToLower(strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN")))
 
 	SessionCookieSecure = false
 	SessionCookieTrustedURLs = nil
+	SessionCookieDomain = ""
+
+	if domainRaw != "" {
+		domainRaw = strings.TrimPrefix(domainRaw, ".")
+		if domainRaw == "" || strings.ContainsAny(domainRaw, "/:\\*") || net.ParseIP(domainRaw) != nil {
+			return fmt.Errorf("SESSION_COOKIE_DOMAIN must be a DNS domain without scheme, port, path, or wildcard")
+		}
+		SessionCookieDomain = domainRaw
+	}
 
 	if secureRaw == "" || strings.EqualFold(secureRaw, "false") {
 		if trustedURLsRaw != "" {
 			return fmt.Errorf("SESSION_COOKIE_TRUSTED_URL requires SESSION_COOKIE_SECURE=true")
+		}
+		if SessionCookieDomain != "" && SessionCookieDomain != "localhost" {
+			return fmt.Errorf("SESSION_COOKIE_DOMAIN requires SESSION_COOKIE_SECURE=true outside localhost")
 		}
 		return nil
 	}

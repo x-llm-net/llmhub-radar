@@ -72,6 +72,8 @@ export interface AuthBundle {
   access_expires_at: number
   user: AuthUser
   session: LoginSession
+  return_origin?: string
+  return_path?: string
 }
 
 export type AuthBootstrapState = 'idle' | 'checking' | 'complete'

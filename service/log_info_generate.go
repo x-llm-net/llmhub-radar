@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -69,6 +70,20 @@ func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other
 	}
 }
 
+func appendHubRoutingInfo(ctx *gin.Context, other map[string]interface{}) {
+	if ctx == nil || other == nil {
+		return
+	}
+	providerID := common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId)
+	if providerID <= 0 {
+		return
+	}
+	other["hub_requested_provider_id"] = providerID
+	other["hub_requested_provider_slug"] = common.GetContextKeyString(ctx, constant.ContextKeyHubRequestedProviderSlug)
+	other["hub_routing_phase"] = common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase)
+	other["hub_provider_fallback"] = common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback)
+}
+
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
@@ -110,6 +125,8 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)
+	appendHubRoutingInfo(ctx, other)
+	AttachHubRelayLogInfo(ctx, relayInfo, other, true)
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)
 	appendBillingInfo(relayInfo, other)
@@ -155,6 +172,16 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if relayInfo == nil || other == nil {
 		return
+	}
+	groupRatioInfo := relayInfo.PriceData.GroupRatioInfo
+	if groupRatioInfo.HasSupplyPricing {
+		other["group_ratio"] = groupRatioInfo.BaseGroupRatio
+		other["supply_multiplier"] = groupRatioInfo.SupplyMultiplier
+		other["billing_ratio"] = groupRatioInfo.GroupRatio
+		other["hub_supply_group_id"] = groupRatioInfo.SupplyGroupId
+		other["hub_provider_id"] = groupRatioInfo.SupplyProviderId
+		other["platform_fee_basis_points"] = model.HubProviderPlatformFeeBasisPoints
+		other["provider_share_basis_points"] = 10000 - model.HubProviderPlatformFeeBasisPoints
 	}
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {
@@ -290,14 +317,17 @@ func GenerateClaudeOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	return info
 }
 
-func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData hosttypes.PriceData) map[string]interface{} {
+func GenerateMjOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, priceData hosttypes.PriceData) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_price"] = priceData.ModelPrice
 	other["group_ratio"] = priceData.GroupRatioInfo.GroupRatio
 	if priceData.GroupRatioInfo.HasSpecialRatio {
 		other["user_group_ratio"] = priceData.GroupRatioInfo.GroupSpecialRatio
 	}
-	appendRequestPath(nil, relayInfo, other)
+	appendRequestPath(ctx, relayInfo, other)
+	appendHubRoutingInfo(ctx, other)
+	AttachHubRelayLogInfo(ctx, relayInfo, other, true)
+	appendBillingInfo(relayInfo, other)
 	return other
 }
 

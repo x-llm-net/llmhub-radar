@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -36,11 +18,18 @@ import {
 } from '../lib'
 import type { Channel } from '../types'
 
+export type ChannelMutationTransport = {
+  create: typeof createChannel
+  update: typeof updateChannel
+}
+
 type UseChannelMutateFormParams = {
   currentRow?: Channel | null
   isEditing: boolean
   isMultiKeyChannel: boolean
   onSuccess: () => void
+  transport?: ChannelMutationTransport
+  canEditSensitiveOverride?: boolean
 }
 
 const SENSITIVE_UPDATE_FIELDS = [
@@ -83,11 +72,17 @@ function getErrorMessage(error: unknown): string | undefined {
 export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   const { t } = useTranslation()
   const currentUser = useAuthStore((s) => s.auth.user)
-  const canEditSensitive = hasPermission(
-    currentUser,
-    ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
-  )
+  const canEditSensitive =
+    props.canEditSensitiveOverride ??
+    hasPermission(
+      currentUser,
+      ADMIN_PERMISSION_RESOURCES.CHANNEL,
+      ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+    )
+  const transport = props.transport ?? {
+    create: createChannel,
+    update: updateChannel,
+  }
 
   return useMutation({
     mutationFn: async (data: ChannelFormValues): Promise<string> => {
@@ -115,7 +110,7 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
               }
             : payload
 
-        const response = await updateChannel(
+        const response = await transport.update(
           props.currentRow.id,
           payloadWithKeyMode
         )
@@ -126,7 +121,7 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
       }
 
       const payload = transformFormDataToCreatePayload(data)
-      const response = await createChannel(payload)
+      const response = await transport.create(payload)
       if (!response.success) {
         throw new Error(response.message || t(ERROR_MESSAGES.CREATE_FAILED))
       }

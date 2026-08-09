@@ -445,6 +445,13 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'subscription.plan_create': 'Created a subscription plan',
   'subscription.plan_update': 'Updated a subscription plan',
   'subscription.bind': 'Bound a subscription',
+  // Provider settlements
+  'hub_provider.withdrawal_approve':
+    'Approved provider withdrawal {{withdrawal_id}}',
+  'hub_provider.withdrawal_paid':
+    'Confirmed payout for provider withdrawal {{withdrawal_id}}',
+  'hub_provider.withdrawal_reject':
+    'Rejected provider withdrawal {{withdrawal_id}}',
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',

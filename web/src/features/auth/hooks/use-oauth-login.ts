@@ -49,6 +49,16 @@ export function useOAuthLogin(
   const [githubButtonDisabled, setGithubButtonDisabled] = useState(false)
   const githubTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const oauthCallbackOrigin = (() => {
+    const configured = status?.server_address ?? status?.data?.server_address
+    if (typeof configured !== 'string') return window.location.origin
+    try {
+      return new URL(configured).origin
+    } catch {
+      return window.location.origin
+    }
+  })()
+
   useEffect(() => {
     setGithubButtonText(t('Continue with GitHub'))
 
@@ -89,7 +99,7 @@ export function useOAuthLogin(
 
     try {
       await resetSession()
-      const state = await createOAuthFlow('github', 'login')
+      const state = await createOAuthFlow('github', 'login', redirectTo)
 
       const url = buildGitHubOAuthUrl(status.github_client_id, state)
       window.open(url, '_self')
@@ -110,9 +120,13 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow('discord', 'login')
+      const state = await createOAuthFlow('discord', 'login', redirectTo)
 
-      const url = buildDiscordOAuthUrl(status.discord_client_id, state)
+      const url = buildDiscordOAuthUrl(
+        status.discord_client_id,
+        state,
+        oauthCallbackOrigin
+      )
       window.open(url, '_self')
     } catch {
       toast.error(t('Failed to start Discord login'))
@@ -127,12 +141,13 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow('oidc', 'login')
+      const state = await createOAuthFlow('oidc', 'login', redirectTo)
 
       const url = buildOIDCOAuthUrl(
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
-        state
+        state,
+        oauthCallbackOrigin
       )
       window.open(url, '_self')
     } catch {
@@ -148,7 +163,7 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow('linuxdo', 'login')
+      const state = await createOAuthFlow('linuxdo', 'login', redirectTo)
 
       const url = buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)
       window.open(url, '_self')
@@ -209,9 +224,9 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow(provider.slug, 'login')
+      const state = await createOAuthFlow(provider.slug, 'login', redirectTo)
 
-      const redirectUri = `${window.location.origin}/oauth/${provider.slug}`
+      const redirectUri = `${oauthCallbackOrigin}/oauth/${provider.slug}`
       const url = new URL(provider.authorization_endpoint)
       url.searchParams.set('client_id', provider.client_id)
       url.searchParams.set('redirect_uri', redirectUri)

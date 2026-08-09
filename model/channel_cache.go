@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -24,6 +24,9 @@ var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
+	if err := RefreshHubSupplyPricingCache(); err != nil {
+		common.SysError("failed to refresh hub supply pricing cache: " + err.Error())
+	}
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		return
@@ -41,29 +44,19 @@ func InitChannelCache() {
 		}
 	}
 	var abilities []*Ability
-	DB.Find(&abilities)
-	groups := make(map[string]bool)
-	for _, ability := range abilities {
-		groups[ability.Group] = true
-	}
+	DB.Where("enabled = ?", true).Find(&abilities)
 	newGroup2model2channels := make(map[string]map[string][]int)
-	for group := range groups {
-		newGroup2model2channels[group] = make(map[string][]int)
-	}
-	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
+	for _, ability := range abilities {
+		channel, ok := newChannelId2channel[ability.ChannelId]
+		if !ok || channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
-		groups := strings.Split(channel.Group, ",")
-		for _, group := range groups {
-			models := strings.Split(channel.Models, ",")
-			for _, model := range models {
-				if _, ok := newGroup2model2channels[group][model]; !ok {
-					newGroup2model2channels[group][model] = make([]int, 0)
-				}
-				newGroup2model2channels[group][model] = append(newGroup2model2channels[group][model], channel.Id)
-			}
+		if _, ok := newGroup2model2channels[ability.Group]; !ok {
+			newGroup2model2channels[ability.Group] = make(map[string][]int)
 		}
+		newGroup2model2channels[ability.Group][ability.Model] = append(
+			newGroup2model2channels[ability.Group][ability.Model], ability.ChannelId,
+		)
 	}
 
 	// sort by priority
@@ -111,10 +104,14 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}) (*Channel, error) {
+	return GetRandomSatisfiedChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, ChannelProviderFilter{})
+}
+
+func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, providerFilter)
 	}
 
 	channelSyncLock.RLock()
@@ -128,7 +125,36 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
 	}
+	channels = filterChannelIDsByProvider(channels, providerFilter)
 
+	if len(channels) == 0 {
+		return nil, nil
+	}
+	if hub_routing_setting.IsServiceTier(group) {
+		candidates := make([]hubTierChannelCandidate, 0, len(channels))
+		for _, channelID := range channels {
+			channel, ok := channelsIDM[channelID]
+			if !ok || channel.Status != common.ChannelStatusEnabled {
+				continue
+			}
+			providerID, eligible := hubTierProviderForChannel(channelID, providerFilter)
+			if !eligible {
+				continue
+			}
+			candidates = append(candidates, hubTierChannelCandidate{
+				ChannelID: channelID,
+				Priority:  channel.GetPriority(),
+				Weight:    channel.GetWeight(),
+				Provider:  providerID,
+			})
+		}
+		channelID := selectHubTierChannel(candidates, excludedChannelIDs)
+		if channelID == 0 {
+			return nil, nil
+		}
+		return channelsIDM[channelID], nil
+	}
+	channels = preferUntriedChannelIDs(channels, excludedChannelIDs, providerFilter.StrictExcludedChannels)
 	if len(channels) == 0 {
 		return nil, nil
 	}
@@ -206,6 +232,38 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+func preferUntriedChannelIDs(channelIDs []int, excludedChannelIDs map[int]struct{}, strict bool) []int {
+	if len(channelIDs) == 0 || len(excludedChannelIDs) == 0 {
+		return channelIDs
+	}
+	filtered := make([]int, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		if _, excluded := excludedChannelIDs[channelID]; !excluded {
+			filtered = append(filtered, channelID)
+		}
+	}
+	if len(filtered) == 0 {
+		if strict {
+			return nil
+		}
+		return channelIDs
+	}
+	return filtered
+}
+
+func filterChannelIDsByProvider(channelIDs []int, providerFilter ChannelProviderFilter) []int {
+	if len(channelIDs) == 0 || providerFilter.Mode == ChannelProviderAny || providerFilter.ProviderID <= 0 {
+		return channelIDs
+	}
+	filtered := make([]int, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		if ChannelMatchesProviderFilter(channelID, providerFilter) {
+			filtered = append(filtered, channelID)
+		}
+	}
+	return filtered
 }
 
 // filterChannelsByRequestPathAndModel restricts candidates by request path and

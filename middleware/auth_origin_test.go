@@ -133,3 +133,31 @@ func TestSessionCookieOriginGuardDoesNotTrustForwardedProtoFromClient(t *testing
 
 	assert.Equal(t, http.StatusForbidden, response.Code)
 }
+
+func TestSessionCookieOriginGuardAcceptsForwardedProtoFromTrustedProxy(t *testing.T) {
+	previousSecure := common.SessionCookieSecure
+	previousTrustedURLs := common.SessionCookieTrustedURLs
+	common.SessionCookieSecure = true
+	common.SessionCookieTrustedURLs = nil
+	t.Setenv("TRUSTED_PROXIES", "127.0.0.1")
+	t.Cleanup(func() {
+		common.SessionCookieSecure = previousSecure
+		common.SessionCookieTrustedURLs = previousTrustedURLs
+	})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	assert.NoError(t, ConfigureTrustedProxies(router))
+	router.POST("/api/user/auth/refresh", SessionCookieOriginGuard(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodPost, "http://llm-routers.llm-hub.store/api/user/auth/refresh", nil)
+	request.Host = "llm-routers.llm-hub.store"
+	request.RemoteAddr = "127.0.0.1:43210"
+	request.Header.Set("Origin", "https://llm-routers.llm-hub.store")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusNoContent, response.Code)
+}

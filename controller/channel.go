@@ -81,14 +81,40 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	return query
 }
 
-func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
+func buildChannelListQuery(group string, statusFilter int, typeFilter int, ownership string) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
+	query = model.ApplyHubChannelOwnershipFilter(query, ownership)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
 	}
 	return query
+}
+
+func attachHubChannelOwnership(channels []*model.Channel) error {
+	channelIDs := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		if channel != nil {
+			channelIDs = append(channelIDs, channel.Id)
+		}
+	}
+	ownershipByChannel, err := model.GetHubChannelProviderOwnership(channelIDs)
+	if err != nil {
+		return err
+	}
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		channel.Ownership = "platform"
+		if ownership, ok := ownershipByChannel[channel.Id]; ok {
+			channel.Ownership = "provider"
+			channel.HubProviderId = ownership.ProviderId
+			channel.HubProviderName = ownership.ProviderName
+		}
+	}
+	return nil
 }
 
 func GetChannelOps(c *gin.Context) {
@@ -103,6 +129,7 @@ func GetAllChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	ownership := c.Query("ownership")
 	groupFilter := model.NormalizeChannelGroupFilter(c.Query("group"))
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
@@ -119,13 +146,13 @@ func GetAllChannels(c *gin.Context) {
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter))
+		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -136,7 +163,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -147,13 +174,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -168,8 +195,12 @@ func GetAllChannels(c *gin.Context) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
+	if err := attachHubChannelOwnership(channelData); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
+	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, ownership)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -281,9 +312,10 @@ func SearchChannels(c *gin.Context) {
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	ownership := c.Query("ownership")
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
-		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
+		tags, err := model.SearchTags(keyword, group, modelKeyword, ownership, idSort)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -294,7 +326,7 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1).Where("tag = ?", *tag)).
+				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1, ownership).Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -308,7 +340,7 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, sortOptions)
+		channels, err := model.SearchChannels(keyword, group, modelKeyword, ownership, idSort, sortOptions)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -381,6 +413,10 @@ func SearchChannels(c *gin.Context) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
+	if err := attachHubChannelOwnership(pagedData); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -407,6 +443,10 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
+		if err := attachHubChannelOwnership([]*model.Channel{channel}); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -414,6 +454,15 @@ func GetChannel(c *gin.Context) {
 		"data":    channel,
 	})
 	return
+}
+
+func GetChannelOwnershipOptions(c *gin.Context) {
+	options, err := model.GetHubChannelOwnershipOptions()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, options)
 }
 
 // GetChannelKey 获取渠道密钥（需要通过安全验证中间件）
@@ -611,90 +660,18 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 
 func AddChannel(c *gin.Context) {
 	addChannelRequest := AddChannelRequest{}
-	err := c.ShouldBindJSON(&addChannelRequest)
-	if err != nil {
+	if err := c.ShouldBindJSON(&addChannelRequest); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 
-	// 使用统一的校验函数
-	if err := validateChannel(addChannelRequest.Channel, true); err != nil {
+	channels, err := prepareChannelsForCreate(&addChannelRequest)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": err.Error(),
 		})
 		return
-	}
-
-	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
-	keys := make([]string, 0)
-	switch addChannelRequest.Mode {
-	case "multi_to_single":
-		addChannelRequest.Channel.ChannelInfo.IsMultiKey = true
-		addChannelRequest.Channel.ChannelInfo.MultiKeyMode = addChannelRequest.MultiKeyMode
-		if addChannelRequest.Channel.Type == constant.ChannelTypeVertexAi && addChannelRequest.Channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
-			array, err := getVertexArrayKeys(addChannelRequest.Channel.Key)
-			if err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
-			addChannelRequest.Channel.ChannelInfo.MultiKeySize = len(array)
-			addChannelRequest.Channel.Key = strings.Join(array, "\n")
-		} else {
-			cleanKeys := make([]string, 0)
-			for _, key := range strings.Split(addChannelRequest.Channel.Key, "\n") {
-				if key == "" {
-					continue
-				}
-				key = strings.TrimSpace(key)
-				cleanKeys = append(cleanKeys, key)
-			}
-			addChannelRequest.Channel.ChannelInfo.MultiKeySize = len(cleanKeys)
-			addChannelRequest.Channel.Key = strings.Join(cleanKeys, "\n")
-		}
-		keys = []string{addChannelRequest.Channel.Key}
-	case "batch":
-		if addChannelRequest.Channel.Type == constant.ChannelTypeVertexAi && addChannelRequest.Channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
-			// multi json
-			keys, err = getVertexArrayKeys(addChannelRequest.Channel.Key)
-			if err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
-		} else {
-			keys = strings.Split(addChannelRequest.Channel.Key, "\n")
-		}
-	case "single":
-		keys = []string{addChannelRequest.Channel.Key}
-	default:
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "不支持的添加模式",
-		})
-		return
-	}
-
-	channels := make([]model.Channel, 0, len(keys))
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		localChannel := addChannelRequest.Channel
-		localChannel.Key = key
-		if addChannelRequest.BatchAddSetKeyPrefix2Name && len(keys) > 1 {
-			keyPrefix := localChannel.Key
-			if len(localChannel.Key) > 8 {
-				keyPrefix = localChannel.Key[:8]
-			}
-			localChannel.Name = fmt.Sprintf("%s %s", localChannel.Name, keyPrefix)
-		}
-		channels = append(channels, *localChannel)
 	}
 	err = model.BatchInsertChannels(channels)
 	if err != nil {
@@ -710,7 +687,81 @@ func AddChannel(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
-	return
+}
+
+func prepareChannelsForCreate(addChannelRequest *AddChannelRequest) ([]model.Channel, error) {
+	if addChannelRequest == nil || addChannelRequest.Channel == nil {
+		return nil, fmt.Errorf("channel cannot be empty")
+	}
+	if err := validateChannel(addChannelRequest.Channel, true); err != nil {
+		return nil, err
+	}
+
+	baseChannel := *addChannelRequest.Channel
+	baseChannel.CreatedTime = common.GetTimestamp()
+	keys := make([]string, 0)
+	switch addChannelRequest.Mode {
+	case "multi_to_single":
+		baseChannel.ChannelInfo.IsMultiKey = true
+		baseChannel.ChannelInfo.MultiKeyMode = addChannelRequest.MultiKeyMode
+		if baseChannel.Type == constant.ChannelTypeVertexAi && baseChannel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
+			array, err := getVertexArrayKeys(baseChannel.Key)
+			if err != nil {
+				return nil, err
+			}
+			baseChannel.ChannelInfo.MultiKeySize = len(array)
+			baseChannel.Key = strings.Join(array, "\n")
+		} else {
+			cleanKeys := make([]string, 0)
+			for _, key := range strings.Split(baseChannel.Key, "\n") {
+				if key == "" {
+					continue
+				}
+				key = strings.TrimSpace(key)
+				cleanKeys = append(cleanKeys, key)
+			}
+			baseChannel.ChannelInfo.MultiKeySize = len(cleanKeys)
+			baseChannel.Key = strings.Join(cleanKeys, "\n")
+		}
+		keys = []string{baseChannel.Key}
+	case "batch":
+		if baseChannel.Type == constant.ChannelTypeVertexAi && baseChannel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
+			// multi json
+			var err error
+			keys, err = getVertexArrayKeys(baseChannel.Key)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			keys = strings.Split(baseChannel.Key, "\n")
+		}
+	case "single":
+		keys = []string{baseChannel.Key}
+	default:
+		return nil, fmt.Errorf("不支持的添加模式")
+	}
+
+	channels := make([]model.Channel, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		localChannel := baseChannel
+		localChannel.Key = key
+		if addChannelRequest.BatchAddSetKeyPrefix2Name && len(keys) > 1 {
+			keyPrefix := localChannel.Key
+			if len(localChannel.Key) > 8 {
+				keyPrefix = localChannel.Key[:8]
+			}
+			localChannel.Name = fmt.Sprintf("%s %s", baseChannel.Name, keyPrefix)
+		}
+		channels = append(channels, localChannel)
+	}
+	if len(channels) == 0 {
+		return nil, fmt.Errorf("channel key cannot be empty")
+	}
+	return channels, nil
 }
 
 func DeleteChannel(c *gin.Context) {
@@ -933,6 +984,131 @@ type PatchChannel struct {
 	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
 }
 
+type channelUpdatePolicy func(channel *model.Channel, origin *model.Channel)
+
+type channelUpdatePreparation struct {
+	originProxy  string
+	proxyChanged bool
+}
+
+func prepareChannelUpdate(
+	channel *PatchChannel,
+	origin *model.Channel,
+	requestData map[string]any,
+	policy channelUpdatePolicy,
+) (*channelUpdatePreparation, error) {
+	if channel == nil || origin == nil {
+		return nil, fmt.Errorf("channel cannot be empty")
+	}
+
+	clearChannelReadOnlyFields(channel, requestData)
+	channel.ChannelInfo = origin.ChannelInfo
+	if err := applyMultiKeyChannelUpdate(channel, origin); err != nil {
+		return nil, err
+	}
+	if policy != nil {
+		policy(&channel.Channel, origin)
+	}
+	if err := validateChannel(&channel.Channel, false); err != nil {
+		return nil, err
+	}
+
+	originProxy := origin.GetSetting().Proxy
+	proxyChanged := false
+	if _, settingProvided := requestData["setting"]; settingProvided {
+		newProxy, _ := service.NormalizeProxyURL(channel.GetSetting().Proxy)
+		normalizedOriginProxy, originProxyErr := service.NormalizeProxyURL(originProxy)
+		proxyChanged = originProxyErr != nil || normalizedOriginProxy != newProxy
+	}
+	return &channelUpdatePreparation{
+		originProxy:  originProxy,
+		proxyChanged: proxyChanged,
+	}, nil
+}
+
+func (preparation *channelUpdatePreparation) invalidateProxyCache() {
+	if preparation != nil && preparation.proxyChanged {
+		service.InvalidateProxyClient(preparation.originProxy)
+	}
+}
+
+func applyMultiKeyChannelUpdate(channel *PatchChannel, originChannel *model.Channel) error {
+	if channel == nil || originChannel == nil {
+		return fmt.Errorf("channel cannot be empty")
+	}
+
+	// Preserve server-managed multi-key metadata, then apply the two fields the
+	// editor is allowed to change.
+	channel.ChannelInfo = originChannel.ChannelInfo
+	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
+		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
+	}
+	if channel.KeyMode == nil || *channel.KeyMode != "append" || !channel.ChannelInfo.IsMultiKey || originChannel.Key == "" {
+		return nil
+	}
+
+	var existingKeys []string
+	if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
+		var array []json.RawMessage
+		if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &array); err != nil {
+			return fmt.Errorf("failed to parse existing keys: %w", err)
+		}
+		existingKeys = make([]string, len(array))
+		for i, value := range array {
+			existingKeys[i] = string(value)
+		}
+	} else {
+		existingKeys = strings.Split(strings.Trim(originChannel.Key, "\n"), "\n")
+	}
+
+	var newKeys []string
+	if channel.Type == constant.ChannelTypeVertexAi && channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
+		if strings.HasPrefix(strings.TrimSpace(channel.Key), "[") {
+			array, err := getVertexArrayKeys(channel.Key)
+			if err != nil {
+				return fmt.Errorf("failed to parse appended keys: %w", err)
+			}
+			newKeys = array
+		} else {
+			newKeys = []string{channel.Key}
+		}
+	} else {
+		for _, key := range strings.Split(channel.Key, "\n") {
+			if key = strings.TrimSpace(key); key != "" {
+				newKeys = append(newKeys, key)
+			}
+		}
+	}
+
+	seen := make(map[string]struct{}, len(existingKeys)+len(newKeys))
+	cleanExistingKeys := make([]string, 0, len(existingKeys))
+	for _, key := range existingKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleanExistingKeys = append(cleanExistingKeys, key)
+	}
+	for _, key := range newKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleanExistingKeys = append(cleanExistingKeys, key)
+	}
+	channel.Key = strings.Join(cleanExistingKeys, "\n")
+	channel.ChannelInfo.MultiKeySize = len(cleanExistingKeys)
+	return nil
+}
+
 type ChannelStatusRequest struct {
 	Status int `json:"status"`
 }
@@ -962,16 +1138,6 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	clearChannelReadOnlyFields(&channel, requestData)
-
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
 	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
 	originChannel, err := model.GetChannelById(channel.Id, true)
 	if err != nil {
@@ -981,107 +1147,16 @@ func UpdateChannel(c *gin.Context) {
 		})
 		return
 	}
-	originProxy := originChannel.GetSetting().Proxy
-	proxyChanged := false
-	if _, settingProvided := requestData["setting"]; settingProvided {
-		newProxy, _ := service.NormalizeProxyURL(channel.GetSetting().Proxy)
-		normalizedOriginProxy, originProxyErr := service.NormalizeProxyURL(originProxy)
-		proxyChanged = originProxyErr != nil || normalizedOriginProxy != newProxy
-	}
-
-	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
-	channel.ChannelInfo = originChannel.ChannelInfo
-
 	if channelHasSensitiveChanges(&channel, originChannel, requestData) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
 		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
 		return
 	}
 
-	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
-	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
-		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
-	}
-
-	// 处理多key模式下的密钥追加/覆盖逻辑
-	if channel.KeyMode != nil && channel.ChannelInfo.IsMultiKey {
-		switch *channel.KeyMode {
-		case "append":
-			// 追加模式：将新密钥添加到现有密钥列表
-			if originChannel.Key != "" {
-				var newKeys []string
-				var existingKeys []string
-
-				// 解析现有密钥
-				if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
-					// JSON数组格式
-					var arr []json.RawMessage
-					if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
-						existingKeys = make([]string, len(arr))
-						for i, v := range arr {
-							existingKeys[i] = string(v)
-						}
-					}
-				} else {
-					// 换行分隔格式
-					existingKeys = strings.Split(strings.Trim(originChannel.Key, "\n"), "\n")
-				}
-
-				// 处理 Vertex AI 的特殊情况
-				if channel.Type == constant.ChannelTypeVertexAi && channel.GetOtherSettings().VertexKeyType != dto.VertexKeyTypeAPIKey {
-					// 尝试解析新密钥为JSON数组
-					if strings.HasPrefix(strings.TrimSpace(channel.Key), "[") {
-						array, err := getVertexArrayKeys(channel.Key)
-						if err != nil {
-							c.JSON(http.StatusOK, gin.H{
-								"success": false,
-								"message": "追加密钥解析失败: " + err.Error(),
-							})
-							return
-						}
-						newKeys = array
-					} else {
-						// 单个JSON密钥
-						newKeys = []string{channel.Key}
-					}
-				} else {
-					// 普通渠道的处理
-					inputKeys := strings.Split(channel.Key, "\n")
-					for _, key := range inputKeys {
-						key = strings.TrimSpace(key)
-						if key != "" {
-							newKeys = append(newKeys, key)
-						}
-					}
-				}
-
-				seen := make(map[string]struct{}, len(existingKeys)+len(newKeys))
-				for _, key := range existingKeys {
-					normalized := strings.TrimSpace(key)
-					if normalized == "" {
-						continue
-					}
-					seen[normalized] = struct{}{}
-				}
-				dedupedNewKeys := make([]string, 0, len(newKeys))
-				for _, key := range newKeys {
-					normalized := strings.TrimSpace(key)
-					if normalized == "" {
-						continue
-					}
-					if _, ok := seen[normalized]; ok {
-						continue
-					}
-					seen[normalized] = struct{}{}
-					dedupedNewKeys = append(dedupedNewKeys, normalized)
-				}
-
-				allKeys := append(existingKeys, dedupedNewKeys...)
-				channel.Key = strings.Join(allKeys, "\n")
-			}
-		case "replace":
-			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
-		}
+	preparation, err := prepareChannelUpdate(&channel, originChannel, requestData, nil)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
 	}
 	err = channel.Update()
 	if err != nil {
@@ -1089,9 +1164,7 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	if proxyChanged {
-		service.InvalidateProxyClient(originProxy)
-	}
+	preparation.invalidateProxyCache()
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。
 	changedFields := make([]string, 0)
 	if channel.Models != originChannel.Models {
@@ -1282,16 +1355,28 @@ func FetchModels(c *gin.Context) {
 		return
 	}
 
+	models, err := fetchModelsForRequest(req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("获取模型列表失败: %s", err.Error()),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    models,
+	})
+}
+
+func fetchModelsForRequest(req fetchModelsRequest) ([]string, error) {
 	var channel *model.Channel
 	if req.Type == constant.ChannelTypeAdvancedCustom || req.ChannelID > 0 {
 		var err error
 		channel, err = buildAdvancedCustomModelPreviewChannel(req)
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": err.Error(),
-			})
-			return
+			return nil, err
 		}
 	} else {
 		baseURL := ""
@@ -1313,19 +1398,7 @@ func FetchModels(c *gin.Context) {
 		}
 	}
 
-	models, err := fetchChannelUpstreamModelIDs(channel)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": fmt.Sprintf("获取模型列表失败: %s", err.Error()),
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    models,
-	})
+	return fetchChannelUpstreamModelIDs(channel)
 }
 
 func BatchSetChannelTag(c *gin.Context) {

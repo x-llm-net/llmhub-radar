@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	ratio_setting.InitRatioSettings()
+	hub_routing_setting.Get().HighQualityProviderIDs = []int{1}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		panic("failed to open test db: " + err.Error())
@@ -46,6 +50,15 @@ func TestMain(m *testing.M) {
 		&TwoFABackupCode{},
 		&Log{},
 		&Channel{},
+		&HubProvider{},
+		&HubSupplyGroup{},
+		&HubProviderEarning{},
+		&HubProviderPayoutAsset{},
+		&HubProviderPayoutAccount{},
+		&HubProviderWithdrawal{},
+		&HubSupplyGroupRevision{},
+		&HubSupplyGroupProbeTarget{},
+		&HubSupplyGroupProbeSample{},
 		&QuotaData{},
 		&Ability{},
 		&TopUp{},
@@ -68,6 +81,15 @@ func truncateTables(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		DB.Exec("DELETE FROM tasks")
+		DB.Exec("DELETE FROM hub_supply_groups")
+		DB.Exec("DELETE FROM hub_provider_earnings")
+		DB.Exec("DELETE FROM hub_provider_withdrawals")
+		DB.Exec("DELETE FROM hub_provider_payout_accounts")
+		DB.Exec("DELETE FROM hub_provider_payout_assets")
+		DB.Exec("DELETE FROM hub_supply_group_revisions")
+		DB.Exec("DELETE FROM hub_supply_group_probe_targets")
+		DB.Exec("DELETE FROM hub_supply_group_probe_samples")
+		DB.Exec("DELETE FROM hub_providers")
 		DB.Exec("DELETE FROM auth_flows")
 		DB.Exec("DELETE FROM external_identity_claims")
 		DB.Exec("DELETE FROM user_sessions")

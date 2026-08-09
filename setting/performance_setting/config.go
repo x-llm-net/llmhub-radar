@@ -33,7 +33,7 @@ var performanceSetting = PerformanceSetting{
 	DiskCacheMaxSizeMB:   1024, // 最大 1GB 磁盘缓存
 	DiskCachePath:        "",   // 空表示使用系统临时目录
 
-	MonitorEnabled:         true,
+	MonitorEnabled:         false,
 	MonitorCPUThreshold:    90,
 	MonitorMemoryThreshold: 90,
 	MonitorDiskThreshold:   95,

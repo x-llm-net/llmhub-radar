@@ -37,9 +37,132 @@ import (
 )
 
 type testResult struct {
-	context     *gin.Context
-	localErr    error
-	newAPIError *types.NewAPIError
+	context            *gin.Context
+	localErr           error
+	newAPIError        *types.NewAPIError
+	upstreamStatusCode int
+	firstTokenMs       *int64
+}
+
+type testProbeTTFTTracker struct {
+	startedAt  time.Time
+	firstToken *time.Time
+	buffer     []byte
+}
+
+func newTestProbeTTFTTracker(startedAt time.Time) *testProbeTTFTTracker {
+	return &testProbeTTFTTracker{startedAt: startedAt}
+}
+
+func (tracker *testProbeTTFTTracker) observe(data []byte) {
+	if tracker == nil || tracker.firstToken != nil || len(data) == 0 {
+		return
+	}
+	tracker.buffer = append(tracker.buffer, data...)
+	if len(tracker.buffer) > 32<<10 {
+		tracker.buffer = tracker.buffer[len(tracker.buffer)-(32<<10):]
+	}
+	for {
+		newline := bytes.IndexByte(tracker.buffer, '\n')
+		if newline < 0 {
+			return
+		}
+		line := bytes.TrimSpace(tracker.buffer[:newline])
+		tracker.buffer = tracker.buffer[newline+1:]
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if hasMeaningfulTestStreamDelta(payload) {
+			now := time.Now()
+			tracker.firstToken = &now
+			return
+		}
+	}
+}
+
+func (tracker *testProbeTTFTTracker) value() *int64 {
+	if tracker == nil || tracker.firstToken == nil {
+		return nil
+	}
+	value := tracker.firstToken.Sub(tracker.startedAt).Milliseconds()
+	if value < 0 {
+		value = 0
+	}
+	return &value
+}
+
+type testProbeResponseWriter struct {
+	gin.ResponseWriter
+	tracker *testProbeTTFTTracker
+}
+
+func (writer *testProbeResponseWriter) Write(data []byte) (int, error) {
+	writer.tracker.observe(data)
+	return writer.ResponseWriter.Write(data)
+}
+
+func (writer *testProbeResponseWriter) WriteString(value string) (int, error) {
+	return writer.Write([]byte(value))
+}
+
+func hasMeaningfulTestStreamDelta(payload []byte) bool {
+	payload = bytes.TrimSpace(payload)
+	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+		return false
+	}
+	if payload[0] != '{' && payload[0] != '[' {
+		return true
+	}
+	for _, path := range []string{
+		"choices.#.delta.content",
+		"choices.#.delta.reasoning_content",
+		"choices.#.delta.reasoning",
+		"choices.#.text",
+		"candidates.#.content.parts.#.text",
+		"delta.text",
+		"delta.thinking",
+		"delta",
+		"text",
+		"completion",
+		"content_block.delta.text",
+		"content_block_delta.delta.text",
+	} {
+		value := gjson.GetBytes(payload, path)
+		if hasMeaningfulTestStreamValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMeaningfulTestStreamValue(value gjson.Result) bool {
+	if !value.Exists() {
+		return false
+	}
+	if value.Type == gjson.String {
+		return strings.TrimSpace(value.String()) != ""
+	}
+	if value.IsArray() {
+		for _, item := range value.Array() {
+			if hasMeaningfulTestStreamValue(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+const channelTestResponseLogLimit = 4096
+
+func channelTestResponseForLog(responseBody []byte, relayMode int) string {
+	if relayMode == relayconstant.RelayModeImagesGenerations || relayMode == relayconstant.RelayModeImagesEdits {
+		return fmt.Sprintf("[image response omitted, %d bytes]", len(responseBody))
+	}
+	if len(responseBody) <= channelTestResponseLogLimit {
+		return string(responseBody)
+	}
+	return fmt.Sprintf("%s\n[response truncated, %d bytes total]", string(responseBody[:channelTestResponseLogLimit]), len(responseBody))
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -74,6 +197,14 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+	return testChannelWithOptions(ctx, channel, testUserID, testModel, endpointType, isStream, false)
+}
+
+func testChannelPricingPreflight(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string) testResult {
+	return testChannelWithOptions(ctx, channel, testUserID, testModel, endpointType, false, true)
+}
+
+func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, pricingOnly bool) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -95,6 +226,11 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	var ttftTracker *testProbeTTFTTracker
+	if isStream {
+		ttftTracker = newTestProbeTTFTTracker(tik)
+		c.Writer = &testProbeResponseWriter{ResponseWriter: c.Writer, tracker: ttftTracker}
+	}
 
 	testModel = strings.TrimSpace(testModel)
 	if testModel == "" {
@@ -291,8 +427,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	//// 创建一个用于日志的 info 副本，移除 ApiKey
 	//logInfo := info
 	//logInfo.ApiKey = ""
-	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
-
 	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
 	if err != nil {
 		return testResult{
@@ -301,6 +435,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest)),
 		}
 	}
+	if pricingOnly {
+		return testResult{context: c}
+	}
+	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
 
 	adaptor.Init(info)
 
@@ -452,9 +590,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 				err,
 			))
 			return testResult{
-				context:     c,
-				localErr:    err,
-				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+				context:            c,
+				localErr:           err,
+				newAPIError:        types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+				upstreamStatusCode: httpResp.StatusCode,
 			}
 		}
 	}
@@ -510,11 +649,16 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, channelTestResponseForLog(respBody, info.RelayMode)))
+	var firstTokenMs *int64
+	if ttftTracker != nil {
+		firstTokenMs = ttftTracker.value()
+	}
 	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
+		context:      c,
+		localErr:     nil,
+		newAPIError:  nil,
+		firstTokenMs: firstTokenMs,
 	}
 }
 
@@ -721,12 +865,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				TopN:      lo.ToPtr(2),
 			}
 		case constant.EndpointTypeOpenAIResponse:
-			// 返回 OpenAIResponsesRequest
-			return &dto.OpenAIResponsesRequest{
-				Model:  model,
-				Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
-				Stream: lo.ToPtr(isStream),
-			}
+			return buildOpenAIResponsesTestRequest(model, isStream)
 		case constant.EndpointTypeOpenAIResponseCompact:
 			// 返回 OpenAIResponsesCompactionRequest
 			return &dto.OpenAIResponsesCompactionRequest{
@@ -788,11 +927,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
-		return &dto.OpenAIResponsesRequest{
-			Model:  model,
-			Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
-			Stream: lo.ToPtr(isStream),
-		}
+		return buildOpenAIResponsesTestRequest(model, isStream)
 	}
 
 	// Chat/Completion 请求 - 返回 GeneralOpenAIRequest
@@ -823,6 +958,18 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	}
 
 	return testRequest
+}
+
+func buildOpenAIResponsesTestRequest(model string, isStream bool) *dto.OpenAIResponsesRequest {
+	request := &dto.OpenAIResponsesRequest{
+		Model:           model,
+		Input:           json.RawMessage(`"hi"`),
+		MaxOutputTokens: lo.ToPtr(uint(16)),
+	}
+	if isStream {
+		request.Stream = lo.ToPtr(true)
+	}
+	return request
 }
 
 func TestChannel(c *gin.Context) {
@@ -1003,6 +1150,11 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	if err != nil {
 		return channelTestSummary{}, err
 	}
+	hubSupplyChannelIDs, err := model.GetHubSupplyChannelIDSet()
+	if err != nil {
+		return channelTestSummary{}, err
+	}
+	channels = excludeHubSupplyChannels(channels, hubSupplyChannelIDs)
 	if strings.TrimSpace(mode) == "" {
 		mode = operation_setting.GetMonitorSetting().ChannelTestMode
 	}
@@ -1013,6 +1165,23 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}
 	return summary, nil
+}
+
+func excludeHubSupplyChannels(channels []*model.Channel, hubSupplyChannelIDs map[int]struct{}) []*model.Channel {
+	if len(channels) == 0 || len(hubSupplyChannelIDs) == 0 {
+		return channels
+	}
+	filtered := make([]*model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if _, isHubSupplyChannel := hubSupplyChannelIDs[channel.Id]; isHubSupplyChannel {
+			continue
+		}
+		filtered = append(filtered, channel)
+	}
+	return filtered
 }
 
 func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*model.Channel {

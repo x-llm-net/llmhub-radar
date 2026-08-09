@@ -127,6 +127,7 @@ func resetSessionCookieSettingsAfterTest(t *testing.T) {
 	t.Cleanup(func() {
 		SessionCookieSecure = false
 		SessionCookieTrustedURLs = nil
+		SessionCookieDomain = ""
 	})
 }
 
@@ -174,6 +175,26 @@ func TestInitSessionCookieSettingsEnablesSecureCookie(t *testing.T) {
 	require.NoError(t, InitSessionCookieSettings())
 	assert.True(t, SessionCookieSecure)
 	assert.Equal(t, []string{"https://example.com"}, SessionCookieTrustedURLs)
+}
+
+func TestInitSessionCookieSettingsSupportsProviderSubdomains(t *testing.T) {
+	resetSessionCookieSettingsAfterTest(t)
+	t.Setenv("SESSION_COOKIE_SECURE", "true")
+	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://llm-hub.store")
+	t.Setenv("SESSION_COOKIE_DOMAIN", ".llm-hub.store")
+
+	require.NoError(t, InitSessionCookieSettings())
+	assert.Equal(t, "llm-hub.store", SessionCookieDomain)
+}
+
+func TestInitSessionCookieSettingsAllowsLocalhostSubdomainsWithoutSecureCookie(t *testing.T) {
+	resetSessionCookieSettingsAfterTest(t)
+	t.Setenv("SESSION_COOKIE_SECURE", "false")
+	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "")
+	t.Setenv("SESSION_COOKIE_DOMAIN", "localhost")
+
+	require.NoError(t, InitSessionCookieSettings())
+	assert.Equal(t, "localhost", SessionCookieDomain)
 }
 
 func TestInitSessionCookieSettingsAllowsMultipleTrustedURLs(t *testing.T) {

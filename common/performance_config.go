@@ -15,7 +15,7 @@ var performanceMonitorConfig atomic.Value
 func init() {
 	// 初始化默认配置
 	performanceMonitorConfig.Store(PerformanceMonitorConfig{
-		Enabled:         true,
+		Enabled:         false,
 		CPUThreshold:    90,
 		MemoryThreshold: 90,
 		DiskThreshold:   90,

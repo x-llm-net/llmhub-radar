@@ -22,6 +22,37 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(hubSupplyProbeHandler{})
+}
+
+// hubSupplyProbeHandler scans once per minute for targets whose provider-owned
+// interval is due. The scan cadence is not the probe cadence: each target stores
+// its own next run (10/30 minutes by default).
+type hubSupplyProbeHandler struct{}
+
+func (hubSupplyProbeHandler) Type() string { return model.SystemTaskTypeHubSupplyProbe }
+
+func (hubSupplyProbeHandler) Enabled() bool { return model.HasHubSupplyGroups() }
+
+func (hubSupplyProbeHandler) Interval() time.Duration { return time.Minute }
+
+func (hubSupplyProbeHandler) NewPayload() any { return nil }
+
+func (hubSupplyProbeHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	summary, err := runHubSupplyProbeTask(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+	hasDue, dueErr := model.HasDueHubSupplyProbeTargets(common.GetTimestamp())
+	if dueErr != nil {
+		common.SysLog(fmt.Sprintf("failed to check follow-up hub supply probes: %v", dueErr))
+		return
+	}
+	if hasDue {
+		enqueueHubSupplyProbe()
+	}
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

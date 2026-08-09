@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
@@ -45,6 +46,11 @@ func TestMain(m *testing.M) {
 		&model.Token{},
 		&model.Log{},
 		&model.Channel{},
+		&model.HubProvider{},
+		&model.HubSupplyGroup{},
+		&model.HubProviderEarning{},
+		&model.HubProviderWithdrawal{},
+		&model.Ability{},
 		&model.TopUp{},
 		&model.UserSubscription{},
 		&model.SystemTask{},
@@ -68,6 +74,8 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
+		model.DB.Exec("DELETE FROM hub_provider_earnings")
+		model.DB.Exec("DELETE FROM hub_provider_withdrawals")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
@@ -238,6 +246,55 @@ func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {
 	}, priceData.OtherRatios())
 }
 
+func TestRecalculateTaskQuotaByTokensUsesSupplyPricingSnapshot(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	originalModelRatios := ratio_setting.ModelRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"supply-task-model":2}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
+	})
+
+	const userID, tokenID, channelID = 70, 70, 70
+	const initialQuota, initialTokenQuota, preConsumedQuota = 10000, 5000, 200
+	seedUser(t, userID, initialQuota)
+	seedToken(t, tokenID, userID, "sk-supply-task", initialTokenQuota)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumedQuota, tokenID, BillingSourceWallet, 0)
+	task.Group = "default"
+	task.Properties.OriginModelName = "supply-task-model"
+	task.PrivateData.BillingContext = &model.TaskBillingContext{
+		ModelRatio:       2,
+		GroupRatio:       0.6,
+		BaseGroupRatio:   1.5,
+		SupplyMultiplier: 0.4,
+		HasSupplyPricing: true,
+		SupplyGroupId:    12,
+		SupplyProviderId: 7,
+		OriginModelName:  "supply-task-model",
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+
+	RecalculateTaskQuotaByTokens(ctx, task, 100)
+
+	const expectedActualQuota = 120
+	assert.Equal(t, expectedActualQuota, task.Quota)
+	assert.Equal(t, initialQuota+(preConsumedQuota-expectedActualQuota), getUserQuota(t, userID))
+	assert.Equal(t, initialTokenQuota+(preConsumedQuota-expectedActualQuota), getTokenRemainQuota(t, tokenID))
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, 1.5, other["group_ratio"])
+	assert.Equal(t, 0.4, other["supply_multiplier"])
+	assert.Equal(t, 0.6, other["billing_ratio"])
+	assert.Equal(t, float64(12), other["hub_supply_group_id"])
+	assert.Equal(t, float64(7), other["hub_provider_id"])
+}
+
 // ---------------------------------------------------------------------------
 // Read-back helpers
 // ---------------------------------------------------------------------------
@@ -330,6 +387,31 @@ func TestRefundTaskQuota_Wallet(t *testing.T) {
 	assert.Equal(t, "test-model", log.ModelName)
 	assert.Zero(t, task.Quota)
 	assert.Zero(t, getTaskQuota(t, task.ID))
+}
+
+func TestRefundTaskQuota_UnpersistedTask(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, tokenID, channelID = 41, 41, 41
+	const initQuota, consumedQuota = 10000, 2500
+	const tokenRemain = 5000
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-unpersisted", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, consumedQuota, tokenID, BillingSourceWallet, 0)
+	require.Zero(t, task.ID)
+
+	assert.True(t, RefundTaskQuota(ctx, task, "task persistence failed"))
+	assert.Equal(t, initQuota+consumedQuota, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+consumedQuota, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, task.Quota)
+
+	var taskCount int64
+	require.NoError(t, model.DB.Model(&model.Task{}).Count(&taskCount).Error)
+	assert.Zero(t, taskCount)
 }
 
 func TestRefundTaskQuota_Subscription(t *testing.T) {

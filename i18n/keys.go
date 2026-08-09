@@ -5,27 +5,28 @@ package i18n
 
 // Common error messages
 const (
-	MsgInvalidParams     = "common.invalid_params"
-	MsgDatabaseError     = "common.database_error"
-	MsgRetryLater        = "common.retry_later"
-	MsgGenerateFailed    = "common.generate_failed"
-	MsgNotFound          = "common.not_found"
-	MsgUnauthorized      = "common.unauthorized"
-	MsgForbidden         = "common.forbidden"
-	MsgInvalidId         = "common.invalid_id"
-	MsgIdEmpty           = "common.id_empty"
-	MsgFeatureDisabled   = "common.feature_disabled"
-	MsgOperationSuccess  = "common.operation_success"
-	MsgOperationFailed   = "common.operation_failed"
-	MsgUpdateSuccess     = "common.update_success"
-	MsgUpdateFailed      = "common.update_failed"
-	MsgCreateSuccess     = "common.create_success"
-	MsgCreateFailed      = "common.create_failed"
-	MsgDeleteSuccess     = "common.delete_success"
-	MsgDeleteFailed      = "common.delete_failed"
-	MsgAlreadyExists     = "common.already_exists"
-	MsgNameCannotBeEmpty = "common.name_cannot_be_empty"
-	MsgBatchTooMany      = "common.batch_too_many"
+	MsgInvalidParams       = "common.invalid_params"
+	MsgDatabaseError       = "common.database_error"
+	MsgRetryLater          = "common.retry_later"
+	MsgGenerateFailed      = "common.generate_failed"
+	MsgNotFound            = "common.not_found"
+	MsgUnauthorized        = "common.unauthorized"
+	MsgForbidden           = "common.forbidden"
+	MsgInvalidId           = "common.invalid_id"
+	MsgIdEmpty             = "common.id_empty"
+	MsgFeatureDisabled     = "common.feature_disabled"
+	MsgOperationSuccess    = "common.operation_success"
+	MsgOperationFailed     = "common.operation_failed"
+	MsgUpdateSuccess       = "common.update_success"
+	MsgUpdateFailed        = "common.update_failed"
+	MsgCreateSuccess       = "common.create_success"
+	MsgCreateFailed        = "common.create_failed"
+	MsgDeleteSuccess       = "common.delete_success"
+	MsgDeleteFailed        = "common.delete_failed"
+	MsgAlreadyExists       = "common.already_exists"
+	MsgNameCannotBeEmpty   = "common.name_cannot_be_empty"
+	MsgBatchTooMany        = "common.batch_too_many"
+	MsgRequestLoopDetected = "common.request_loop_detected"
 )
 
 // Auth middleware messages
@@ -277,6 +278,14 @@ const (
 	MsgPerfGcExecuted       = "performance.gc_executed"
 )
 
+// LLM-Hub provider payout messages
+const (
+	MsgHubProviderPayoutAccountInvalid     = "hub_provider.payout_account_invalid"
+	MsgHubProviderPayoutAccountNotFound    = "hub_provider.payout_account_not_found"
+	MsgHubProviderPayoutQRCodeInvalid      = "hub_provider.payout_qr_code_invalid"
+	MsgHubProviderWithdrawalPaymentInvalid = "hub_provider.withdrawal_payment_invalid"
+)
+
 // Ability related messages
 const (
 	MsgAbilityDbCorrupted   = "ability.db_corrupted"
@@ -335,4 +344,28 @@ const (
 	MsgCustomOAuthHasBindings       = "custom_oauth.has_bindings"
 	MsgCustomOAuthBindingNotFound   = "custom_oauth.binding_not_found"
 	MsgCustomOAuthProviderIdInvalid = "custom_oauth.provider_id_field_invalid"
+)
+
+// LLM-Hub provider profile messages
+const (
+	MsgHubProviderNameEmpty                = "hub_provider.name_empty"
+	MsgHubProviderNameTooLong              = "hub_provider.name_too_long"
+	MsgHubProviderSlugInvalid              = "hub_provider.slug_invalid"
+	MsgHubProviderSlugAlreadyExists        = "hub_provider.slug_already_exists"
+	MsgHubProviderWebsiteInvalid           = "hub_provider.website_invalid"
+	MsgHubProviderLogoURLInvalid           = "hub_provider.logo_url_invalid"
+	MsgHubProviderDescriptionLong          = "hub_provider.description_too_long"
+	MsgHubProviderAlreadyExists            = "hub_provider.already_exists"
+	MsgHubProviderRequired                 = "hub_provider.required"
+	MsgHubProviderWithdrawalInvalid        = "hub_provider.withdrawal_invalid"
+	MsgHubProviderWithdrawalPending        = "hub_provider.withdrawal_pending"
+	MsgHubProviderWithdrawalInsufficient   = "hub_provider.withdrawal_insufficient"
+	MsgHubProviderWithdrawalTransition     = "hub_provider.withdrawal_transition"
+	MsgHubProviderWithdrawalRemarkRequired = "hub_provider.withdrawal_remark_required"
+	MsgHubProviderAdjustmentInvalid        = "hub_provider.adjustment_invalid"
+)
+
+// LLM-Hub provider channel messages
+const (
+	MsgHubProviderChannelNotFound = "hub_provider_channel.not_found"
 )

@@ -43,6 +43,7 @@ import {
   resolveOAuthCallbackMode,
 } from '@/features/auth/lib/oauth-callback-mode'
 import { api, applyAuthBundle, isAuthBundle } from '@/lib/api'
+import { isHubFirstPartyOrigin } from '@/lib/provider-domain'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 
 type OAuthRequestConfig = AxiosRequestConfig & {
@@ -199,8 +200,20 @@ function OAuthCallback() {
         }
         const response = await api.get(`/api/oauth/${provider}`, config)
         if (response.data?.success && isAuthBundle(response.data?.data)) {
-          applyAuthBundle(response.data.data)
-          safeNavigate(search.redirect)
+          const bundle = response.data.data
+          applyAuthBundle(bundle)
+          if (
+            bundle.return_origin &&
+            bundle.return_origin !== window.location.origin &&
+            isHubFirstPartyOrigin(bundle.return_origin)
+          ) {
+            const returnPath =
+              sanitizeAuthRedirect(bundle.return_path, bundle.return_origin) ??
+              '/dashboard'
+            window.location.replace(`${bundle.return_origin}${returnPath}`)
+            return
+          }
+          safeNavigate(bundle.return_path ?? search.redirect)
           toast.success(i18next.t('Signed in successfully!'))
           return
         }

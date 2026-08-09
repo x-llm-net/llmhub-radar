@@ -36,6 +36,7 @@ var SessionSecret = uuid.New().String()
 var CryptoSecret = uuid.New().String()
 var SessionCookieSecure = false
 var SessionCookieTrustedURLs []string
+var SessionCookieDomain string
 
 const (
 	DefaultUserSessionActiveLimit           = 50

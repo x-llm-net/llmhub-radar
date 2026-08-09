@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -39,6 +40,59 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		return apiErr
 	}
 	relayInfo.Billing = session
+	return nil
+}
+
+// PrepareBillingForSelectedChannel refreshes the reservation after routing or
+// retrying to a channel whose user-group or supply multiplier differs.
+func PrepareBillingForSelectedChannel(c *gin.Context, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
+	if relayInfo == nil {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("relay info is nil"),
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	if relayInfo.TieredBillingSnapshot != nil {
+		return PrepareTieredBillingForSelectedGroup(c, relayInfo)
+	}
+	if relayInfo.PriceData.QuotaBeforeGroup < 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("quota before group cannot be negative: %f", relayInfo.PriceData.QuotaBeforeGroup),
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+
+	targetQuota, err := common.QuotaFromFloatStrict(
+		relayInfo.PriceData.QuotaBeforeGroup * relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+	)
+	if err != nil {
+		return types.NewErrorWithStatusCode(
+			err,
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	relayInfo.PriceData.QuotaToPreConsume = targetQuota
+	if targetQuota == 0 {
+		if relayInfo.Billing == nil {
+			relayInfo.PriceData.FreeModel = true
+		}
+		return nil
+	}
+
+	relayInfo.PriceData.FreeModel = false
+	if relayInfo.Billing == nil {
+		return PreConsumeBilling(c, targetQuota, relayInfo)
+	}
+	if err := relayInfo.Billing.Reserve(targetQuota); err != nil {
+		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+	relayInfo.FinalPreConsumedQuota = relayInfo.Billing.GetPreConsumedQuota()
 	return nil
 }
 

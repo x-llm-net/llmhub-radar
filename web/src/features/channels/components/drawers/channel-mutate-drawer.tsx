@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -146,7 +128,10 @@ import {
   FIELD_PLACEHOLDERS,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
-import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
+import {
+  useChannelMutateForm,
+  type ChannelMutationTransport,
+} from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   CHANNEL_TYPE_ADVANCED_CUSTOM,
@@ -171,8 +156,13 @@ import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
-import type { Channel } from '../../types'
-import { useChannels } from '../channels-provider'
+import type {
+  AddChannelRequest,
+  Channel,
+  FetchModelsResponse,
+  GetChannelResponse,
+} from '../../types'
+import { useOptionalChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
@@ -191,10 +181,47 @@ import {
   ChannelModelsSection,
 } from './sections'
 
-type ChannelMutateDrawerProps = {
+export type ChannelSupplySettings = {
+  price_multiplier: number
+  text_probe_minutes: number
+  image_probe_minutes: number
+}
+
+export type ChannelEditorTransport = {
+  queryKeyPrefix: readonly unknown[]
+  getChannel: (id: number) => Promise<GetChannelResponse>
+  create: (
+    payload: AddChannelRequest,
+    supply: ChannelSupplySettings
+  ) => Promise<{ success: boolean; message?: string }>
+  update: (
+    id: number,
+    payload: Partial<Channel>,
+    supply: ChannelSupplySettings
+  ) => Promise<{ success: boolean; message?: string }>
+  previewModels: (data: {
+    base_url: string
+    type: number
+    key?: string
+    channel_id?: number
+    advanced_custom?: string
+    header_override?: string
+    proxy?: string
+  }) => Promise<FetchModelsResponse>
+  fetchStoredModels: (id: number) => Promise<FetchModelsResponse>
+  getGroups: typeof getGroups
+  getAllModels: typeof getAllModels
+  getPrefillGroups: typeof getPrefillGroups
+}
+
+export type ChannelMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: Channel | null
+  mode?: 'admin' | 'provider'
+  transport?: ChannelEditorTransport
+  supplySettings?: ChannelSupplySettings
+  onSuccess?: () => void
 }
 
 type ModelMappingGuardrail = {
@@ -244,12 +271,14 @@ const CHANNEL_EDITOR_SECTION_IDS = {
   identity: 'channel-section-identity',
   credentials: 'channel-section-credentials',
   models: 'channel-section-models',
+  supply: 'channel-section-supply',
   advanced: 'channel-section-advanced',
 } as const
 const CHANNEL_EDITOR_MAIN_SECTION_IDS = [
   CHANNEL_EDITOR_SECTION_IDS.identity,
   CHANNEL_EDITOR_SECTION_IDS.credentials,
   CHANNEL_EDITOR_SECTION_IDS.models,
+  CHANNEL_EDITOR_SECTION_IDS.supply,
   CHANNEL_EDITOR_SECTION_IDS.advanced,
 ]
 const ADVANCED_SETTINGS_SECTION_IDS = {
@@ -607,17 +636,33 @@ export function ChannelMutateDrawer({
   open,
   onOpenChange,
   currentRow,
+  mode = 'admin',
+  transport,
+  supplySettings,
+  onSuccess,
 }: ChannelMutateDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { setOpen } = useChannels()
+  const channelsContext = useOptionalChannels()
   const currentUser = useAuthStore((s) => s.auth.user)
-  const canEditSensitive = hasPermission(
-    currentUser,
-    ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
-  )
-  const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
+  const isProviderMode = mode === 'provider'
+  const canEditSensitive =
+    isProviderMode ||
+    hasPermission(
+      currentUser,
+      ADMIN_PERMISSION_RESOURCES.CHANNEL,
+      ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+    )
+  const canRevealChannelKey =
+    !isProviderMode && currentUser?.role === ROLE.SUPER_ADMIN
+  const [currentSupplySettings, setCurrentSupplySettings] =
+    useState<ChannelSupplySettings>(
+      supplySettings ?? {
+        price_multiplier: 1,
+        text_probe_minutes: 10,
+        image_probe_minutes: 30,
+      }
+    )
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
@@ -656,30 +701,34 @@ export function ChannelMutateDrawer({
   const isEditing = Boolean(currentRow)
   const channelId = currentRow?.id ?? null
   const sensitiveLocked = isEditing && !canEditSensitive
+  const editorQueryPrefix = transport?.queryKeyPrefix ?? channelsQueryKeys.all
 
   // Fetch channel details if editing
   const { data: channelData, isLoading: isChannelLoading } = useQuery({
-    queryKey: channelsQueryKeys.detail(channelId || 0),
-    queryFn: () => getChannel(channelId || 0),
+    queryKey: [...editorQueryPrefix, 'detail', channelId || 0],
+    queryFn: () => (transport?.getChannel ?? getChannel)(channelId || 0),
     enabled: isEditing && Boolean(channelId),
   })
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
-    queryFn: getGroups,
+    queryKey: [...editorQueryPrefix, 'groups'],
+    queryFn: transport?.getGroups ?? getGroups,
   })
 
   // Fetch all available models
   const { data: allModelsData } = useQuery({
-    queryKey: ['channel_models'],
-    queryFn: getAllModels,
+    queryKey: [...editorQueryPrefix, 'models'],
+    queryFn: transport?.getAllModels ?? getAllModels,
   })
 
   // Fetch prefill model groups
   const { data: prefillGroupsData } = useQuery({
-    queryKey: ['prefill_groups', 'model'],
-    queryFn: () => getPrefillGroups('model'),
+    queryKey: [...editorQueryPrefix, 'prefill-groups', 'model'],
+    queryFn: () =>
+      transport?.getPrefillGroups
+        ? transport.getPrefillGroups('model')
+        : getPrefillGroups('model'),
   })
 
   const { copyToClipboard } = useCopyToClipboard()
@@ -703,6 +752,17 @@ export function ChannelMutateDrawer({
       setChannelKey(null)
     }
   }, [open, channelId])
+
+  useEffect(() => {
+    if (!open || !isProviderMode) return
+    setCurrentSupplySettings(
+      supplySettings ?? {
+        price_multiplier: 1,
+        text_probe_minutes: 10,
+        image_probe_minutes: 30,
+      }
+    )
+  }, [channelId, isProviderMode, open, supplySettings])
 
   // Check if this is a multi-key channel
   const isMultiKeyChannel =
@@ -1000,15 +1060,17 @@ export function ChannelMutateDrawer({
     ? 'error'
     : 'idle'
   const advancedSummary = advancedHaveErrors ? t('Error') : undefined
-  const routingStrategyConfigured = Boolean(
-    currentPriority ||
-    currentWeight ||
-    currentTestModel?.trim() ||
-    (currentAutoBan ?? 1) !== 1
-  )
-  const internalNotesConfigured = Boolean(
-    currentTag?.trim() || currentRemark?.trim()
-  )
+  const routingStrategyConfigured = isProviderMode
+    ? Boolean(currentTestModel?.trim())
+    : Boolean(
+        currentPriority ||
+        currentWeight ||
+        currentTestModel?.trim() ||
+        (currentAutoBan ?? 1) !== 1
+      )
+  const internalNotesConfigured = isProviderMode
+    ? Boolean(currentRemark?.trim())
+    : Boolean(currentTag?.trim() || currentRemark?.trim())
   const overrideRulesConfigured = Boolean(
     hasConfiguredOverrideValue(currentStatusCodeMapping) ||
     hasConfiguredOverrideValue(currentParamOverride) ||
@@ -1058,7 +1120,7 @@ export function ChannelMutateDrawer({
   const advancedNavChildren: ChannelEditorNavChildItem[] = [
     {
       id: ADVANCED_SETTINGS_SECTION_IDS.routingStrategy,
-      title: t('Routing Strategy'),
+      title: isProviderMode ? t('Test Settings') : t('Routing Strategy'),
       configured: routingStrategyConfigured,
     },
     {
@@ -1110,12 +1172,24 @@ export function ChannelMutateDrawer({
     },
     {
       id: CHANNEL_EDITOR_SECTION_IDS.models,
-      title: t('Models & Groups'),
+      title: isProviderMode ? t('Models') : t('Models & Groups'),
       description: getSectionStatusLabel(modelsStatus, t),
       statusLabel: getSectionStatusLabel(modelsStatus, t),
       status: modelsStatus,
       icon: <Boxes className='h-4 w-4' aria-hidden='true' />,
     },
+    ...(isProviderMode
+      ? [
+          {
+            id: CHANNEL_EDITOR_SECTION_IDS.supply,
+            title: t('Supply Settings'),
+            description: t('Configured'),
+            statusLabel: t('Configured'),
+            status: 'configured' as ChannelEditorSectionStatus,
+            icon: <SlidersHorizontal className='h-4 w-4' aria-hidden='true' />,
+          },
+        ]
+      : []),
     {
       id: CHANNEL_EDITOR_SECTION_IDS.advanced,
       title: t('Advanced Settings'),
@@ -1246,6 +1320,12 @@ export function ChannelMutateDrawer({
   useEffect(() => {
     if (isEditing && channelData?.data) {
       const defaults = transformChannelToFormDefaults(channelData.data)
+      if (isProviderMode) {
+        defaults.group = ['default']
+        defaults.priority = 0
+        defaults.weight = 0
+        defaults.auto_ban = 0
+      }
       form.reset(defaults)
       setAdvancedSettingsOpen(
         readAdvancedSettingsPreference() || hasAdvancedSettingsValues(defaults)
@@ -1258,13 +1338,18 @@ export function ChannelMutateDrawer({
       initialStatusCodeMappingRef.current =
         channelData.data.status_code_mapping || ''
     } else if (!isEditing) {
-      form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+      form.reset({
+        ...CHANNEL_FORM_DEFAULT_VALUES,
+        ...(isProviderMode
+          ? { group: ['default'], priority: 0, weight: 0, auto_ban: 0 }
+          : {}),
+      })
       setAdvancedSettingsOpen(false)
       initialModelsRef.current = []
       initialModelMappingRef.current = ''
       initialStatusCodeMappingRef.current = ''
     }
-  }, [isEditing, channelData, form])
+  }, [isEditing, channelData, form, isProviderMode])
 
   // Handle type change - set default values for specific types
   useEffect(() => {
@@ -1461,7 +1546,7 @@ export function ChannelMutateDrawer({
     if (editingAdvancedCustom && channelId === null) {
       throw new Error(t('No channel selected'))
     }
-    const response = await fetchModels({
+    const response = await (transport?.previewModels ?? fetchModels)({
       type,
       key: isEditing ? undefined : form.getValues('key'),
       channel_id: editingAdvancedCustom ? channelId || undefined : undefined,
@@ -1474,7 +1559,7 @@ export function ChannelMutateDrawer({
       return response.data
     }
     throw new Error(response.message || t('No models fetched from upstream'))
-  }, [canEditSensitive, channelId, form, isEditing, t])
+  }, [canEditSensitive, channelId, form, isEditing, t, transport])
 
   // Handle model operations
   const handleFillRelatedModels = useCallback(() => {
@@ -1549,15 +1634,23 @@ export function ChannelMutateDrawer({
 
   // Handle successful submission
   const handleSuccess = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+    queryClient.invalidateQueries({ queryKey: editorQueryPrefix })
     if (channelId) {
       queryClient.invalidateQueries({
-        queryKey: channelsQueryKeys.detail(channelId),
+        queryKey: [...editorQueryPrefix, 'detail', channelId],
       })
     }
     onOpenChange(false)
-    setOpen(null)
-  }, [channelId, queryClient, onOpenChange, setOpen])
+    channelsContext?.setOpen(null)
+    onSuccess?.()
+  }, [
+    channelId,
+    queryClient,
+    editorQueryPrefix,
+    onOpenChange,
+    channelsContext,
+    onSuccess,
+  ])
 
   // Show missing models confirmation dialog
   const confirmMissingModelMappings = useCallback(
@@ -1611,11 +1704,21 @@ export function ChannelMutateDrawer({
     }
   }, [])
 
+  const mutationTransport: ChannelMutationTransport | undefined = transport
+    ? {
+        create: (payload) => transport.create(payload, currentSupplySettings),
+        update: (id, payload) =>
+          transport.update(id, payload, currentSupplySettings),
+      }
+    : undefined
+
   const channelMutation = useChannelMutateForm({
     currentRow,
     isEditing,
     isMultiKeyChannel,
     onSuccess: handleSuccess,
+    transport: mutationTransport,
+    canEditSensitiveOverride: isProviderMode ? true : undefined,
   })
 
   const isSubmitting = channelMutation.isPending
@@ -1623,6 +1726,36 @@ export function ChannelMutateDrawer({
   // Submit handler
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
+      if (isProviderMode) {
+        const { price_multiplier, text_probe_minutes, image_probe_minutes } =
+          currentSupplySettings
+        if (
+          !Number.isFinite(price_multiplier) ||
+          price_multiplier < 0.01 ||
+          price_multiplier > 100
+        ) {
+          toast.error(t('Supply multiplier must be between 0.01 and 100'))
+          return
+        }
+        if (
+          !Number.isInteger(text_probe_minutes) ||
+          !Number.isInteger(image_probe_minutes) ||
+          text_probe_minutes < 5 ||
+          text_probe_minutes > 1440 ||
+          image_probe_minutes < 5 ||
+          image_probe_minutes > 1440
+        ) {
+          toast.error(t('Probe interval must be between 5 and 1440 minutes'))
+          return
+        }
+        data.group = ['default']
+        data.priority = 0
+        data.weight = 0
+        data.auto_ban = 0
+        data.status = 0
+        data.tag = ''
+      }
+
       // Validate key is required when creating
       if (!isEditing && !data.key?.trim()) {
         form.setError('key', {
@@ -1728,6 +1861,8 @@ export function ChannelMutateDrawer({
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
       channelMutation,
+      currentSupplySettings,
+      isProviderMode,
       t,
     ]
   )
@@ -1840,6 +1975,30 @@ export function ChannelMutateDrawer({
     [handleAdvancedSettingsOpenChange, t]
   )
 
+  let editorTitle = t('Create Channel')
+  if (isEditing) {
+    editorTitle = t('Edit Channel')
+  }
+  if (isProviderMode) {
+    editorTitle = isEditing
+      ? t('Edit Supply Channel')
+      : t('Create Supply Channel')
+  }
+
+  let editorDescription = t(
+    'Add a new channel by providing the necessary information.'
+  )
+  if (isEditing) {
+    editorDescription = t(
+      "Update channel configuration and click save when you're done."
+    )
+  }
+  if (isProviderMode) {
+    editorDescription = t(
+      'Configure the upstream channel, supply pricing, and probe schedule.'
+    )
+  }
+
   // Handle drawer close
   const handleOpenChange = useCallback(
     (v: boolean) => {
@@ -1868,20 +2027,14 @@ export function ChannelMutateDrawer({
                     <ChannelTypeLogo type={currentType} size={22} />
                   </IconBadge>
                   <span>
-                    {isEditing ? t('Edit Channel') : t('Create Channel')}
+                    {editorTitle}
                     <span className='text-muted-foreground ml-2 text-sm font-normal'>
                       {t(currentTypeLabel)}
                     </span>
                   </span>
                 </SheetTitle>
                 <SheetDescription className='mt-1'>
-                  {isEditing
-                    ? t(
-                        "Update channel configuration and click save when you're done."
-                      )
-                    : t(
-                        'Add a new channel by providing the necessary information.'
-                      )}
+                  {editorDescription}
                 </SheetDescription>
               </div>
               {!isEditing && (
@@ -2041,7 +2194,7 @@ export function ChannelMutateDrawer({
                           />
                         </div>
 
-                        {!isEditing && (
+                        {!isEditing && !isProviderMode && (
                           <FormField
                             control={form.control}
                             name='status'
@@ -3086,27 +3239,31 @@ export function ChannelMutateDrawer({
                                       )}
                                     </div>
                                     <div className='flex flex-wrap items-center gap-2'>
-                                      {isEditing && channelId && (
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={handleRefreshCodexCredential}
-                                          disabled={
-                                            sensitiveLocked ||
-                                            isCodexCredentialRefreshing
-                                          }
-                                        >
-                                          {isCodexCredentialRefreshing ? (
-                                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                                          ) : (
-                                            <RefreshCw className='mr-2 h-4 w-4' />
-                                          )}
-                                          {isCodexCredentialRefreshing
-                                            ? t('Refreshing...')
-                                            : t('Refresh credential')}
-                                        </Button>
-                                      )}
+                                      {!isProviderMode &&
+                                        isEditing &&
+                                        channelId && (
+                                          <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={
+                                              handleRefreshCodexCredential
+                                            }
+                                            disabled={
+                                              sensitiveLocked ||
+                                              isCodexCredentialRefreshing
+                                            }
+                                          >
+                                            {isCodexCredentialRefreshing ? (
+                                              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                            ) : (
+                                              <RefreshCw className='mr-2 h-4 w-4' />
+                                            )}
+                                            {isCodexCredentialRefreshing
+                                              ? t('Refreshing...')
+                                              : t('Refresh credential')}
+                                          </Button>
+                                        )}
                                     </div>
                                   </div>
                                   <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
@@ -3575,40 +3732,124 @@ export function ChannelMutateDrawer({
                             />
                           </div>
 
-                          <div className='border-border/60 rounded-lg border p-4'>
-                            <FormField
-                              control={form.control}
-                              name='group'
-                              render={({ field }) => (
-                                <FormItem className='space-y-3'>
-                                  <div className='space-y-1'>
-                                    <FormLabel>{t('Groups *')}</FormLabel>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.GROUP)}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    {isLoadingGroups ? (
-                                      <Skeleton className='h-10 w-full' />
-                                    ) : (
-                                      <MultiSelect
-                                        options={groupOptions}
-                                        selected={field.value}
-                                        onChange={field.onChange}
-                                        placeholder={t(
-                                          FIELD_PLACEHOLDERS.GROUP
-                                        )}
-                                      />
-                                    )}
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
+                          {!isProviderMode && (
+                            <div className='border-border/60 rounded-lg border p-4'>
+                              <FormField
+                                control={form.control}
+                                name='group'
+                                render={({ field }) => (
+                                  <FormItem className='space-y-3'>
+                                    <div className='space-y-1'>
+                                      <FormLabel>{t('Groups *')}</FormLabel>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.GROUP)}
+                                      </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                      {isLoadingGroups ? (
+                                        <Skeleton className='h-10 w-full' />
+                                      ) : (
+                                        <MultiSelect
+                                          options={groupOptions}
+                                          selected={field.value}
+                                          onChange={field.onChange}
+                                          placeholder={t(
+                                            FIELD_PLACEHOLDERS.GROUP
+                                          )}
+                                        />
+                                      )}
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          )}
                         </div>
                       </ChannelModelsSection>
                     </div>
+
+                    {isProviderMode && (
+                      <div
+                        id={CHANNEL_EDITOR_SECTION_IDS.supply}
+                        className='scroll-mt-4'
+                      >
+                        <div className={sideDrawerSectionClassName()}>
+                          <CardHeading
+                            title={t('Supply Settings')}
+                            icon={<SlidersHorizontal className='h-4 w-4' />}
+                            iconTone='chart-3'
+                          />
+                          <div className='grid gap-4 sm:grid-cols-3'>
+                            <div className='grid gap-2'>
+                              <FormLabel htmlFor='supply-price-multiplier'>
+                                {t('Price Multiplier')}
+                              </FormLabel>
+                              <Input
+                                id='supply-price-multiplier'
+                                type='number'
+                                min='0.01'
+                                max='100'
+                                step='0.01'
+                                value={currentSupplySettings.price_multiplier}
+                                onChange={(event) =>
+                                  setCurrentSupplySettings((current) => ({
+                                    ...current,
+                                    price_multiplier: Number(
+                                      event.target.value
+                                    ),
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className='grid gap-2'>
+                              <FormLabel htmlFor='supply-text-probe'>
+                                {t('Text Probe Interval')}
+                              </FormLabel>
+                              <Input
+                                id='supply-text-probe'
+                                type='number'
+                                min='5'
+                                max='1440'
+                                step='1'
+                                value={currentSupplySettings.text_probe_minutes}
+                                onChange={(event) =>
+                                  setCurrentSupplySettings((current) => ({
+                                    ...current,
+                                    text_probe_minutes: Number(
+                                      event.target.value
+                                    ),
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className='grid gap-2'>
+                              <FormLabel htmlFor='supply-image-probe'>
+                                {t('Image Probe Interval')}
+                              </FormLabel>
+                              <Input
+                                id='supply-image-probe'
+                                type='number'
+                                min='5'
+                                max='1440'
+                                step='1'
+                                value={
+                                  currentSupplySettings.image_probe_minutes
+                                }
+                                onChange={(event) =>
+                                  setCurrentSupplySettings((current) => ({
+                                    ...current,
+                                    image_probe_minutes: Number(
+                                      event.target.value
+                                    ),
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div
                       id={CHANNEL_EDITOR_SECTION_IDS.advanced}
@@ -3622,7 +3863,11 @@ export function ChannelMutateDrawer({
                         {/* ── Routing & Overrides ── */}
                         <div className={sideDrawerSectionClassName()}>
                           <CardHeading
-                            title={t('Routing & Overrides')}
+                            title={
+                              isProviderMode
+                                ? t('Testing & Overrides')
+                                : t('Routing & Overrides')
+                            }
                             icon={<Route className='h-4 w-4' />}
                             iconTone='info'
                           />
@@ -3634,59 +3879,69 @@ export function ChannelMutateDrawer({
                             )}
                           >
                             <SubHeading
-                              title={t('Routing Strategy')}
+                              title={
+                                isProviderMode
+                                  ? t('Test Settings')
+                                  : t('Routing Strategy')
+                              }
                               icon={<Route className='h-3.5 w-3.5' />}
                               iconTone='info'
                             />
-                            <div className='grid gap-4 sm:grid-cols-2'>
-                              <FormField
-                                control={form.control}
-                                name='priority'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Priority')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.PRIORITY)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                            {!isProviderMode && (
+                              <div className='grid gap-4 sm:grid-cols-2'>
+                                <FormField
+                                  control={form.control}
+                                  name='priority'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Priority')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.PRIORITY)}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
 
-                              <FormField
-                                control={form.control}
-                                name='weight'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Weight')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.WEIGHT)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
+                                <FormField
+                                  control={form.control}
+                                  name='weight'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Weight')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type='number'
+                                          placeholder='0'
+                                          {...field}
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.WEIGHT)}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+                            )}
 
                             <FormField
                               control={form.control}
@@ -3710,28 +3965,30 @@ export function ChannelMutateDrawer({
                               )}
                             />
 
-                            <FormField
-                              control={form.control}
-                              name='auto_ban'
-                              render={({ field }) => (
-                                <FormItem className='flex items-center justify-between'>
-                                  <div className='space-y-0.5'>
-                                    <FormLabel>{t('Auto Ban')}</FormLabel>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.AUTO_BAN)}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    <Switch
-                                      checked={field.value === 1}
-                                      onCheckedChange={(checked) =>
-                                        field.onChange(checked ? 1 : 0)
-                                      }
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
+                            {!isProviderMode && (
+                              <FormField
+                                control={form.control}
+                                name='auto_ban'
+                                render={({ field }) => (
+                                  <FormItem className='flex items-center justify-between'>
+                                    <div className='space-y-0.5'>
+                                      <FormLabel>{t('Auto Ban')}</FormLabel>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.AUTO_BAN)}
+                                      </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                      <Switch
+                                        checked={field.value === 1}
+                                        onCheckedChange={(checked) =>
+                                          field.onChange(checked ? 1 : 0)
+                                        }
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            )}
                           </div>
 
                           <div
@@ -3747,25 +4004,29 @@ export function ChannelMutateDrawer({
                               iconTone='chart-3'
                             />
                             <div className='grid gap-4 sm:grid-cols-2'>
-                              <FormField
-                                control={form.control}
-                                name='tag'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Tag')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(FIELD_PLACEHOLDERS.TAG)}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.TAG)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                              {!isProviderMode && (
+                                <FormField
+                                  control={form.control}
+                                  name='tag'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Tag')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          placeholder={t(
+                                            FIELD_PLACEHOLDERS.TAG
+                                          )}
+                                          {...field}
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(FIELD_DESCRIPTIONS.TAG)}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
 
                               <FormField
                                 control={form.control}
@@ -4233,9 +4494,7 @@ export function ChannelMutateDrawer({
                                         <SelectValue />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent
-                                      alignItemWithTrigger={false}
-                                    >
+                                    <SelectContent alignItemWithTrigger={false}>
                                       <SelectGroup>
                                         <SelectItem value='auto'>
                                           {t('Auto')}
@@ -4828,6 +5087,12 @@ export function ChannelMutateDrawer({
           shouldPreviewUnsavedModels
             ? parseModelsString(form.getValues('models') || '')
             : undefined
+        }
+        activeChannelOverride={
+          isProviderMode ? (channelData?.data ?? currentRow ?? null) : undefined
+        }
+        storedFetcher={
+          isProviderMode ? transport?.fetchStoredModels : undefined
         }
       />
 
