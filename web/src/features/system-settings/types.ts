@@ -39,6 +39,20 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type ServiceTierFamilyCeilings = {
+  special: number
+  low: number
+  medium: number
+  high: number
+}
+
+export type UpdateServiceTierRoutingRequest = {
+  enabled: boolean
+  allow_other_family: boolean
+  family_tier_ceilings: Record<string, ServiceTierFamilyCeilings>
+  high_quality_provider_ids: number[]
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string

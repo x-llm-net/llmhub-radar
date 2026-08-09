@@ -189,11 +189,28 @@ func InitOptionMap() {
 }
 
 func loadOptionsFromDatabase() {
-	options, _ := AllOption()
+	options, err := AllOption()
+	if err != nil {
+		common.SysError("failed to load options from database: " + err.Error())
+		return
+	}
+	hubValues := make(map[string]string)
 	for _, option := range options {
-		err := updateOptionMap(option.Key, option.Value)
-		if err != nil {
+		if hub_routing_setting.IsOptionKey(option.Key) {
+			hubValues[option.Key] = option.Value
+		}
+		if err := updateOptionMap(option.Key, option.Value); err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
+		}
+	}
+	if len(hubValues) > 0 {
+		routingSetting, err := hub_routing_setting.FromOptionValues(hubValues)
+		if err != nil {
+			common.SysError("failed to load hub routing settings: " + err.Error())
+			return
+		}
+		if err := hub_routing_setting.Publish(routingSetting); err != nil {
+			common.SysError("failed to publish hub routing settings: " + err.Error())
 		}
 	}
 }
@@ -220,6 +237,9 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if hub_routing_setting.IsOptionKey(key) {
+		return ErrHubRoutingSettingRequiresAtomicSave
+	}
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
@@ -228,12 +248,16 @@ func UpdateOption(key string, value string) error {
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
 	option.Value = value
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
 	// Update OptionMap
 	if err := updateOptionMap(key, value); err != nil {
 		return err
@@ -252,6 +276,11 @@ func UpdateOption(key string, value string) error {
 func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
+	}
+	for key := range values {
+		if hub_routing_setting.IsOptionKey(key) {
+			return ErrHubRoutingSettingRequiresAtomicSave
+		}
 	}
 	for key, value := range values {
 		if err := validateOptionValue(key, value); err != nil {
@@ -632,6 +661,11 @@ func handleConfigUpdate(key, value string) bool {
 
 	configName := parts[0]
 	configKey := parts[1]
+	if configName == "hub_routing_setting" {
+		// The four routing options must be published together by the dedicated
+		// save path so the derived Ability rows never use a partial snapshot.
+		return true
+	}
 
 	// 获取配置对象
 	cfg := config.GlobalConfig.Get(configName)

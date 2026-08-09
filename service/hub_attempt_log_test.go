@@ -17,7 +17,7 @@ import (
 
 func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	original := *hub_routing_setting.Get()
-	t.Cleanup(func() { *hub_routing_setting.Get() = original })
+	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })
 
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

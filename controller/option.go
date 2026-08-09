@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -119,6 +120,50 @@ func GetOptions(c *gin.Context) {
 type OptionUpdateRequest struct {
 	Key   string `json:"key"`
 	Value any    `json:"value"`
+}
+
+type HubRoutingSettingUpdateRequest struct {
+	Enabled                bool                                              `json:"enabled"`
+	AllowOtherFamily       bool                                              `json:"allow_other_family"`
+	FamilyTierCeilings     map[string]hub_routing_setting.FamilyTierCeilings `json:"family_tier_ceilings"`
+	HighQualityProviderIDs []int                                             `json:"high_quality_provider_ids"`
+}
+
+func UpdateHubRoutingSetting(c *gin.Context) {
+	var request HubRoutingSettingUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "invalid hub routing settings",
+		})
+		return
+	}
+
+	routingSetting, err := hub_routing_setting.NormalizeAndValidate(hub_routing_setting.HubRoutingSetting{
+		Enabled:                request.Enabled,
+		AllowOtherFamily:       request.AllowOtherFamily,
+		FamilyTierCeilings:     request.FamilyTierCeilings,
+		HighQualityProviderIDs: request.HighQualityProviderIDs,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	if err := model.SaveHubRoutingSetting(routingSetting); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	recordManageAudit(c, "option.hub_routing.update", map[string]interface{}{
+		"keys": hub_routing_setting.OptionKeys(),
+	})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
 }
 
 func UpdateOption(c *gin.Context) {

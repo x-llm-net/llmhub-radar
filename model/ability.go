@@ -329,6 +329,10 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 }
 
 func buildChannelAbilities(tx *gorm.DB, channel *Channel) ([]Ability, error) {
+	return buildChannelAbilitiesWithRoutingSetting(tx, channel, nil)
+}
+
+func buildChannelAbilitiesWithRoutingSetting(tx *gorm.DB, channel *Channel, routingSetting *hub_routing_setting.HubRoutingSetting) ([]Ability, error) {
 	abilityModels, err := getHubSupplyChannelAbilityModels(tx, channel)
 	if err != nil {
 		return nil, err
@@ -366,11 +370,20 @@ func buildChannelAbilities(tx *gorm.DB, channel *Channel) ([]Ability, error) {
 				continue
 			}
 			family := ClassifyHubPublicModelFamily(modelName)
-			groups = hub_routing_setting.ResolveEligibleServiceTiers(
-				family,
-				supplyGroup.PriceMultiplier,
-				supplyGroup.ProviderId,
-			)
+			if routingSetting == nil {
+				groups = hub_routing_setting.ResolveEligibleServiceTiers(
+					family,
+					supplyGroup.PriceMultiplier,
+					supplyGroup.ProviderId,
+				)
+			} else {
+				groups = hub_routing_setting.ResolveEligibleServiceTiersWithSetting(
+					*routingSetting,
+					family,
+					supplyGroup.PriceMultiplier,
+					supplyGroup.ProviderId,
+				)
+			}
 			if len(groups) == 0 {
 				continue
 			}
@@ -402,6 +415,14 @@ func (channel *Channel) DeleteAbilities() error {
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
+	return channel.updateAbilitiesWithRoutingSetting(tx, nil)
+}
+
+func (channel *Channel) UpdateAbilitiesWithRoutingSetting(tx *gorm.DB, routingSetting *hub_routing_setting.HubRoutingSetting) error {
+	return channel.updateAbilitiesWithRoutingSetting(tx, routingSetting)
+}
+
+func (channel *Channel) updateAbilitiesWithRoutingSetting(tx *gorm.DB, routingSetting *hub_routing_setting.HubRoutingSetting) error {
 	isNewTx := false
 	// 如果没有传入事务，创建新的事务
 	if tx == nil {
@@ -427,7 +448,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	}
 
 	// Then add new abilities
-	abilities, err := buildChannelAbilities(tx, channel)
+	abilities, err := buildChannelAbilitiesWithRoutingSetting(tx, channel, routingSetting)
 	if err != nil {
 		if isNewTx {
 			tx.Rollback()
@@ -484,32 +505,44 @@ var hubSupplyAbilityRefreshLock sync.Mutex
 func RefreshHubSupplyAbilities() error {
 	hubSupplyAbilityRefreshLock.Lock()
 	defer hubSupplyAbilityRefreshLock.Unlock()
-	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) {
+	routingSetting := hub_routing_setting.Snapshot()
+	if err := refreshHubSupplyAbilitiesWithSetting(DB, &routingSetting); err != nil {
+		return err
+	}
+	InitChannelCache()
+	return nil
+}
+
+func refreshHubSupplyAbilitiesWithSetting(query *gorm.DB, routingSetting *hub_routing_setting.HubRoutingSetting) error {
+	if query == nil {
+		return nil
+	}
+	if !query.Migrator().HasTable(&HubSupplyGroup{}) {
 		return nil
 	}
 	channelIDs := make([]int, 0)
-	if err := DB.Model(&HubSupplyGroup{}).Pluck("new_api_channel_id", &channelIDs).Error; err != nil {
+	if err := query.Model(&HubSupplyGroup{}).Pluck("new_api_channel_id", &channelIDs).Error; err != nil {
 		return err
 	}
 	if len(channelIDs) == 0 {
 		return nil
 	}
 	var channels []*Channel
-	if err := DB.Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
+	if err := query.Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
 		return err
 	}
-	if err := DB.Transaction(func(tx *gorm.DB) error {
+	update := func(tx *gorm.DB) error {
 		for _, channel := range channels {
-			if err := channel.UpdateAbilities(tx); err != nil {
+			if err := channel.UpdateAbilitiesWithRoutingSetting(tx, routingSetting); err != nil {
 				return err
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
 	}
-	InitChannelCache()
-	return nil
+	if query == DB {
+		return DB.Transaction(update)
+	}
+	return update(query)
 }
 
 func FixAbility() (int, int, error) {

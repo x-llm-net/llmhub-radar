@@ -16,7 +16,7 @@ import {
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
-import { useUpdateOption } from '../hooks/use-update-option'
+import { useUpdateServiceTierRouting } from '../hooks/use-update-service-tier-routing'
 
 const FAMILY_ORDER = [
   'anthropic',
@@ -129,7 +129,7 @@ export function ServiceTierRoutingSection({
   defaultValues,
 }: ServiceTierRoutingSectionProps) {
   const { t } = useTranslation()
-  const updateOption = useUpdateOption()
+  const updateRouting = useUpdateServiceTierRouting()
   const initialCeilings = useMemo(
     () => parseCeilings(defaultValues.familyTierCeilings),
     [defaultValues.familyTierCeilings]
@@ -208,35 +208,25 @@ export function ServiceTierRoutingSection({
       ceilings: normalizeCeilings(ceilings),
       providerIDs: JSON.stringify(approvedProviderIDs),
     }
-    const updates = [
-      {
-        changed: normalized.enabled !== baselineRef.current.enabled,
-        key: 'hub_routing_setting.enabled',
-        value: normalized.enabled,
-      },
-      {
-        changed:
-          normalized.allowOtherFamily !== baselineRef.current.allowOtherFamily,
-        key: 'hub_routing_setting.allow_other_family',
-        value: normalized.allowOtherFamily,
-      },
-      {
-        changed: normalized.ceilings !== baselineRef.current.ceilings,
-        key: 'hub_routing_setting.family_tier_ceilings',
-        value: normalized.ceilings,
-      },
-      {
-        changed: normalized.providerIDs !== baselineRef.current.providerIDs,
-        key: 'hub_routing_setting.high_quality_provider_ids',
-        value: normalized.providerIDs,
-      },
-    ].filter((update) => update.changed)
-    if (updates.length === 0) {
+    const hasChanges =
+      normalized.enabled !== baselineRef.current.enabled ||
+      normalized.allowOtherFamily !== baselineRef.current.allowOtherFamily ||
+      normalized.ceilings !== baselineRef.current.ceilings ||
+      normalized.providerIDs !== baselineRef.current.providerIDs
+    if (!hasChanges) {
       toast.info(t('No changes to save'))
       return
     }
-    for (const update of updates) {
-      await updateOption.mutateAsync({ key: update.key, value: update.value })
+
+    try {
+      await updateRouting.mutateAsync({
+        enabled: normalized.enabled,
+        allow_other_family: normalized.allowOtherFamily,
+        family_tier_ceilings: ceilings,
+        high_quality_provider_ids: approvedProviderIDs,
+      })
+    } catch {
+      return
     }
     baselineRef.current = normalized
   }
@@ -286,7 +276,7 @@ export function ServiceTierRoutingSection({
     <SettingsSection title={t('Service Tiers & Routing')}>
       <SettingsPageFormActions
         onSave={onSave}
-        isSaving={updateOption.isPending}
+        isSaving={updateRouting.isPending}
       />
 
       <div className='grid gap-4 lg:grid-cols-2'>

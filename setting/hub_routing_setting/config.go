@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -15,6 +16,11 @@ const (
 	ServiceTierLow     = "low"
 	ServiceTierMedium  = "medium"
 	ServiceTierHigh    = "high"
+
+	OptionKeyEnabled                = "hub_routing_setting.enabled"
+	OptionKeyAllowOtherFamily       = "hub_routing_setting.allow_other_family"
+	OptionKeyFamilyTierCeilings     = "hub_routing_setting.family_tier_ceilings"
+	OptionKeyHighQualityProviderIDs = "hub_routing_setting.high_quality_provider_ids"
 )
 
 var serviceTiers = []string{
@@ -50,19 +56,46 @@ var defaultFamilyTierCeilings = map[string]FamilyTierCeilings{
 	"other":     {Special: 0.10, Low: 0.30, Medium: 0.80, High: 1.00},
 }
 
-var hubRoutingSetting = HubRoutingSetting{
+var defaultHubRoutingSetting = HubRoutingSetting{
 	Enabled:                true,
 	AllowOtherFamily:       false,
 	FamilyTierCeilings:     cloneFamilyTierCeilings(defaultFamilyTierCeilings),
 	HighQualityProviderIDs: []int{},
 }
 
+// registeredHubRoutingSetting only supplies defaults to the generic config
+// registry. Runtime readers use the separately synchronized active snapshot.
+var registeredHubRoutingSetting = cloneHubRoutingSetting(defaultHubRoutingSetting)
+
+var (
+	hubRoutingSettingMu sync.RWMutex
+	hubRoutingSetting   = cloneHubRoutingSetting(defaultHubRoutingSetting)
+)
+
 func init() {
-	config.GlobalConfig.Register("hub_routing_setting", &hubRoutingSetting)
+	config.GlobalConfig.Register("hub_routing_setting", &registeredHubRoutingSetting)
 }
 
 func Get() *HubRoutingSetting {
-	return &hubRoutingSetting
+	snapshot := Snapshot()
+	return &snapshot
+}
+
+func Snapshot() HubRoutingSetting {
+	hubRoutingSettingMu.RLock()
+	defer hubRoutingSettingMu.RUnlock()
+	return cloneHubRoutingSetting(hubRoutingSetting)
+}
+
+func Publish(value HubRoutingSetting) error {
+	normalized, err := NormalizeAndValidate(value)
+	if err != nil {
+		return err
+	}
+	hubRoutingSettingMu.Lock()
+	hubRoutingSetting = normalized
+	hubRoutingSettingMu.Unlock()
+	return nil
 }
 
 func ServiceTiers() []string {
@@ -79,8 +112,12 @@ func IsServiceTier(group string) bool {
 }
 
 func GetFamilyTierCeilings() map[string]FamilyTierCeilings {
+	return getFamilyTierCeilings(Snapshot())
+}
+
+func getFamilyTierCeilings(setting HubRoutingSetting) map[string]FamilyTierCeilings {
 	result := cloneFamilyTierCeilings(defaultFamilyTierCeilings)
-	for family, ceilings := range hubRoutingSetting.FamilyTierCeilings {
+	for family, ceilings := range setting.FamilyTierCeilings {
 		ceilings = normalizeLegacyFamilyTierCeilings(ceilings)
 		if validFamilyTierCeilings(ceilings) {
 			result[family] = ceilings
@@ -90,13 +127,17 @@ func GetFamilyTierCeilings() map[string]FamilyTierCeilings {
 }
 
 func ResolveEligibleServiceTiers(family string, multiplier float64, providerID int) []string {
-	if !hubRoutingSetting.Enabled || multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+	return ResolveEligibleServiceTiersWithSetting(Snapshot(), family, multiplier, providerID)
+}
+
+func ResolveEligibleServiceTiersWithSetting(setting HubRoutingSetting, family string, multiplier float64, providerID int) []string {
+	if !setting.Enabled || multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
 		return nil
 	}
-	if family == "other" && !hubRoutingSetting.AllowOtherFamily {
+	if family == "other" && !setting.AllowOtherFamily {
 		return nil
 	}
-	ceilings, ok := GetFamilyTierCeilings()[family]
+	ceilings, ok := getFamilyTierCeilings(setting)[family]
 	if !ok || !validFamilyTierCeilings(ceilings) {
 		return nil
 	}
@@ -110,29 +151,131 @@ func ResolveEligibleServiceTiers(family string, multiplier float64, providerID i
 	case multiplier <= ceilings.Medium:
 		tiers = append(tiers, ServiceTierMedium)
 	}
-	if multiplier <= ceilings.High && IsHighQualityProvider(providerID) {
+	if multiplier <= ceilings.High && isHighQualityProvider(setting, providerID) {
 		tiers = append(tiers, ServiceTierHigh)
 	}
 	return tiers
 }
 
 func IsHighQualityProvider(providerID int) bool {
+	return isHighQualityProvider(Snapshot(), providerID)
+}
+
+func isHighQualityProvider(setting HubRoutingSetting, providerID int) bool {
 	if providerID <= 0 {
 		return false
 	}
-	ids := append([]int(nil), hubRoutingSetting.HighQualityProviderIDs...)
+	ids := append([]int(nil), setting.HighQualityProviderIDs...)
 	sort.Ints(ids)
 	index := sort.SearchInts(ids, providerID)
 	return index < len(ids) && ids[index] == providerID
 }
 
+func OptionKeys() []string {
+	return []string{
+		OptionKeyEnabled,
+		OptionKeyAllowOtherFamily,
+		OptionKeyFamilyTierCeilings,
+		OptionKeyHighQualityProviderIDs,
+	}
+}
+
+func IsOptionKey(key string) bool {
+	switch key {
+	case OptionKeyEnabled, OptionKeyAllowOtherFamily, OptionKeyFamilyTierCeilings, OptionKeyHighQualityProviderIDs:
+		return true
+	default:
+		return false
+	}
+}
+
+func OptionValues(value HubRoutingSetting) (map[string]string, error) {
+	normalized, err := NormalizeAndValidate(value)
+	if err != nil {
+		return nil, err
+	}
+	ceilings, err := common.Marshal(normalized.FamilyTierCeilings)
+	if err != nil {
+		return nil, err
+	}
+	providerIDs, err := common.Marshal(normalized.HighQualityProviderIDs)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		OptionKeyEnabled:                strconv.FormatBool(normalized.Enabled),
+		OptionKeyAllowOtherFamily:       strconv.FormatBool(normalized.AllowOtherFamily),
+		OptionKeyFamilyTierCeilings:     string(ceilings),
+		OptionKeyHighQualityProviderIDs: string(providerIDs),
+	}, nil
+}
+
+func FromOptionValues(values map[string]string) (HubRoutingSetting, error) {
+	result := Snapshot()
+	if raw, ok := values[OptionKeyEnabled]; ok {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return HubRoutingSetting{}, fmt.Errorf("invalid boolean routing setting")
+		}
+		result.Enabled = value
+	}
+	if raw, ok := values[OptionKeyAllowOtherFamily]; ok {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return HubRoutingSetting{}, fmt.Errorf("invalid boolean routing setting")
+		}
+		result.AllowOtherFamily = value
+	}
+	if raw, ok := values[OptionKeyFamilyTierCeilings]; ok {
+		ceilings := make(map[string]FamilyTierCeilings)
+		if err := common.Unmarshal([]byte(raw), &ceilings); err != nil {
+			return HubRoutingSetting{}, fmt.Errorf("invalid family tier ceilings: %w", err)
+		}
+		result.FamilyTierCeilings = ceilings
+	}
+	if raw, ok := values[OptionKeyHighQualityProviderIDs]; ok {
+		providerIDs := make([]int, 0)
+		if err := common.Unmarshal([]byte(raw), &providerIDs); err != nil {
+			return HubRoutingSetting{}, fmt.Errorf("invalid high-quality provider list: %w", err)
+		}
+		result.HighQualityProviderIDs = providerIDs
+	}
+	return NormalizeAndValidate(result)
+}
+
+func NormalizeAndValidate(value HubRoutingSetting) (HubRoutingSetting, error) {
+	result := cloneHubRoutingSetting(value)
+	if len(result.FamilyTierCeilings) == 0 {
+		return HubRoutingSetting{}, fmt.Errorf("family tier ceilings cannot be empty")
+	}
+	for family, ceilings := range result.FamilyTierCeilings {
+		ceilings = normalizeLegacyFamilyTierCeilings(ceilings)
+		if !validFamilyTierCeilings(ceilings) {
+			return HubRoutingSetting{}, fmt.Errorf("invalid tier ceilings for family %s", family)
+		}
+		result.FamilyTierCeilings[family] = ceilings
+	}
+	seen := make(map[int]struct{}, len(result.HighQualityProviderIDs))
+	for _, providerID := range result.HighQualityProviderIDs {
+		if providerID <= 0 {
+			return HubRoutingSetting{}, fmt.Errorf("provider IDs must be positive")
+		}
+		if _, exists := seen[providerID]; exists {
+			return HubRoutingSetting{}, fmt.Errorf("provider IDs must be unique")
+		}
+		seen[providerID] = struct{}{}
+	}
+	sort.Ints(result.HighQualityProviderIDs)
+	return result, nil
+}
+
 func ValidateOption(key, value string) error {
 	switch key {
-	case "hub_routing_setting.enabled", "hub_routing_setting.allow_other_family":
+	case OptionKeyEnabled, OptionKeyAllowOtherFamily:
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("invalid boolean routing setting")
 		}
-	case "hub_routing_setting.family_tier_ceilings":
+	case OptionKeyFamilyTierCeilings:
 		ceilings := make(map[string]FamilyTierCeilings)
 		if err := common.Unmarshal([]byte(value), &ceilings); err != nil {
 			return fmt.Errorf("invalid family tier ceilings: %w", err)
@@ -145,7 +288,7 @@ func ValidateOption(key, value string) error {
 				return fmt.Errorf("invalid tier ceilings for family %s", family)
 			}
 		}
-	case "hub_routing_setting.high_quality_provider_ids":
+	case OptionKeyHighQualityProviderIDs:
 		providerIDs := make([]int, 0)
 		if err := common.Unmarshal([]byte(value), &providerIDs); err != nil {
 			return fmt.Errorf("invalid high-quality provider list: %w", err)
@@ -190,4 +333,13 @@ func cloneFamilyTierCeilings(source map[string]FamilyTierCeilings) map[string]Fa
 		result[family] = ceilings
 	}
 	return result
+}
+
+func cloneHubRoutingSetting(source HubRoutingSetting) HubRoutingSetting {
+	return HubRoutingSetting{
+		Enabled:                source.Enabled,
+		AllowOtherFamily:       source.AllowOtherFamily,
+		FamilyTierCeilings:     cloneFamilyTierCeilings(source.FamilyTierCeilings),
+		HighQualityProviderIDs: append([]int(nil), source.HighQualityProviderIDs...),
+	}
 }

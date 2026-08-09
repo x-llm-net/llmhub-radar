@@ -19,9 +19,11 @@ func TestHubTierPrerequisites(t *testing.T) {
 
 func TestBuildChannelAbilitiesCreatesPriceAndHighQualityRows(t *testing.T) {
 	original := *hub_routing_setting.Get()
-	t.Cleanup(func() { *hub_routing_setting.Get() = original })
-	hub_routing_setting.Get().Enabled = true
-	hub_routing_setting.Get().HighQualityProviderIDs = []int{1}
+	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })
+	routingSetting := original
+	routingSetting.Enabled = true
+	routingSetting.HighQualityProviderIDs = []int{1}
+	require.NoError(t, hub_routing_setting.Publish(routingSetting))
 
 	channel := &Channel{
 		Id:     91001,

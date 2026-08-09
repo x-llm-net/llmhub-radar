@@ -18,7 +18,11 @@ import (
 
 func TestMain(m *testing.M) {
 	ratio_setting.InitRatioSettings()
-	hub_routing_setting.Get().HighQualityProviderIDs = []int{1}
+	routingSetting := hub_routing_setting.Snapshot()
+	routingSetting.HighQualityProviderIDs = []int{1}
+	if err := hub_routing_setting.Publish(routingSetting); err != nil {
+		panic("failed to publish hub routing test setting: " + err.Error())
+	}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		panic("failed to open test db: " + err.Error())

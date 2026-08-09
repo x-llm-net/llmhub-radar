@@ -9,10 +9,12 @@ import (
 
 func TestResolveEligibleServiceTiersUsesExclusivePriceBands(t *testing.T) {
 	original := *Get()
-	t.Cleanup(func() { *Get() = original })
-	Get().Enabled = true
-	Get().FamilyTierCeilings = cloneFamilyTierCeilings(defaultFamilyTierCeilings)
-	Get().HighQualityProviderIDs = nil
+	t.Cleanup(func() { require.NoError(t, Publish(original)) })
+	setting := original
+	setting.Enabled = true
+	setting.FamilyTierCeilings = cloneFamilyTierCeilings(defaultFamilyTierCeilings)
+	setting.HighQualityProviderIDs = nil
+	require.NoError(t, Publish(setting))
 
 	assert.Equal(t, []string{ServiceTierSpecial}, ResolveEligibleServiceTiers("openai", 0.10, 1))
 	assert.Equal(t, []string{ServiceTierSpecial}, ResolveEligibleServiceTiers("anthropic", 0.15, 1))
@@ -23,10 +25,12 @@ func TestResolveEligibleServiceTiersUsesExclusivePriceBands(t *testing.T) {
 
 func TestResolveEligibleServiceTiersOverlapsApprovedHighQualitySupply(t *testing.T) {
 	original := *Get()
-	t.Cleanup(func() { *Get() = original })
-	Get().Enabled = true
-	Get().FamilyTierCeilings = cloneFamilyTierCeilings(defaultFamilyTierCeilings)
-	Get().HighQualityProviderIDs = []int{7}
+	t.Cleanup(func() { require.NoError(t, Publish(original)) })
+	setting := original
+	setting.Enabled = true
+	setting.FamilyTierCeilings = cloneFamilyTierCeilings(defaultFamilyTierCeilings)
+	setting.HighQualityProviderIDs = []int{7}
+	require.NoError(t, Publish(setting))
 
 	assert.Equal(t,
 		[]string{ServiceTierSpecial, ServiceTierHigh},
@@ -40,13 +44,14 @@ func TestResolveEligibleServiceTiersOverlapsApprovedHighQualitySupply(t *testing
 }
 
 func TestGetFamilyTierCeilingsNormalizesLegacyHighSentinel(t *testing.T) {
-	original := *Get()
-	t.Cleanup(func() { *Get() = original })
-	Get().FamilyTierCeilings = map[string]FamilyTierCeilings{
-		"openai": {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
+	setting := HubRoutingSetting{
+		Enabled: true,
+		FamilyTierCeilings: map[string]FamilyTierCeilings{
+			"openai": {Special: 0.10, Low: 0.30, Medium: 0.80, High: 100},
+		},
 	}
 
-	assert.Equal(t, 1.0, GetFamilyTierCeilings()["openai"].High)
+	assert.Equal(t, 1.0, getFamilyTierCeilings(setting)["openai"].High)
 }
 
 func TestValidateOptionTreatsHighAsIndependentGuardrail(t *testing.T) {
@@ -59,9 +64,11 @@ func TestValidateOptionTreatsHighAsIndependentGuardrail(t *testing.T) {
 
 func TestResolveEligibleServiceTiersRejectsUnknownFamilyByDefault(t *testing.T) {
 	original := *Get()
-	t.Cleanup(func() { *Get() = original })
-	Get().Enabled = true
-	Get().AllowOtherFamily = false
+	t.Cleanup(func() { require.NoError(t, Publish(original)) })
+	setting := original
+	setting.Enabled = true
+	setting.AllowOtherFamily = false
+	require.NoError(t, Publish(setting))
 
 	assert.Empty(t, ResolveEligibleServiceTiers("other", 0.05, 1))
 }
