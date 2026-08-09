@@ -164,11 +164,11 @@ func Distribute() func(c *gin.Context) {
 						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
 						//	message = "数据库一致性已被破坏，请联系管理员"
 						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, unavailableChannelErrorCode(c))
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), unavailableChannelErrorCode(c))
 						return
 					}
 				}
@@ -181,6 +181,13 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func unavailableChannelErrorCode(c *gin.Context) types.ErrorCode {
+	if service.IsHubServiceTierRequest(c) {
+		return types.ErrorCodeServiceTierUnavailable
+	}
+	return types.ErrorCodeModelNotFound
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.

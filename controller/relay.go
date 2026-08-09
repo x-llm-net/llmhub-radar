@@ -346,10 +346,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, newChannelSelectionError(c, fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()))
 	}
 	if channel == nil {
-		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, newChannelSelectionError(c, fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName))
 	}
 
 	groupRatioInfo := helper.HandleGroupRatio(c, info)
@@ -369,6 +369,30 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, newAPIError
 	}
 	return channel, nil
+}
+
+func newChannelSelectionError(c *gin.Context, err error) *types.NewAPIError {
+	if service.IsHubServiceTierRequest(c) {
+		return types.NewErrorWithStatusCode(
+			err,
+			types.ErrorCodeServiceTierUnavailable,
+			http.StatusServiceUnavailable,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	return types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+}
+
+func taskErrorFromChannelSelection(c *gin.Context, channelErr *types.NewAPIError) *taskdto.TaskError {
+	if channelErr != nil && channelErr.GetErrorCode() == types.ErrorCodeServiceTierUnavailable {
+		message := common.MessageWithRequestId(channelErr.Error(), c.GetString(common.RequestIdKey))
+		return service.TaskErrorWrapperLocal(
+			errors.New(message),
+			string(types.ErrorCodeServiceTierUnavailable),
+			http.StatusServiceUnavailable,
+		)
+	}
+	return service.TaskErrorWrapperLocal(channelErr.Err, string(types.ErrorCodeGetChannelFailed), http.StatusInternalServerError)
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
@@ -635,7 +659,7 @@ func RelayTask(c *gin.Context) {
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				taskErr = taskErrorFromChannelSelection(c, channelErr)
 				break
 			}
 		}
