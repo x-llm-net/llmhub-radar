@@ -42,9 +42,11 @@ const SENSITIVE_MASK = '••••'
 function ChannelCardComponent({
   row,
   isSelected,
+  serviceTierMode = false,
 }: {
   row: Row<Channel>
   isSelected: boolean
+  serviceTierMode?: boolean
 }) {
   const { t } = useTranslation()
   const { sensitiveVisible } = useChannels()
@@ -65,7 +67,9 @@ function ChannelCardComponent({
     test_time: t('Last Tested'),
   }
 
-  const groups = parseGroupsList(row.original.group ?? '')
+  const groups = serviceTierMode
+    ? (row.original.hub_service_tiers ?? [])
+    : parseGroupsList(row.original.group ?? '')
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
@@ -160,15 +164,20 @@ function ChannelCardComponent({
           </div>
         </div>
 
-        {/* Last row: groups span the full width, showing every group (no label) */}
+        {/* Last row: groups or derived service tiers span the full width. */}
         <div className='min-w-0'>
           {groups.length > 0 ? (
             <div className='-ml-1.5 flex flex-wrap gap-1'>
-              {groups.map((g) => (
+              {groups.map((g, index) => (
                 <GroupBadge
                   key={g}
                   group={g}
                   label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                  ratio={
+                    serviceTierMode && index === 0
+                      ? row.original.hub_supply_multiplier
+                      : undefined
+                  }
                   size='sm'
                 />
               ))}

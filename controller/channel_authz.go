@@ -82,15 +82,17 @@ var channelOperationalFields = map[string]struct{}{
 // channelReadOnlyFields lists server-managed/accounting fields that the general
 // channel edit endpoint must ignore even if a client sends them.
 var channelReadOnlyFields = map[string]struct{}{
-	"created_time":         {},
-	"test_time":            {},
-	"response_time":        {},
-	"balance":              {},
-	"balance_updated_time": {},
-	"used_quota":           {},
-	"ownership":            {},
-	"hub_provider_id":      {},
-	"hub_provider_name":    {},
+	"created_time":          {},
+	"test_time":             {},
+	"response_time":         {},
+	"balance":               {},
+	"balance_updated_time":  {},
+	"used_quota":            {},
+	"ownership":             {},
+	"hub_provider_id":       {},
+	"hub_provider_name":     {},
+	"hub_supply_multiplier": {},
+	"hub_service_tiers":     {},
 }
 
 func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]any) {
@@ -120,6 +122,12 @@ func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]an
 	}
 	if _, ok := requestData["hub_provider_name"]; ok {
 		channel.HubProviderName = ""
+	}
+	if _, ok := requestData["hub_supply_multiplier"]; ok {
+		channel.HubSupplyMultiplier = 0
+	}
+	if _, ok := requestData["hub_service_tiers"]; ok {
+		channel.HubServiceTiers = nil
 	}
 }
 

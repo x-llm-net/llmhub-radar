@@ -288,7 +288,7 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 	channel := &model.Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "Published supply",
 		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
-		Status: common.ChannelStatusManuallyDisabled,
+		Status: common.ChannelStatusAutoDisabled,
 	}
 	require.NoError(t, model.CreateHubSupplyGroup(group, channel))
 	var target model.HubSupplyGroupProbeTarget
@@ -323,7 +323,7 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 	}
 	require.NoError(t, common.Unmarshal(disableRecorder.Body.Bytes(), &disableResponse))
 	require.True(t, disableResponse.Success, disableRecorder.Body.String())
-	assertHubProviderRouteState(model.HubProviderStatusDisabled, common.ChannelStatusManuallyDisabled, 0)
+	assertHubProviderRouteState(model.HubProviderStatusDisabled, common.ChannelStatusAutoDisabled, 0)
 
 	enableCtx, enableRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/status", map[string]string{
 		"status": model.HubProviderStatusActive,

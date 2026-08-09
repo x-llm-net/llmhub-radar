@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -84,9 +85,10 @@ type HubSupplyGroupListOptions struct {
 }
 
 type HubChannelProviderOwnership struct {
-	ChannelId    int    `json:"channel_id" gorm:"column:channel_id"`
-	ProviderId   int    `json:"provider_id" gorm:"column:provider_id"`
-	ProviderName string `json:"provider_name" gorm:"column:provider_name"`
+	ChannelId       int     `json:"channel_id" gorm:"column:channel_id"`
+	ProviderId      int     `json:"provider_id" gorm:"column:provider_id"`
+	ProviderName    string  `json:"provider_name" gorm:"column:provider_name"`
+	PriceMultiplier float64 `json:"price_multiplier" gorm:"column:price_multiplier"`
 }
 
 type HubChannelOwnershipOptions struct {
@@ -137,6 +139,7 @@ func GetHubChannelProviderOwnership(channelIDs []int) (map[int]HubChannelProvide
 	err := DB.Table("hub_supply_groups AS supply_groups").
 		Select(
 			"supply_groups.new_api_channel_id AS channel_id, "+
+				"supply_groups.price_multiplier AS price_multiplier, "+
 				"providers.id AS provider_id, providers.name AS provider_name",
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
@@ -149,6 +152,23 @@ func GetHubChannelProviderOwnership(channelIDs []int) (map[int]HubChannelProvide
 		result[row.ChannelId] = row
 	}
 	return result, nil
+}
+
+func ResolveHubSupplyServiceTiers(modelsCSV string, multiplier float64, providerID int) []string {
+	eligible := make(map[string]struct{})
+	for _, modelName := range normalizeHubSupplyModelNames(modelsCSV) {
+		family := ClassifyHubPublicModelFamily(modelName)
+		for _, tier := range hub_routing_setting.ResolveEligibleServiceTiers(family, multiplier, providerID) {
+			eligible[tier] = struct{}{}
+		}
+	}
+	tiers := make([]string, 0, len(eligible))
+	for _, tier := range hub_routing_setting.ServiceTiers() {
+		if _, ok := eligible[tier]; ok {
+			tiers = append(tiers, tier)
+		}
+	}
+	return tiers
 }
 
 func GetHubChannelOwnershipOptions() (*HubChannelOwnershipOptions, error) {
@@ -661,7 +681,10 @@ func syncHubSupplyGroupFromChannelTx(tx *gorm.DB, before, channel *Channel) erro
 		group.ErrorModelCount = 0
 		group.PendingModelCount = len(channel.GetModels())
 		group.LastProbeAt = 0
-		channel.Status = common.ChannelStatusManuallyDisabled
+		channel.Status = common.ChannelStatusAutoDisabled
+		if before != nil && before.Status == common.ChannelStatusManuallyDisabled {
+			channel.Status = common.ChannelStatusManuallyDisabled
+		}
 		updates["config_version"] = group.ConfigVersion
 		updates["status"] = group.Status
 		updates["available_model_count"] = 0

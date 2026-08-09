@@ -10,6 +10,7 @@ import {
   DISABLED_ROW_MOBILE,
   useDataTable,
 } from '@/components/data-table'
+import { getLocalizedGroupLabel } from '@/components/group-badge'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -86,11 +87,14 @@ export function ChannelsTable() {
     queryKey: ['groups'],
     queryFn: getGroups,
   })
+  const ownership = listState.queryParams.ownership ?? ''
+  const serviceTierMode =
+    ownership === 'provider' || ownership.startsWith('provider:')
   const groupOptions = useMemo(
     () => [
       { label: t('All Groups'), value: 'all' },
       ...(groupsData?.data || []).map((group) => ({
-        label: sensitiveVisible ? group : '••••',
+        label: sensitiveVisible ? getLocalizedGroupLabel(group, t) : '••••',
         value: group,
       })),
     ],
@@ -166,7 +170,10 @@ export function ChannelsTable() {
       ? aggregateChannelsByTag(items)
       : items
   }, [data, enableTagMode])
-  const columns = useChannelsColumns({ enableSelection: batchMode })
+  const columns = useChannelsColumns({
+    enableSelection: batchMode,
+    serviceTierMode,
+  })
   const { table } = useDataTable({
     data: channels,
     columns,
@@ -208,7 +215,7 @@ export function ChannelsTable() {
       columns={columns}
       typeCounts={data?.data?.type_counts}
       statusOptions={CHANNEL_STATUS_OPTIONS}
-      groupOptions={groupOptions}
+      groupOptions={serviceTierMode ? undefined : groupOptions}
       ownershipOptions={ownershipOptions}
       isLoading={isLoading}
       isFetching={isFetching}
@@ -242,7 +249,11 @@ export function ChannelsTable() {
       enableCardView
       viewModeStorageKey={CHANNELS_VIEW_MODE_STORAGE_KEY}
       renderCard={(row, { isSelected }) => (
-        <ChannelCard row={row} isSelected={isSelected} />
+        <ChannelCard
+          row={row}
+          isSelected={isSelected}
+          serviceTierMode={serviceTierMode}
+        />
       )}
       cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3'
       applyHeaderSize

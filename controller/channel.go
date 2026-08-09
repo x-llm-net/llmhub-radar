@@ -112,6 +112,12 @@ func attachHubChannelOwnership(channels []*model.Channel) error {
 			channel.Ownership = "provider"
 			channel.HubProviderId = ownership.ProviderId
 			channel.HubProviderName = ownership.ProviderName
+			channel.HubSupplyMultiplier = ownership.PriceMultiplier
+			channel.HubServiceTiers = model.ResolveHubSupplyServiceTiers(
+				channel.Models,
+				ownership.PriceMultiplier,
+				ownership.ProviderId,
+			)
 		}
 	}
 	return nil

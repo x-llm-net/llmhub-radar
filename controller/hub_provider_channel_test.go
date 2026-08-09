@@ -133,7 +133,7 @@ func TestCreateHubProviderChannelUsesNativeChannelConfiguration(t *testing.T) {
 	assert.Equal(t, "default", channel.Group)
 	assert.Equal(t, int64(0), channel.GetPriority())
 	assert.Equal(t, 0, channel.GetWeight())
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, channel.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, channel.Status)
 	assert.True(t, channel.ChannelInfo.IsMultiKey)
 	assert.Equal(t, 2, channel.ChannelInfo.MultiKeySize)
 	assert.Equal(t, constant.MultiKeyModePolling, channel.ChannelInfo.MultiKeyMode)

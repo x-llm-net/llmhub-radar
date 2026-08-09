@@ -384,7 +384,7 @@ func TestUpdateHubProviderChannelModelsPublicationChecksBatchAndOwnership(t *tes
 	channel := &model.Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "batch-listing",
 		BaseURL: &baseURL, Models: "gpt-5,gpt-5-mini", Group: "default",
-		Status: common.ChannelStatusManuallyDisabled,
+		Status: common.ChannelStatusAutoDisabled,
 	}
 	require.NoError(t, model.CreateHubSupplyGroup(group, channel))
 	var target model.HubSupplyGroupProbeTarget

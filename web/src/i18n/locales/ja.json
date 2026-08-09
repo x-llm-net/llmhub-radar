@@ -5650,9 +5650,9 @@
     "Multiplier boundaries": "Multiplier boundaries",
     "Price tiers are exclusive; approved supply may also enter high quality": "Price tiers are exclusive; approved supply may also enter high quality",
     "Model family": "Model family",
-    "Special price": "Special price",
-    "Economy": "Economy",
-    "High quality": "High quality",
+    "Special price": "特別価格",
+    "Economy": "エコノミー",
+    "High quality": "高品質",
     "Maximum approved multiplier": "Maximum approved multiplier",
     "High-quality provider approval": "High-quality provider approval",
     "Only approved providers can enter the high-quality tier": "Only approved providers can enter the high-quality tier",
@@ -5661,7 +5661,7 @@
     "Budget routing within this price tier": "Budget routing within this price tier",
     "Balanced routing within this price tier": "Balanced routing within this price tier",
     "Admin-approved high-quality sources": "Admin-approved high-quality sources",
-    "Please select a service tier": "Please select a service tier",
-    "Service tier": "Service tier"
+    "Please select a service tier": "サービス階層を選択してください",
+    "Service tier": "サービス階層"
   }
 }

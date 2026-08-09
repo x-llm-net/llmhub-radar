@@ -549,11 +549,13 @@ function BalanceCell({ channel }: { channel: Channel }) {
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
+    serviceTierMode?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
   const { t, i18n } = useTranslation()
   const { sensitiveVisible } = useChannels()
   const enableSelection = options.enableSelection ?? true
+  const serviceTierMode = options.serviceTierMode ?? false
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   // The column definitions only depend on the translation function, the active
   // locale, and sensitive-data visibility. Memoizing keeps the array (and every
@@ -1072,18 +1074,27 @@ export function useChannelsColumns(
       // Group column
       {
         accessorKey: 'group',
-        header: t('Groups'),
+        header: t(serviceTierMode ? 'Service tier' : 'Groups'),
         meta: { mobileHidden: true },
         cell: ({ row }) => {
-          const group = row.getValue('group') as string
-          const groupArray = parseGroupsList(group)
+          const groupArray = serviceTierMode
+            ? (row.original.hub_service_tiers ?? [])
+            : parseGroupsList(row.original.group)
+          if (groupArray.length === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
           return (
             <BadgeListCell
-              items={groupArray.map((g) => (
+              items={groupArray.map((g, index) => (
                 <GroupBadge
                   key={g}
                   group={g}
                   label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                  ratio={
+                    serviceTierMode && index === 0
+                      ? row.original.hub_supply_multiplier
+                      : undefined
+                  }
                   size='sm'
                 />
               ))}
@@ -1241,6 +1252,6 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [enableSelection, t, locale, sensitiveVisible]
+    [enableSelection, serviceTierMode, t, locale, sensitiveVisible]
   )
 }

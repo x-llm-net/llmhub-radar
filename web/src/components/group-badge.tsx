@@ -31,6 +31,25 @@ type GroupBadgeProps = Omit<
   ratio?: number | null
 }
 
+const SERVICE_TIER_LABEL_KEYS: Record<string, string> = {
+  special: 'Special price',
+  low: 'Economy',
+  medium: 'Standard',
+  high: 'High quality',
+}
+
+export function isServiceTierGroup(group?: string | null): boolean {
+  return Boolean(group?.trim() && SERVICE_TIER_LABEL_KEYS[group.trim()])
+}
+
+export function getLocalizedGroupLabel(
+  groupName: string | undefined,
+  t: (key: string) => string
+): string {
+  if (!groupName) return ''
+  return t(SERVICE_TIER_LABEL_KEYS[groupName] ?? groupName)
+}
+
 function getGroupRatioClassName(ratio: number): string {
   if (ratio > 1) {
     return 'bg-warning/10 text-warning'
@@ -51,7 +70,7 @@ function getGroupLabel(params: {
   if (params.labelOverride) return params.labelOverride
   if (params.isEmptyGroup) return params.t('User Group')
   if (params.isAutoGroup) return params.t('Auto')
-  return params.groupName ?? ''
+  return getLocalizedGroupLabel(params.groupName, params.t)
 }
 
 export function GroupBadge(props: GroupBadgeProps) {

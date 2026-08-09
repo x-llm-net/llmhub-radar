@@ -643,7 +643,10 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 	} else if errorCount > 0 {
 		status = HubSupplyGroupStatusError
 	}
-	channelStatus := common.ChannelStatusManuallyDisabled
+	channelStatus := common.ChannelStatusAutoDisabled
+	if channel.Status == common.ChannelStatusManuallyDisabled {
+		channelStatus = common.ChannelStatusManuallyDisabled
+	}
 	publishedModels := make(map[string]struct{})
 	for _, modelName := range group.GetPublishedModels(channel.Models) {
 		publishedModels[modelName] = struct{}{}
@@ -654,7 +657,9 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 			routableModelCount++
 		}
 	}
-	if providerStatus == HubProviderStatusActive && routableModelCount > 0 {
+	if providerStatus == HubProviderStatusActive &&
+		routableModelCount > 0 &&
+		channel.Status != common.ChannelStatusManuallyDisabled {
 		channelStatus = common.ChannelStatusEnabled
 	}
 	channel.Status = channelStatus

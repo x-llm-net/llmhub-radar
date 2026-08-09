@@ -5650,8 +5650,8 @@
     "Multiplier boundaries": "Multiplier boundaries",
     "Price tiers are exclusive; approved supply may also enter high quality": "特價、經濟、標準互斥；通過審核的供給可同時進入高品質檔",
     "Model family": "Model family",
-    "Special price": "Special price",
-    "Economy": "Economy",
+    "Special price": "特價",
+    "Economy": "經濟",
     "High quality": "高品質",
     "Maximum approved multiplier": "審核供給最高倍率",
     "High-quality provider approval": "High-quality provider approval",
@@ -5661,7 +5661,7 @@
     "Budget routing within this price tier": "Budget routing within this price tier",
     "Balanced routing within this price tier": "Balanced routing within this price tier",
     "Admin-approved high-quality sources": "Admin-approved high-quality sources",
-    "Please select a service tier": "Please select a service tier",
-    "Service tier": "Service tier"
+    "Please select a service tier": "請選擇服務檔位",
+    "Service tier": "服務檔位"
   }
 }

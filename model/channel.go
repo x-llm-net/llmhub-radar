@@ -56,9 +56,11 @@ type Channel struct {
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
 	// Hub ownership is attached for administrator-facing channel responses.
-	Ownership       string `json:"ownership,omitempty" gorm:"-"`
-	HubProviderId   int    `json:"hub_provider_id,omitempty" gorm:"-"`
-	HubProviderName string `json:"hub_provider_name,omitempty" gorm:"-"`
+	Ownership           string   `json:"ownership,omitempty" gorm:"-"`
+	HubProviderId       int      `json:"hub_provider_id,omitempty" gorm:"-"`
+	HubProviderName     string   `json:"hub_provider_name,omitempty" gorm:"-"`
+	HubSupplyMultiplier float64  `json:"hub_supply_multiplier,omitempty" gorm:"-"`
+	HubServiceTiers     []string `json:"hub_service_tiers,omitempty" gorm:"-"`
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`

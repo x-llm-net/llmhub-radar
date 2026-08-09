@@ -117,7 +117,7 @@ func applyHubProviderChannelPolicy(channel *model.Channel, origin *model.Channel
 	channel.AutoBan = &zeroAutoBan
 	channel.Tag = nil
 	if origin == nil {
-		channel.Status = common.ChannelStatusManuallyDisabled
+		channel.Status = common.ChannelStatusAutoDisabled
 		channel.TestTime = 0
 		channel.ResponseTime = 0
 		channel.Balance = 0

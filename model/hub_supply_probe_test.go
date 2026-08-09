@@ -23,6 +23,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -102,7 +103,7 @@ func TestNativeChannelUpdateKeepsSupplyStateForMetadataAndResetsConnectionChange
 	channel := &Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "provider channel",
 		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
-		Status: common.ChannelStatusManuallyDisabled,
+		Status: common.ChannelStatusAutoDisabled,
 	}
 	require.NoError(t, CreateHubSupplyGroup(group, channel))
 	var target HubSupplyGroupProbeTarget
@@ -137,7 +138,7 @@ func TestNativeChannelUpdateKeepsSupplyStateForMetadataAndResetsConnectionChange
 
 	updatedChannel, err := GetChannelById(channel.Id, true)
 	require.NoError(t, err)
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
 	var currentTargets []HubSupplyGroupProbeTarget
 	require.NoError(t, DB.Where("group_id = ? AND config_version = ?", group.Id, resetGroup.ConfigVersion).Find(&currentTargets).Error)
 	require.Len(t, currentTargets, 1)
@@ -184,7 +185,7 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	channel := &Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:test",
 		BaseURL: &baseURL, Models: "gpt-5,gpt-5-mini", Group: "hub_test",
-		Status: common.ChannelStatusManuallyDisabled,
+		Status: common.ChannelStatusAutoDisabled,
 	}
 	require.NoError(t, CreateHubSupplyGroup(group, channel))
 
@@ -197,7 +198,7 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 
 	updatedChannel, err := GetChannelById(channel.Id, true)
 	require.NoError(t, err)
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedChannel.GetModels(), "routing state must not rewrite channel configuration")
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
 
@@ -229,7 +230,7 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedChannel.GetModels())
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "a published model must leave routing while unhealthy")
 
@@ -245,12 +246,58 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
-	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedChannel.GetModels())
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "manual unlisting must override a healthy probe")
 	_, _, err = FixAbility()
 	require.NoError(t, err)
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "ability repair must preserve supply publication rules")
+}
+
+func TestReconcileHubSupplyGroupPreservesManualDisableAfterHealthyProbe(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{
+		ProviderId: 1, PriceMultiplier: 0.1, PublishedModels: "gpt-5",
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "manually disabled supply",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+
+	var target HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ? AND model_name = ?", group.Id, "gpt-5").First(&target).Error)
+	_, _, err := RecordHubSupplyProbeResult(target.Id, true, 500, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+
+	updatedChannel, err := GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
+}
+
+func TestResolveHubSupplyServiceTiersAggregatesModelFamilies(t *testing.T) {
+	original := hub_routing_setting.Snapshot()
+	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })
+	setting := original
+	setting.Enabled = true
+	setting.AllowOtherFamily = false
+	setting.HighQualityProviderIDs = nil
+	setting.FamilyTierCeilings = map[string]hub_routing_setting.FamilyTierCeilings{
+		"openai":    {Special: 0.1, Low: 0.3, Medium: 0.8, High: 1},
+		"anthropic": {Special: 0.2, Low: 0.4, Medium: 0.8, High: 1},
+	}
+	require.NoError(t, hub_routing_setting.Publish(setting))
+
+	assert.Equal(
+		t,
+		[]string{hub_routing_setting.ServiceTierSpecial, hub_routing_setting.ServiceTierLow},
+		ResolveHubSupplyServiceTiers("gpt-5,claude-opus-4-6", 0.15, 1),
+	)
 }
 
 func TestUpdateHubSupplyGroupModelsPublicationIsAtomic(t *testing.T) {
