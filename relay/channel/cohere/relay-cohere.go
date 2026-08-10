@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -111,20 +110,19 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		stopChan <- true
 	}()
 	helper.SetEventStreamHeaders(c)
-	isFirst := true
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case data := <-dataChan:
-			if isFirst {
-				isFirst = false
-				info.FirstResponseTime = time.Now()
-			}
+			info.SetFirstResponseTime()
 			data = strings.TrimSuffix(data, "\r")
 			var cohereResp CohereResponse
 			err := json.Unmarshal([]byte(data), &cohereResp)
 			if err != nil {
 				common.SysLog("error unmarshalling stream response: " + err.Error())
 				return true
+			}
+			if strings.TrimSpace(cohereResp.Text) != "" {
+				info.SetFirstTokenTime()
 			}
 			var openaiResp dto.ChatCompletionsStreamResponse
 			openaiResp.Id = responseId

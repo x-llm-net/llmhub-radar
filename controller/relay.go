@@ -293,7 +293,7 @@ func beginHubRelayAttemptContext(c *gin.Context, relayInfo *relaycommon.RelayInf
 	c.Set(hubRelayAttemptStartedAtKey, time.Now())
 	c.Set(hubRelayAttemptRetryIndexKey, relayInfo.RetryIndex)
 	c.Set(common.UpstreamRequestIdKey, "")
-	relayInfo.FirstResponseTime = time.Time{}
+	relayInfo.ResetResponseTiming()
 }
 
 func setHubRelayAttemptPricingContext(c *gin.Context, relayInfo *relaycommon.RelayInfo) {

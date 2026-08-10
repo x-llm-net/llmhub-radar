@@ -90,7 +90,11 @@ type RelayInfo struct {
 	TokenUnlimited    bool
 	StartTime         time.Time
 	FirstResponseTime time.Time
-	isFirstResponse   bool
+	// FirstTokenTime is the first meaningful text or reasoning increment.
+	// FirstResponseTime intentionally remains the first upstream event for
+	// transport diagnostics and backwards-compatible request logs.
+	FirstTokenTime  time.Time
+	isFirstResponse bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -810,14 +814,40 @@ func (info *RelayInfo) ConvOptions() *convmeta.Options {
 }
 
 func (info *RelayInfo) SetFirstResponseTime() {
+	if info == nil {
+		return
+	}
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
 	}
 }
 
+func (info *RelayInfo) SetFirstTokenTime() {
+	if info == nil || !info.FirstTokenTime.IsZero() {
+		return
+	}
+	info.FirstTokenTime = time.Now()
+}
+
+// ResetResponseTiming starts a fresh timing window for a retry attempt.
+// Retry attempts must not inherit first-event or first-token timestamps from
+// the channel that failed before them.
+func (info *RelayInfo) ResetResponseTiming() {
+	if info == nil {
+		return
+	}
+	info.FirstResponseTime = time.Time{}
+	info.FirstTokenTime = time.Time{}
+	info.isFirstResponse = true
+}
+
 func (info *RelayInfo) HasSendResponse() bool {
 	return info.FirstResponseTime.After(info.StartTime)
+}
+
+func (info *RelayInfo) HasFirstToken() bool {
+	return info != nil && info.FirstTokenTime.After(info.StartTime)
 }
 
 type TaskRelayInfo struct {

@@ -99,6 +99,23 @@ func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	assert.False(t, called.Load(), "handler should not be called for empty body")
 }
 
+func TestStreamScannerHandler_SeparatesFirstEventFromFirstToken(t *testing.T) {
+	c, resp, info := setupStreamTest(t, strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n"+
+			"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1}}\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n"+
+			"data: [DONE]\n",
+	))
+	info.IsStream = true
+	info.ResetResponseTiming()
+
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
+
+	require.False(t, info.FirstResponseTime.IsZero())
+	require.False(t, info.FirstTokenTime.IsZero())
+	assert.False(t, info.FirstResponseTime.After(info.FirstTokenTime))
+}
+
 func TestStreamScannerHandler_1000Chunks(t *testing.T) {
 	t.Parallel()
 

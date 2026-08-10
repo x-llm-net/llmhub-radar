@@ -2,12 +2,34 @@ package common
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRelayInfoResetResponseTiming(t *testing.T) {
+	start := time.Now().Add(-time.Second)
+	info := &RelayInfo{
+		StartTime:         start,
+		FirstResponseTime: start.Add(100 * time.Millisecond),
+		FirstTokenTime:    start.Add(200 * time.Millisecond),
+	}
+
+	info.ResetResponseTiming()
+
+	assert.True(t, info.FirstResponseTime.IsZero())
+	assert.True(t, info.FirstTokenTime.IsZero())
+	assert.False(t, info.HasSendResponse())
+	assert.False(t, info.HasFirstToken())
+
+	info.SetFirstResponseTime()
+	info.SetFirstTokenTime()
+	assert.True(t, info.HasSendResponse())
+	assert.True(t, info.HasFirstToken())
+}
 
 func TestRelayInfoGetFinalRequestRelayFormatPrefersExplicitFinal(t *testing.T) {
 	info := &RelayInfo{
