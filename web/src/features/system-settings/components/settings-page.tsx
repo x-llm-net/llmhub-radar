@@ -17,14 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useParams } from '@tanstack/react-router'
+import { CircleAlert, Loader2, RefreshCw } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 
 import { useSystemOptions, getOptionValue } from '../hooks/use-system-options'
 import type { SystemOption } from '../types'
 import { SettingsPageProvider } from './settings-page-context'
+import { getSettingsPageLoadState } from './settings-page-state'
 
 type SettingsPageProps<
   TSettings extends Record<string, string | number | boolean | unknown[]>,
@@ -53,6 +57,45 @@ type SettingsPageProps<
 type SettingsPageFrameProps = {
   title: ReactNode
   children: ReactNode
+}
+
+type SettingsPageLoadErrorProps = {
+  isRetrying: boolean
+  onRetry: () => void
+}
+
+export function SettingsPageLoadError({
+  isRetrying,
+  onRetry,
+}: SettingsPageLoadErrorProps) {
+  const { t } = useTranslation()
+
+  return (
+    <div className='flex min-h-40 items-center justify-center'>
+      <Alert variant='destructive' className='max-w-xl'>
+        <CircleAlert />
+        <AlertTitle>{t('Failed to load setup data')}</AlertTitle>
+        <AlertDescription>
+          <p>{t('Please try again later.')}</p>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            className='mt-3'
+            onClick={onRetry}
+            disabled={isRetrying}
+          >
+            {isRetrying ? (
+              <Loader2 data-icon='inline-start' className='animate-spin' />
+            ) : (
+              <RefreshCw data-icon='inline-start' />
+            )}
+            <span>{t('Retry')}</span>
+          </Button>
+        </AlertDescription>
+      </Alert>
+    </div>
+  )
 }
 
 function SettingsPageFrame(props: SettingsPageFrameProps) {
@@ -111,7 +154,7 @@ export function SettingsPage<
   resolveSettings,
 }: SettingsPageProps<TSettings, TSectionId, TExtraArgs>) {
   const { t } = useTranslation()
-  const { data, isLoading } = useSystemOptions()
+  const { data, isLoading, isError, isFetching, refetch } = useSystemOptions()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params = useParams({ from: routePath as any })
   const activeSection = (params?.section ?? defaultSection) as TSectionId
@@ -127,12 +170,29 @@ export function SettingsPage<
       : baseSettings
   }, [data?.data, defaultSettings, resolveSettings])
 
-  if (isLoading) {
+  const loadState = getSettingsPageLoadState({
+    hasData: data !== undefined,
+    isLoading,
+    isError,
+  })
+
+  if (loadState === 'loading') {
     return (
       <SettingsPageFrame title={t(sectionMeta.titleKey)}>
         <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
           {t(loadingMessage)}
         </div>
+      </SettingsPageFrame>
+    )
+  }
+
+  if (loadState === 'error') {
+    return (
+      <SettingsPageFrame title={t(sectionMeta.titleKey)}>
+        <SettingsPageLoadError
+          isRetrying={isFetching}
+          onRetry={() => void refetch()}
+        />
       </SettingsPageFrame>
     )
   }

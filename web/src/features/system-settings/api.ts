@@ -34,7 +34,14 @@ import type {
 
 export async function getSystemOptions() {
   const res = await api.get<SystemOptionsResponse>('/api/option/')
-  return res.data
+  const response = res.data
+  if (!response.success) {
+    throw new Error(response.message || 'Failed to load system options')
+  }
+  if (!Array.isArray(response.data)) {
+    throw new Error('Invalid system options response')
+  }
+  return response
 }
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
