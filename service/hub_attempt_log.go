@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -19,6 +20,7 @@ const (
 	hubEndpointTypeOpenAIRealtime  = "openai-realtime"
 	hubEndpointTypeMidjourneyProxy = "midjourney-proxy"
 	hubEndpointTypeUnknown         = "unknown"
+	hubRoutingMetricsRecordedKey   = "hub_routing_metrics_recorded"
 )
 
 type HubRelayAttempt struct {
@@ -105,10 +107,45 @@ func AttachHubRelayLogInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 		attempt.StatusCode = 200
 		attempt.UpstreamChargeStatus = "charged"
 		attempts = append(attempts, attempt)
+		RecordHubRelayAttemptMetrics(ctx, relayInfo, true)
 	}
 	if len(attempts) > 0 {
 		other["hub_attempts"] = attempts
 	}
+}
+
+// RecordHubRelayAttemptMetrics persists one request's complete attempt chain
+// into the read-only routing observer. The context guard matters because a
+// successful request may pass through more than one log decoration helper.
+func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, includeCurrentSuccess bool) {
+	if !IsHubServiceTierRequest(ctx) || ctx == nil || ctx.GetBool(hubRoutingMetricsRecordedKey) {
+		return
+	}
+	attempts := GetHubRelayAttempts(ctx)
+	if includeCurrentSuccess {
+		attempt := buildHubRelayAttempt(ctx, relayInfo)
+		attempt.Result = "success"
+		attempt.StatusCode = 200
+		attempt.UpstreamChargeStatus = "charged"
+		attempts = append(attempts, attempt)
+	}
+	if len(attempts) == 0 {
+		return
+	}
+	samples := make([]perfmetrics.HubRoutingAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		samples = append(samples, perfmetrics.HubRoutingAttempt{
+			Model:        attempt.Model,
+			EndpointType: attempt.EndpointType,
+			ProviderID:   attempt.ProviderID,
+			ChannelID:    attempt.ChannelID,
+			Success:      attempt.Result == "success",
+			LatencyMS:    attempt.LatencyMS,
+			FirstTokenMS: attempt.FirstTokenMS,
+		})
+	}
+	perfmetrics.RecordHubRoutingAttempts(samples)
+	ctx.Set(hubRoutingMetricsRecordedKey, true)
 }
 
 func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) HubRelayAttempt {

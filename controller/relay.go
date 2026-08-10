@@ -504,6 +504,7 @@ func recordHubFinalRelayError(c *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		return
 	}
 	if constant.ErrorLogEnabled && len(service.GetHubRelayAttempts(c)) > 0 {
+		service.RecordHubRelayAttemptMetrics(c, relayInfo, false)
 		return
 	}
 	other := map[string]interface{}{
@@ -515,6 +516,7 @@ func recordHubFinalRelayError(c *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		other["request_path"] = c.Request.URL.Path
 	}
 	service.AttachHubRelayLogInfo(c, relayInfo, other, false)
+	service.RecordHubRelayAttemptMetrics(c, relayInfo, false)
 	startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 	if startTime.IsZero() {
 		startTime = time.Now()

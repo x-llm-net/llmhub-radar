@@ -17,6 +17,7 @@
 - 公共池先按渠道商选择，再在渠道商内部按 Channel 优先级和权重选择，避免拆分多个 Channel 人为放大份额。管理员创建、无渠道商归属的渠道作为一个平台虚拟提供者参与。
 - 最终实际命中的供给倍率参与预扣、重试后的预扣调整、最终扣费和渠道商收益结算。
 - 请求日志保存结构化 `hub_attempts`，包括尝试顺序、模型、端点类型、样本来源、服务档位、路由阶段、渠道商、Channel、状态、耗时、首事件时间、TTFT、倍率和上游扣费状态；真实请求暂只用于观测和单请求追踪，不参与自动选路。
+- M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查看；该聚合不参与选路和结算。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
 
 ## 自动化闭环验证

@@ -202,6 +202,7 @@ func SetApiRouter(router *gin.Engine) {
 		hubAdminRoute.Use(middleware.AdminAuth())
 		{
 			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
+			hubAdminRoute.GET("/routing-metrics", controller.AdminListHubRoutingMetrics)
 		}
 
 		// Subscription billing (plans, purchase, admin management)
