@@ -74,6 +74,17 @@ active   后续才允许健康数据影响选路
 
 第一步先让管理员看见真实已有数据，不新增实时健康系统。
 
+实现状态：已完成首版只读页面。管理员可通过
+`/system-settings/models/channel-health-routing` 查看，数据接口为
+`GET /api/hub/admin/routing-health`。本模块没有新增表、定时任务或路由分数，
+也不参与实际选路。
+
+- [x] 按 `Channel + Model + EndpointType + ProbeKind` 展示当前状态。
+- [x] 展示渠道商归属、Channel 手动/自动禁用、上架、探测和服务档位 Ability。
+- [x] 复用 7 天探测样本排除规则、P50/P95、置信度和现有公开排行公式。
+- [x] 未上架、暂无样本、手动禁用、自动禁用和平台自营未监控渠道均保留在列表中。
+- [x] 样本只查询当前分页涉及的供给组；平台自营 Channel 不伪造 Hub 探测结果。
+
 ### 3.1 复用的数据来源
 
 - 探测目标和结果：`model/hub_supply_probe.go`。

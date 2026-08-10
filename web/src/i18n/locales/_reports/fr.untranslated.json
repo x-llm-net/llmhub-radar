@@ -87,5 +87,6 @@
   "Each model is shown independently with seven-day stability, first-token latency, supply coverage, and price multiplier.": "Each model is shown independently with seven-day stability, first-token latency, supply coverage, and price multiplier.",
   "Build supply eligibility from model family and multiplier": "Build supply eligibility from model family and multiplier",
   "Only approved providers can enter the high-quality tier": "Only approved providers can enter the high-quality tier",
-  "Please select a service tier": "Please select a service tier"
+  "Search provider, channel, or model": "Search provider, channel, or model",
+  "Failed to load channel health data": "Failed to load channel health data"
 }

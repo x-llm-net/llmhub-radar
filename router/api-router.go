@@ -198,6 +198,11 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)
 			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
 		}
+		hubAdminRoute := apiRouter.Group("/hub/admin")
+		hubAdminRoute.Use(middleware.AdminAuth())
+		{
+			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
+		}
 
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")

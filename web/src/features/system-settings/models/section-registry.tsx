@@ -20,6 +20,7 @@ import { ChannelAffinitySection } from '../general/channel-affinity'
 import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ChannelHealthRoutingSection } from './channel-health-routing-section'
 import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
@@ -73,8 +74,7 @@ const MODELS_SECTIONS = [
       <ServiceTierRoutingSection
         defaultValues={{
           enabled: settings['hub_routing_setting.enabled'],
-          allowOtherFamily:
-            settings['hub_routing_setting.allow_other_family'],
+          allowOtherFamily: settings['hub_routing_setting.allow_other_family'],
           familyTierCeilings:
             settings['hub_routing_setting.family_tier_ceilings'],
           highQualityProviderIDs:
@@ -82,6 +82,11 @@ const MODELS_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'channel-health-routing',
+    titleKey: 'Channel Health & Routing',
+    build: () => <ChannelHealthRoutingSection />,
   },
   {
     id: 'routing-reliability',
