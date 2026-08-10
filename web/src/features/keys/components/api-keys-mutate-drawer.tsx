@@ -195,10 +195,9 @@ export function ApiKeysMutateDrawer({
       const meta = SERVICE_TIER_I18N[tier]
       return [
         {
-          ...group,
+          value: group.value,
           label: t(meta.label),
           desc: t(meta.desc),
-          ratio: 1,
         },
       ]
     })
@@ -481,7 +480,17 @@ export function ApiKeysMutateDrawer({
                             shouldDirty: true,
                           })
                         }}
-                        placeholder={t('Select a group')}
+                        placeholder={t(
+                          usesServiceTiers
+                            ? 'Please select a service tier'
+                            : 'Select a group'
+                        )}
+                        emptyMessage={
+                          usesServiceTiers
+                            ? t('No service tier found.')
+                            : undefined
+                        }
+                        showRatio={!usesServiceTiers}
                       />
                     </FormControl>
                     <FormMessage />

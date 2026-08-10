@@ -210,7 +210,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         return (
           <ApiKeyGroupCell
             group={group}
-            ratio={groupRatios[group]}
+            ratio={usesServiceTiers ? undefined : groupRatios[group]}
             crossGroupRetry={apiKey.cross_group_retry}
             shouldReduceMotion={shouldReduceMotion}
           />

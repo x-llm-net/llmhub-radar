@@ -5662,6 +5662,7 @@
     "Balanced routing within this price tier": "Balanced routing within this price tier",
     "Admin-approved high-quality sources": "Admin-approved high-quality sources",
     "Please select a service tier": "サービス階層を選択してください",
-    "Service tier": "サービス階層"
+    "Service tier": "サービス階層",
+    "No service tier found.": "サービス階層が見つかりません。"
   }
 }

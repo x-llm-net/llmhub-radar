@@ -55,6 +55,8 @@ type ApiKeyGroupComboboxProps = {
   value?: string
   onValueChange: (value: string) => void
   placeholder?: string
+  emptyMessage?: string
+  showRatio?: boolean
   disabled?: boolean
 }
 
@@ -63,6 +65,8 @@ export function ApiKeyGroupCombobox({
   value,
   onValueChange,
   placeholder,
+  emptyMessage,
+  showRatio = true,
   disabled,
 }: ApiKeyGroupComboboxProps) {
   const { t } = useTranslation()
@@ -77,7 +81,9 @@ export function ApiKeyGroupCombobox({
     if (!search) return options
 
     return options.filter((option) => {
-      const ratioText = String(option.ratio ?? '').toLowerCase()
+      const ratioText = showRatio
+        ? String(option.ratio ?? '').toLowerCase()
+        : ''
       return (
         option.value.toLowerCase().includes(search) ||
         option.label.toLowerCase().includes(search) ||
@@ -85,7 +91,7 @@ export function ApiKeyGroupCombobox({
         ratioText.includes(search)
       )
     })
-  }, [options, searchValue])
+  }, [options, searchValue, showRatio])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
@@ -129,13 +135,15 @@ export function ApiKeyGroupCombobox({
               </span>
             )}
           </span>
-          <span className='hidden sm:block'>
-            <GroupRatioBadge
-              ratio={selectedOption?.ratio}
-              isAuto={isAutoSelected}
-              shouldReduceMotion={shouldReduceMotion}
-            />
-          </span>
+          {showRatio && (
+            <span className='hidden sm:block'>
+              <GroupRatioBadge
+                ratio={selectedOption?.ratio}
+                isAuto={isAutoSelected}
+                shouldReduceMotion={shouldReduceMotion}
+              />
+            </span>
+          )}
         </span>
         <ChevronsUpDown
           aria-hidden='true'
@@ -155,7 +163,7 @@ export function ApiKeyGroupCombobox({
             onValueChange={setSearchValue}
           />
           <CommandList className='max-h-[360px]'>
-            <CommandEmpty>{t('No group found.')}</CommandEmpty>
+            <CommandEmpty>{emptyMessage || t('No group found.')}</CommandEmpty>
             <CommandGroup>
               {filteredOptions.map((option) => {
                 const isAutoOption = option.value === 'auto'
@@ -197,11 +205,13 @@ export function ApiKeyGroupCombobox({
                         </span>
                       )}
                     </span>
-                    <GroupRatioBadge
-                      ratio={option.ratio}
-                      isAuto={isAutoOption}
-                      shouldReduceMotion={shouldReduceMotion}
-                    />
+                    {showRatio && (
+                      <GroupRatioBadge
+                        ratio={option.ratio}
+                        isAuto={isAutoOption}
+                        shouldReduceMotion={shouldReduceMotion}
+                      />
+                    )}
                   </CommandItem>
                 )
               })}

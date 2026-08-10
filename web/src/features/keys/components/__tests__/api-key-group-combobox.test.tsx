@@ -82,6 +82,8 @@ await i18n.use(initReactI18next).init({
         Ratio: 'Ratio',
         'Search...': 'Search...',
         'No group found.': 'No group found.',
+        'No service tier found.': 'No service tier found.',
+        'Please select a service tier': 'Please select a service tier',
         'Select a group': 'Select a group',
       },
     },
@@ -115,6 +117,30 @@ function Harness(props: { initialValue: string }) {
         onValueChange={setValue}
       />
       <output data-testid='selected-group'>{value}</output>
+    </I18nextProvider>
+  )
+}
+
+function ServiceTierHarness(props: { initialValue?: string }) {
+  const [value, setValue] = useState(props.initialValue)
+
+  return (
+    <I18nextProvider i18n={i18n}>
+      <ApiKeyGroupCombobox
+        options={[
+          {
+            value: 'special',
+            label: 'Special price',
+            desc: 'Lowest-cost approved supply',
+            ratio: 1,
+          },
+        ]}
+        value={value}
+        onValueChange={setValue}
+        placeholder='Please select a service tier'
+        emptyMessage='No service tier found.'
+        showRatio={false}
+      />
     </I18nextProvider>
   )
 }
@@ -290,5 +316,47 @@ describe('API key group combobox Auto effect', () => {
     await act(async () => root.unmount())
     container.remove()
     setReducedMotion(false)
+  })
+
+  test('uses service tier terminology and hides group ratios in service tier mode', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+
+    await act(async () => root.render(<ServiceTierHarness />))
+
+    const trigger = getTrigger(container)
+    assert.equal(
+      trigger.textContent?.includes('Please select a service tier'),
+      true
+    )
+    assert.equal(trigger.textContent?.includes('Ratio'), false)
+
+    await act(async () => trigger.click())
+    const specialOption = getCommandItem('Special price')
+    assert.equal(specialOption.textContent?.includes('Ratio'), false)
+
+    const searchInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder="Search..."]'
+    )
+    assert.ok(searchInput)
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        domWindow.HTMLInputElement.prototype,
+        'value'
+      )?.set
+      assert.ok(valueSetter)
+      valueSetter.call(searchInput, 'missing')
+      searchInput.dispatchEvent(
+        new domWindow.Event('input', { bubbles: true }) as unknown as Event
+      )
+    })
+    assert.equal(
+      document.body.textContent?.includes('No service tier found.'),
+      true
+    )
+
+    await act(async () => root.unmount())
+    container.remove()
   })
 })

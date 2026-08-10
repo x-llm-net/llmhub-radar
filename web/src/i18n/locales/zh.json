@@ -5662,6 +5662,7 @@
     "Balanced routing within this price tier": "在标准价格区间内路由",
     "Admin-approved high-quality sources": "仅使用管理员批准的高品质来源",
     "Please select a service tier": "请选择服务档位",
-    "Service tier": "服务档位"
+    "Service tier": "服务档位",
+    "No service tier found.": "未找到服务档位。"
   }
 }

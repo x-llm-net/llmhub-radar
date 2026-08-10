@@ -5662,6 +5662,7 @@
     "Balanced routing within this price tier": "Balanced routing within this price tier",
     "Admin-approved high-quality sources": "Admin-approved high-quality sources",
     "Please select a service tier": "Выберите уровень сервиса",
-    "Service tier": "Уровень сервиса"
+    "Service tier": "Уровень сервиса",
+    "No service tier found.": "Уровень сервиса не найден."
   }
 }

@@ -27,7 +27,9 @@ export function isServiceTierGroup(group?: string | null): boolean {
 }
 
 export function areServiceTierGroups(groups: readonly string[]): boolean {
-  return groups.length > 0 && groups.every(isServiceTierGroup)
+  return Object.keys(SERVICE_TIER_LABEL_KEYS).every((tier) =>
+    groups.includes(tier)
+  )
 }
 
 export function getLocalizedGroupLabel(

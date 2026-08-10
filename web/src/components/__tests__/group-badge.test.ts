@@ -57,6 +57,21 @@ describe('service tier group labels', () => {
       areServiceTierGroups(['special', 'low', 'medium', 'high']),
       true
     )
+    assert.equal(
+      areServiceTierGroups(['auto', 'special', 'low', 'medium', 'high']),
+      true
+    )
+    assert.equal(
+      areServiceTierGroups([
+        'default',
+        'vip',
+        'special',
+        'low',
+        'medium',
+        'high',
+      ]),
+      true
+    )
     assert.equal(areServiceTierGroups(['special', 'default']), false)
     assert.equal(areServiceTierGroups([]), false)
   })
