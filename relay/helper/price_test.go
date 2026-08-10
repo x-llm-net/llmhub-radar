@@ -1,20 +1,107 @@
 package helper
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func setupHubSupplyPricingTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	previousDB := model.DB
+	previousLogDB := model.LOG_DB
+	previousMainDatabaseType := common.MainDatabaseType()
+	previousLogDatabaseType := common.LogDatabaseType()
+
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubSupplyGroup{}))
+
+	model.DB = db
+	model.LOG_DB = db
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+
+	t.Cleanup(func() {
+		model.DB = previousDB
+		model.LOG_DB = previousLogDB
+		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)
+		require.NoError(t, model.RefreshHubSupplyPricingCache())
+		sqlDB, sqlErr := db.DB()
+		if sqlErr == nil {
+			require.NoError(t, sqlDB.Close())
+		}
+	})
+
+	return db
+}
+
+func TestApplyHubSupplyPricingFailsClosedOnMissingSnapshot(t *testing.T) {
+	db := setupHubSupplyPricingTestDB(t)
+	base := hosttypes.GroupRatioInfo{GroupRatio: 2}
+
+	platform, err := ApplyHubSupplyPricing(base, 101)
+	require.NoError(t, err)
+	require.Equal(t, 2.0, platform.GroupRatio)
+	require.Equal(t, 1.0, platform.SupplyMultiplier)
+	require.False(t, platform.HasSupplyPricing)
+
+	provider := &model.HubProvider{
+		OwnerUserId: 98001,
+		Name:        "Pricing Provider",
+		Slug:        "pricing-provider",
+	}
+	require.NoError(t, db.Create(provider).Error)
+	validGroup := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: 102, PriceMultiplier: 0.8,
+	}
+	require.NoError(t, db.Create(validGroup).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+
+	priced, err := ApplyHubSupplyPricing(base, validGroup.NewAPIChannelId)
+	require.NoError(t, err)
+	require.Equal(t, 1.6, priced.GroupRatio)
+	require.Equal(t, 0.8, priced.SupplyMultiplier)
+	require.True(t, priced.HasSupplyPricing)
+	require.Equal(t, validGroup.Id, priced.SupplyGroupId)
+	require.Equal(t, provider.Id, priced.SupplyProviderId)
+
+	invalidGroup := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: 103, PriceMultiplier: 0,
+	}
+	require.NoError(t, db.Create(invalidGroup).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+	_, err = ApplyHubSupplyPricing(base, invalidGroup.NewAPIChannelId)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid hub supply price multiplier")
+
+	staleGroup := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: 104, PriceMultiplier: 0.7,
+	}
+	require.NoError(t, db.Create(staleGroup).Error)
+	// Do not refresh the cache: the database knows this is a supply channel,
+	// while the request-side pricing snapshot is intentionally stale.
+	_, err = ApplyHubSupplyPricing(base, staleGroup.NewAPIChannelId)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pricing snapshot is missing")
+}
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)

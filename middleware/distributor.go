@@ -52,6 +52,11 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
 				return
 			}
+			if service.IsHubServiceTierRequest(c) && shouldSelectChannel {
+				if !validateSpecificChannelForServiceTier(c, channel, modelRequest.Model) {
+					return
+				}
+			}
 			if channel.Status != common.ChannelStatusEnabled {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
@@ -192,6 +197,36 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+// validateSpecificChannelForServiceTier keeps an administrator's fixed-channel
+// token inside the same service-tier and provider boundaries as normal routing.
+// Legacy groups intentionally retain the historical fixed-channel bypass.
+func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channel, modelName string) bool {
+	if strings.TrimSpace(modelName) == "" {
+		abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
+		return false
+	}
+
+	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+	available := channel.Status == common.ChannelStatusEnabled &&
+		model.IsChannelEnabledForGroupModel(group, modelName, channel.Id) &&
+		channelSupportsRequestPath(channel, c.Request.URL.Path, modelName) &&
+		model.IsHubSupplyChannelProviderActive(channel.Id)
+	if providerID > 0 {
+		available = available && model.ChannelMatchesProviderFilter(channel.Id, model.ChannelProviderFilter{
+			ProviderID: providerID,
+			Mode:       model.ChannelProviderOnly,
+		})
+	}
+	if available {
+		return true
+	}
+
+	logger.LogError(c, fmt.Sprintf("fixed channel %d is unavailable for service tier %s and model %s", channel.Id, group, modelName))
+	abortWithOpenAiMessage(c, http.StatusServiceUnavailable, ServiceTierUnavailableMessage(c, group, modelName), types.ErrorCodeServiceTierUnavailable)
+	return false
 }
 
 // ServiceTierUnavailableMessage returns the public error for an exhausted

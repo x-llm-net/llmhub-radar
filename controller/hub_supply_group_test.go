@@ -154,8 +154,10 @@ func TestRunImmediateHubSupplyModelProbesInParallel(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	baseURL := upstream.URL
+	provider := seedHubProvider(t, 9002)
 	group := &model.HubSupplyGroup{
-		ProviderId: 1, PriceMultiplier: 1,
+		ProviderId: provider.Id, PriceMultiplier: 1,
+		PublishedModels:  "hub-direct-a,hub-direct-b",
 		TextProbeMinutes: 10, ImageProbeMinutes: 30,
 	}
 	channel := &model.Channel{

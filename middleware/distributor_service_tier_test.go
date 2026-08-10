@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,6 +48,7 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 		&model.Ability{},
 		&model.HubProvider{},
 		&model.HubSupplyGroup{},
+		&model.HubSupplyGroupProbeTarget{},
 	))
 
 	model.DB = db
@@ -97,6 +99,157 @@ func newDistributorServiceTierContextForModel(providerID int, modelName string) 
 	return ctx, recorder
 }
 
+func newFixedChannelServiceTierContext(channelID int, modelName string, requestPath string, body string, providerID int) (*gin.Context, *httptest.ResponseRecorder) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, requestPath, bytes.NewBufferString(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
+	common.SetContextKey(ctx, constant.ContextKeyTokenSpecificChannelId, strconv.Itoa(channelID))
+	if providerID > 0 {
+		common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, providerID)
+	}
+	return ctx, recorder
+}
+
+func createFixedChannelServiceTierFixture(t *testing.T, db *gorm.DB, modelName string) (*model.HubProvider, *model.Channel) {
+	t.Helper()
+	priority := int64(0)
+	provider := &model.HubProvider{
+		OwnerUserId: 73002,
+		Name:        "Fixed Token Provider",
+		Slug:        "fixed-token-provider",
+		Status:      model.HubProviderStatusActive,
+	}
+	require.NoError(t, db.Create(provider).Error)
+	channel := &model.Channel{
+		Name:     "fixed-token-channel",
+		Type:     constant.ChannelTypeOpenAI,
+		Key:      "fixed-token-key",
+		Models:   modelName,
+		Group:    hub_routing_setting.ServiceTierMedium,
+		Status:   common.ChannelStatusEnabled,
+		Priority: &priority,
+	}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
+		ChannelId: channel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id, PriceMultiplier: 0.8,
+	}
+	require.NoError(t, db.Create(group).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroupProbeTarget{
+		GroupId: group.Id, ConfigVersion: group.ConfigVersion, ModelName: modelName,
+		EndpointType: "openai", EndpointMode: "openai", ProbeKind: model.HubSupplyProbeKindText,
+		Status: model.HubSupplyProbeStatusAvailable,
+	}).Error)
+	model.InitChannelCache()
+	return provider, channel
+}
+
+func assertServiceTierUnavailable(t *testing.T, recorder *httptest.ResponseRecorder) {
+	t.Helper()
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	var response distributorErrorResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, "service_tier_unavailable", response.Error.Code)
+}
+
+func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+
+	t.Run("matching tier and provider succeeds", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-success")
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-success", "/v1/chat/completions", `{"model":"fixed-tier-success","messages":[]}`, provider.Id)
+
+		Distribute()(ctx)
+
+		require.False(t, ctx.IsAborted())
+		require.Equal(t, http.StatusOK, recorder.Code)
+		assert.Equal(t, channel.Id, common.GetContextKeyInt(ctx, constant.ContextKeyChannelId))
+	})
+
+	t.Run("missing ability is unavailable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-no-ability")
+		require.NoError(t, db.Where("channel_id = ?", channel.Id).Delete(&model.Ability{}).Error)
+		model.InitChannelCache()
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-no-ability", "/v1/chat/completions", `{"model":"fixed-tier-no-ability","messages":[]}`, provider.Id)
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+	})
+
+	t.Run("disabled provider is unavailable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-disabled-provider")
+		_, err := model.UpdateHubProviderStatus(provider.Id, model.HubProviderStatusDisabled)
+		require.NoError(t, err)
+		model.InitChannelCache()
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-disabled-provider", "/v1/chat/completions", `{"model":"fixed-tier-disabled-provider","messages":[]}`, provider.Id)
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+	})
+
+	t.Run("disabled channel is unavailable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-disabled-channel")
+		require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("status", common.ChannelStatusManuallyDisabled).Error)
+		model.InitChannelCache()
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-disabled-channel", "/v1/chat/completions", `{"model":"fixed-tier-disabled-channel","messages":[]}`, provider.Id)
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+	})
+
+	t.Run("provider subdomain cannot use another provider channel", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-provider-mismatch")
+		otherProvider := &model.HubProvider{
+			OwnerUserId: 73003,
+			Name:        "Other Provider",
+			Slug:        "other-provider",
+			Status:      model.HubProviderStatusActive,
+		}
+		require.NoError(t, db.Create(otherProvider).Error)
+		model.InitChannelCache()
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-provider-mismatch", "/v1/chat/completions", `{"model":"fixed-tier-provider-mismatch","messages":[]}`, otherProvider.Id)
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+		assert.NotEqual(t, provider.Id, otherProvider.Id)
+	})
+
+	t.Run("text-only endpoint cannot serve image request", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-text-only")
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-tier-text-only", "/v1/images/generations", `{"model":"fixed-tier-text-only","prompt":"test"}`, provider.Id)
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+	})
+
+	t.Run("missing model remains a bad request", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-no-model")
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "", "/v1/chat/completions", `{"messages":[]}`, provider.Id)
+
+		Distribute()(ctx)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+	})
+}
+
 func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupDistributorServiceTierTestDB(t)
@@ -125,8 +278,14 @@ func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {
 		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
 		ChannelId: providerChannel.Id, Enabled: true, Priority: &priority,
 	}).Error)
-	require.NoError(t, db.Create(&model.HubSupplyGroup{
+	supplyGroup := &model.HubSupplyGroup{
 		ProviderId: provider.Id, NewAPIChannelId: providerChannel.Id, PriceMultiplier: 0.8,
+	}
+	require.NoError(t, db.Create(supplyGroup).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroupProbeTarget{
+		GroupId: supplyGroup.Id, ConfigVersion: supplyGroup.ConfigVersion,
+		ModelName: modelName, EndpointType: "openai", EndpointMode: "openai",
+		ProbeKind: model.HubSupplyProbeKindText, Status: model.HubSupplyProbeStatusAvailable,
 	}).Error)
 	model.InitChannelCache()
 

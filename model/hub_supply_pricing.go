@@ -102,6 +102,25 @@ func GetHubSupplyPricingByChannelID(channelID int) (HubSupplyPricing, bool) {
 	return pricing, ok
 }
 
+// IsHubSupplyChannelConfigured confirms ownership from the database when the
+// in-memory pricing cache has no entry. It is intentionally used only on the
+// cache-miss path so normal requests keep the cache-only hot path.
+func IsHubSupplyChannelConfigured(channelID int) (bool, error) {
+	if channelID <= 0 {
+		return false, nil
+	}
+	if DB == nil {
+		return false, nil
+	}
+	var count int64
+	if err := DB.Model(&HubSupplyGroup{}).
+		Where("new_api_channel_id = ?", channelID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func IsHubSupplyChannelProviderActive(channelID int) bool {
 	pricing, isSupplyChannel := GetHubSupplyPricingByChannelID(channelID)
 	return !isSupplyChannel || pricing.SupplyProviderStatus == HubProviderStatusActive

@@ -84,7 +84,27 @@ func ApplyHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo, channelID in
 
 	pricing, ok := model.GetHubSupplyPricingByChannelID(channelID)
 	if !ok {
+		configured, err := model.IsHubSupplyChannelConfigured(channelID)
+		if err != nil {
+			return hosttypes.GroupRatioInfo{}, fmt.Errorf(
+				"failed to verify hub supply ownership for channel %d: %w",
+				channelID,
+				err,
+			)
+		}
+		if configured {
+			return hosttypes.GroupRatioInfo{}, fmt.Errorf(
+				"hub supply pricing snapshot is missing for channel %d",
+				channelID,
+			)
+		}
 		return groupRatioInfo, nil
+	}
+	if pricing.SupplyGroupId <= 0 || pricing.SupplyProviderId <= 0 || pricing.SupplyProviderStatus == "" {
+		return hosttypes.GroupRatioInfo{}, fmt.Errorf(
+			"incomplete hub supply pricing snapshot for channel %d",
+			channelID,
+		)
 	}
 	if math.IsNaN(pricing.PriceMultiplier) || math.IsInf(pricing.PriceMultiplier, 0) ||
 		pricing.PriceMultiplier < 0.01 || pricing.PriceMultiplier > 100 {
