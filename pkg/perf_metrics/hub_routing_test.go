@@ -87,7 +87,7 @@ func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
 	}, now)
 	recordHubRoutingWindow(HubRoutingAttempt{
 		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
-		Success: false, LatencyMS: 7000,
+		Success: false, FailureClass: "upstream", LatencyMS: 7000,
 	}, now)
 	recordHubRoutingWindow(HubRoutingAttempt{
 		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
@@ -110,6 +110,8 @@ func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
 	assert.Equal(t, int64(3000), *hubRoutingHistogramPercentile(item.latencyHistogram, 95))
 	assert.Equal(t, int64(500), *hubRoutingHistogramPercentile(item.ttftHistogram, 50))
 	assert.Equal(t, int64(2000), *hubRoutingHistogramPercentile(item.ttftHistogram, 95))
+	assert.Equal(t, int64(1), item.failureCounts5m[hubRoutingFailureClassIndex("upstream")])
+	assert.Equal(t, int64(1), item.failureCounts60m[hubRoutingFailureClassIndex("upstream")])
 }
 
 func TestHubRoutingWindowRedisBucketKeyRoundTrip(t *testing.T) {

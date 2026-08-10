@@ -19,7 +19,12 @@ const (
 	hubRoutingDefaultWindowMinutes       = 15
 	hubRoutingMaxWindowMinutes           = 60
 	hubRoutingHistogramBucketCount       = 16
+	hubRoutingFailureClassCount          = 6
 )
+
+var hubRoutingFailureClasses = [hubRoutingFailureClassCount]string{
+	"upstream", "configuration", "client", "loop", "response_started", "unknown",
+}
 
 var hubRoutingHistogramUpperBounds = [hubRoutingHistogramBucketCount]int64{
 	100, 250, 500, 1_000, 2_000, 3_000, 5_000, 8_000,
@@ -37,6 +42,7 @@ type hubRoutingWindowBucketKey struct {
 type hubRoutingWindowCounters struct {
 	requestCount     int64
 	successCount     int64
+	failureCounts    [hubRoutingFailureClassCount]int64
 	latencyHistogram [hubRoutingHistogramBucketCount]int64
 	ttftHistogram    [hubRoutingHistogramBucketCount]int64
 }
@@ -44,6 +50,7 @@ type hubRoutingWindowCounters struct {
 type hubRoutingWindowAtomicBucket struct {
 	requestCount     atomic.Int64
 	successCount     atomic.Int64
+	failureCounts    [hubRoutingFailureClassCount]atomic.Int64
 	latencyHistogram [hubRoutingHistogramBucketCount]atomic.Int64
 	ttftHistogram    [hubRoutingHistogramBucketCount]atomic.Int64
 }
@@ -53,6 +60,8 @@ type hubRoutingWindowAggregate struct {
 	successCount5m   int64
 	requestCount60m  int64
 	successCount60m  int64
+	failureCounts5m  [hubRoutingFailureClassCount]int64
+	failureCounts60m [hubRoutingFailureClassCount]int64
 	latencyHistogram [hubRoutingHistogramBucketCount]int64
 	ttftHistogram    [hubRoutingHistogramBucketCount]int64
 }
@@ -62,6 +71,7 @@ var hubRoutingWindowBuckets sync.Map
 func (bucket *hubRoutingWindowAtomicBucket) add(sample HubRoutingAttempt) {
 	bucket.requestCount.Add(1)
 	if !sample.Success {
+		bucket.failureCounts[hubRoutingFailureClassIndex(sample.FailureClass)].Add(1)
 		return
 	}
 	bucket.successCount.Add(1)
@@ -77,6 +87,9 @@ func (bucket *hubRoutingWindowAtomicBucket) snapshot() hubRoutingWindowCounters 
 	counters := hubRoutingWindowCounters{
 		requestCount: bucket.requestCount.Load(),
 		successCount: bucket.successCount.Load(),
+	}
+	for index := range hubRoutingFailureClassCount {
+		counters.failureCounts[index] = bucket.failureCounts[index].Load()
 	}
 	for index := range hubRoutingHistogramBucketCount {
 		counters.latencyHistogram[index] = bucket.latencyHistogram[index].Load()
@@ -132,9 +145,15 @@ func queryHubRoutingWindowMetrics(params HubRoutingMetricQueryParams, nowTs int6
 		aggregate := aggregates[dimension]
 		aggregate.requestCount60m += counters.requestCount
 		aggregate.successCount60m += counters.successCount
+		for index := range hubRoutingFailureClassCount {
+			aggregate.failureCounts60m[index] += counters.failureCounts[index]
+		}
 		if key.bucketTs >= earliest5m {
 			aggregate.requestCount5m += counters.requestCount
 			aggregate.successCount5m += counters.successCount
+			for index := range hubRoutingFailureClassCount {
+				aggregate.failureCounts5m[index] += counters.failureCounts[index]
+			}
 		}
 		if key.bucketTs >= earliestPercentile {
 			mergeHubRoutingHistogram(&aggregate.latencyHistogram, counters.latencyHistogram)
@@ -143,6 +162,28 @@ func queryHubRoutingWindowMetrics(params HubRoutingMetricQueryParams, nowTs int6
 		aggregates[dimension] = aggregate
 	}
 	return aggregates
+}
+
+func hubRoutingFailureClassIndex(class string) int {
+	for index, known := range hubRoutingFailureClasses {
+		if class == known {
+			return index
+		}
+	}
+	return hubRoutingFailureClassCount - 1
+}
+
+func hubRoutingFailureCountsMap(counts [hubRoutingFailureClassCount]int64) map[string]int64 {
+	result := make(map[string]int64)
+	for index, count := range counts {
+		if count > 0 {
+			result[hubRoutingFailureClasses[index]] = count
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func matchesHubRoutingWindowQuery(key hubRoutingWindowBucketKey, params HubRoutingMetricQueryParams) bool {
@@ -230,6 +271,8 @@ func appendHubRoutingWindowRedis(ctx context.Context, pipe redis.Pipeliner, key 
 		if sample.FirstTokenMS != nil && *sample.FirstTokenMS >= 0 {
 			pipe.HIncrBy(ctx, redisKey, hubRoutingHistogramRedisField("ttft", hubRoutingHistogramIndex(*sample.FirstTokenMS)), 1)
 		}
+	} else {
+		pipe.HIncrBy(ctx, redisKey, hubRoutingFailureRedisField(sample.FailureClass), 1)
 	}
 	pipe.Expire(ctx, redisKey, 2*time.Hour)
 }
@@ -263,6 +306,9 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 				counters.latencyHistogram[index] = parseRedisInt(values[hubRoutingHistogramRedisField("lat", index)])
 				counters.ttftHistogram[index] = parseRedisInt(values[hubRoutingHistogramRedisField("ttft", index)])
 			}
+			for index := range hubRoutingFailureClassCount {
+				counters.failureCounts[index] = parseRedisInt(values[hubRoutingFailureRedisField(hubRoutingFailureClasses[index])])
+			}
 			// Redis includes this instance and all peers, so it replaces the
 			// local minute bucket instead of being added to it.
 			merged[key] = counters
@@ -276,6 +322,10 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 
 func hubRoutingHistogramRedisField(prefix string, index int) string {
 	return prefix + "_" + strconv.Itoa(index)
+}
+
+func hubRoutingFailureRedisField(class string) string {
+	return "failure_" + hubRoutingFailureClasses[hubRoutingFailureClassIndex(class)]
 }
 
 func hubRoutingWindowRedisBucketKey(key hubRoutingWindowBucketKey) string {

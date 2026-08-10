@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,6 +17,12 @@ import (
 const (
 	HubSampleSourceRealRequest     = "real_request"
 	HubAttemptSkipReasonFailed     = "failed_attempt"
+	HubFailureClassUpstream        = "upstream"
+	HubFailureClassConfiguration   = "configuration"
+	HubFailureClassClient          = "client"
+	HubFailureClassLoop            = "loop"
+	HubFailureClassResponseStarted = "response_started"
+	HubFailureClassUnknown         = "unknown"
 	hubEndpointTypeOpenAIAudio     = "openai-audio"
 	hubEndpointTypeOpenAIRealtime  = "openai-realtime"
 	hubEndpointTypeMidjourneyProxy = "midjourney-proxy"
@@ -36,6 +43,7 @@ type HubRelayAttempt struct {
 	SupplyGroupID        int     `json:"supply_group_id,omitempty"`
 	ChannelID            int     `json:"channel_id"`
 	Result               string  `json:"result"`
+	FailureClass         string  `json:"failure_class,omitempty"`
 	ErrorCategory        string  `json:"error_category,omitempty"`
 	StatusCode           int     `json:"status_code,omitempty"`
 	StartedAt            int64   `json:"started_at"`
@@ -80,6 +88,7 @@ func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 	attempt.Result = "failed"
 	attempt.StatusCode = relayErr.StatusCode
 	attempt.SkipReason = HubAttemptSkipReasonFailed
+	attempt.FailureClass = ClassifyHubAttemptFailure(ctx, relayErr)
 	attempt.ErrorCategory = string(relayErr.GetErrorType())
 	if attempt.ErrorCategory == "" {
 		attempt.ErrorCategory = string(relayErr.GetErrorCode())
@@ -88,6 +97,69 @@ func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 	attempts := GetHubRelayAttempts(ctx)
 	attempts = append(attempts, attempt)
 	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttempts, attempts)
+}
+
+// ClassifyHubAttemptFailure provides a stable observation label for a failed
+// upstream attempt. It deliberately does not decide whether the request will
+// retry; controller.shouldRetry remains the sole retry policy.
+func ClassifyHubAttemptFailure(ctx *gin.Context, err *types.NewAPIError) string {
+	if err == nil {
+		return ""
+	}
+	if ctx != nil && ctx.Writer.Written() {
+		return HubFailureClassResponseStarted
+	}
+	code := err.GetErrorCode()
+	switch code {
+	case types.ErrorCodeRequestLoopDetected:
+		return HubFailureClassLoop
+	case types.ErrorCodeInvalidRequest,
+		types.ErrorCodeReadRequestBodyFailed,
+		types.ErrorCodeConvertRequestFailed,
+		types.ErrorCodeBadRequestBody,
+		types.ErrorCodeAccessDenied,
+		types.ErrorCodeSensitiveWordsDetected,
+		types.ErrorCodeViolationFeeGrokCSAM:
+		return HubFailureClassClient
+	case types.ErrorCodeModelPriceError,
+		types.ErrorCodeModelNotFound,
+		types.ErrorCodeInvalidApiType,
+		types.ErrorCodeChannelModelMappedError,
+		types.ErrorCodeChannelInvalidKey,
+		types.ErrorCodeChannelNoAvailableKey,
+		types.ErrorCodeChannelParamOverrideInvalid,
+		types.ErrorCodeChannelHeaderOverrideInvalid,
+		types.ErrorCodeChannelAwsClientError:
+		return HubFailureClassConfiguration
+	case types.ErrorCodeDoRequestFailed,
+		types.ErrorCodeReadResponseBodyFailed,
+		types.ErrorCodeBadResponseStatusCode,
+		types.ErrorCodeBadResponse,
+		types.ErrorCodeBadResponseBody,
+		types.ErrorCodeEmptyResponse,
+		types.ErrorCodeAwsInvokeError,
+		types.ErrorCodePromptBlocked:
+		return HubFailureClassUpstream
+	}
+	if types.IsChannelError(err) {
+		return HubFailureClassConfiguration
+	}
+	switch err.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		return HubFailureClassConfiguration
+	case http.StatusBadRequest, http.StatusRequestTimeout, http.StatusTooManyRequests:
+		if err.StatusCode == http.StatusBadRequest {
+			return HubFailureClassClient
+		}
+		return HubFailureClassUpstream
+	}
+	if err.StatusCode >= 500 || err.StatusCode < 100 {
+		return HubFailureClassUpstream
+	}
+	if types.IsSkipRetryError(err) {
+		return HubFailureClassUnknown
+	}
+	return HubFailureClassUnknown
 }
 
 func AttachHubRelayLogInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}, includeCurrentSuccess bool) {
@@ -140,6 +212,7 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 			ProviderID:   attempt.ProviderID,
 			ChannelID:    attempt.ChannelID,
 			Success:      attempt.Result == "success",
+			FailureClass: attempt.FailureClass,
 			LatencyMS:    attempt.LatencyMS,
 			FirstTokenMS: attempt.FirstTokenMS,
 		})

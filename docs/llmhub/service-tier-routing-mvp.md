@@ -19,6 +19,7 @@
 - 请求日志保存结构化 `hub_attempts`，包括尝试顺序、模型、端点类型、样本来源、服务档位、路由阶段、渠道商、Channel、状态、耗时、首事件时间、TTFT、倍率和上游扣费状态；真实请求暂只用于观测和单请求追踪，不参与自动选路。
 - M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查询，并在 `/system-settings/models/channel-health-routing` 下方查看最近 24 小时的尝试数、尝试级成功率、平均完整响应耗时和平均 TTFT；该聚合不参与选路和结算。
 - M4-B 在同一记录入口增加 1 分钟内存/Redis 桶：页面展示 5 分钟和 1 小时成功率，以及默认 15 分钟成功尝试的完整响应耗时和 TTFT P50/P95。短窗口不落库，进程重启后本机窗口从空开始；Redis 可用时合并多实例数据。该数据仍只观察，不参与选路和结算。
+- M4-C 为失败尝试增加 `failure_class` 观测和 5 分钟/1 小时类别计数，区分上游、渠道配置、客户端、循环保护、已开始响应和未知错误；不复制重试策略，也不改变重试、选路或结算。平台生成的 `request_loop_detected` 固定不触发 Channel 自动禁用，`channel:model_mapped_error` 不触发 Channel 级自动禁用。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
 
 ## 自动化闭环验证

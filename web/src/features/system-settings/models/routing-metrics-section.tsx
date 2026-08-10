@@ -48,6 +48,27 @@ function formatRate(value: number | undefined) {
   return `${value.toFixed(1)}%`
 }
 
+const failureClassLabels: Record<string, string> = {
+  upstream: 'Upstream failure',
+  configuration: 'Channel configuration',
+  client: 'Client request',
+  loop: 'Loop protection',
+  response_started: 'Response already started',
+  unknown: 'Unknown failure',
+}
+
+function formatFailureCounts(
+  value: Record<string, number> | undefined,
+  translate: (key: string) => string
+) {
+  if (!value) return '-'
+  return Object.entries(value)
+    .map(
+      ([key, count]) => `${translate(failureClassLabels[key] ?? key)} ${count}`
+    )
+    .join(', ')
+}
+
 function endpointLabel(endpoint: string) {
   if (endpoint === 'openai') return 'Chat endpoint'
   if (endpoint === 'openai-response') return 'Responses endpoint'
@@ -94,6 +115,12 @@ function RoutingMetricRow({ metric }: { metric: HubRoutingMetric }) {
           {t('5m / 1h: {{short}} / {{long}}', {
             short: formatRate(metric.success_rate_5m),
             long: formatRate(metric.success_rate_60m),
+          })}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('Failure breakdown 5m / 1h: {{short}} / {{long}}', {
+            short: formatFailureCounts(metric.failure_counts_5m, t),
+            long: formatFailureCounts(metric.failure_counts_60m, t),
           })}
         </div>
       </TableCell>

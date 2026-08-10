@@ -25,6 +25,7 @@ type HubRoutingAttempt struct {
 	ProviderID   int
 	ChannelID    int
 	Success      bool
+	FailureClass string
 	LatencyMS    int64
 	FirstTokenMS *int64
 }
@@ -48,25 +49,27 @@ type HubRoutingMetricQueryResult struct {
 }
 
 type HubRoutingMetricAggregate struct {
-	ModelName             string   `json:"model_name"`
-	EndpointType          string   `json:"endpoint_type"`
-	ProviderID            int      `json:"provider_id"`
-	ChannelID             int      `json:"channel_id"`
-	RequestCount          int64    `json:"request_count"`
-	SuccessCount          int64    `json:"success_count"`
-	SuccessRate           float64  `json:"success_rate"`
-	AvgLatencyMS          int64    `json:"avg_latency_ms"`
-	AvgFirstTokenMS       *int64   `json:"avg_first_token_ms,omitempty"`
-	RequestCount5m        int64    `json:"request_count_5m"`
-	SuccessRate5m         *float64 `json:"success_rate_5m,omitempty"`
-	RequestCount60m       int64    `json:"request_count_60m"`
-	SuccessRate60m        *float64 `json:"success_rate_60m,omitempty"`
-	LatencySampleCount    int64    `json:"latency_sample_count"`
-	LatencyP50MS          *int64   `json:"latency_p50_ms,omitempty"`
-	LatencyP95MS          *int64   `json:"latency_p95_ms,omitempty"`
-	FirstTokenSampleCount int64    `json:"first_token_sample_count"`
-	FirstTokenP50MS       *int64   `json:"first_token_p50_ms,omitempty"`
-	FirstTokenP95MS       *int64   `json:"first_token_p95_ms,omitempty"`
+	ModelName             string           `json:"model_name"`
+	EndpointType          string           `json:"endpoint_type"`
+	ProviderID            int              `json:"provider_id"`
+	ChannelID             int              `json:"channel_id"`
+	RequestCount          int64            `json:"request_count"`
+	SuccessCount          int64            `json:"success_count"`
+	SuccessRate           float64          `json:"success_rate"`
+	AvgLatencyMS          int64            `json:"avg_latency_ms"`
+	AvgFirstTokenMS       *int64           `json:"avg_first_token_ms,omitempty"`
+	RequestCount5m        int64            `json:"request_count_5m"`
+	SuccessRate5m         *float64         `json:"success_rate_5m,omitempty"`
+	RequestCount60m       int64            `json:"request_count_60m"`
+	SuccessRate60m        *float64         `json:"success_rate_60m,omitempty"`
+	LatencySampleCount    int64            `json:"latency_sample_count"`
+	LatencyP50MS          *int64           `json:"latency_p50_ms,omitempty"`
+	LatencyP95MS          *int64           `json:"latency_p95_ms,omitempty"`
+	FirstTokenSampleCount int64            `json:"first_token_sample_count"`
+	FirstTokenP50MS       *int64           `json:"first_token_p50_ms,omitempty"`
+	FirstTokenP95MS       *int64           `json:"first_token_p95_ms,omitempty"`
+	FailureCounts5m       map[string]int64 `json:"failure_counts_5m,omitempty"`
+	FailureCounts60m      map[string]int64 `json:"failure_counts_60m,omitempty"`
 }
 
 type hubRoutingBucketKey struct {
@@ -263,6 +266,8 @@ func QueryHubRoutingMetrics(params HubRoutingMetricQueryParams) (HubRoutingMetri
 			item.FirstTokenSampleCount = hubRoutingHistogramCount(window.ttftHistogram)
 			item.FirstTokenP50MS = hubRoutingHistogramPercentile(window.ttftHistogram, 50)
 			item.FirstTokenP95MS = hubRoutingHistogramPercentile(window.ttftHistogram, 95)
+			item.FailureCounts5m = hubRoutingFailureCountsMap(window.failureCounts5m)
+			item.FailureCounts60m = hubRoutingFailureCountsMap(window.failureCounts60m)
 		}
 		items = append(items, item)
 	}

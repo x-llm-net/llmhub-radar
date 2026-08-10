@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -12,8 +13,31 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestClassifyHubAttemptFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	tests := []struct {
+		name string
+		err  *types.NewAPIError
+		want string
+	}{
+		{name: "upstream timeout", err: types.NewErrorWithStatusCode(errors.New("timeout"), types.ErrorCodeBadResponseStatusCode, 504), want: HubFailureClassUpstream},
+		{name: "channel configuration", err: types.NewError(errors.New("bad key"), types.ErrorCodeChannelInvalidKey), want: HubFailureClassConfiguration},
+		{name: "client request", err: types.NewErrorWithStatusCode(errors.New("bad request"), types.ErrorCodeInvalidRequest, http.StatusBadRequest), want: HubFailureClassClient},
+		{name: "loop protection", err: types.NewErrorWithStatusCode(errors.New("loop"), types.ErrorCodeRequestLoopDetected, http.StatusLoopDetected), want: HubFailureClassLoop},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, ClassifyHubAttemptFailure(ctx, test.err))
+		})
+	}
+	_, _ = ctx.Writer.Write([]byte("started"))
+	assert.Equal(t, HubFailureClassResponseStarted, ClassifyHubAttemptFailure(ctx, tests[0].err))
+}
 
 func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	original := *hub_routing_setting.Get()
@@ -68,6 +92,7 @@ func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	require.Equal(t, string(constant.EndpointTypeAnthropic), attempts[0].EndpointType)
 	require.Equal(t, HubSampleSourceRealRequest, attempts[0].SampleSource)
 	require.Equal(t, HubAttemptSkipReasonFailed, attempts[0].SkipReason)
+	require.Equal(t, HubFailureClassUpstream, attempts[0].FailureClass)
 	require.NotNil(t, attempts[0].FirstEventMS)
 	require.NotNil(t, attempts[0].FirstTokenMS)
 	require.Equal(t, int64(10), *attempts[0].FirstEventMS)
