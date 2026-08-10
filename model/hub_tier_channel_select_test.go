@@ -77,3 +77,43 @@ func TestSelectHubTierProviderChannelUsesHighestRemainingPriority(t *testing.T) 
 	}
 	assert.Equal(t, 22, selectHubTierProviderChannel(candidates))
 }
+
+func TestBuildHubTierCandidateBucketsPreservesProviderFirstSelection(t *testing.T) {
+	priorityHigh := int64(10)
+	priorityLow := int64(0)
+	special := hub_routing_setting.ServiceTierSpecial
+	buckets := buildHubTierCandidateBuckets(
+		map[string]map[string][]int{
+			special: {
+				"gpt-cache-test": {101, 102, 201, 301},
+			},
+		},
+		map[int]*Channel{
+			101: {Id: 101, Priority: &priorityHigh},
+			102: {Id: 102, Priority: &priorityLow},
+			201: {Id: 201, Priority: &priorityLow},
+			301: {Id: 301, Priority: &priorityLow},
+		},
+		map[int]HubSupplyPricing{
+			101: {SupplyProviderId: 10},
+			102: {SupplyProviderId: 10},
+			201: {SupplyProviderId: 20},
+		},
+	)
+
+	bucket := buckets[special]["gpt-cache-test"]
+	require.NotNil(t, bucket)
+	assert.Equal(t, []int{0, 10, 20}, bucket.providerIDs)
+	assert.Len(t, bucket.candidatesBySource[10], 2)
+	assert.Len(t, bucket.candidatesBySource[20], 1)
+	assert.Len(t, bucket.candidatesBySource[0], 1)
+
+	providerOnly := ChannelProviderFilter{ProviderID: 10, Mode: ChannelProviderOnly}
+	assert.Equal(t, 101, selectHubTierChannelFromBuckets(bucket, nil, providerOnly, nil))
+	assert.Equal(t, 102, selectHubTierChannelFromBuckets(bucket, map[int]struct{}{101: {}}, providerOnly, nil))
+
+	providerUnavailable := ChannelProviderFilter{ProviderID: 20, Mode: ChannelProviderOnly}
+	assert.Zero(t, selectHubTierChannelFromBuckets(bucket, nil, providerUnavailable, func(candidate hubTierChannelCandidate) bool {
+		return candidate.ChannelID != 201
+	}))
+}

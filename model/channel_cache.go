@@ -18,6 +18,8 @@ import (
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
+var group2model2hubTierCandidates map[string]map[string]*hubTierCandidateBuckets
+
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
@@ -87,10 +89,16 @@ func InitChannelCache() {
 			newGroup2model2channels[group][model] = channels
 		}
 	}
+	newGroup2model2hubTierCandidates := buildHubTierCandidateBuckets(
+		newGroup2model2channels,
+		newChannelId2channel,
+		pricingData.pricingByChannel,
+	)
 
 	channelSyncLock.Lock()
 	hubSupplyPricingMu.Lock()
 	group2model2channels = newGroup2model2channels
+	group2model2hubTierCandidates = newGroup2model2hubTierCandidates
 	//channelsIDM = newChannelId2channel
 	for i, channel := range newChannelId2channel {
 		if channel.ChannelInfo.IsMultiKey {
@@ -118,6 +126,46 @@ func InitChannelCache() {
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
 	common.SysLog("channels synced from database")
+}
+
+func buildHubTierCandidateBuckets(
+	group2model2channels map[string]map[string][]int,
+	channelsByID map[int]*Channel,
+	pricingByChannel map[int]HubSupplyPricing,
+) map[string]map[string]*hubTierCandidateBuckets {
+	bucketsByGroup := make(map[string]map[string]*hubTierCandidateBuckets)
+	for group, models := range group2model2channels {
+		if !hub_routing_setting.IsServiceTier(group) {
+			continue
+		}
+		bucketsByModel := make(map[string]*hubTierCandidateBuckets)
+		for modelName, channelIDs := range models {
+			bucket := &hubTierCandidateBuckets{candidatesBySource: make(map[int][]hubTierChannelCandidate)}
+			for _, channelID := range channelIDs {
+				channel, ok := channelsByID[channelID]
+				if !ok {
+					continue
+				}
+				providerID := 0
+				if pricing, isSupplyChannel := pricingByChannel[channelID]; isSupplyChannel {
+					providerID = pricing.SupplyProviderId
+				}
+				if _, exists := bucket.candidatesBySource[providerID]; !exists {
+					bucket.providerIDs = append(bucket.providerIDs, providerID)
+				}
+				bucket.candidatesBySource[providerID] = append(bucket.candidatesBySource[providerID], hubTierChannelCandidate{
+					ChannelID: channelID,
+					Priority:  channel.GetPriority(),
+					Weight:    channel.GetWeight(),
+					Provider:  providerID,
+				})
+			}
+			sort.Ints(bucket.providerIDs)
+			bucketsByModel[modelName] = bucket
+		}
+		bucketsByGroup[group] = bucketsByModel
+	}
+	return bucketsByGroup
 }
 
 func SyncChannelCache(frequency int) {
@@ -149,42 +197,44 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
+	selectedModel := model
 	channels := filterChannelsByRequestPathAndModel(group2model2channels[group][model], requestPath, model)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
-	}
-	channels = filterChannelIDsByProvider(channels, providerFilter)
-
-	if len(channels) == 0 {
-		return nil, HubSupplyPricingSnapshot{}, nil
+		selectedModel = normalizedModel
 	}
 	if hub_routing_setting.IsServiceTier(group) {
-		candidates := make([]hubTierChannelCandidate, 0, len(channels))
-		for _, channelID := range channels {
-			channel, ok := channelsIDM[channelID]
+		buckets := group2model2hubTierCandidates[group][selectedModel]
+		channelID := selectHubTierChannelFromBuckets(buckets, excludedChannelIDs, providerFilter, func(candidate hubTierChannelCandidate) bool {
+			channel, ok := channelsIDM[candidate.ChannelID]
 			if !ok || channel.Status != common.ChannelStatusEnabled {
-				continue
+				return false
 			}
-			providerID, eligible := hubTierProviderForChannel(channelID, providerFilter)
-			if !eligible {
-				continue
+			if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, candidate.ChannelID, model, requestPath) {
+				return false
 			}
-			candidates = append(candidates, hubTierChannelCandidate{
-				ChannelID: channelID,
-				Priority:  channel.GetPriority(),
-				Weight:    channel.GetWeight(),
-				Provider:  providerID,
-			})
-		}
-		channelID := selectHubTierChannel(candidates, excludedChannelIDs)
+			if channel.Type == constant.ChannelTypeAdvancedCustom && requestPath != "" {
+				config := channel2advancedCustomConfig[candidate.ChannelID]
+				if config == nil || !config.SupportsPathForModel(requestPath, model) {
+					return false
+				}
+			}
+			providerID, eligible := hubTierProviderForChannel(candidate.ChannelID, providerFilter)
+			return eligible && providerID == candidate.Provider
+		})
 		if channelID == 0 {
 			return nil, HubSupplyPricingSnapshot{}, nil
 		}
 		channel := channelsIDM[channelID]
 		return channel, CaptureHubSupplyPricingSnapshot(channel.Id), nil
+	}
+	channels = filterChannelIDsByProvider(channels, providerFilter)
+
+	if len(channels) == 0 {
+		return nil, HubSupplyPricingSnapshot{}, nil
 	}
 	channels = preferUntriedChannelIDs(channels, excludedChannelIDs, providerFilter.StrictExcludedChannels)
 	if len(channels) == 0 {

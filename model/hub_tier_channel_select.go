@@ -14,6 +14,14 @@ type hubTierChannelCandidate struct {
 	Provider  int
 }
 
+// hubTierCandidateBuckets is published with the channel cache. It keeps the
+// provider-first routing shape without rebuilding provider buckets on every
+// service-tier request.
+type hubTierCandidateBuckets struct {
+	providerIDs        []int
+	candidatesBySource map[int][]hubTierChannelCandidate
+}
+
 // selectHubTierChannel first chooses an owner, then chooses a Channel within
 // that owner. Platform Channels share provider key 0. This prevents a provider
 // from gaining traffic merely by splitting one upstream into more Channels.
@@ -35,6 +43,65 @@ func selectHubTierChannel(candidates []hubTierChannelCandidate, excludedChannelI
 	sort.Ints(providerIDs)
 	providerID := providerIDs[common.GetRandomInt(len(providerIDs))]
 	return selectHubTierProviderChannel(providers[providerID])
+}
+
+// selectHubTierChannelFromBuckets keeps the existing provider-first choice,
+// while applying request-specific endpoint, provider-status, and exclusion
+// checks only to the prebuilt provider buckets.
+func selectHubTierChannelFromBuckets(
+	buckets *hubTierCandidateBuckets,
+	excludedChannelIDs map[int]struct{},
+	providerFilter ChannelProviderFilter,
+	isEligible func(hubTierChannelCandidate) bool,
+) int {
+	if buckets == nil {
+		return 0
+	}
+
+	providerIDs := make([]int, 0, len(buckets.providerIDs))
+	for _, providerID := range buckets.providerIDs {
+		if !hubTierBucketProviderMatchesFilter(providerID, providerFilter) {
+			continue
+		}
+		for _, candidate := range buckets.candidatesBySource[providerID] {
+			if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
+				continue
+			}
+			if isEligible == nil || isEligible(candidate) {
+				providerIDs = append(providerIDs, providerID)
+				break
+			}
+		}
+	}
+	if len(providerIDs) == 0 {
+		return 0
+	}
+
+	providerID := providerIDs[common.GetRandomInt(len(providerIDs))]
+	candidates := make([]hubTierChannelCandidate, 0, len(buckets.candidatesBySource[providerID]))
+	for _, candidate := range buckets.candidatesBySource[providerID] {
+		if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
+			continue
+		}
+		if isEligible == nil || isEligible(candidate) {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return selectHubTierProviderChannel(candidates)
+}
+
+func hubTierBucketProviderMatchesFilter(providerID int, filter ChannelProviderFilter) bool {
+	if filter.Mode == ChannelProviderAny || filter.ProviderID <= 0 {
+		return true
+	}
+	switch filter.Mode {
+	case ChannelProviderOnly:
+		return providerID == filter.ProviderID
+	case ChannelProviderExclude:
+		return providerID != filter.ProviderID
+	default:
+		return true
+	}
 }
 
 func selectHubTierProviderChannel(candidates []hubTierChannelCandidate) int {
