@@ -18,9 +18,10 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import {
+  areServiceTierGroups,
   getLocalizedGroupLabel,
   isServiceTierGroup,
-} from '../group-badge'
+} from '../group-badge-utils'
 
 const translate = (key: string) =>
   ({
@@ -49,5 +50,14 @@ describe('service tier group labels', () => {
     assert.equal(getLocalizedGroupLabel('default', translate), 'default')
     assert.equal(isServiceTierGroup('default'), false)
     assert.equal(isServiceTierGroup('special'), true)
+  })
+
+  test('distinguishes the service tier namespace from mixed groups', () => {
+    assert.equal(
+      areServiceTierGroups(['special', 'low', 'medium', 'high']),
+      true
+    )
+    assert.equal(areServiceTierGroups(['special', 'default']), false)
+    assert.equal(areServiceTierGroups([]), false)
   })
 })

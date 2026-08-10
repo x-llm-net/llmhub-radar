@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
+import { areServiceTierGroups } from '@/components/group-badge-utils'
 import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
@@ -53,29 +54,39 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-function useGroupRatios(): Record<string, number | string> {
+type GroupMetadata = {
+  ratios: Record<string, number | string>
+  usesServiceTiers: boolean
+}
+
+function useGroupMetadata(): GroupMetadata {
   const { data } = useQuery({
     queryKey: ['user-groups'],
     queryFn: getUserGroups,
     staleTime: 0,
     select: (res) => {
-      if (!res.success || !res.data) return {}
+      if (!res.success || !res.data) {
+        return { ratios: {}, usesServiceTiers: false }
+      }
       const ratios: Record<string, number | string> = {}
       for (const [group, info] of Object.entries(res.data)) {
         if (typeof info.ratio === 'number' || typeof info.ratio === 'string') {
           ratios[group] = info.ratio
         }
       }
-      return ratios
+      return {
+        ratios,
+        usesServiceTiers: areServiceTierGroups(Object.keys(res.data)),
+      }
     },
   })
 
-  return data ?? {}
+  return data ?? { ratios: {}, usesServiceTiers: false }
 }
 
 export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { t, i18n } = useTranslation()
-  const groupRatios = useGroupRatios()
+  const { ratios: groupRatios, usesServiceTiers } = useGroupMetadata()
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
@@ -192,7 +203,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
     },
     {
       accessorKey: 'group',
-      header: t('Group'),
+      header: t(usesServiceTiers ? 'Service tier' : 'Group'),
       cell: ({ row }) => {
         const apiKey = row.original
         const group = row.getValue('group') as string

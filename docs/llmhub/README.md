@@ -43,6 +43,8 @@ New API Channel 是唯一的上游配置实体。渠道商中心直接创建和�
 - Channel 创建统一经过 `insertChannelsTx`，更新统一经过 `updateTx`；需要事务内同步扩展数据时复用这两个内核，不复制 Channel 字段清单。
 - 渠道商接口只能在原生 Channel 流程上增加归属校验、平台字段策略和 `hub_supply_groups` 扩展，不能另写一套渠道校验或持久化逻辑。
 - 渠道商前端只能扩展同一个 `ChannelMutateDrawer`，不得复制一份简化渠道表单。
+- 供给探测只新增按模型调度、探测结果和上架状态聚合；实际请求必须复用原生 `testChannel`、Adaptor 和定价预检，不能复制协议测试实现。
+- 供给探测必须遵守原生 Channel 状态语义：只有 `auto_disabled` 可以在恢复后自动启用，`manually_disabled` 必须保持关闭，直到用户明确启用。
 
 New API 的 `Channel.Group` 是消费者请求的路由分组，不是渠道商中心的“供给分组”。渠道商不能直接修改该字段，由平台统一管理。
 

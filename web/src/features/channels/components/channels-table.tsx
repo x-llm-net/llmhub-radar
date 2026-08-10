@@ -10,7 +10,7 @@ import {
   DISABLED_ROW_MOBILE,
   useDataTable,
 } from '@/components/data-table'
-import { getLocalizedGroupLabel } from '@/components/group-badge'
+import { getLocalizedGroupLabel } from '@/components/group-badge-utils'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,

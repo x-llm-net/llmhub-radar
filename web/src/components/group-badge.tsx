@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
+import { getLocalizedGroupLabel } from './group-badge-utils'
 import { StatusBadge, type StatusBadgeProps } from './status-badge'
 
 type GroupBadgeProps = Omit<
@@ -29,25 +30,6 @@ type GroupBadgeProps = Omit<
   group?: string | null
   label?: string
   ratio?: number | null
-}
-
-const SERVICE_TIER_LABEL_KEYS: Record<string, string> = {
-  special: 'Special price',
-  low: 'Economy',
-  medium: 'Standard',
-  high: 'High quality',
-}
-
-export function isServiceTierGroup(group?: string | null): boolean {
-  return Boolean(group?.trim() && SERVICE_TIER_LABEL_KEYS[group.trim()])
-}
-
-export function getLocalizedGroupLabel(
-  groupName: string | undefined,
-  t: (key: string) => string
-): string {
-  if (!groupName) return ''
-  return t(SERVICE_TIER_LABEL_KEYS[groupName] ?? groupName)
 }
 
 function getGroupRatioClassName(ratio: number): string {

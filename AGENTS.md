@@ -56,6 +56,8 @@ web/           — Frontend (React 19, Rsbuild, Base UI, Tailwind)
 
 ### Common Code Quality
 
+- Prefer the smallest change that satisfies the product requirement, and reuse existing entities, workflows, validators, schedulers, and state semantics before adding parallel infrastructure.
+- Before a large change such as a new subsystem, scheduler, state machine, persistence model, or replacement workflow, explain the gap in the existing implementation, proposed reuse boundary, behavior and data impact, rollout/rollback plan, and alternatives to the user. Do not implement it until the user has explicitly agreed on that design.
 - New code should stay direct and readable. Prefer early returns, clear branches, and well-named local variables to deep nesting or layered control flow.
 - Minimize nested function definitions. Use them only when required by a callback API or when keeping the closure local is clearly simpler than adding another symbol.
 - Avoid adding package-level or module-level helper functions that have only one caller and do not express a stable business concept. Inline that logic at the call site instead.

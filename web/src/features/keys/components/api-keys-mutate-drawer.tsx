@@ -34,6 +34,7 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
+import { areServiceTierGroups } from '@/components/group-badge-utils'
 import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import {
@@ -205,10 +206,8 @@ export function ApiKeysMutateDrawer({
       ? serviceTiers
       : allGroups
   }, [groupsData, t])
-  const usesServiceTiers = groups.every((group) =>
-    SERVICE_TIER_ORDER.includes(
-      group.value as (typeof SERVICE_TIER_ORDER)[number]
-    )
+  const usesServiceTiers = areServiceTierGroups(
+    groups.map((group) => group.value)
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(
