@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 package model
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -312,14 +313,12 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	assert.Empty(t, updatedGroup.GetPublishedModels(updatedChannel.Models))
 
 	require.NoError(t, UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5-mini", true))
-	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedChannel.GetModels())
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "publication intent alone must not route an untested model")
 
 	require.NoError(t, UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5", true))
-	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusEnabled, updatedChannel.Status)
@@ -344,7 +343,6 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id), "a published model must return after recovery")
 
 	require.NoError(t, UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5", false))
-	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
@@ -459,6 +457,80 @@ func TestUpdateHubSupplyGroupModelsPublicationIsAtomic(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, updatedGroup)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedGroup.GetPublishedModels(channel.Models), "an invalid batch must not partially update publication state")
+}
+
+func TestUpdateHubSupplyGroupPublicationRollsBackWhenAbilityRefreshFails(t *testing.T) {
+	newFixture := func(t *testing.T) (*HubSupplyGroup, *Channel) {
+		t.Helper()
+		truncateTables(t)
+		baseURL := "https://upstream.example"
+		group := &HubSupplyGroup{
+			ProviderId: 1, PriceMultiplier: 0.1,
+			TextProbeMinutes: 10, ImageProbeMinutes: 30,
+		}
+		channel := &Channel{
+			Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:publication-rollback",
+			BaseURL: &baseURL, Models: "gpt-5", Group: "default",
+			Status: common.ChannelStatusAutoDisabled,
+		}
+		require.NoError(t, CreateHubSupplyGroup(group, channel))
+		var target HubSupplyGroupProbeTarget
+		require.NoError(t, DB.Where("group_id = ? AND model_name = ?", group.Id, "gpt-5").First(&target).Error)
+		_, current, err := RecordHubSupplyProbeResult(target.Id, true, 500, "", "", "")
+		require.NoError(t, err)
+		require.True(t, current)
+		return group, channel
+	}
+
+	t.Run("publish", func(t *testing.T) {
+		group, channel := newFixture(t)
+		callbackName := "test:fail-hub-ability-create"
+		require.NoError(t, DB.Callback().Create().Before("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+			if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "abilities" {
+				tx.AddError(errors.New("forced ability create failure"))
+			}
+		}))
+		t.Cleanup(func() { require.NoError(t, DB.Callback().Create().Remove(callbackName)) })
+
+		err := UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5", true)
+		require.ErrorContains(t, err, "forced ability create failure")
+
+		storedGroup, getErr := GetHubSupplyGroupByChannelID(channel.Id)
+		require.NoError(t, getErr)
+		require.NotNil(t, storedGroup)
+		assert.Empty(t, storedGroup.GetPublishedModels(channel.Models))
+		storedChannel, getErr := GetChannelById(channel.Id, true)
+		require.NoError(t, getErr)
+		assert.Equal(t, common.ChannelStatusAutoDisabled, storedChannel.Status)
+		assert.Empty(t, getChannelAbilityModels(t, channel.Id))
+	})
+
+	t.Run("unpublish", func(t *testing.T) {
+		group, channel := newFixture(t)
+		require.NoError(t, UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5", true))
+		abilitiesBefore := getChannelAbilityModels(t, channel.Id)
+		require.NotEmpty(t, abilitiesBefore)
+
+		callbackName := "test:fail-hub-ability-delete"
+		require.NoError(t, DB.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+			if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "abilities" {
+				tx.AddError(errors.New("forced ability delete failure"))
+			}
+		}))
+		t.Cleanup(func() { require.NoError(t, DB.Callback().Delete().Remove(callbackName)) })
+
+		err := UpdateHubSupplyGroupModelPublication(group.Id, "gpt-5", false)
+		require.ErrorContains(t, err, "forced ability delete failure")
+
+		storedGroup, getErr := GetHubSupplyGroupByChannelID(channel.Id)
+		require.NoError(t, getErr)
+		require.NotNil(t, storedGroup)
+		assert.Equal(t, []string{"gpt-5"}, storedGroup.GetPublishedModels(channel.Models))
+		storedChannel, getErr := GetChannelById(channel.Id, true)
+		require.NoError(t, getErr)
+		assert.Equal(t, common.ChannelStatusEnabled, storedChannel.Status)
+		assert.Equal(t, abilitiesBefore, getChannelAbilityModels(t, channel.Id))
+	})
 }
 
 func TestUpdateHubSupplyGroupDropsPublicationForRemovedModels(t *testing.T) {

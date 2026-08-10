@@ -26,7 +26,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -753,9 +752,9 @@ func UpdateHubSupplyGroupModelsPublication(groupID int, modelNames []string, pub
 	if groupID <= 0 || len(requestedModels) == 0 {
 		return ErrHubSupplyProbeModelNotFound
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var group HubSupplyGroup
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, groupID).Error; err != nil {
+		if err := lockForUpdate(tx).First(&group, groupID).Error; err != nil {
 			return err
 		}
 		var channel Channel
@@ -790,9 +789,17 @@ func UpdateHubSupplyGroupModelsPublication(groupID int, modelNames []string, pub
 				publishedModels = append(publishedModels, configuredModel)
 			}
 		}
-		return tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
+		if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
 			"published_models": strings.Join(publishedModels, ","),
 			"updated_at":       common.GetTimestamp(),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
 	})
+	if err != nil {
+		return err
+	}
+	InitChannelCache()
+	return nil
 }

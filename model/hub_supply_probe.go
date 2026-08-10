@@ -572,23 +572,36 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 }
 
 func ReconcileHubSupplyGroupRouteState(groupID int) error {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return reconcileHubSupplyGroupRouteStateTx(tx, groupID)
+	}); err != nil {
+		return err
+	}
+	InitChannelCache()
+	return nil
+}
+
+func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
+	if tx == nil || groupID <= 0 {
+		return errors.New("invalid hub supply group route state update")
+	}
 	var group HubSupplyGroup
-	if err := DB.First(&group, groupID).Error; err != nil {
+	if err := lockForUpdate(tx).First(&group, groupID).Error; err != nil {
 		return err
 	}
 	providerStatus := HubProviderStatusActive
 	var provider HubProvider
-	if err := DB.Select("status").First(&provider, group.ProviderId).Error; err == nil {
+	if err := tx.Select("status").First(&provider, group.ProviderId).Error; err == nil {
 		providerStatus = provider.Status
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	channel, err := GetChannelById(group.NewAPIChannelId, true)
-	if err != nil {
+	var channel Channel
+	if err := lockForUpdate(tx).First(&channel, group.NewAPIChannelId).Error; err != nil {
 		return err
 	}
 	var targets []HubSupplyGroupProbeTarget
-	if err := DB.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&targets).Error; err != nil {
+	if err := tx.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&targets).Error; err != nil {
 		return err
 	}
 
@@ -664,20 +677,14 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 		channelStatus = common.ChannelStatusEnabled
 	}
 
-	if err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
-			"status": status, "available_model_count": availableCount,
-			"error_model_count": errorCount, "pending_model_count": pendingCount,
-			"last_probe_at": lastProbeAt, "updated_at": common.GetTimestamp(),
-		}).Error; err != nil {
-			return err
-		}
-		return reconcileHubSupplyChannelRouteStateTx(tx, channel.Id, channelStatus)
-	}); err != nil {
+	if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
+		"status": status, "available_model_count": availableCount,
+		"error_model_count": errorCount, "pending_model_count": pendingCount,
+		"last_probe_at": lastProbeAt, "updated_at": common.GetTimestamp(),
+	}).Error; err != nil {
 		return err
 	}
-	InitChannelCache()
-	return nil
+	return reconcileHubSupplyChannelRouteStateTx(tx, channel.Id, channelStatus)
 }
 
 func reconcileHubSupplyChannelRouteStateTx(tx *gorm.DB, channelID int, status int) error {

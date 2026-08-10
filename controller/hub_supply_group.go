@@ -321,10 +321,6 @@ func UpdateHubProviderChannelModelPublication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := reconcileHubSupplyGroupRouteState(group.Id); err != nil {
-		common.ApiError(c, err)
-		return
-	}
 	refreshedGroup, err := model.GetHubSupplyGroupByChannelID(channel.Id)
 	if err != nil || refreshedGroup == nil {
 		if err == nil {
@@ -374,10 +370,6 @@ func UpdateHubProviderChannelModelsPublication(c *gin.Context) {
 			common.ApiError(c, fmt.Errorf("one or more models are not configured for this channel"))
 			return
 		}
-		common.ApiError(c, err)
-		return
-	}
-	if err := reconcileHubSupplyGroupRouteState(group.Id); err != nil {
 		common.ApiError(c, err)
 		return
 	}
