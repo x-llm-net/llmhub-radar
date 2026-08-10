@@ -10,6 +10,15 @@ type HubSupplyPricing struct {
 	PriceMultiplier      float64
 }
 
+// HubSupplyPricingSnapshot is captured when a channel is selected and kept
+// in the request context until billing and logging finish.
+type HubSupplyPricingSnapshot struct {
+	ChannelID  int
+	Pricing    HubSupplyPricing
+	Found      bool
+	Configured bool
+}
+
 type HubProviderRoutingInfo struct {
 	Id     int
 	Slug   string
@@ -33,20 +42,24 @@ type ChannelProviderFilter struct {
 var (
 	hubSupplyPricingMu        sync.RWMutex
 	hubSupplyPricingByChannel = map[int]HubSupplyPricing{}
+	hubSupplyConfiguredIDs    = map[int]struct{}{}
 	hubProviderRoutingBySlug  = map[string]HubProviderRoutingInfo{}
 )
 
 type hubSupplyPricingCacheData struct {
 	pricingByChannel map[int]HubSupplyPricing
+	configuredIDs    map[int]struct{}
 	providerBySlug   map[string]HubProviderRoutingInfo
 }
 
 func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	pricingByChannel := make(map[int]HubSupplyPricing)
+	configuredIDs := make(map[int]struct{})
 	providerBySlug := make(map[string]HubProviderRoutingInfo)
 	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) || !DB.Migrator().HasTable(&HubProvider{}) {
 		return &hubSupplyPricingCacheData{
 			pricingByChannel: pricingByChannel,
+			configuredIDs:    configuredIDs,
 			providerBySlug:   providerBySlug,
 		}, nil
 	}
@@ -80,6 +93,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		return nil, err
 	}
 	for _, row := range rows {
+		configuredIDs[row.NewAPIChannelId] = struct{}{}
 		pricingByChannel[row.NewAPIChannelId] = HubSupplyPricing{
 			SupplyGroupId:        row.Id,
 			SupplyProviderId:     row.ProviderId,
@@ -91,6 +105,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 
 	return &hubSupplyPricingCacheData{
 		pricingByChannel: pricingByChannel,
+		configuredIDs:    configuredIDs,
 		providerBySlug:   providerBySlug,
 	}, nil
 }
@@ -105,6 +120,7 @@ func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
 	channelSyncLock.Lock()
 	hubSupplyPricingMu.Lock()
 	hubSupplyPricingByChannel = data.pricingByChannel
+	hubSupplyConfiguredIDs = data.configuredIDs
 	hubProviderRoutingBySlug = data.providerBySlug
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
@@ -129,6 +145,21 @@ func GetHubSupplyPricingByChannelID(channelID int) (HubSupplyPricing, bool) {
 	pricing, ok := hubSupplyPricingByChannel[channelID]
 	hubSupplyPricingMu.RUnlock()
 	return pricing, ok
+}
+
+// CaptureHubSupplyPricingSnapshot reads the pricing and ownership state from
+// the same published cache generation. Configured distinguishes a platform
+// channel from a supply channel whose pricing entry is missing.
+func CaptureHubSupplyPricingSnapshot(channelID int) HubSupplyPricingSnapshot {
+	snapshot := HubSupplyPricingSnapshot{ChannelID: channelID}
+	if channelID <= 0 {
+		return snapshot
+	}
+	hubSupplyPricingMu.RLock()
+	snapshot.Pricing, snapshot.Found = hubSupplyPricingByChannel[channelID]
+	_, snapshot.Configured = hubSupplyConfiguredIDs[channelID]
+	hubSupplyPricingMu.RUnlock()
+	return snapshot
 }
 
 // IsHubSupplyChannelConfigured confirms ownership from the database when the

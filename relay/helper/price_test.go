@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -99,6 +100,49 @@ func TestApplyHubSupplyPricingFailsClosedOnMissingSnapshot(t *testing.T) {
 	// Do not refresh the cache: the database knows this is a supply channel,
 	// while the request-side pricing snapshot is intentionally stale.
 	_, err = ApplyHubSupplyPricing(base, staleGroup.NewAPIChannelId)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pricing snapshot is missing")
+}
+
+func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
+	db := setupHubSupplyPricingTestDB(t)
+	provider := &model.HubProvider{
+		OwnerUserId: 98002,
+		Name:        "Request Snapshot Provider",
+		Slug:        "request-snapshot-provider",
+	}
+	require.NoError(t, db.Create(provider).Error)
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: 105, PriceMultiplier: 0.4,
+	}
+	require.NoError(t, db.Create(group).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	snapshot := model.CaptureHubSupplyPricingSnapshot(group.NewAPIChannelId)
+	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
+
+	// A later cache refresh must not change the pricing used by this request.
+	require.NoError(t, db.Model(group).Update("price_multiplier", 0.9).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+
+	priced, err := ApplyHubSupplyPricingFromRequest(ctx, hosttypes.GroupRatioInfo{GroupRatio: 1}, group.NewAPIChannelId)
+	require.NoError(t, err)
+	require.Equal(t, 0.4, priced.SupplyMultiplier)
+	require.Equal(t, 0.4, priced.GroupRatio)
+	require.Equal(t, group.Id, priced.SupplyGroupId)
+}
+
+func TestApplyHubSupplyPricingFromRequestFailsClosedOnIncompleteCapturedSnapshot(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, model.HubSupplyPricingSnapshot{
+		ChannelID:  106,
+		Configured: true,
+	})
+
+	_, err := ApplyHubSupplyPricingFromRequest(ctx, hosttypes.GroupRatioInfo{GroupRatio: 1}, 106)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "pricing snapshot is missing")
 }

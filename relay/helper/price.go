@@ -75,12 +75,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 }
 
 func ApplyHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo, channelID int) (hosttypes.GroupRatioInfo, error) {
-	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
-	groupRatioInfo.SupplyMultiplier = 1
-	groupRatioInfo.HasSupplyPricing = false
-	groupRatioInfo.SupplyGroupId = 0
-	groupRatioInfo.SupplyProviderId = 0
-	groupRatioInfo.SupplyOwnerUserId = 0
+	groupRatioInfo = resetHubSupplyPricing(groupRatioInfo)
 
 	pricing, ok := model.GetHubSupplyPricingByChannelID(channelID)
 	if !ok {
@@ -99,6 +94,42 @@ func ApplyHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo, channelID in
 			)
 		}
 		return groupRatioInfo, nil
+	}
+	return applyHubSupplyPricingSnapshot(groupRatioInfo, channelID, pricing, true)
+}
+
+// ApplyHubSupplyPricingFromRequest uses the snapshot captured when the
+// current channel was selected. The legacy function above remains available
+// for callers that do not run inside a routed request.
+func ApplyHubSupplyPricingFromRequest(c *gin.Context, groupRatioInfo hosttypes.GroupRatioInfo, channelID int) (hosttypes.GroupRatioInfo, error) {
+	groupRatioInfo = resetHubSupplyPricing(groupRatioInfo)
+	if c != nil {
+		if snapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](c, constant.ContextKeyHubSupplyPricingSnapshot); ok && snapshot.ChannelID == channelID {
+			if !snapshot.Found && !snapshot.Configured {
+				return groupRatioInfo, nil
+			}
+			return applyHubSupplyPricingSnapshot(groupRatioInfo, channelID, snapshot.Pricing, snapshot.Found)
+		}
+	}
+	return ApplyHubSupplyPricing(groupRatioInfo, channelID)
+}
+
+func resetHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.GroupRatioInfo {
+	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
+	groupRatioInfo.SupplyMultiplier = 1
+	groupRatioInfo.HasSupplyPricing = false
+	groupRatioInfo.SupplyGroupId = 0
+	groupRatioInfo.SupplyProviderId = 0
+	groupRatioInfo.SupplyOwnerUserId = 0
+	return groupRatioInfo
+}
+
+func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, channelID int, pricing model.HubSupplyPricing, found bool) (hosttypes.GroupRatioInfo, error) {
+	if !found {
+		return hosttypes.GroupRatioInfo{}, fmt.Errorf(
+			"hub supply pricing snapshot is missing for channel %d",
+			channelID,
+		)
 	}
 	if pricing.SupplyGroupId <= 0 || pricing.SupplyProviderId <= 0 || pricing.SupplyProviderStatus == "" {
 		return hosttypes.GroupRatioInfo{}, fmt.Errorf(
@@ -128,7 +159,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
-	groupRatioInfo, err := ApplyHubSupplyPricing(
+	groupRatioInfo, err := ApplyHubSupplyPricingFromRequest(c,
 		groupRatioInfo,
 		common.GetContextKeyInt(c, constant.ContextKeyChannelId),
 	)
@@ -251,7 +282,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hosttypes.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	groupRatioInfo, err := ApplyHubSupplyPricing(
+	groupRatioInfo, err := ApplyHubSupplyPricingFromRequest(c,
 		groupRatioInfo,
 		common.GetContextKeyInt(c, constant.ContextKeyChannelId),
 	)
