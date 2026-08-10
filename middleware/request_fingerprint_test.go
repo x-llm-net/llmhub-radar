@@ -76,6 +76,82 @@ func TestBuildRequestFingerprintChangesWithSemanticInput(t *testing.T) {
 	assert.NotEqual(t, firstFingerprint, secondFingerprint)
 }
 
+func TestBuildRequestFingerprintHashesNonJSONBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	first := fingerprintTestContext(t, "model=gpt-test&prompt=hello")
+	second := fingerprintTestContext(t, "model=gpt-test&prompt=hello")
+	first.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	second.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	firstFingerprint, firstOK, firstErr := buildRequestFingerprint(first)
+	secondFingerprint, secondOK, secondErr := buildRequestFingerprint(second)
+
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	assert.True(t, firstOK)
+	assert.True(t, secondOK)
+	assert.Equal(t, firstFingerprint, secondFingerprint)
+}
+
+func TestBuildRequestFingerprintExcludesAuthenticationQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	first := fingerprintTestContext(t, `{"model":"gemini-test","contents":[]}`)
+	second := fingerprintTestContext(t, `{"model":"gemini-test","contents":[]}`)
+	first.Request.URL.RawQuery = "alt=sse&key=first-token"
+	second.Request.URL.RawQuery = "key=second-token&alt=sse"
+
+	firstFingerprint, _, firstErr := buildRequestFingerprint(first)
+	secondFingerprint, _, secondErr := buildRequestFingerprint(second)
+
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	assert.Equal(t, firstFingerprint, secondFingerprint)
+}
+
+func TestRequestFingerprintGuardRejectsTerminalHopBeforeFingerprinting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, appI18n.Init())
+
+	marker := ""
+	for range common.RequestHopMax {
+		marker = common.NextRequestHop(marker)
+	}
+
+	var downstreamCalls atomic.Int32
+	router := gin.New()
+	router.GET("/v1/realtime", RequestFingerprintGuard(), func(c *gin.Context) {
+		downstreamCalls.Add(1)
+		c.Status(http.StatusNoContent)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	request.Header.Set(common.RequestHopHeader, marker)
+
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusLoopDetected, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "request_loop_detected")
+	assert.Zero(t, downstreamCalls.Load())
+}
+
+func TestRequestFingerprintGuardIgnoresUntrustedHop(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var downstreamCalls atomic.Int32
+	router := gin.New()
+	router.GET("/v1/realtime", RequestFingerprintGuard(), func(c *gin.Context) {
+		downstreamCalls.Add(1)
+		c.Status(http.StatusNoContent)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	request.Header.Set(common.RequestHopHeader, "v1:3:forged")
+
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+	assert.Equal(t, int32(1), downstreamCalls.Load())
+}
+
 func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, appI18n.Init())

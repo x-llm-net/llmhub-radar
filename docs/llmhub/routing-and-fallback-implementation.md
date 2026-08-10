@@ -57,18 +57,18 @@ active   后续才允许健康数据影响选路
 - [x] Affinity 命中路径检查渠道商仍为 active，不能只检查 Channel 和 Ability。
 - [x] 服务档位请求不被 New API Affinity 的 `SkipRetryOnFailure` 阻止同档重试和平台兜底，根域名和子域名都适用。
 - [x] 自动恢复写库排除手动禁用状态，避免探测先读到自动禁用、管理员随后手动禁用、旧探测结果最后又覆盖为启用。
-- [ ] 单个模型不支持或端点不匹配时，不能通过通用渠道错误路径误伤同 Channel 的其他模型；只有连接、TLS、基础认证或余额等基础设施故障才考虑 Channel 级影响。
-- [ ] 循环指纹是最终保护，不等同于“已访问渠道商集合”。平台公共池至少排除入口渠道商和本次已失败 Channel；指纹保护继续覆盖所有实际 relay 入口。
+- [x] 单个模型不支持或端点不匹配时，不通过通用渠道错误路径误伤同 Channel 的其他模型；文本/图片按现有 `ProbeKind` 粗粒度隔离，连接、TLS、基础认证或余额等基础设施故障才保留 Channel 级处理。
+- [x] 循环保护不等同于“已访问渠道商集合”。平台公共池排除入口渠道商和本次已失败 Channel；实际 relay 入口同时校验平台签名 hop，非空 POST 再使用并发指纹保护。
 
 `SkipRetryOnFailure` 是 New API Affinity 规则中的一个选项：请求命中粘性 Channel 后，一旦该 Channel 失败就直接返回错误，不再尝试其他 Channel。这个语义适合要求固定上游的普通 New API 场景，但与 LLM-Hub“同档兜底”的产品规则冲突。因此服务档位请求必须忽略该停止重试选项；普通 New API 请求继续保持原行为。
 
 ### 2.3 端点发布边界
 
-现有 `Ability` 和供给发布流程主要以 `Channel + Model` 作为可路由单元。首版继续复用这一语义，不修改 Ability 为端点级独立上架，不承诺“同一模型文本已上线、图片端点单独上线”在所有场景都能独立表达。
+现有 `Ability` 和供给发布流程继续以 `Channel + Model` 作为可路由单元，不新增端点字段。首版复用探测目标的 `ProbeKind` 在候选选择时隔离文本和图片资格：任一类型健康时保留模型 Ability，文本请求只使用文本健康候选，图片请求只使用图片健康候选，全部类型失败后才删除 Ability。
 
 这里的“端点”是同一模型使用的 API 协议或请求路径，例如 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或图片生成接口；不是“具体模型”的别名，也与管理员直接创建平台自有 Channel 无关。
 
-探测目标和管理员排行可以继续区分 `EndpointType`、`ProbeKind` 和 `ResolvedEndpointType`。如果要让端点真正独立进入 Ability 和消费者路由，必须另开设计任务，不能在健康分接入时顺带改变发布语义。
+这仍是粗粒度隔离，不等于 Chat Completions、Responses、Anthropic Messages 等协议端点分别上架。若要让这些端点真正独立进入 Ability，必须另开设计任务，不能在健康分接入时顺带改变发布语义。
 
 ## 3. M1：管理员只读渠道状态与现有指标
 

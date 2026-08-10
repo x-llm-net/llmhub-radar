@@ -24,6 +24,7 @@
 - 多端点模型继续使用模型级 Ability，不新增数据库字段；路由缓存同时保存现有探测目标汇总出的 text/image 资格。模型任一探测类型健康时保留 Ability 和 Channel，候选选择与 Affinity 根据请求路径复查对应类型；所有探测类型失败后才移出路由。内存缓存和数据库直查使用同一判断。
 - M4-D 在短窗口并列展示可切换尝试数和成功率：成功请求以及可通过更换渠道恢复的失败计入，客户端错误和循环保护排除；原有全尝试成功率、24 小时聚合、重试、选路和结算口径不变。状态码映射前的上游状态仅用于观测归因。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
+- 循环保护使用平台签名的 `X-LLM-Hub-Hop` 和并发请求指纹：标准 HTTP、multipart/form、任务提交、Midjourney 与 Realtime WebSocket 入口达到第 3 跳时固定返回 `508 request_loop_detected`；非空非 JSON `POST` 也进入原始请求体指纹保护。该错误不重试、不扣费、不结算，也不自动禁用 Channel。
 
 ## 自动化闭环验证
 
@@ -52,6 +53,7 @@
 - 流式响应已经输出部分内容后中断的最终扣费规则仍待确认。
 - 多密钥渠道目前按 Channel 排除失败，不做 `Channel + Key` 级隔离。
 - Token 创建时不校验档位的瞬时供给可用性；创建后供给变化统一由运行时 `service_tier_unavailable` 契约表达。
+- 后台任务轮询和少数历史直连适配器尚未统一写入 hop Header；本版没有为此扩大 `TaskAdaptor` 接口改造。
 
 ## 后续阶段
 

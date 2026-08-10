@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -120,6 +121,7 @@ func TestProcessHeaderOverride_PassthroughSkipsAcceptEncoding(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	ctx.Request.Header.Set("X-Trace-Id", "trace-123")
 	ctx.Request.Header.Set("Accept-Encoding", "gzip")
+	ctx.Request.Header.Set(common.RequestHopHeader, "client-value")
 
 	info := &relaycommon.RelayInfo{
 		IsChannelTest: false,
@@ -136,6 +138,27 @@ func TestProcessHeaderOverride_PassthroughSkipsAcceptEncoding(t *testing.T) {
 
 	_, hasAcceptEncoding := headers["accept-encoding"]
 	require.False(t, hasAcceptEncoding)
+	_, hasRequestHop := headers["x-llm-hub-hop"]
+	require.False(t, hasRequestHop)
+}
+
+func TestApplyRequestHopHeaderOverridesChannelValueAndIncrements(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	first := common.NextRequestHop("")
+	ctx.Request.Header.Set(common.RequestHopHeader, first)
+
+	upstreamRequest := httptest.NewRequest(http.MethodPost, "https://example.com/v1/chat/completions", nil)
+	upstreamRequest.Header.Set(common.RequestHopHeader, "channel-override")
+	applyRequestHopHeader(upstreamRequest, ctx)
+
+	hop, valid := common.ParseRequestHop(upstreamRequest.Header.Get(common.RequestHopHeader))
+	require.True(t, valid)
+	require.Equal(t, 2, hop)
 }
 
 func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.T) {

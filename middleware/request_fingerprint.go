@@ -63,10 +63,25 @@ var activeRequestFingerprints = requestFingerprintMemoryState{
 	leases: make(map[string]map[string]time.Time),
 }
 
-// RequestFingerprintGuard stops recursive gateway calls after the same JSON
-// inference request re-enters this service too many times while still active.
+// RequestFingerprintGuard stops recursive gateway calls using a signed hop
+// marker first and an active-request fingerprint as a second layer.
 func RequestFingerprintGuard() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if common.RequestHopExceeded(c.GetHeader(common.RequestHopHeader)) {
+			hop, _ := common.ParseRequestHop(c.GetHeader(common.RequestHopHeader))
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf(
+				"recursive request hop rejected: hop=%d path=%s user_id=%d token_id=%d",
+				hop, c.Request.URL.Path, c.GetInt("id"), c.GetInt("token_id"),
+			))
+			abortWithOpenAiMessage(
+				c,
+				http.StatusLoopDetected,
+				i18n.T(c, i18n.MsgRequestLoopDetected),
+				types.ErrorCodeRequestLoopDetected,
+			)
+			return
+		}
+
 		fingerprint, ok, err := buildRequestFingerprint(c)
 		if err != nil {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("request fingerprint skipped: %v", err))
@@ -110,7 +125,7 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 }
 
 func buildRequestFingerprint(c *gin.Context) (string, bool, error) {
-	if c.Request.Method != http.MethodPost || !strings.HasPrefix(strings.ToLower(c.Request.Header.Get("Content-Type")), "application/json") {
+	if c.Request.Method != http.MethodPost {
 		return "", false, nil
 	}
 
@@ -128,12 +143,18 @@ func buildRequestFingerprint(c *gin.Context) (string, bool, error) {
 
 	hash := sha256.New()
 	_, _ = io.WriteString(hash, c.Request.URL.EscapedPath())
-	if query := c.Request.URL.Query().Encode(); query != "" {
-		_, _ = io.WriteString(hash, "?"+query)
+	query := c.Request.URL.Query()
+	for _, authParam := range []string{"key", "api_key", "access_token"} {
+		query.Del(authParam)
+	}
+	if encodedQuery := query.Encode(); encodedQuery != "" {
+		_, _ = io.WriteString(hash, "?"+encodedQuery)
 	}
 	_, _ = hash.Write([]byte{0})
 
-	if storage.Size() > requestFingerprintCanonicalMaxBytes {
+	contentType := strings.ToLower(c.Request.Header.Get("Content-Type"))
+	isJSON := strings.HasPrefix(contentType, "application/json")
+	if !isJSON || storage.Size() > requestFingerprintCanonicalMaxBytes {
 		if _, err := storage.Seek(0, io.SeekStart); err != nil {
 			return "", false, err
 		}

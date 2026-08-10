@@ -40,7 +40,9 @@
 - [x] `channel:model_mapped_error` 只记录模型/端点级失败，不触发 Channel 级自动禁用，避免一个模型映射错误误伤同渠道其他模型。
 - [x] `channel:endpoint_unsupported` 用于端点不匹配或适配器明确不支持的请求；该错误只影响本次 `Channel + Model + Endpoint` 尝试，允许同档重试且不触发 Channel 级自动禁用。上游 `model_not_found` 同样不触发整条 Channel 自动禁用。
 - [x] 多端点模型按现有探测 `ProbeKind` 隔离文本与图片资格；一类探测失败不会删除另一类健康端点的模型 Ability。缓存、数据库直查和 Affinity 命中均按当前请求类型复查，全部探测类型失败后才让该模型退出路由。
-- [ ] 在 JSON 指纹之外补充适用于 multipart、表单、任务和 WebSocket 的循环保护；优先采用受控 hop 标记，指纹作为第二层保护。
+- [x] 所有已接入 relay 入口在认证后校验平台签名的 hop 标记；标准 HTTP、multipart/form、任务提交、Midjourney 和 Realtime WebSocket 的统一上游路径最终覆盖并递增标记，达到第 3 跳时终止。
+- [x] 请求指纹扩展到非空非 JSON `POST`；JSON 继续规范化，multipart、表单和其他请求体使用原始哈希，Gemini 等查询认证参数不参与指纹。
+- [ ] 后台任务轮询和少数绕过统一 HTTP 请求层的历史直连适配器补齐 hop 标记；本项不得通过大范围修改 `TaskAdaptor` 接口顺带完成。
 - [x] 渠道亲和命中时同时检查 Channel、供给扩展和渠道商均为启用状态；拒绝后清除失效亲和。
 - [x] 服务档位在数据库直查和内存缓存路径都严格排除本次已失败 Channel；普通 New API 分组在候选全部尝试后仍保留原有复用行为。
 - [ ] 明确服务档位重试预算恰好耗尽时的最终错误契约：当前返回最后一个上游错误；只有下一次选路确认无候选时才返回 `service_tier_unavailable`。
