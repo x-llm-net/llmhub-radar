@@ -50,6 +50,7 @@ const (
 	ErrorCodeDoRequestFailed        ErrorCode = "do_request_failed"
 	ErrorCodeGetChannelFailed       ErrorCode = "get_channel_failed"
 	ErrorCodeServiceTierUnavailable ErrorCode = "service_tier_unavailable"
+	ErrorCodeRequestLoopDetected    ErrorCode = "request_loop_detected"
 	ErrorCodeGenRelayInfoFailed     ErrorCode = "gen_relay_info_failed"
 
 	// channel error

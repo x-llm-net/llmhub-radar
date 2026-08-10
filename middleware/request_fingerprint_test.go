@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,9 +91,11 @@ func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing
 
 	entered := make(chan struct{}, requestFingerprintMaxActive)
 	release := make(chan struct{})
+	var downstreamCalls atomic.Int32
 	router := gin.New()
 	router.Use(BodyStorageCleanup())
 	router.POST("/v1/chat/completions", RequestFingerprintGuard(), func(c *gin.Context) {
+		downstreamCalls.Add(1)
 		entered <- struct{}{}
 		<-release
 		c.Status(http.StatusNoContent)
@@ -122,6 +125,7 @@ func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing
 	router.ServeHTTP(blockedRecorder, blockedRequest)
 	assert.Equal(t, http.StatusLoopDetected, blockedRecorder.Code)
 	assert.Contains(t, blockedRecorder.Body.String(), "request_loop_detected")
+	assert.Equal(t, int32(requestFingerprintMaxActive), downstreamCalls.Load())
 
 	close(release)
 	requests.Wait()
@@ -135,6 +139,7 @@ func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing
 	afterReleaseRequest.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(afterReleaseRecorder, afterReleaseRequest)
 	assert.Equal(t, http.StatusNoContent, afterReleaseRecorder.Code)
+	assert.Equal(t, int32(requestFingerprintMaxActive+1), downstreamCalls.Load())
 }
 
 func TestRedisRequestFingerprintLeaseLimitAndRelease(t *testing.T) {

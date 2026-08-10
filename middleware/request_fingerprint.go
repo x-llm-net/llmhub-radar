@@ -91,7 +91,7 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 				c,
 				http.StatusLoopDetected,
 				i18n.T(c, i18n.MsgRequestLoopDetected),
-				types.ErrorCode("request_loop_detected"),
+				types.ErrorCodeRequestLoopDetected,
 			)
 			return
 		}
