@@ -151,6 +151,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter model.ChannelProviderFilter) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
+	var pricingSnapshot model.HubSupplyPricingSnapshot
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
@@ -183,7 +184,7 @@ func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannelWithFilter(
+			channel, pricingSnapshot, _ = model.GetRandomSatisfiedChannelWithFilter(
 				autoGroup,
 				param.ModelName,
 				priorityRetry,
@@ -228,7 +229,7 @@ func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannelWithFilter(
+		channel, pricingSnapshot, err = model.GetRandomSatisfiedChannelWithFilter(
 			param.TokenGroup,
 			param.ModelName,
 			param.GetRetry(),
@@ -239,6 +240,9 @@ func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter 
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
+	}
+	if channel != nil {
+		common.SetContextKey(param.Ctx, constant.ContextKeyHubSupplyPricingSnapshot, pricingSnapshot)
 	}
 	return channel, selectGroup, nil
 }

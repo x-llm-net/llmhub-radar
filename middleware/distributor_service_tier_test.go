@@ -387,6 +387,9 @@ func TestDistributeServiceTierClearsDisabledChannelAffinity(t *testing.T) {
 	require.False(t, seedCtx.IsAborted())
 	require.Equal(t, http.StatusOK, seedRecorder.Code)
 	require.Equal(t, disabledChannel.Id, common.GetContextKeyInt(seedCtx, constant.ContextKeyChannelId))
+	seedSnapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](seedCtx, constant.ContextKeyHubSupplyPricingSnapshot)
+	require.True(t, ok)
+	require.Equal(t, disabledChannel.Id, seedSnapshot.ChannelID)
 
 	require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", disabledChannel.Id).Update("status", common.ChannelStatusManuallyDisabled).Error)
 	model.InitChannelCache()

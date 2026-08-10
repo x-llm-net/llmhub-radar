@@ -129,13 +129,20 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}) (*Channel, error) {
-	return GetRandomSatisfiedChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, ChannelProviderFilter{})
+	channel, _, err := GetRandomSatisfiedChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, ChannelProviderFilter{})
+	return channel, err
 }
 
-func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter) (*Channel, error) {
+// GetRandomSatisfiedChannelWithFilter returns the selected channel and its
+// supply pricing from the same published cache generation.
+func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter) (*Channel, HubSupplyPricingSnapshot, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, providerFilter)
+		channel, err := GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, providerFilter)
+		if channel == nil {
+			return nil, HubSupplyPricingSnapshot{}, err
+		}
+		return channel, CaptureHubSupplyPricingSnapshot(channel.Id), err
 	}
 
 	channelSyncLock.RLock()
@@ -152,7 +159,7 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	channels = filterChannelIDsByProvider(channels, providerFilter)
 
 	if len(channels) == 0 {
-		return nil, nil
+		return nil, HubSupplyPricingSnapshot{}, nil
 	}
 	if hub_routing_setting.IsServiceTier(group) {
 		candidates := make([]hubTierChannelCandidate, 0, len(channels))
@@ -174,20 +181,21 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 		}
 		channelID := selectHubTierChannel(candidates, excludedChannelIDs)
 		if channelID == 0 {
-			return nil, nil
+			return nil, HubSupplyPricingSnapshot{}, nil
 		}
-		return channelsIDM[channelID], nil
+		channel := channelsIDM[channelID]
+		return channel, CaptureHubSupplyPricingSnapshot(channel.Id), nil
 	}
 	channels = preferUntriedChannelIDs(channels, excludedChannelIDs, providerFilter.StrictExcludedChannels)
 	if len(channels) == 0 {
-		return nil, nil
+		return nil, HubSupplyPricingSnapshot{}, nil
 	}
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
-			return channel, nil
+			return channel, CaptureHubSupplyPricingSnapshot(channel.Id), nil
 		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
+		return nil, HubSupplyPricingSnapshot{}, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
 	uniquePriorities := make(map[int]bool)
@@ -195,7 +203,7 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 		if channel, ok := channelsIDM[channelId]; ok {
 			uniquePriorities[int(channel.GetPriority())] = true
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, HubSupplyPricingSnapshot{}, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
 	var sortedUniquePriorities []int
@@ -219,12 +227,12 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, HubSupplyPricingSnapshot{}, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
 
 	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+		return nil, HubSupplyPricingSnapshot{}, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
 	}
 
 	// smoothing factor and adjustment
@@ -251,11 +259,11 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 	for _, channel := range targetChannels {
 		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
 		if randomWeight < 0 {
-			return channel, nil
+			return channel, CaptureHubSupplyPricingSnapshot(channel.Id), nil
 		}
 	}
 	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	return nil, HubSupplyPricingSnapshot{}, errors.New("channel not found")
 }
 
 func preferUntriedChannelIDs(channelIDs []int, excludedChannelIDs map[int]struct{}, strict bool) []int {
@@ -335,6 +343,25 @@ func CacheGetChannel(id int) (*Channel, error) {
 		return nil, fmt.Errorf("渠道# %d，已不存在", id)
 	}
 	return c, nil
+}
+
+// CacheGetChannelWithPricing returns a channel and its pricing state from the
+// same cache generation. It is used by affinity selection.
+func CacheGetChannelWithPricing(id int) (*Channel, HubSupplyPricingSnapshot, error) {
+	if !common.MemoryCacheEnabled {
+		channel, err := GetChannelById(id, true)
+		if channel == nil {
+			return nil, HubSupplyPricingSnapshot{}, err
+		}
+		return channel, CaptureHubSupplyPricingSnapshot(channel.Id), err
+	}
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	channel, ok := channelsIDM[id]
+	if !ok {
+		return nil, HubSupplyPricingSnapshot{}, fmt.Errorf("渠道# %d，已不存在", id)
+	}
+	return channel, CaptureHubSupplyPricingSnapshot(channel.Id), nil
 }
 
 func CacheGetChannelInfo(id int) (*ChannelInfo, error) {

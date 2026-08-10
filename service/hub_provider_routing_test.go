@@ -84,6 +84,10 @@ func TestProviderHostRoutingPrefersProviderThenFallsBackToPlatformPool(t *testin
 			first, _, err := CacheGetRandomSatisfiedChannel(param)
 			require.NoError(t, err)
 			require.NotNil(t, first)
+			firstSnapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](ctx, constant.ContextKeyHubSupplyPricingSnapshot)
+			require.True(t, ok)
+			assert.Equal(t, first.Id, firstSnapshot.ChannelID)
+			assert.Equal(t, provider.Id, firstSnapshot.Pricing.SupplyProviderId)
 			assert.True(t, model.ChannelMatchesProviderFilter(first.Id, model.ChannelProviderFilter{
 				ProviderID: provider.Id, Mode: model.ChannelProviderOnly,
 			}))
@@ -93,6 +97,10 @@ func TestProviderHostRoutingPrefersProviderThenFallsBackToPlatformPool(t *testin
 			second, _, err := CacheGetRandomSatisfiedChannel(param)
 			require.NoError(t, err)
 			require.NotNil(t, second)
+			secondSnapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](ctx, constant.ContextKeyHubSupplyPricingSnapshot)
+			require.True(t, ok)
+			assert.Equal(t, second.Id, secondSnapshot.ChannelID)
+			assert.Equal(t, provider.Id, secondSnapshot.Pricing.SupplyProviderId)
 			assert.NotEqual(t, first.Id, second.Id)
 			assert.True(t, model.ChannelMatchesProviderFilter(second.Id, model.ChannelProviderFilter{
 				ProviderID: provider.Id, Mode: model.ChannelProviderOnly,
@@ -103,6 +111,9 @@ func TestProviderHostRoutingPrefersProviderThenFallsBackToPlatformPool(t *testin
 			fallback, _, err := CacheGetRandomSatisfiedChannel(param)
 			require.NoError(t, err)
 			require.NotNil(t, fallback)
+			fallbackSnapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](ctx, constant.ContextKeyHubSupplyPricingSnapshot)
+			require.True(t, ok)
+			assert.Equal(t, fallback.Id, fallbackSnapshot.ChannelID)
 			assert.True(t, model.ChannelMatchesProviderFilter(fallback.Id, model.ChannelProviderFilter{
 				ProviderID: provider.Id, Mode: model.ChannelProviderExclude,
 			}))

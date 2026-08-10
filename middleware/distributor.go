@@ -111,7 +111,7 @@ func Distribute() func(c *gin.Context) {
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
-					preferred, err := model.CacheGetChannel(preferredChannelID)
+					preferred, preferredPricingSnapshot, err := model.CacheGetChannelWithPricing(preferredChannelID)
 					providerAllowed := true
 					providerActive := model.IsHubSupplyChannelProviderActive(preferredChannelID)
 					if providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId); providerID > 0 {
@@ -143,6 +143,7 @@ func Distribute() func(c *gin.Context) {
 						}
 					}
 					if affinityUsable {
+						common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, preferredPricingSnapshot)
 						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, "preferred")
 						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, false)
 					}
@@ -553,7 +554,9 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, channel.GetAutoBan())
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
-	common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(channel.Id))
+	if snapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](c, constant.ContextKeyHubSupplyPricingSnapshot); !ok || snapshot.ChannelID != channel.Id {
+		common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(channel.Id))
+	}
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {
