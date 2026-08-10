@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -122,4 +123,38 @@ func TestGetChannelPreservesLegacyGroupErrorContract(t *testing.T) {
 	taskErr := taskErrorFromChannelSelection(ctx, apiErr)
 	assert.Equal(t, "get_channel_failed", taskErr.Code)
 	assert.Equal(t, http.StatusInternalServerError, taskErr.StatusCode)
+}
+
+func TestFinalizeServiceTierRetryErrorUsesStableContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+
+	ctx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-opus-test",
+		TokenGroup:      hub_routing_setting.ServiceTierMedium,
+	}
+	upstreamErr := types.NewOpenAIError(errors.New("upstream returned 503"), types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+
+	finalErr := finalizeServiceTierRetryError(ctx, info, upstreamErr, true)
+
+	require.NotNil(t, finalErr)
+	assert.Equal(t, types.ErrorCodeServiceTierUnavailable, finalErr.GetErrorCode())
+	assert.Equal(t, http.StatusServiceUnavailable, finalErr.StatusCode)
+	assert.True(t, types.IsSkipRetryError(finalErr))
+	assert.Contains(t, finalErr.Error(), "standard service tier")
+	assert.NotContains(t, finalErr.Error(), "upstream returned 503")
+}
+
+func TestFinalizeServiceTierRetryErrorPreservesNonExhaustedAndLegacyErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamErr := types.NewOpenAIError(errors.New("upstream returned 503"), types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+
+	serviceTierCtx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	serviceTierInfo := &relaycommon.RelayInfo{OriginModelName: "test-model", TokenGroup: hub_routing_setting.ServiceTierMedium}
+	assert.Same(t, upstreamErr, finalizeServiceTierRetryError(serviceTierCtx, serviceTierInfo, upstreamErr, false))
+
+	legacyCtx := newRelayChannelSelectionContext("default")
+	legacyInfo := &relaycommon.RelayInfo{OriginModelName: "test-model", TokenGroup: "default"}
+	assert.Same(t, upstreamErr, finalizeServiceTierRetryError(legacyCtx, legacyInfo, upstreamErr, true))
 }

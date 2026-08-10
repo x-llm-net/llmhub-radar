@@ -199,6 +199,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	retryBudgetExhausted := false
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
@@ -249,7 +250,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		retriesRemaining := common.RetryTimes - retryParam.GetRetry()
+		retryBudgetExhausted = retriesRemaining <= 0 && shouldRetry(c, newAPIError, 1)
+		if !shouldRetry(c, newAPIError, retriesRemaining) {
 			break
 		}
 		if service.IsHubServiceTierRequest(c) {
@@ -257,6 +260,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		retryParam.ExcludeChannel(channel.Id)
 	}
+	newAPIError = finalizeServiceTierRetryError(c, relayInfo, newAPIError, retryBudgetExhausted)
 
 	useChannel := c.GetStringSlice("use_channel")
 	if len(useChannel) > 1 {
@@ -378,15 +382,26 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 func newChannelSelectionError(c *gin.Context, err error, group, modelName string) *types.NewAPIError {
 	if service.IsHubServiceTierRequest(c) {
-		logger.LogError(c, fmt.Sprintf("service tier %s unavailable for model %s: %s", group, modelName, err.Error()))
-		return types.NewErrorWithStatusCode(
-			errors.New(middleware.ServiceTierUnavailableMessage(c, group, modelName)),
-			types.ErrorCodeServiceTierUnavailable,
-			http.StatusServiceUnavailable,
-			types.ErrOptionWithSkipRetry(),
-		)
+		return newServiceTierUnavailableError(c, err, group, modelName)
 	}
 	return types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+}
+
+func newServiceTierUnavailableError(c *gin.Context, cause error, group, modelName string) *types.NewAPIError {
+	logger.LogError(c, fmt.Sprintf("service tier %s unavailable for model %s: %s", group, modelName, cause.Error()))
+	return types.NewErrorWithStatusCode(
+		errors.New(middleware.ServiceTierUnavailableMessage(c, group, modelName)),
+		types.ErrorCodeServiceTierUnavailable,
+		http.StatusServiceUnavailable,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
+
+func finalizeServiceTierRetryError(c *gin.Context, info *relaycommon.RelayInfo, relayErr *types.NewAPIError, exhausted bool) *types.NewAPIError {
+	if relayErr == nil || !exhausted || info == nil || !service.IsHubServiceTierRequest(c) {
+		return relayErr
+	}
+	return newServiceTierUnavailableError(c, relayErr, info.TokenGroup, info.OriginModelName)
 }
 
 func taskErrorFromChannelSelection(c *gin.Context, channelErr *types.NewAPIError) *taskdto.TaskError {
@@ -636,6 +651,7 @@ func RelayTask(c *gin.Context) {
 
 	var result *relay.TaskSubmitResult
 	var taskErr *taskdto.TaskError
+	retryBudgetExhausted := false
 	defer func() {
 		if taskErr != nil && relayInfo.Billing != nil {
 			relayInfo.Billing.Refund(c)
@@ -699,13 +715,22 @@ func RelayTask(c *gin.Context) {
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 
-		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
+		retriesRemaining := common.RetryTimes - retryParam.GetRetry()
+		retryBudgetExhausted = retriesRemaining <= 0 && shouldRetryTaskRelay(c, channel.Id, taskErr, 1)
+		if !shouldRetryTaskRelay(c, channel.Id, taskErr, retriesRemaining) {
 			break
 		}
 		if service.IsHubServiceTierRequest(c) {
 			service.ClearCurrentChannelAffinityCache(c)
 		}
 		retryParam.ExcludeChannel(channel.Id)
+	}
+	if taskErr != nil && retryBudgetExhausted && relayInfo.LockedChannel == nil && service.IsHubServiceTierRequest(c) {
+		cause := taskErr.Error
+		if cause == nil {
+			cause = errors.New(taskErr.Message)
+		}
+		taskErr = taskErrorFromChannelSelection(c, newServiceTierUnavailableError(c, cause, relayInfo.TokenGroup, relayInfo.OriginModelName))
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
