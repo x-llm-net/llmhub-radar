@@ -161,6 +161,18 @@ func TestApplyRequestHopHeaderOverridesChannelValueAndIncrements(t *testing.T) {
 	require.Equal(t, 2, hop)
 }
 
+func TestApplyInitialRequestHopHeaderStartsAtOne(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1/tasks/123", nil)
+	req.Header.Set(common.RequestHopHeader, "channel-override")
+	ApplyInitialRequestHopHeader(req)
+
+	hop, valid := common.ParseRequestHop(req.Header.Get(common.RequestHopHeader))
+	require.True(t, valid)
+	require.Equal(t, 1, hop)
+}
+
 func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.T) {
 	t.Parallel()
 

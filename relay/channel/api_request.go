@@ -312,6 +312,13 @@ func applyRequestHopHeader(req *http.Request, c *gin.Context) {
 	req.Header.Set(common2.RequestHopHeader, common2.NextRequestHop(c.GetHeader(common2.RequestHopHeader)))
 }
 
+func ApplyInitialRequestHopHeader(req *http.Request) {
+	if req == nil {
+		return
+	}
+	req.Header.Set(common2.RequestHopHeader, common2.NextRequestHop(""))
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {

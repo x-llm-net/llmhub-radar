@@ -59,7 +59,7 @@
 - 流式响应已经输出部分内容后中断的最终扣费规则仍待确认。
 - 多密钥渠道目前按 Channel 排除失败，不做 `Channel + Key` 级隔离。
 - Token 创建时不校验档位的瞬时供给可用性；创建后供给变化统一由运行时 `service_tier_unavailable` 契约表达。
-- 后台任务轮询和少数历史直连适配器尚未统一写入 hop Header；本版没有为此扩大 `TaskAdaptor` 接口改造。
+- 后台任务轮询已在 10 个现有 `FetchTask` 适配器发出请求前统一写入初始 hop Header，未修改 `TaskAdaptor` 接口；少数其他历史直连适配器仍单列为后续加固项。
 
 ## 后续阶段
 

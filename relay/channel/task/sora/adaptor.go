@@ -276,6 +276,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
+	channel.ApplyInitialRequestHopHeader(req)
 	return client.Do(req)
 }
 
