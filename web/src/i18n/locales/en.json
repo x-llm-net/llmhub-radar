@@ -5669,6 +5669,7 @@
     "Last 24 hours; failed retries are counted as attempts.": "Last 24 hours; failed retries are counted as attempts.",
     "Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.": "Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.",
     "5m / 1h: {{short}} / {{long}}": "5m / 1h: {{short}} / {{long}}",
+    "Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})": "Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})",
     "15m successful samples: {{count}}": "15m successful samples: {{count}}",
     "24h average: {{value}}": "24h average: {{value}}",
     "Provider / Channel": "Provider / Channel",

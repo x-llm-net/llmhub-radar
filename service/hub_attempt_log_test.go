@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,8 @@ import (
 func TestClassifyHubAttemptFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	mappedBadRequest := types.NewErrorWithStatusCode(errors.New("upstream bad request"), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+	ResetStatusCode(mappedBadRequest, `{"400":503}`)
 	tests := []struct {
 		name string
 		err  *types.NewAPIError
@@ -28,6 +31,8 @@ func TestClassifyHubAttemptFailure(t *testing.T) {
 		{name: "upstream timeout", err: types.NewErrorWithStatusCode(errors.New("timeout"), types.ErrorCodeBadResponseStatusCode, 504), want: HubFailureClassUpstream},
 		{name: "channel configuration", err: types.NewError(errors.New("bad key"), types.ErrorCodeChannelInvalidKey), want: HubFailureClassConfiguration},
 		{name: "client request", err: types.NewErrorWithStatusCode(errors.New("bad request"), types.ErrorCodeInvalidRequest, http.StatusBadRequest), want: HubFailureClassClient},
+		{name: "prompt blocked", err: types.NewErrorWithStatusCode(errors.New("blocked"), types.ErrorCodePromptBlocked, http.StatusBadRequest), want: HubFailureClassClient},
+		{name: "mapped bad request", err: mappedBadRequest, want: HubFailureClassClient},
 		{name: "loop protection", err: types.NewErrorWithStatusCode(errors.New("loop"), types.ErrorCodeRequestLoopDetected, http.StatusLoopDetected), want: HubFailureClassLoop},
 	}
 	for _, test := range tests {
@@ -37,6 +42,20 @@ func TestClassifyHubAttemptFailure(t *testing.T) {
 	}
 	_, _ = ctx.Writer.Write([]byte("started"))
 	assert.Equal(t, HubFailureClassResponseStarted, ClassifyHubAttemptFailure(ctx, tests[0].err))
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil).WithContext(canceledCtx)
+	assert.Equal(t, HubFailureClassClient, ClassifyHubAttemptFailure(ctx, tests[0].err))
+}
+
+func TestIsHubFailureHealthEligible(t *testing.T) {
+	assert.True(t, IsHubFailureHealthEligible(HubFailureClassUpstream))
+	assert.True(t, IsHubFailureHealthEligible(HubFailureClassConfiguration))
+	assert.True(t, IsHubFailureHealthEligible(HubFailureClassResponseStarted))
+	assert.True(t, IsHubFailureHealthEligible(HubFailureClassUnknown))
+	assert.False(t, IsHubFailureHealthEligible(HubFailureClassClient))
+	assert.False(t, IsHubFailureHealthEligible(HubFailureClassLoop))
 }
 
 func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
@@ -93,6 +112,7 @@ func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	require.Equal(t, HubSampleSourceRealRequest, attempts[0].SampleSource)
 	require.Equal(t, HubAttemptSkipReasonFailed, attempts[0].SkipReason)
 	require.Equal(t, HubFailureClassUpstream, attempts[0].FailureClass)
+	require.True(t, attempts[0].HealthEligible)
 	require.NotNil(t, attempts[0].FirstEventMS)
 	require.NotNil(t, attempts[0].FirstTokenMS)
 	require.Equal(t, int64(10), *attempts[0].FirstEventMS)
@@ -102,6 +122,7 @@ func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	require.Equal(t, "gpt-5", attempts[1].Model)
 	require.Equal(t, string(constant.EndpointTypeOpenAI), attempts[1].EndpointType)
 	require.Equal(t, HubSampleSourceRealRequest, attempts[1].SampleSource)
+	require.True(t, attempts[1].HealthEligible)
 	require.NotNil(t, attempts[1].FirstEventMS)
 	require.NotNil(t, attempts[1].FirstTokenMS)
 	require.Equal(t, int64(15), *attempts[1].FirstEventMS)

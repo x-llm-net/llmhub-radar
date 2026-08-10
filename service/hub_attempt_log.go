@@ -44,6 +44,7 @@ type HubRelayAttempt struct {
 	ChannelID            int     `json:"channel_id"`
 	Result               string  `json:"result"`
 	FailureClass         string  `json:"failure_class,omitempty"`
+	HealthEligible       bool    `json:"health_eligible"`
 	ErrorCategory        string  `json:"error_category,omitempty"`
 	StatusCode           int     `json:"status_code,omitempty"`
 	StartedAt            int64   `json:"started_at"`
@@ -89,6 +90,7 @@ func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 	attempt.StatusCode = relayErr.StatusCode
 	attempt.SkipReason = HubAttemptSkipReasonFailed
 	attempt.FailureClass = ClassifyHubAttemptFailure(ctx, relayErr)
+	attempt.HealthEligible = IsHubFailureHealthEligible(attempt.FailureClass)
 	attempt.ErrorCategory = string(relayErr.GetErrorType())
 	if attempt.ErrorCategory == "" {
 		attempt.ErrorCategory = string(relayErr.GetErrorCode())
@@ -99,6 +101,17 @@ func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttempts, attempts)
 }
 
+// IsHubFailureHealthEligible marks failures that may be recovered by trying
+// another channel. It does not decide whether the request will retry.
+func IsHubFailureHealthEligible(failureClass string) bool {
+	switch failureClass {
+	case HubFailureClassClient, HubFailureClassLoop:
+		return false
+	default:
+		return true
+	}
+}
+
 // ClassifyHubAttemptFailure provides a stable observation label for a failed
 // upstream attempt. It deliberately does not decide whether the request will
 // retry; controller.shouldRetry remains the sole retry policy.
@@ -106,10 +119,16 @@ func ClassifyHubAttemptFailure(ctx *gin.Context, err *types.NewAPIError) string 
 	if err == nil {
 		return ""
 	}
+	if ctx != nil && ctx.Request != nil && ctx.Request.Context().Err() != nil {
+		return HubFailureClassClient
+	}
 	if ctx != nil && ctx.Writer.Written() {
 		return HubFailureClassResponseStarted
 	}
 	code := err.GetErrorCode()
+	if code == types.ErrorCodeBadResponseStatusCode && err.GetOriginalStatusCode() == http.StatusBadRequest {
+		return HubFailureClassClient
+	}
 	switch code {
 	case types.ErrorCodeRequestLoopDetected:
 		return HubFailureClassLoop
@@ -131,15 +150,19 @@ func ClassifyHubAttemptFailure(ctx *gin.Context, err *types.NewAPIError) string 
 		types.ErrorCodeChannelHeaderOverrideInvalid,
 		types.ErrorCodeChannelAwsClientError:
 		return HubFailureClassConfiguration
+	case types.ErrorCodePromptBlocked:
+		return HubFailureClassClient
 	case types.ErrorCodeDoRequestFailed,
 		types.ErrorCodeReadResponseBodyFailed,
 		types.ErrorCodeBadResponseStatusCode,
 		types.ErrorCodeBadResponse,
 		types.ErrorCodeBadResponseBody,
 		types.ErrorCodeEmptyResponse,
-		types.ErrorCodeAwsInvokeError,
-		types.ErrorCodePromptBlocked:
+		types.ErrorCodeAwsInvokeError:
 		return HubFailureClassUpstream
+	}
+	if err.GetOriginalStatusCode() == http.StatusBadRequest {
+		return HubFailureClassClient
 	}
 	if types.IsChannelError(err) {
 		return HubFailureClassConfiguration
@@ -177,6 +200,7 @@ func AttachHubRelayLogInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 		attempt := buildHubRelayAttempt(ctx, relayInfo)
 		attempt.Result = "success"
 		attempt.StatusCode = 200
+		attempt.HealthEligible = true
 		attempt.UpstreamChargeStatus = "charged"
 		attempts = append(attempts, attempt)
 		RecordHubRelayAttemptMetrics(ctx, relayInfo, true)
@@ -198,6 +222,7 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 		attempt := buildHubRelayAttempt(ctx, relayInfo)
 		attempt.Result = "success"
 		attempt.StatusCode = 200
+		attempt.HealthEligible = true
 		attempt.UpstreamChargeStatus = "charged"
 		attempts = append(attempts, attempt)
 	}
@@ -207,14 +232,15 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 	samples := make([]perfmetrics.HubRoutingAttempt, 0, len(attempts))
 	for _, attempt := range attempts {
 		samples = append(samples, perfmetrics.HubRoutingAttempt{
-			Model:        attempt.Model,
-			EndpointType: attempt.EndpointType,
-			ProviderID:   attempt.ProviderID,
-			ChannelID:    attempt.ChannelID,
-			Success:      attempt.Result == "success",
-			FailureClass: attempt.FailureClass,
-			LatencyMS:    attempt.LatencyMS,
-			FirstTokenMS: attempt.FirstTokenMS,
+			Model:          attempt.Model,
+			EndpointType:   attempt.EndpointType,
+			ProviderID:     attempt.ProviderID,
+			ChannelID:      attempt.ChannelID,
+			Success:        attempt.Result == "success",
+			FailureClass:   attempt.FailureClass,
+			HealthEligible: attempt.HealthEligible,
+			LatencyMS:      attempt.LatencyMS,
+			FirstTokenMS:   attempt.FirstTokenMS,
 		})
 	}
 	perfmetrics.RecordHubRoutingAttempts(samples)

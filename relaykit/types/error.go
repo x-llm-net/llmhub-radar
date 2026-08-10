@@ -90,14 +90,15 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
-	RelayError     any
-	skipRetry      bool
-	recordErrorLog *bool
-	errorType      ErrorType
-	errorCode      ErrorCode
-	StatusCode     int
-	Metadata       json.RawMessage
+	Err                error
+	RelayError         any
+	skipRetry          bool
+	recordErrorLog     *bool
+	errorType          ErrorType
+	errorCode          ErrorCode
+	StatusCode         int
+	originalStatusCode int
+	Metadata           json.RawMessage
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -120,6 +121,25 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 		return ""
 	}
 	return e.errorType
+}
+
+// GetOriginalStatusCode returns the status before an optional channel mapping.
+// When no mapping was applied, StatusCode is the original value.
+func (e *NewAPIError) GetOriginalStatusCode() int {
+	if e == nil {
+		return 0
+	}
+	if e.originalStatusCode != 0 {
+		return e.originalStatusCode
+	}
+	return e.StatusCode
+}
+
+// SetOriginalStatusCode records the pre-mapping status once.
+func (e *NewAPIError) SetOriginalStatusCode(statusCode int) {
+	if e != nil && e.originalStatusCode == 0 {
+		e.originalStatusCode = statusCode
+	}
 }
 
 func (e *NewAPIError) Error() string {

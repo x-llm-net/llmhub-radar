@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,6 +63,19 @@ func TestResetStatusCode(t *testing.T) {
 			require.Equal(t, tc.expectedCode, newAPIError.StatusCode)
 		})
 	}
+}
+
+func TestResetStatusCodePreservesOriginalStatusCode(t *testing.T) {
+	err := types.NewErrorWithStatusCode(
+		errors.New("upstream bad request"),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusBadRequest,
+	)
+
+	ResetStatusCode(err, `{"400":503}`)
+
+	require.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
+	require.Equal(t, http.StatusBadRequest, err.GetOriginalStatusCode())
 }
 
 func TestRelayErrorHandlerTruncatesInvalidJSONBodyInLog(t *testing.T) {

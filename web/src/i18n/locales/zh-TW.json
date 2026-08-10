@@ -5669,6 +5669,7 @@
     "Last 24 hours; failed retries are counted as attempts.": "最近 24 小時；失敗重試也會計入嘗試次數。",
     "Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.": "最近 24 小時資料加最近 15 分鐘即時視窗。失敗重試計入嘗試次數；延遲百分位只統計成功嘗試。",
     "5m / 1h: {{short}} / {{long}}": "5 分鐘 / 1 小時：{{short}} / {{long}}",
+    "Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})": "可切換成功率 5 分鐘 / 1 小時：{{short}}（{{shortCount}}）/ {{long}}（{{longCount}}）",
     "15m successful samples: {{count}}": "15 分鐘成功樣本：{{count}}",
     "24h average: {{value}}": "24 小時平均：{{value}}",
     "Provider / Channel": "供應商 / 頻道",

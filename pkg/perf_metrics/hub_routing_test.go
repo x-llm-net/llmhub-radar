@@ -16,7 +16,7 @@ func TestHubRoutingAtomicBucketAccumulatesAttempts(t *testing.T) {
 	ttft := int64(240)
 	bucket := &hubRoutingAtomicBucket{}
 	bucket.add(HubRoutingAttempt{Success: true, LatencyMS: 1000, FirstTokenMS: &ttft})
-	bucket.add(HubRoutingAttempt{Success: false, LatencyMS: 500})
+	bucket.add(HubRoutingAttempt{Success: false, HealthEligible: true, LatencyMS: 500})
 
 	got := bucket.snapshot()
 	assert.Equal(t, int64(2), got.requestCount)
@@ -87,7 +87,11 @@ func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
 	}, now)
 	recordHubRoutingWindow(HubRoutingAttempt{
 		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
-		Success: false, FailureClass: "upstream", LatencyMS: 7000,
+		Success: false, FailureClass: "upstream", HealthEligible: true, LatencyMS: 7000,
+	}, now)
+	recordHubRoutingWindow(HubRoutingAttempt{
+		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
+		Success: false, FailureClass: "client", HealthEligible: false, LatencyMS: 200,
 	}, now)
 	recordHubRoutingWindow(HubRoutingAttempt{
 		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
@@ -101,10 +105,14 @@ func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
 		modelName: "gpt-window", endpointType: "openai", providerID: 3, channelID: 11,
 	}]
 	require.True(t, ok)
-	assert.Equal(t, int64(3), item.requestCount5m)
+	assert.Equal(t, int64(4), item.requestCount5m)
 	assert.Equal(t, int64(2), item.successCount5m)
-	assert.Equal(t, int64(4), item.requestCount60m)
+	assert.Equal(t, int64(5), item.requestCount60m)
 	assert.Equal(t, int64(3), item.successCount60m)
+	assert.Equal(t, int64(3), item.switchableRequestCount5m)
+	assert.Equal(t, int64(2), item.switchableSuccessCount5m)
+	assert.Equal(t, int64(4), item.switchableRequestCount60m)
+	assert.Equal(t, int64(3), item.switchableSuccessCount60m)
 	assert.Equal(t, int64(2), hubRoutingHistogramCount(item.latencyHistogram))
 	assert.Equal(t, int64(1000), *hubRoutingHistogramPercentile(item.latencyHistogram, 50))
 	assert.Equal(t, int64(3000), *hubRoutingHistogramPercentile(item.latencyHistogram, 95))
@@ -112,6 +120,8 @@ func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
 	assert.Equal(t, int64(2000), *hubRoutingHistogramPercentile(item.ttftHistogram, 95))
 	assert.Equal(t, int64(1), item.failureCounts5m[hubRoutingFailureClassIndex("upstream")])
 	assert.Equal(t, int64(1), item.failureCounts60m[hubRoutingFailureClassIndex("upstream")])
+	assert.Equal(t, int64(1), item.failureCounts5m[hubRoutingFailureClassIndex("client")])
+	assert.Equal(t, int64(1), item.failureCounts60m[hubRoutingFailureClassIndex("client")])
 }
 
 func TestHubRoutingWindowRedisBucketKeyRoundTrip(t *testing.T) {

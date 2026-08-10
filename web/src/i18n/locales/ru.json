@@ -5669,6 +5669,7 @@
     "Last 24 hours; failed retries are counted as attempts.": "Последние 24 часа; неудачные повторные попытки учитываются как попытки.",
     "Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.": "Последние 24 часа и оперативное окно 15 минут. Неудачные повторы учитываются как попытки; перцентили задержки считают только успешные попытки.",
     "5m / 1h: {{short}} / {{long}}": "5 мин / 1 ч: {{short}} / {{long}}",
+    "Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})": "Успешность с переключением за 5 мин / 1 ч: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})",
     "15m successful samples: {{count}}": "Успешных образцов за 15 мин: {{count}}",
     "24h average: {{value}}": "Среднее за 24 ч: {{value}}",
     "Provider / Channel": "Поставщик / Канал",

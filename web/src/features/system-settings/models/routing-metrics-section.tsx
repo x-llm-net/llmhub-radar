@@ -118,6 +118,17 @@ function RoutingMetricRow({ metric }: { metric: HubRoutingMetric }) {
           })}
         </div>
         <div className='text-muted-foreground mt-1 text-xs'>
+          {t(
+            'Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})',
+            {
+              short: formatRate(metric.switchable_success_rate_5m),
+              shortCount: metric.switchable_request_count_5m,
+              long: formatRate(metric.switchable_success_rate_60m),
+              longCount: metric.switchable_request_count_60m,
+            }
+          )}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
           {t('Failure breakdown 5m / 1h: {{short}} / {{long}}', {
             short: formatFailureCounts(metric.failure_counts_5m, t),
             long: formatFailureCounts(metric.failure_counts_60m, t),

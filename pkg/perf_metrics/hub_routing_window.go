@@ -40,30 +40,38 @@ type hubRoutingWindowBucketKey struct {
 }
 
 type hubRoutingWindowCounters struct {
-	requestCount     int64
-	successCount     int64
-	failureCounts    [hubRoutingFailureClassCount]int64
-	latencyHistogram [hubRoutingHistogramBucketCount]int64
-	ttftHistogram    [hubRoutingHistogramBucketCount]int64
+	requestCount           int64
+	successCount           int64
+	switchableRequestCount int64
+	switchableSuccessCount int64
+	failureCounts          [hubRoutingFailureClassCount]int64
+	latencyHistogram       [hubRoutingHistogramBucketCount]int64
+	ttftHistogram          [hubRoutingHistogramBucketCount]int64
 }
 
 type hubRoutingWindowAtomicBucket struct {
-	requestCount     atomic.Int64
-	successCount     atomic.Int64
-	failureCounts    [hubRoutingFailureClassCount]atomic.Int64
-	latencyHistogram [hubRoutingHistogramBucketCount]atomic.Int64
-	ttftHistogram    [hubRoutingHistogramBucketCount]atomic.Int64
+	requestCount           atomic.Int64
+	successCount           atomic.Int64
+	switchableRequestCount atomic.Int64
+	switchableSuccessCount atomic.Int64
+	failureCounts          [hubRoutingFailureClassCount]atomic.Int64
+	latencyHistogram       [hubRoutingHistogramBucketCount]atomic.Int64
+	ttftHistogram          [hubRoutingHistogramBucketCount]atomic.Int64
 }
 
 type hubRoutingWindowAggregate struct {
-	requestCount5m   int64
-	successCount5m   int64
-	requestCount60m  int64
-	successCount60m  int64
-	failureCounts5m  [hubRoutingFailureClassCount]int64
-	failureCounts60m [hubRoutingFailureClassCount]int64
-	latencyHistogram [hubRoutingHistogramBucketCount]int64
-	ttftHistogram    [hubRoutingHistogramBucketCount]int64
+	requestCount5m            int64
+	successCount5m            int64
+	switchableRequestCount5m  int64
+	switchableSuccessCount5m  int64
+	requestCount60m           int64
+	successCount60m           int64
+	switchableRequestCount60m int64
+	switchableSuccessCount60m int64
+	failureCounts5m           [hubRoutingFailureClassCount]int64
+	failureCounts60m          [hubRoutingFailureClassCount]int64
+	latencyHistogram          [hubRoutingHistogramBucketCount]int64
+	ttftHistogram             [hubRoutingHistogramBucketCount]int64
 }
 
 var hubRoutingWindowBuckets sync.Map
@@ -71,10 +79,15 @@ var hubRoutingWindowBuckets sync.Map
 func (bucket *hubRoutingWindowAtomicBucket) add(sample HubRoutingAttempt) {
 	bucket.requestCount.Add(1)
 	if !sample.Success {
+		if sample.HealthEligible {
+			bucket.switchableRequestCount.Add(1)
+		}
 		bucket.failureCounts[hubRoutingFailureClassIndex(sample.FailureClass)].Add(1)
 		return
 	}
 	bucket.successCount.Add(1)
+	bucket.switchableRequestCount.Add(1)
+	bucket.switchableSuccessCount.Add(1)
 	if sample.LatencyMS >= 0 {
 		bucket.latencyHistogram[hubRoutingHistogramIndex(sample.LatencyMS)].Add(1)
 	}
@@ -85,8 +98,10 @@ func (bucket *hubRoutingWindowAtomicBucket) add(sample HubRoutingAttempt) {
 
 func (bucket *hubRoutingWindowAtomicBucket) snapshot() hubRoutingWindowCounters {
 	counters := hubRoutingWindowCounters{
-		requestCount: bucket.requestCount.Load(),
-		successCount: bucket.successCount.Load(),
+		requestCount:           bucket.requestCount.Load(),
+		successCount:           bucket.successCount.Load(),
+		switchableRequestCount: bucket.switchableRequestCount.Load(),
+		switchableSuccessCount: bucket.switchableSuccessCount.Load(),
 	}
 	for index := range hubRoutingFailureClassCount {
 		counters.failureCounts[index] = bucket.failureCounts[index].Load()
@@ -145,12 +160,16 @@ func queryHubRoutingWindowMetrics(params HubRoutingMetricQueryParams, nowTs int6
 		aggregate := aggregates[dimension]
 		aggregate.requestCount60m += counters.requestCount
 		aggregate.successCount60m += counters.successCount
+		aggregate.switchableRequestCount60m += counters.switchableRequestCount
+		aggregate.switchableSuccessCount60m += counters.switchableSuccessCount
 		for index := range hubRoutingFailureClassCount {
 			aggregate.failureCounts60m[index] += counters.failureCounts[index]
 		}
 		if key.bucketTs >= earliest5m {
 			aggregate.requestCount5m += counters.requestCount
 			aggregate.successCount5m += counters.successCount
+			aggregate.switchableRequestCount5m += counters.switchableRequestCount
+			aggregate.switchableSuccessCount5m += counters.switchableSuccessCount
 			for index := range hubRoutingFailureClassCount {
 				aggregate.failureCounts5m[index] += counters.failureCounts[index]
 			}
@@ -265,6 +284,8 @@ func appendHubRoutingWindowRedis(ctx context.Context, pipe redis.Pipeliner, key 
 	pipe.HIncrBy(ctx, redisKey, "req", 1)
 	if sample.Success {
 		pipe.HIncrBy(ctx, redisKey, "ok", 1)
+		pipe.HIncrBy(ctx, redisKey, "switchable_req", 1)
+		pipe.HIncrBy(ctx, redisKey, "switchable_ok", 1)
 		if sample.LatencyMS >= 0 {
 			pipe.HIncrBy(ctx, redisKey, hubRoutingHistogramRedisField("lat", hubRoutingHistogramIndex(sample.LatencyMS)), 1)
 		}
@@ -273,6 +294,9 @@ func appendHubRoutingWindowRedis(ctx context.Context, pipe redis.Pipeliner, key 
 		}
 	} else {
 		pipe.HIncrBy(ctx, redisKey, hubRoutingFailureRedisField(sample.FailureClass), 1)
+		if sample.HealthEligible {
+			pipe.HIncrBy(ctx, redisKey, "switchable_req", 1)
+		}
 	}
 	pipe.Expire(ctx, redisKey, 2*time.Hour)
 }
@@ -299,8 +323,10 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 				continue
 			}
 			counters := hubRoutingWindowCounters{
-				requestCount: parseRedisInt(values["req"]),
-				successCount: parseRedisInt(values["ok"]),
+				requestCount:           parseRedisInt(values["req"]),
+				successCount:           parseRedisInt(values["ok"]),
+				switchableRequestCount: parseRedisInt(values["switchable_req"]),
+				switchableSuccessCount: parseRedisInt(values["switchable_ok"]),
 			}
 			for index := range hubRoutingHistogramBucketCount {
 				counters.latencyHistogram[index] = parseRedisInt(values[hubRoutingHistogramRedisField("lat", index)])

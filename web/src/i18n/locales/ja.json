@@ -5669,6 +5669,7 @@
     "Last 24 hours; failed retries are counted as attempts.": "過去24時間。失敗した再試行も試行回数に含まれます。",
     "Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.": "過去24時間と直近15分のリアルタイム表示。失敗した再試行も試行回数に含め、レイテンシのパーセンタイルは成功した試行のみを集計します。",
     "5m / 1h: {{short}} / {{long}}": "5分 / 1時間: {{short}} / {{long}}",
+    "Switchable success 5m / 1h: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})": "切り替え可能な成功率 5分 / 1時間: {{short}} ({{shortCount}}) / {{long}} ({{longCount}})",
     "15m successful samples: {{count}}": "15分間の成功サンプル: {{count}}",
     "24h average: {{value}}": "24時間平均: {{value}}",
     "Provider / Channel": "プロバイダー / チャネル",

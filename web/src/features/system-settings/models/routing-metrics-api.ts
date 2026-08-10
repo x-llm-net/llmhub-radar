@@ -40,6 +40,10 @@ export type HubRoutingMetric = {
   first_token_p95_ms?: number
   failure_counts_5m?: Record<string, number>
   failure_counts_60m?: Record<string, number>
+  switchable_request_count_5m: number
+  switchable_success_rate_5m?: number
+  switchable_request_count_60m: number
+  switchable_success_rate_60m?: number
 }
 
 export type HubRoutingMetricsParams = {

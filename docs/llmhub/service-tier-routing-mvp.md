@@ -20,6 +20,7 @@
 - M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查询，并在 `/system-settings/models/channel-health-routing` 下方查看最近 24 小时的尝试数、尝试级成功率、平均完整响应耗时和平均 TTFT；该聚合不参与选路和结算。
 - M4-B 在同一记录入口增加 1 分钟内存/Redis 桶：页面展示 5 分钟和 1 小时成功率，以及默认 15 分钟成功尝试的完整响应耗时和 TTFT P50/P95。短窗口不落库，进程重启后本机窗口从空开始；Redis 可用时合并多实例数据。该数据仍只观察，不参与选路和结算。
 - M4-C 为失败尝试增加 `failure_class` 观测和 5 分钟/1 小时类别计数，区分上游、渠道配置、客户端、循环保护、已开始响应和未知错误；不复制重试策略，也不改变重试、选路或结算。平台生成的 `request_loop_detected` 固定不触发 Channel 自动禁用，`channel:model_mapped_error` 不触发 Channel 级自动禁用。
+- M4-D 在短窗口并列展示可切换尝试数和成功率：成功请求以及可通过更换渠道恢复的失败计入，客户端错误和循环保护排除；原有全尝试成功率、24 小时聚合、重试、选路和结算口径不变。状态码映射前的上游状态仅用于观测归因。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
 
 ## 自动化闭环验证
@@ -27,7 +28,7 @@
 - `service/hub_marketplace_flow_test.go` 覆盖渠道商和供给渠道创建、模型探测成功、手工上架后生成档位 Ability、`medium` 档 Token、子域渠道商优先、失败后同档公共池兜底、按最终供给倍率扣除用户与 Token 额度、只给最终渠道商结算收益，以及 `hub_attempts` 保留失败与成功两次尝试。
 - 回归场景固定入口渠道商倍率为 `0.5x`、兜底渠道商倍率为 `0.6x`，验证最终按 `0.6x` 扣费，入口渠道商不获得该请求收益。
 - 自动化用例使用确定性的本地数据库和模拟上游失败，不依赖真实网络；真实上游协议、超时和流式中断仍按下方验收流程进行人工验证。
-- 当前全仓 `go test ./... -count=1` 已通过。
+- 当前全仓 `go test -p=1 ./... -count=1` 已通过；串行参数用于降低本地测试环境的资源峰值。
 
 ## 验收流程
 
