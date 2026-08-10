@@ -158,3 +158,59 @@ func TestProviderHostRoutingFallsBackImmediatelyWhenProviderHasNoModel(t *testin
 	assert.Equal(t, platform.Id, selected.Id)
 	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback))
 }
+
+func TestProviderHostRoutingPreservesAutoGroupRetryState(t *testing.T) {
+	db := setupChannelSelectAutoGroupsTest(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubSupplyGroup{}))
+
+	originalRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	t.Cleanup(func() { common.RetryTimes = originalRetryTimes })
+
+	const modelName = "provider-auto-retry-state-model"
+	provider := &model.HubProvider{OwnerUserId: 95004, Name: "Auto Routing Provider", Slug: "auto-routing-provider"}
+	require.NoError(t, model.CreateHubProvider(provider))
+	createChannelSelectAutoGroupsChannel(t, db, 2201, "vip", modelName)
+	createChannelSelectAutoGroupsChannel(t, db, 2202, "default", modelName)
+	createChannelSelectAutoGroupsChannel(t, db, 2203, "vip", modelName)
+	for _, channelID := range []int{2201, 2202} {
+		require.NoError(t, db.Create(&model.HubSupplyGroup{
+			ProviderId: provider.Id, NewAPIChannelId: channelID, PriceMultiplier: 0.4,
+		}).Error)
+	}
+	model.InitChannelCache()
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyTokenAutoGroups, []string{"vip", "default"})
+	common.SetContextKey(ctx, constant.ContextKeyTokenCrossGroupRetry, true)
+	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, provider.Id)
+	param := &RetryParam{
+		Ctx: ctx, TokenGroup: "auto", ModelName: modelName,
+		RequestPath: "/v1/chat/completions", Retry: common.GetPointer(0),
+	}
+
+	first, group, err := CacheGetRandomSatisfiedChannel(param)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Equal(t, 2201, first.Id)
+	assert.Equal(t, "vip", group)
+
+	param.ExcludeChannel(first.Id)
+	param.IncreaseRetry()
+	second, group, err := CacheGetRandomSatisfiedChannel(param)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.Equal(t, 2202, second.Id)
+	assert.Equal(t, "default", group)
+
+	param.ExcludeChannel(second.Id)
+	param.IncreaseRetry()
+	fallback, group, err := CacheGetRandomSatisfiedChannel(param)
+	require.NoError(t, err)
+	require.NotNil(t, fallback)
+	assert.Equal(t, 2203, fallback.Id)
+	assert.Equal(t, "vip", group)
+	assert.Equal(t, "platform_fallback", common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase))
+	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback))
+}

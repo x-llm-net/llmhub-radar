@@ -80,8 +80,14 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 	retry := param.GetRetry()
 	isFallback := common.GetContextKeyBool(param.Ctx, constant.ContextKeyHubRoutingFallback)
-	if !isFallback && (common.RetryTimes == 0 || retry < common.RetryTimes) {
+	if !isFallback && (param.TokenGroup == "auto" || common.RetryTimes == 0 || retry < common.RetryTimes) {
 		preferredParam := cloneRetryParamAt(param, retry)
+		if param.TokenGroup == "auto" {
+			// Auto groups reset the retry counter while moving to the next group.
+			// Keep that state on the original request so provider preference is not
+			// abandoned before its ordered groups are exhausted.
+			preferredParam = param
+		}
 		channel, group, err := cacheGetRandomSatisfiedChannelWithFilter(preferredParam, model.ChannelProviderFilter{
 			ProviderID: providerID, Mode: model.ChannelProviderOnly, StrictExcludedChannels: true,
 		})
