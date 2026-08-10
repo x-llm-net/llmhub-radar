@@ -28,10 +28,21 @@ export type HubRoutingMetric = {
   success_rate: number
   avg_latency_ms: number
   avg_first_token_ms?: number
+  request_count_5m: number
+  success_rate_5m?: number
+  request_count_60m: number
+  success_rate_60m?: number
+  latency_sample_count: number
+  latency_p50_ms?: number
+  latency_p95_ms?: number
+  first_token_sample_count: number
+  first_token_p50_ms?: number
+  first_token_p95_ms?: number
 }
 
 export type HubRoutingMetricsParams = {
   hours?: number
+  window_minutes?: number
   limit?: number
 }
 
@@ -40,6 +51,7 @@ export type HubRoutingMetricsResponse = {
   message?: string
   data?: {
     hours: number
+    window_minutes: number
     start_ts: number
     end_ts: number
     items: HubRoutingMetric[]

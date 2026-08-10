@@ -30,31 +30,43 @@ type HubRoutingAttempt struct {
 }
 
 type HubRoutingMetricQueryParams struct {
-	Model        string
-	EndpointType string
-	ProviderID   *int
-	ChannelID    *int
-	Hours        int
-	Limit        int
+	Model         string
+	EndpointType  string
+	ProviderID    *int
+	ChannelID     *int
+	Hours         int
+	WindowMinutes int
+	Limit         int
 }
 
 type HubRoutingMetricQueryResult struct {
-	Hours   int                         `json:"hours"`
-	StartTs int64                       `json:"start_ts"`
-	EndTs   int64                       `json:"end_ts"`
-	Items   []HubRoutingMetricAggregate `json:"items"`
+	Hours         int                         `json:"hours"`
+	WindowMinutes int                         `json:"window_minutes"`
+	StartTs       int64                       `json:"start_ts"`
+	EndTs         int64                       `json:"end_ts"`
+	Items         []HubRoutingMetricAggregate `json:"items"`
 }
 
 type HubRoutingMetricAggregate struct {
-	ModelName       string  `json:"model_name"`
-	EndpointType    string  `json:"endpoint_type"`
-	ProviderID      int     `json:"provider_id"`
-	ChannelID       int     `json:"channel_id"`
-	RequestCount    int64   `json:"request_count"`
-	SuccessCount    int64   `json:"success_count"`
-	SuccessRate     float64 `json:"success_rate"`
-	AvgLatencyMS    int64   `json:"avg_latency_ms"`
-	AvgFirstTokenMS *int64  `json:"avg_first_token_ms,omitempty"`
+	ModelName             string   `json:"model_name"`
+	EndpointType          string   `json:"endpoint_type"`
+	ProviderID            int      `json:"provider_id"`
+	ChannelID             int      `json:"channel_id"`
+	RequestCount          int64    `json:"request_count"`
+	SuccessCount          int64    `json:"success_count"`
+	SuccessRate           float64  `json:"success_rate"`
+	AvgLatencyMS          int64    `json:"avg_latency_ms"`
+	AvgFirstTokenMS       *int64   `json:"avg_first_token_ms,omitempty"`
+	RequestCount5m        int64    `json:"request_count_5m"`
+	SuccessRate5m         *float64 `json:"success_rate_5m,omitempty"`
+	RequestCount60m       int64    `json:"request_count_60m"`
+	SuccessRate60m        *float64 `json:"success_rate_60m,omitempty"`
+	LatencySampleCount    int64    `json:"latency_sample_count"`
+	LatencyP50MS          *int64   `json:"latency_p50_ms,omitempty"`
+	LatencyP95MS          *int64   `json:"latency_p95_ms,omitempty"`
+	FirstTokenSampleCount int64    `json:"first_token_sample_count"`
+	FirstTokenP50MS       *int64   `json:"first_token_p50_ms,omitempty"`
+	FirstTokenP95MS       *int64   `json:"first_token_p95_ms,omitempty"`
 }
 
 type hubRoutingBucketKey struct {
@@ -136,6 +148,7 @@ func RecordHubRoutingAttempts(attempts []HubRoutingAttempt) {
 	if !perf_metrics_setting.GetSetting().Enabled {
 		return
 	}
+	now := time.Now().Unix()
 	for _, attempt := range attempts {
 		if attempt.Model == "" || attempt.EndpointType == "" || attempt.ChannelID <= 0 {
 			continue
@@ -145,11 +158,12 @@ func RecordHubRoutingAttempts(attempts []HubRoutingAttempt) {
 			endpointType: attempt.EndpointType,
 			providerID:   attempt.ProviderID,
 			channelID:    attempt.ChannelID,
-			bucketTs:     bucketStart(time.Now().Unix()),
+			bucketTs:     bucketStart(now),
 		}
 		actual, _ := hubRoutingBuckets.LoadOrStore(key, &hubRoutingAtomicBucket{})
 		actual.(*hubRoutingAtomicBucket).add(attempt)
-		recordHubRoutingRedis(key, attempt)
+		recordHubRoutingWindow(attempt, now)
+		recordHubRoutingRedis(key, attempt, now)
 	}
 }
 
@@ -165,6 +179,12 @@ func QueryHubRoutingMetrics(params HubRoutingMetricQueryParams) (HubRoutingMetri
 	}
 	if params.Limit > 1000 {
 		params.Limit = 1000
+	}
+	if params.WindowMinutes <= 0 {
+		params.WindowMinutes = hubRoutingDefaultWindowMinutes
+	}
+	if params.WindowMinutes > hubRoutingMaxWindowMinutes {
+		params.WindowMinutes = hubRoutingMaxWindowMinutes
 	}
 
 	endTs := time.Now().Unix()
@@ -212,6 +232,7 @@ func QueryHubRoutingMetrics(params HubRoutingMetricQueryParams) (HubRoutingMetri
 		mergeHubRoutingDimensionCounters(dimensions, dimensionKey, value)
 	}
 
+	recent := queryHubRoutingWindowMetrics(params, endTs)
 	items := make([]HubRoutingMetricAggregate, 0, len(dimensions))
 	for key, value := range dimensions {
 		if value.requestCount <= 0 {
@@ -230,6 +251,18 @@ func QueryHubRoutingMetrics(params HubRoutingMetricQueryParams) (HubRoutingMetri
 		if value.ttftCount > 0 {
 			avg := value.ttftSumMs / value.ttftCount
 			item.AvgFirstTokenMS = &avg
+		}
+		if window, ok := recent[key]; ok {
+			item.RequestCount5m = window.requestCount5m
+			item.SuccessRate5m = hubRoutingSuccessRate(window.successCount5m, window.requestCount5m)
+			item.RequestCount60m = window.requestCount60m
+			item.SuccessRate60m = hubRoutingSuccessRate(window.successCount60m, window.requestCount60m)
+			item.LatencySampleCount = hubRoutingHistogramCount(window.latencyHistogram)
+			item.LatencyP50MS = hubRoutingHistogramPercentile(window.latencyHistogram, 50)
+			item.LatencyP95MS = hubRoutingHistogramPercentile(window.latencyHistogram, 95)
+			item.FirstTokenSampleCount = hubRoutingHistogramCount(window.ttftHistogram)
+			item.FirstTokenP50MS = hubRoutingHistogramPercentile(window.ttftHistogram, 50)
+			item.FirstTokenP95MS = hubRoutingHistogramPercentile(window.ttftHistogram, 95)
 		}
 		items = append(items, item)
 	}
@@ -251,7 +284,10 @@ func QueryHubRoutingMetrics(params HubRoutingMetricQueryParams) (HubRoutingMetri
 	if len(items) > params.Limit {
 		items = items[:params.Limit]
 	}
-	return HubRoutingMetricQueryResult{Hours: params.Hours, StartTs: startTs, EndTs: endTs, Items: items}, nil
+	return HubRoutingMetricQueryResult{
+		Hours: params.Hours, WindowMinutes: params.WindowMinutes,
+		StartTs: startTs, EndTs: endTs, Items: items,
+	}, nil
 }
 
 func matchesHubRoutingQuery(key hubRoutingBucketKey, params HubRoutingMetricQueryParams) bool {
@@ -291,6 +327,7 @@ func mergeHubRoutingDimensionCounters(merged map[hubRoutingDimensionKey]hubRouti
 }
 
 func flushHubRoutingBuckets() {
+	cleanupHubRoutingWindowBuckets(time.Now().Unix())
 	currentBucket := bucketStart(time.Now().Unix())
 	hubRoutingBuckets.Range(func(key, value any) bool {
 		k := key.(hubRoutingBucketKey)
@@ -331,7 +368,7 @@ func deleteOldHubRoutingBucket(k hubRoutingBucketKey, rawKey any) {
 	}
 }
 
-func recordHubRoutingRedis(key hubRoutingBucketKey, sample HubRoutingAttempt) {
+func recordHubRoutingRedis(key hubRoutingBucketKey, sample HubRoutingAttempt, nowTs int64) {
 	if !common.RedisEnabled || common.RDB == nil {
 		return
 	}
@@ -351,6 +388,7 @@ func recordHubRoutingRedis(key hubRoutingBucketKey, sample HubRoutingAttempt) {
 		pipe.HIncrBy(ctx, redisKey, "ttft_n", 1)
 	}
 	pipe.Expire(ctx, redisKey, 2*time.Hour)
+	appendHubRoutingWindowRedis(ctx, pipe, key, sample, nowTs)
 	_, _ = pipe.Exec(ctx)
 }
 

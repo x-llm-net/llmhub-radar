@@ -43,11 +43,25 @@ function formatLatency(value: number | undefined) {
   return `${(value / 1000).toFixed(2)} s`
 }
 
+function formatRate(value: number | undefined) {
+  if (value == null) return '-'
+  return `${value.toFixed(1)}%`
+}
+
 function endpointLabel(endpoint: string) {
+  if (endpoint === 'openai') return 'Chat endpoint'
   if (endpoint === 'openai-response') return 'Responses endpoint'
+  if (endpoint === 'openai-response-compact') {
+    return 'Responses compact endpoint'
+  }
+  if (endpoint === 'openai-alpha-search') return 'OpenAI search endpoint'
   if (endpoint === 'image-generation') return 'Image endpoint'
   if (endpoint === 'anthropic') return 'Anthropic endpoint'
-  return 'Chat endpoint'
+  if (endpoint === 'gemini') return 'Gemini endpoint'
+  if (endpoint === 'jina-rerank') return 'Rerank endpoint'
+  if (endpoint === 'embeddings') return 'Embeddings endpoint'
+  if (endpoint === 'openai-video') return 'Video endpoint'
+  return endpoint || 'Unknown endpoint'
 }
 
 function RoutingMetricRow({ metric }: { metric: HubRoutingMetric }) {
@@ -76,12 +90,44 @@ function RoutingMetricRow({ metric }: { metric: HubRoutingMetric }) {
         <div className='text-muted-foreground mt-1 text-xs'>
           {metric.success_count} {t('successful attempts')}
         </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('5m / 1h: {{short}} / {{long}}', {
+            short: formatRate(metric.success_rate_5m),
+            long: formatRate(metric.success_rate_60m),
+          })}
+        </div>
       </TableCell>
       <TableCell className='min-w-36 align-top tabular-nums'>
-        {formatLatency(metric.avg_latency_ms)}
+        <div>
+          {formatLatency(metric.latency_p50_ms)} /{' '}
+          {formatLatency(metric.latency_p95_ms)}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('15m successful samples: {{count}}', {
+            count: metric.latency_sample_count,
+          })}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('24h average: {{value}}', {
+            value: formatLatency(metric.avg_latency_ms),
+          })}
+        </div>
       </TableCell>
       <TableCell className='min-w-36 align-top tabular-nums'>
-        {formatLatency(metric.avg_first_token_ms)}
+        <div>
+          {formatLatency(metric.first_token_p50_ms)} /{' '}
+          {formatLatency(metric.first_token_p95_ms)}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('15m successful samples: {{count}}', {
+            count: metric.first_token_sample_count,
+          })}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('24h average: {{value}}', {
+            value: formatLatency(metric.avg_first_token_ms),
+          })}
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -91,7 +137,8 @@ export function RoutingMetricsSection() {
   const { t } = useTranslation()
   const metrics = useQuery({
     queryKey: hubRoutingMetricsQueryKey,
-    queryFn: () => getHubRoutingMetrics({ hours: 24, limit: 100 }),
+    queryFn: () =>
+      getHubRoutingMetrics({ hours: 24, window_minutes: 15, limit: 100 }),
   })
   const items = metrics.data?.data?.items ?? []
 
@@ -99,7 +146,9 @@ export function RoutingMetricsSection() {
     <SettingsSection title={t('Real Request Metrics')}>
       <div className='flex items-center justify-between gap-3'>
         <p className='text-muted-foreground text-sm'>
-          {t('Last 24 hours; failed retries are counted as attempts.')}
+          {t(
+            'Last 24 hours plus a 15-minute live window. Failed retries count as attempts; latency percentiles use successful attempts only.'
+          )}
         </p>
         <Button
           type='button'
@@ -125,8 +174,8 @@ export function RoutingMetricsSection() {
                 <TableHead>{t('Provider / Channel')}</TableHead>
                 <TableHead>{t('Attempts')}</TableHead>
                 <TableHead>{t('Success rate')}</TableHead>
-                <TableHead>{t('Average latency')}</TableHead>
-                <TableHead>{t('Average TTFT')}</TableHead>
+                <TableHead>{t('Latency P50/P95')}</TableHead>
+                <TableHead>{t('TTFT P50/P95')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

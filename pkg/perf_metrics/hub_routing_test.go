@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,74 @@ func TestQueryHubRoutingMetricsAggregatesStoredRows(t *testing.T) {
 	assert.Equal(t, int64(733), item.AvgLatencyMS)
 	require.NotNil(t, item.AvgFirstTokenMS)
 	assert.Equal(t, int64(250), *item.AvgFirstTokenMS)
+}
+
+func TestQueryHubRoutingWindowMetricsUsesSuccessOnlyPercentiles(t *testing.T) {
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	clearHubRoutingWindowBucketsForTest()
+	t.Cleanup(func() {
+		clearHubRoutingWindowBucketsForTest()
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	now := hubRoutingWindowBucketStart(time.Now().Unix())
+	recordHubRoutingWindow(HubRoutingAttempt{
+		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
+		Success: true, LatencyMS: 900, FirstTokenMS: int64Pointer(300),
+	}, now)
+	recordHubRoutingWindow(HubRoutingAttempt{
+		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
+		Success: true, LatencyMS: 2900, FirstTokenMS: int64Pointer(1800),
+	}, now)
+	recordHubRoutingWindow(HubRoutingAttempt{
+		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
+		Success: false, LatencyMS: 7000,
+	}, now)
+	recordHubRoutingWindow(HubRoutingAttempt{
+		Model: "gpt-window", EndpointType: "openai", ProviderID: 3, ChannelID: 11,
+		Success: true, LatencyMS: 500,
+	}, now-30*60)
+
+	metrics := queryHubRoutingWindowMetrics(HubRoutingMetricQueryParams{
+		Model: "gpt-window", WindowMinutes: 15,
+	}, now+30)
+	item, ok := metrics[hubRoutingDimensionKey{
+		modelName: "gpt-window", endpointType: "openai", providerID: 3, channelID: 11,
+	}]
+	require.True(t, ok)
+	assert.Equal(t, int64(3), item.requestCount5m)
+	assert.Equal(t, int64(2), item.successCount5m)
+	assert.Equal(t, int64(4), item.requestCount60m)
+	assert.Equal(t, int64(3), item.successCount60m)
+	assert.Equal(t, int64(2), hubRoutingHistogramCount(item.latencyHistogram))
+	assert.Equal(t, int64(1000), *hubRoutingHistogramPercentile(item.latencyHistogram, 50))
+	assert.Equal(t, int64(3000), *hubRoutingHistogramPercentile(item.latencyHistogram, 95))
+	assert.Equal(t, int64(500), *hubRoutingHistogramPercentile(item.ttftHistogram, 50))
+	assert.Equal(t, int64(2000), *hubRoutingHistogramPercentile(item.ttftHistogram, 95))
+}
+
+func TestHubRoutingWindowRedisBucketKeyRoundTrip(t *testing.T) {
+	original := hubRoutingWindowBucketKey{
+		modelName:    "model/name with spaces",
+		endpointType: "endpoint:type",
+		providerID:   3,
+		channelID:    11,
+		bucketTs:     1770000060,
+	}
+
+	parsed, ok := parseHubRoutingWindowRedisBucketKey(hubRoutingWindowRedisBucketKey(original))
+	require.True(t, ok)
+	assert.Equal(t, original, parsed)
+}
+
+func clearHubRoutingWindowBucketsForTest() {
+	hubRoutingWindowBuckets.Range(func(key, _ any) bool {
+		hubRoutingWindowBuckets.Delete(key)
+		return true
+	})
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
 }

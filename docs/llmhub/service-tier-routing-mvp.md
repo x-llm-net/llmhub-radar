@@ -17,7 +17,8 @@
 - 公共池先按渠道商选择，再在渠道商内部按 Channel 优先级和权重选择，避免拆分多个 Channel 人为放大份额。管理员创建、无渠道商归属的渠道作为一个平台虚拟提供者参与。
 - 最终实际命中的供给倍率参与预扣、重试后的预扣调整、最终扣费和渠道商收益结算。
 - 请求日志保存结构化 `hub_attempts`，包括尝试顺序、模型、端点类型、样本来源、服务档位、路由阶段、渠道商、Channel、状态、耗时、首事件时间、TTFT、倍率和上游扣费状态；真实请求暂只用于观测和单请求追踪，不参与自动选路。
-- M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查看；该聚合不参与选路和结算。
+- M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查询，并在 `/system-settings/models/channel-health-routing` 下方查看最近 24 小时的尝试数、尝试级成功率、平均完整响应耗时和平均 TTFT；该聚合不参与选路和结算。
+- M4-B 在同一记录入口增加 1 分钟内存/Redis 桶：页面展示 5 分钟和 1 小时成功率，以及默认 15 分钟成功尝试的完整响应耗时和 TTFT P50/P95。短窗口不落库，进程重启后本机窗口从空开始；Redis 可用时合并多实例数据。该数据仍只观察，不参与选路和结算。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
 
 ## 自动化闭环验证
@@ -36,6 +37,7 @@
 5. 使用根域名调用，确认只命中该档位的候选，不跨档兜底。
 6. 确认系统重试次数至少为 `1`，再使用 `{slug}.localhost:3100/v1` 调用：先确认命中该渠道商，停用或制造其渠道失败后确认切换到平台同档公共池。`RetryTimes=0` 表示不进行第二次上游尝试，因此不会触发失败后的公共池兜底。
 7. 查看使用日志，确认入口渠道商、最终渠道商、路由阶段、实际倍率、扣费和 `hub_attempts` 与调用结果一致。
+8. 管理员进入 `/system-settings/models/channel-health-routing`，确认探测指标和真实请求指标分开展示，并在产生新请求后检查 5 分钟/1 小时成功率和 15 分钟 P50/P95；若菜单未出现，先重新构建嵌入式前端并重启本地 Go 服务，不能只刷新旧二进制提供的页面。
 
 ## 第一版边界
 

@@ -39,6 +39,14 @@ func AdminListHubRoutingMetrics(c *gin.Context) {
 		}
 		params.Hours = hours
 	}
+	if raw := strings.TrimSpace(c.Query("window_minutes")); raw != "" {
+		windowMinutes, err := strconv.Atoi(raw)
+		if err != nil || windowMinutes <= 0 || windowMinutes > 60 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		params.WindowMinutes = windowMinutes
+	}
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit <= 0 {
