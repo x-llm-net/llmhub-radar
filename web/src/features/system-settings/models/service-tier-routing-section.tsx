@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+  Search,
+} from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -9,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { getAdminProviders } from '@/features/providers/api'
+import { useDebounce } from '@/hooks'
 
 import {
   SettingsSwitchContent,
@@ -41,6 +48,8 @@ const FAMILY_LABELS: Record<(typeof FAMILY_ORDER)[number], string> = {
   zhipu: 'Zhipu / GLM',
   other: 'Other',
 }
+
+const PROVIDER_PAGE_SIZE = 20
 
 type FamilyKey = (typeof FAMILY_ORDER)[number]
 
@@ -165,11 +174,37 @@ export function ServiceTierRoutingSection({
     }
   }, [defaultValues, initialCeilings, initialProviderIDs])
 
+  const [providerSearch, setProviderSearch] = useState('')
+  const [providerPage, setProviderPage] = useState(1)
+  const debouncedProviderSearch = useDebounce(providerSearch, 400)
   const providersQuery = useQuery({
-    queryKey: ['hub-admin', 'providers', 'service-tier-routing'],
-    queryFn: () => getAdminProviders({ p: 1, page_size: 1000 }),
+    queryKey: [
+      'hub-admin',
+      'providers',
+      'service-tier-routing',
+      debouncedProviderSearch,
+      providerPage,
+    ],
+    queryFn: async () => {
+      const response = await getAdminProviders({
+        keyword: debouncedProviderSearch,
+        p: providerPage,
+        page_size: PROVIDER_PAGE_SIZE,
+      })
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Failed to load providers')
+      }
+      return response.data
+    },
   })
-  const providers = providersQuery.data?.data?.items ?? []
+  useEffect(() => {
+    setProviderPage(1)
+  }, [debouncedProviderSearch])
+  const providers = providersQuery.data?.items ?? []
+  const providerPageCount = Math.max(
+    1,
+    Math.ceil((providersQuery.data?.total ?? 0) / PROVIDER_PAGE_SIZE)
+  )
 
   const updateCeiling = (
     family: FamilyKey,
@@ -237,6 +272,25 @@ export function ServiceTierRoutingSection({
       <div className='text-muted-foreground flex h-24 items-center justify-center gap-2 text-sm'>
         <Loader2 className='size-4 animate-spin' />
         {t('Loading...')}
+      </div>
+    )
+  } else if (providersQuery.isError) {
+    providerOptions = (
+      <div className='text-destructive flex min-h-24 flex-col items-center justify-center gap-2 px-3 py-4 text-center text-sm'>
+        <span>{t('Failed to load providers')}</span>
+        <button
+          type='button'
+          className='text-foreground inline-flex items-center gap-1.5 underline underline-offset-4 disabled:opacity-50'
+          onClick={() => void providersQuery.refetch()}
+          disabled={providersQuery.isFetching}
+        >
+          {providersQuery.isFetching ? (
+            <Loader2 className='size-3.5 animate-spin' />
+          ) : (
+            <RefreshCw className='size-3.5' />
+          )}
+          {t('Retry')}
+        </button>
       </div>
     )
   } else if (providers.length === 0) {
@@ -386,8 +440,53 @@ export function ServiceTierRoutingSection({
             {t('Only approved providers can enter the high-quality tier')}
           </p>
         </div>
+        <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+          <div className='relative min-w-0 flex-1 sm:max-w-md'>
+            <Search className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2' />
+            <Input
+              value={providerSearch}
+              onChange={(event) => setProviderSearch(event.target.value)}
+              placeholder={t('Filter by provider, owner, email or website...')}
+              aria-label={t('Filter by provider, owner, email or website...')}
+              className='pl-9'
+            />
+          </div>
+          <span className='text-muted-foreground shrink-0 text-xs'>
+            {t('Selected {{count}}', { count: approvedProviderIDs.length })}
+          </span>
+        </div>
         <div className='max-h-64 overflow-y-auto rounded-md border'>
           {providerOptions}
+        </div>
+        <div className='flex items-center justify-between gap-3'>
+          <span className='text-muted-foreground text-xs tabular-nums'>
+            {t('Page {{page}} of {{total}}', {
+              page: Math.min(providerPage, providerPageCount),
+              total: providerPageCount,
+            })}
+          </span>
+          <div className='flex items-center gap-2'>
+            <button
+              type='button'
+              className='border-input hover:bg-muted inline-flex size-8 items-center justify-center rounded-md border disabled:pointer-events-none disabled:opacity-50'
+              onClick={() => setProviderPage((current) => current - 1)}
+              disabled={providerPage <= 1 || providersQuery.isFetching}
+              aria-label={t('Previous page')}
+            >
+              <ChevronLeft className='size-4' />
+            </button>
+            <button
+              type='button'
+              className='border-input hover:bg-muted inline-flex size-8 items-center justify-center rounded-md border disabled:pointer-events-none disabled:opacity-50'
+              onClick={() => setProviderPage((current) => current + 1)}
+              disabled={
+                providerPage >= providerPageCount || providersQuery.isFetching
+              }
+              aria-label={t('Next page')}
+            >
+              <ChevronRight className='size-4' />
+            </button>
+          </div>
         </div>
       </div>
     </SettingsSection>
