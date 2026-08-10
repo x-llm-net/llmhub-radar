@@ -21,6 +21,7 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
+var channel2HubSupplyProbeKinds hubSupplyChannelProbeKinds
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -45,6 +46,13 @@ func InitChannelCache() {
 	}
 	var abilities []*Ability
 	DB.Where("enabled = ?", true).Find(&abilities)
+	newChannel2HubSupplyProbeKinds, err := loadHubSupplyChannelProbeKinds(DB, nil)
+	if err != nil {
+		common.SysError("failed to refresh hub supply route availability: " + err.Error())
+		channelSyncLock.RLock()
+		newChannel2HubSupplyProbeKinds = channel2HubSupplyProbeKinds
+		channelSyncLock.RUnlock()
+	}
 	newGroup2model2channels := make(map[string]map[string][]int)
 	for _, ability := range abilities {
 		channel, ok := newChannelId2channel[ability.ChannelId]
@@ -87,6 +95,7 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	channel2HubSupplyProbeKinds = newChannel2HubSupplyProbeKinds
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -266,17 +275,18 @@ func filterChannelIDsByProvider(channelIDs []int, providerFilter ChannelProvider
 	return filtered
 }
 
-// filterChannelsByRequestPathAndModel restricts candidates by request path and
-// model. Only Advanced Custom (type 58) channels are path-checked: they are kept
-// only when one of their configured routes matches requestPath and model. All
-// other channel types always pass. When requestPath is empty, filtering is skipped.
+// filterChannelsByRequestPathAndModel restricts candidates by the current Hub
+// probe kind and, for Advanced Custom channels, the configured request path.
 // Caller must hold channelSyncLock (read lock). The cached slice is never mutated.
 func filterChannelsByRequestPathAndModel(channels []int, requestPath string, model string) []int {
-	if requestPath == "" || len(channels) == 0 {
+	if len(channels) == 0 {
 		return channels
 	}
 	filtered := make([]int, 0, len(channels))
 	for _, channelId := range channels {
+		if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelId, model, requestPath) {
+			continue
+		}
 		channel, ok := channelsIDM[channelId]
 		if !ok {
 			// keep it so the downstream consistency error is raised as before
@@ -287,7 +297,11 @@ func filterChannelsByRequestPathAndModel(channels []int, requestPath string, mod
 			filtered = append(filtered, channelId)
 			continue
 		}
-		if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPathForModel(requestPath, model) {
+		if requestPath != "" {
+			if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPathForModel(requestPath, model) {
+				filtered = append(filtered, channelId)
+			}
+		} else {
 			filtered = append(filtered, channelId)
 		}
 	}

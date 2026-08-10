@@ -41,3 +41,16 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	assert.Equal(t, types.ErrorCode("third_party_508"), ordinaryErr.GetErrorCode())
 	assert.True(t, shouldRetry(ctx, ordinaryErr, 3))
 }
+
+func TestShouldRetryTreatsEndpointUnsupportedAsChannelScoped(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	endpointErr := types.NewErrorWithStatusCode(
+		io.ErrUnexpectedEOF,
+		types.ErrorCodeChannelEndpointUnsupported,
+		http.StatusBadRequest,
+		types.ErrOptionWithSkipRetry(),
+	)
+
+	assert.True(t, shouldRetry(ctx, endpointErr, 1))
+}

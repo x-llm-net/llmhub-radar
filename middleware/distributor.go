@@ -227,6 +227,9 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string, requ
 	if channel == nil {
 		return false
 	}
+	if !model.IsHubSupplyChannelRoutableForRequest(channel.Id, requestModel, requestPath) {
+		return false
+	}
 	if channel.Type != constant.ChannelTypeAdvancedCustom {
 		return true
 	}

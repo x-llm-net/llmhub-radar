@@ -25,7 +25,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		!common.IsResponsesCompactAPIType(info.ApiType) {
 		return types.NewErrorWithStatusCode(
 			fmt.Errorf("unsupported endpoint %q for api type %d", "/v1/responses/compact", info.ApiType),
-			types.ErrorCodeInvalidRequest,
+			types.ErrorCodeChannelEndpointUnsupported,
 			http.StatusBadRequest,
 			types.ErrOptionWithSkipRetry(),
 		)

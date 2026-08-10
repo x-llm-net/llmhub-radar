@@ -9,7 +9,7 @@
 - 用户服务档位固定为 `special`、`low`、`medium`、`high`，四档 `GroupRatio` 固定为 `1`。
 - 管理员可在 `/system-settings/models/service-tiers-routing` 配置各模型族倍率边界、未知模型族开关和高品质渠道商白名单。
 - 服务档位配置通过专用整包接口保存，数据库配置与供给 Ability 在同一事务中更新，并在成功后只重建一次。
-- 渠道商供给模型只有在模型已定价、已上架且探测可用时才生成消费者路由能力。
+- 渠道商供给模型只有在模型已定价、已上架且至少一个探测类型可用时才生成消费者路由能力；文本和图片候选再按当前请求的 `ProbeKind` 独立过滤，一类端点失败不会拖下另一类健康端点。
 - 每个 `Channel + Model` 根据模型族和供给倍率进入一个互斥价格档；通过管理员审核且不超过高品质最高倍率的供给，可同时进入高品质档。当前高品质默认最高倍率为 `1.0x`。
 - 用户创建 API 密钥时明确选择一个服务档位；四档齐全时不再向普通用户展示 `default` 或 `auto`。
 - 渠道商子域名请求优先选择该渠道商在当前档位的可用渠道，失败或无候选时进入平台同档公共池。
@@ -20,6 +20,8 @@
 - M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查询，并在 `/system-settings/models/channel-health-routing` 下方查看最近 24 小时的尝试数、尝试级成功率、平均完整响应耗时和平均 TTFT；该聚合不参与选路和结算。
 - M4-B 在同一记录入口增加 1 分钟内存/Redis 桶：页面展示 5 分钟和 1 小时成功率，以及默认 15 分钟成功尝试的完整响应耗时和 TTFT P50/P95。短窗口不落库，进程重启后本机窗口从空开始；Redis 可用时合并多实例数据。该数据仍只观察，不参与选路和结算。
 - M4-C 为失败尝试增加 `failure_class` 观测和 5 分钟/1 小时类别计数，区分上游、渠道配置、客户端、循环保护、已开始响应和未知错误；不复制重试策略，也不改变重试、选路或结算。平台生成的 `request_loop_detected` 固定不触发 Channel 自动禁用，`channel:model_mapped_error` 不触发 Channel 级自动禁用。
+- 模型/端点故障隔离继续复用现有 `NewAPIError`：适配器明确不支持端点时使用 `channel:endpoint_unsupported`，本次渠道被排除并可进入同档重试；`model_not_found`、模型映射和端点不匹配不会把整条 Channel 自动禁用。连接、认证、余额等渠道级故障仍保留原有 Channel 级处理。
+- 多端点模型继续使用模型级 Ability，不新增数据库字段；路由缓存同时保存现有探测目标汇总出的 text/image 资格。模型任一探测类型健康时保留 Ability 和 Channel，候选选择与 Affinity 根据请求路径复查对应类型；所有探测类型失败后才移出路由。内存缓存和数据库直查使用同一判断。
 - M4-D 在短窗口并列展示可切换尝试数和成功率：成功请求以及可通过更换渠道恢复的失败计入，客户端错误和循环保护排除；原有全尝试成功率、24 小时聚合、重试、选路和结算口径不变。状态码映射前的上游状态仅用于观测归因。
 - 同档候选耗尽时，同步接口固定返回 HTTP `503`、`error.code = service_tier_unavailable` 和 `request_id`；任务接口使用相同状态码与顶层 `code`。该错误不触发跨档、Token 禁用或 Token 修改，供给恢复后同一 Token 可直接重试。
 

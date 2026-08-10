@@ -38,6 +38,8 @@
 - [x] `request_loop_detected` 具有终止语义，不进入普通状态码重试、计费或结算；第三方普通 `508` 仍保留现有可配置重试语义。
 - [x] `request_loop_detected` 固定排除 Channel 自动禁用；即使管理员显式把 `508` 加入自动禁用状态码范围，平台生成的循环错误也不会关闭渠道。
 - [x] `channel:model_mapped_error` 只记录模型/端点级失败，不触发 Channel 级自动禁用，避免一个模型映射错误误伤同渠道其他模型。
+- [x] `channel:endpoint_unsupported` 用于端点不匹配或适配器明确不支持的请求；该错误只影响本次 `Channel + Model + Endpoint` 尝试，允许同档重试且不触发 Channel 级自动禁用。上游 `model_not_found` 同样不触发整条 Channel 自动禁用。
+- [x] 多端点模型按现有探测 `ProbeKind` 隔离文本与图片资格；一类探测失败不会删除另一类健康端点的模型 Ability。缓存、数据库直查和 Affinity 命中均按当前请求类型复查，全部探测类型失败后才让该模型退出路由。
 - [ ] 在 JSON 指纹之外补充适用于 multipart、表单、任务和 WebSocket 的循环保护；优先采用受控 hop 标记，指纹作为第二层保护。
 - [x] 渠道亲和命中时同时检查 Channel、供给扩展和渠道商均为启用状态；拒绝后清除失效亲和。
 - [x] 服务档位在数据库直查和内存缓存路径都严格排除本次已失败 Channel；普通 New API 分组在候选全部尝试后仍保留原有复用行为。

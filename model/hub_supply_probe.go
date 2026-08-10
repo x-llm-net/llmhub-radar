@@ -593,6 +593,7 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 	}
 
 	targetsByModel := make(map[string][]HubSupplyGroupProbeTarget)
+	probeKinds := buildHubSupplyModelProbeKinds(targets)
 	lastProbeAt := int64(0)
 	for _, target := range targets {
 		targetsByModel[target.ModelName] = append(targetsByModel[target.ModelName], target)
@@ -601,14 +602,17 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 		}
 	}
 	configuredModels := channel.GetModels()
-	availableModels := make([]string, 0)
-	availableCount, errorCount, pendingCount, waitingCount := 0, 0, 0, 0
+	fullyAvailableCount, availableCount, errorCount, pendingCount, waitingCount := 0, 0, 0, 0, 0
 	for _, modelName := range configuredModels {
 		modelTargets := targetsByModel[modelName]
 		allAvailable := len(modelTargets) > 0
+		hasAvailable := false
 		hasPending := len(modelTargets) == 0
 		hasWaiting := false
 		for _, target := range modelTargets {
+			if target.Status == HubSupplyProbeStatusAvailable {
+				hasAvailable = true
+			}
 			if target.Status != HubSupplyProbeStatusAvailable {
 				allAvailable = false
 			}
@@ -620,8 +624,10 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 			}
 		}
 		if allAvailable {
+			fullyAvailableCount++
 			availableCount++
-			availableModels = append(availableModels, modelName)
+		} else if hasAvailable {
+			availableCount++
 		} else if hasPending {
 			pendingCount++
 		} else if hasWaiting {
@@ -632,7 +638,7 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 	}
 
 	status := HubSupplyGroupStatusPending
-	if availableCount == len(configuredModels) && len(configuredModels) > 0 {
+	if fullyAvailableCount == len(configuredModels) && len(configuredModels) > 0 {
 		status = HubSupplyGroupStatusAvailable
 	} else if availableCount > 0 {
 		status = HubSupplyGroupStatusPartial
@@ -649,8 +655,8 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 		publishedModels[modelName] = struct{}{}
 	}
 	routableModelCount := 0
-	for _, modelName := range availableModels {
-		if _, published := publishedModels[modelName]; published {
+	for modelName := range publishedModels {
+		if hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
 			routableModelCount++
 		}
 	}

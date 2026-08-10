@@ -303,28 +303,11 @@ func getHubSupplyChannelAbilityModels(tx *gorm.DB, channel *Channel) ([]string, 
 	if err := query.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&targets).Error; err != nil {
 		return nil, err
 	}
-	targetsByModel := make(map[string][]HubSupplyGroupProbeTarget)
-	for _, target := range targets {
-		targetsByModel[target.ModelName] = append(targetsByModel[target.ModelName], target)
-	}
-	availableModels := make(map[string]struct{})
-	for _, modelName := range configuredModels {
-		modelTargets := targetsByModel[modelName]
-		allAvailable := len(modelTargets) > 0
-		for _, target := range modelTargets {
-			if target.Status != HubSupplyProbeStatusAvailable {
-				allAvailable = false
-				break
-			}
-		}
-		if allAvailable {
-			availableModels[modelName] = struct{}{}
-		}
-	}
+	probeKinds := buildHubSupplyModelProbeKinds(targets)
 
 	routableModels := make([]string, 0)
 	for _, modelName := range group.GetPublishedModels(channel.Models) {
-		if _, available := availableModels[modelName]; available {
+		if hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
 			routableModels = append(routableModels, modelName)
 		}
 	}

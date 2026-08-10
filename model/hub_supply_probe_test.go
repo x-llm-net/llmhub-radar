@@ -93,6 +93,107 @@ func TestHubSupplyProbeDefinitionsHonorManualEndpointOverride(t *testing.T) {
 	assert.Equal(t, string(constant.EndpointTypeOpenAIResponse), definitions[1].EndpointMode)
 }
 
+func TestHubSupplyRoutingIsolatesTextAndImageProbeKinds(t *testing.T) {
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		InitChannelCache()
+	})
+	truncateTables(t)
+
+	modelSupportEndpointsLock.Lock()
+	originalEndpoints := modelSupportEndpointTypes
+	modelSupportEndpointTypes = map[string][]constant.EndpointType{
+		"gpt-5": {constant.EndpointTypeOpenAI, constant.EndpointTypeImageGeneration},
+	}
+	modelSupportEndpointsLock.Unlock()
+	t.Cleanup(func() {
+		modelSupportEndpointsLock.Lock()
+		modelSupportEndpointTypes = originalEndpoints
+		modelSupportEndpointsLock.Unlock()
+	})
+
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{
+		ProviderId: 1, PriceMultiplier: 0.1, PublishedModels: "gpt-5",
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "multimodal supply",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+
+	var targets []HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).Find(&targets).Error)
+	require.Len(t, targets, 2)
+	var textTarget, imageTarget HubSupplyGroupProbeTarget
+	for _, target := range targets {
+		switch target.ProbeKind {
+		case HubSupplyProbeKindText:
+			textTarget = target
+		case HubSupplyProbeKindImage:
+			imageTarget = target
+		}
+	}
+	require.NotZero(t, textTarget.Id)
+	require.NotZero(t, imageTarget.Id)
+
+	_, _, err := RecordHubSupplyProbeResult(textTarget.Id, true, 500, "", "", "")
+	require.NoError(t, err)
+	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, false, 700, "image failed", "upstream_error", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+
+	storedGroup, err := GetHubSupplyGroupByChannelID(channel.Id)
+	require.NoError(t, err)
+	require.NotNil(t, storedGroup)
+	assert.Equal(t, HubSupplyGroupStatusPartial, storedGroup.Status)
+	assert.Equal(t, 1, storedGroup.AvailableModelCount)
+	storedChannel, err := GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusEnabled, storedChannel.Status)
+	assert.Contains(t, getChannelAbilityModels(t, channel.Id), "gpt-5")
+
+	var ability Ability
+	require.NoError(t, DB.Where("channel_id = ? AND model = ? AND enabled = ?", channel.Id, "gpt-5", true).First(&ability).Error)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/generations", false)
+
+	_, _, err = RecordHubSupplyProbeResult(textTarget.Id, false, 650, "text failed", "upstream_error", "")
+	require.NoError(t, err)
+	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, true, 600, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", false)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/edits", true)
+
+	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, false, 800, "image failed again", "upstream_error", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	storedChannel, err = GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, storedChannel.Status)
+	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
+}
+
+func assertHubSupplyProbeKindSelection(t *testing.T, group string, channelID int, requestPath string, expected bool) {
+	t.Helper()
+	for _, memoryCacheEnabled := range []bool{false, true} {
+		common.MemoryCacheEnabled = memoryCacheEnabled
+		InitChannelCache()
+		selected, err := GetRandomSatisfiedChannel(group, "gpt-5", 0, requestPath, nil)
+		require.NoError(t, err)
+		if expected {
+			require.NotNil(t, selected, "memory_cache=%t path=%s", memoryCacheEnabled, requestPath)
+			assert.Equal(t, channelID, selected.Id)
+		} else {
+			assert.Nil(t, selected, "memory_cache=%t path=%s", memoryCacheEnabled, requestPath)
+		}
+	}
+}
+
 func TestNativeChannelUpdateKeepsSupplyStateForMetadataAndResetsConnectionChanges(t *testing.T) {
 	truncateTables(t)
 	baseURL := "https://upstream.example"

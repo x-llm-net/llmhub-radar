@@ -157,6 +157,18 @@ Affinity 是保留上游缓存和会话收益的软粘性，不是永久绑定�
 
 如果后续出现可复现的“不同端点或入口 Host 互相污染”，再为通用 Affinity 增加字段并单独回归，不在动态评分任务中顺带完成。
 
+### 4.3 模型和端点故障边界
+
+首版不新增模型故障状态机或独立表，复用现有错误码、当前请求的 Channel 排除和供给探测状态：
+
+- 连接、TLS、基础认证、余额和无可用 Key 等可能影响整条 Channel 的故障，继续沿用 New API 的 Channel 级处理。
+- `model_not_found` 和 `channel:model_mapped_error` 只表示当前模型不可用，不触发整条 Channel 自动禁用。
+- 适配器明确不支持当前请求端点时返回 `channel:endpoint_unsupported`；它只影响本次 `Channel + Model + Endpoint` 尝试，沿用现有同档重试并排除当前 Channel，不跨档，也不关闭该 Channel 的其他模型和端点。
+- 同一模型存在文本和图片探测目标时，模型任一 `ProbeKind` 健康即可保留模型级 Ability；实际候选和 Affinity 再按请求路径选择 text/image 资格。供给组此时显示 `partial`，只有所有已上架模型的所有探测类型都不可用时，Channel 才自动退出路由。
+- 未知转换错误仍保留原有客户端错误和跳过重试语义，不能通过匹配错误文案自动升级为渠道故障。
+
+该边界不改变 RetryTimes、服务档位资格、Ability 表结构、探测任务、扣费或收益。缓存开启、数据库直查和 Affinity 命中使用同一 `ProbeKind` 判断。后续如果真实流量证明需要跨请求的 `Channel + Model + Endpoint` 熔断，再基于现有探测和短窗口指标单独设计，不能在本次修补中暗加持久状态。
+
 ## 5. M3：真实请求健康评分，后置到 observe/active
 
 这一模块不是首版静态路由的前置条件。M3 先补齐真实请求的结构化观测字段，M4-A 再提供只读聚合；两者都不改变当前选路和结算。

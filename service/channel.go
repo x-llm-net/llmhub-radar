@@ -52,7 +52,10 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	// These errors describe the platform route or one model mapping, not a
 	// channel-wide upstream outage. Never auto-disable a channel for them.
 	switch err.GetErrorCode() {
-	case types.ErrorCodeRequestLoopDetected, types.ErrorCodeChannelModelMappedError:
+	case types.ErrorCodeRequestLoopDetected,
+		types.ErrorCodeModelNotFound,
+		types.ErrorCodeChannelModelMappedError,
+		types.ErrorCodeChannelEndpointUnsupported:
 		return false
 	}
 	if types.IsChannelError(err) {
