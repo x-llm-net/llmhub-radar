@@ -254,6 +254,41 @@ func TestGetPreferredChannelByAffinity_RequestHeaderKeySource(t *testing.T) {
 	require.Equal(t, buildChannelAffinityKeyHint(affinityValue), meta.KeyHint)
 }
 
+func TestBuildChannelAffinityCacheKeySuffixServiceTierIncludesNormalizedModel(t *testing.T) {
+	rule := operation_setting.ChannelAffinityRule{
+		Name:              "service-tier-model-scope",
+		IncludeRuleName:   true,
+		IncludeUsingGroup: true,
+		IncludeModelName:  false,
+	}
+
+	first := buildChannelAffinityCacheKeySuffix(
+		rule,
+		"gemini-2.5-pro-thinking-1024",
+		hub_routing_setting.ServiceTierMedium,
+		"session-1",
+	)
+	second := buildChannelAffinityCacheKeySuffix(
+		rule,
+		"gemini-2.5-pro-thinking-8192",
+		hub_routing_setting.ServiceTierMedium,
+		"session-1",
+	)
+	otherModel := buildChannelAffinityCacheKeySuffix(
+		rule,
+		"gpt-5",
+		hub_routing_setting.ServiceTierMedium,
+		"session-1",
+	)
+	legacyFirst := buildChannelAffinityCacheKeySuffix(rule, "gpt-5", "default", "session-1")
+	legacySecond := buildChannelAffinityCacheKeySuffix(rule, "claude-opus-4-6", "default", "session-1")
+
+	require.Equal(t, "service-tier-model-scope:gemini-2.5-pro-thinking-*:medium:session-1", first)
+	require.Equal(t, first, second)
+	require.NotEqual(t, first, otherModel)
+	require.Equal(t, legacyFirst, legacySecond)
+}
+
 func TestClearCurrentChannelAffinityCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

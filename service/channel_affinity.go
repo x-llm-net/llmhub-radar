@@ -13,7 +13,9 @@ import (
 	"github.com/QuantumNous/new-api/pkg/cachex"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/hot"
 	"github.com/tidwall/gjson"
@@ -339,8 +341,14 @@ func buildChannelAffinityCacheKeySuffix(rule operation_setting.ChannelAffinityRu
 	if rule.IncludeRuleName && rule.Name != "" {
 		parts = append(parts, rule.Name)
 	}
-	if rule.IncludeModelName && modelName != "" {
-		parts = append(parts, modelName)
+	includeModelName := rule.IncludeModelName
+	modelKey := modelName
+	if hub_routing_setting.IsServiceTier(usingGroup) {
+		includeModelName = true
+		modelKey = ratio_setting.FormatMatchingModelName(modelName)
+	}
+	if includeModelName && modelKey != "" {
+		parts = append(parts, modelKey)
 	}
 	if rule.IncludeUsingGroup && usingGroup != "" {
 		parts = append(parts, usingGroup)

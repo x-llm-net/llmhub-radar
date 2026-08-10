@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
@@ -182,6 +183,84 @@ func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {
 	require.False(t, fallbackCtx.IsAborted())
 	require.Equal(t, http.StatusOK, fallbackRecorder.Code)
 	require.Equal(t, platformChannel.Id, common.GetContextKeyInt(fallbackCtx, constant.ContextKeyChannelId))
+}
+
+func TestDistributeServiceTierClearsDisabledChannelAffinity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	db := setupDistributorServiceTierTestDB(t)
+
+	const modelName = "service-tier-disabled-channel-affinity"
+	priority := int64(0)
+	disabledChannel := &model.Channel{
+		Name: "disabled-affinity-channel", Type: constant.ChannelTypeOpenAI,
+		Key: "disabled-key", Models: modelName, Group: hub_routing_setting.ServiceTierMedium,
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
+	require.NoError(t, db.Create(disabledChannel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
+		ChannelId: disabledChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	model.InitChannelCache()
+
+	affinitySetting := operation_setting.GetChannelAffinitySetting()
+	originalRules := affinitySetting.Rules
+	originalEnabled := affinitySetting.Enabled
+	originalKeepDisabled := affinitySetting.KeepOnChannelDisabled
+	affinitySetting.Enabled = true
+	affinitySetting.KeepOnChannelDisabled = true
+	affinitySetting.Rules = append([]operation_setting.ChannelAffinityRule{{
+		Name: "disabled-channel-affinity-test", ModelRegex: []string{"^" + modelName + "$"},
+		PathRegex:  []string{"^/v1/chat/completions$"},
+		KeySources: []operation_setting.ChannelAffinityKeySource{{Type: "request_header", Key: "X-Test-Affinity"}},
+		TTLSeconds: 60, IncludeUsingGroup: true, IncludeRuleName: true,
+	}}, originalRules...)
+	t.Cleanup(func() {
+		affinitySetting.Rules = originalRules
+		affinitySetting.Enabled = originalEnabled
+		affinitySetting.KeepOnChannelDisabled = originalKeepDisabled
+	})
+
+	seedCtx, seedRecorder := newDistributorServiceTierContextForModel(0, modelName)
+	seedCtx.Request.Header.Set("X-Test-Affinity", "disabled-channel-session")
+	Distribute()(seedCtx)
+	require.False(t, seedCtx.IsAborted())
+	require.Equal(t, http.StatusOK, seedRecorder.Code)
+	require.Equal(t, disabledChannel.Id, common.GetContextKeyInt(seedCtx, constant.ContextKeyChannelId))
+
+	require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", disabledChannel.Id).Update("status", common.ChannelStatusManuallyDisabled).Error)
+	model.InitChannelCache()
+
+	unavailableCtx, unavailableRecorder := newDistributorServiceTierContextForModel(0, modelName)
+	unavailableCtx.Request.Header.Set("X-Test-Affinity", "disabled-channel-session")
+	Distribute()(unavailableCtx)
+	require.True(t, unavailableCtx.IsAborted())
+	require.Equal(t, http.StatusServiceUnavailable, unavailableRecorder.Code)
+
+	nextCtx, _ := newDistributorServiceTierContextForModel(0, modelName)
+	nextCtx.Request.Header.Set("X-Test-Affinity", "disabled-channel-session")
+	_, found := service.GetPreferredChannelByAffinity(nextCtx, modelName, hub_routing_setting.ServiceTierMedium)
+	require.False(t, found)
+
+	replacementChannel := &model.Channel{
+		Name: "replacement-affinity-channel", Type: constant.ChannelTypeOpenAI,
+		Key: "replacement-key", Models: modelName, Group: hub_routing_setting.ServiceTierMedium,
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
+	require.NoError(t, db.Create(replacementChannel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
+		ChannelId: replacementChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	model.InitChannelCache()
+
+	recoveredCtx, recoveredRecorder := newDistributorServiceTierContextForModel(0, modelName)
+	recoveredCtx.Request.Header.Set("X-Test-Affinity", "disabled-channel-session")
+	Distribute()(recoveredCtx)
+	require.False(t, recoveredCtx.IsAborted())
+	require.Equal(t, http.StatusOK, recoveredRecorder.Code)
+	require.Equal(t, replacementChannel.Id, common.GetContextKeyInt(recoveredCtx, constant.ContextKeyChannelId))
 }
 
 func TestDistributeServiceTierUnavailableRecoversWithoutChangingToken(t *testing.T) {

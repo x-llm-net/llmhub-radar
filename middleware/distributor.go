@@ -141,7 +141,7 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, "preferred")
 						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, false)
 					}
-					if !affinityUsable && (!providerActive || !service.ShouldKeepChannelAffinityOnChannelDisabled()) {
+					if !affinityUsable && (service.IsHubServiceTierRequest(c) || !providerActive || !service.ShouldKeepChannelAffinityOnChannelDisabled()) {
 						if providerAllowed {
 							service.ClearCurrentChannelAffinityCache(c)
 						}
