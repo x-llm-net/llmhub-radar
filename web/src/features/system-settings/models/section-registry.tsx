@@ -25,6 +25,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { RoutingMetricsSection } from './routing-metrics-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 import { ServiceTierRoutingSection } from './service-tier-routing-section'
 
@@ -86,7 +87,12 @@ const MODELS_SECTIONS = [
   {
     id: 'channel-health-routing',
     titleKey: 'Channel Health & Routing',
-    build: () => <ChannelHealthRoutingSection />,
+    build: () => (
+      <>
+        <ChannelHealthRoutingSection />
+        <RoutingMetricsSection />
+      </>
+    ),
   },
   {
     id: 'routing-reliability',
