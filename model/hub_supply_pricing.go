@@ -102,6 +102,11 @@ func GetHubSupplyPricingByChannelID(channelID int) (HubSupplyPricing, bool) {
 	return pricing, ok
 }
 
+func IsHubSupplyChannelProviderActive(channelID int) bool {
+	pricing, isSupplyChannel := GetHubSupplyPricingByChannelID(channelID)
+	return !isSupplyChannel || pricing.SupplyProviderStatus == HubProviderStatusActive
+}
+
 func GetHubProviderRoutingBySlug(slug string) (HubProviderRoutingInfo, bool) {
 	hubSupplyPricingMu.RLock()
 	provider, ok := hubProviderRoutingBySlug[slug]

@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -164,6 +167,21 @@ func TestShouldSkipRetryAfterChannelAffinityFailure(t *testing.T) {
 					UsingGroup: "default",
 					ModelName:  "gpt-5",
 				})
+			},
+			want: false,
+		},
+		{
+			name: "service tier ignores skip retry",
+			ctx: func() *gin.Context {
+				ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{
+					RuleName:   "service-tier-affinity",
+					SkipRetry:  true,
+					UsingGroup: hub_routing_setting.ServiceTierMedium,
+					ModelName:  "gpt-5",
+				})
+				ctx.Set(ginKeyChannelAffinitySkipRetry, true)
+				common.SetContextKey(ctx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
+				return ctx
 			},
 			want: false,
 		},

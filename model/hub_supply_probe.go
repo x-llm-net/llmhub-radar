@@ -644,9 +644,6 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 		status = HubSupplyGroupStatusError
 	}
 	channelStatus := common.ChannelStatusAutoDisabled
-	if channel.Status == common.ChannelStatusManuallyDisabled {
-		channelStatus = common.ChannelStatusManuallyDisabled
-	}
 	publishedModels := make(map[string]struct{})
 	for _, modelName := range group.GetPublishedModels(channel.Models) {
 		publishedModels[modelName] = struct{}{}
@@ -657,12 +654,9 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 			routableModelCount++
 		}
 	}
-	if providerStatus == HubProviderStatusActive &&
-		routableModelCount > 0 &&
-		channel.Status != common.ChannelStatusManuallyDisabled {
+	if providerStatus == HubProviderStatusActive && routableModelCount > 0 {
 		channelStatus = common.ChannelStatusEnabled
 	}
-	channel.Status = channelStatus
 
 	if err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
@@ -672,18 +666,42 @@ func ReconcileHubSupplyGroupRouteState(groupID int) error {
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&Channel{Id: channel.Id}).Select("status").Updates(channel).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error; err != nil {
-			return err
-		}
-		return channel.AddAbilities(tx)
+		return reconcileHubSupplyChannelRouteStateTx(tx, channel.Id, channelStatus)
 	}); err != nil {
 		return err
 	}
 	InitChannelCache()
 	return nil
+}
+
+func reconcileHubSupplyChannelRouteStateTx(tx *gorm.DB, channelID int, status int) error {
+	if tx == nil || channelID <= 0 {
+		return errors.New("invalid hub supply channel route state update")
+	}
+	if status != common.ChannelStatusEnabled && status != common.ChannelStatusAutoDisabled {
+		return errors.New("invalid hub supply channel route status")
+	}
+
+	// Manual disable may happen after the probe state was read. Keep it out of
+	// the automatic status update so the administrator's newer decision wins.
+	result := tx.Model(&Channel{}).
+		Where("id = ? AND status <> ?", channelID, common.ChannelStatusManuallyDisabled).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	var current Channel
+	if err := tx.First(&current, channelID).Error; err != nil {
+		return err
+	}
+	if current.Status == common.ChannelStatusManuallyDisabled || current.Status != status {
+		return nil
+	}
+	if err := tx.Where("channel_id = ?", channelID).Delete(&Ability{}).Error; err != nil {
+		return err
+	}
+	return current.AddAbilities(tx)
 }
 
 func requestImmediateHubSupplyGroupProbe(groupID int, modelName string) (int64, error) {

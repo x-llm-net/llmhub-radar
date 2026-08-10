@@ -48,7 +48,7 @@ func createProbedHubMarketplaceSupply(
 		BaseURL:  &baseURL,
 		Models:   hubMarketplaceFlowModel,
 		Group:    "default",
-		Status:   common.ChannelStatusManuallyDisabled,
+		Status:   common.ChannelStatusAutoDisabled,
 		Priority: &priority,
 	}
 	require.NoError(t, model.CreateHubSupplyGroup(group, channel))

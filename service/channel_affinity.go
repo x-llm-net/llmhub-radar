@@ -627,6 +627,9 @@ func ShouldSkipRetryAfterChannelAffinityFailure(c *gin.Context) bool {
 	if c == nil {
 		return false
 	}
+	if IsHubServiceTierRequest(c) {
+		return false
+	}
 	v, ok := c.Get(ginKeyChannelAffinitySkipRetry)
 	if ok {
 		b, ok := v.(bool)

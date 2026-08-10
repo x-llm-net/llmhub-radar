@@ -280,6 +280,38 @@ func TestReconcileHubSupplyGroupPreservesManualDisableAfterHealthyProbe(t *testi
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
 }
 
+func TestReconcileHubSupplyChannelRouteStatePreservesConcurrentManualDisable(t *testing.T) {
+	truncateTables(t)
+	priority := int64(0)
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "concurrent manual disable",
+		Models: "gpt-5", Group: "default", Status: common.ChannelStatusAutoDisabled,
+		Priority: &priority,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	require.NoError(t, DB.Create(&Ability{
+		Group: "default", Model: "gpt-5", ChannelId: channel.Id,
+		Enabled: false, Priority: &priority,
+	}).Error)
+
+	// The route decision was made while the Channel was auto-disabled, but the
+	// administrator disabled it manually before the recovery write reached DB.
+	require.NoError(t, DB.Model(&Channel{}).
+		Where("id = ?", channel.Id).
+		Update("status", common.ChannelStatusManuallyDisabled).Error)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return reconcileHubSupplyChannelRouteStateTx(tx, channel.Id, common.ChannelStatusEnabled)
+	}))
+
+	stored, err := GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+	var abilities []Ability
+	require.NoError(t, DB.Where("channel_id = ?", channel.Id).Find(&abilities).Error)
+	require.Len(t, abilities, 1)
+	assert.False(t, abilities[0].Enabled)
+}
+
 func TestResolveHubSupplyServiceTiersAggregatesModelFamilies(t *testing.T) {
 	original := hub_routing_setting.Snapshot()
 	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })

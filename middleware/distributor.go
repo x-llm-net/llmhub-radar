@@ -108,13 +108,14 @@ func Distribute() func(c *gin.Context) {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					providerAllowed := true
+					providerActive := model.IsHubSupplyChannelProviderActive(preferredChannelID)
 					if providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId); providerID > 0 {
 						providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
 							ProviderID: providerID,
 							Mode:       model.ChannelProviderOnly,
 						})
 					}
-					if providerAllowed && err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
+					if providerAllowed && providerActive && err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
 						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
@@ -140,7 +141,7 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, "preferred")
 						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, false)
 					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+					if !affinityUsable && (!providerActive || !service.ShouldKeepChannelAffinityOnChannelDisabled()) {
 						if providerAllowed {
 							service.ClearCurrentChannelAffinityCache(c)
 						}

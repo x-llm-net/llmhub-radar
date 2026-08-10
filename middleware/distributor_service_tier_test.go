@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,12 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Channel{},
+		&model.Ability{},
+		&model.HubProvider{},
+		&model.HubSupplyGroup{},
+	))
 
 	model.DB = db
 	model.LOG_DB = db
@@ -70,12 +76,16 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 }
 
 func newDistributorServiceTierContext(providerID int) (*gin.Context, *httptest.ResponseRecorder) {
+	return newDistributorServiceTierContextForModel(providerID, "service-tier-recovery-model")
+}
+
+func newDistributorServiceTierContextForModel(providerID int, modelName string) (*gin.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(
 		http.MethodPost,
 		"/v1/chat/completions",
-		bytes.NewBufferString(`{"model":"service-tier-recovery-model","messages":[]}`),
+		bytes.NewBufferString(fmt.Sprintf(`{"model":%q,"messages":[]}`, modelName)),
 	)
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
@@ -84,6 +94,94 @@ func newDistributorServiceTierContext(providerID int) (*gin.Context, *httptest.R
 		common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, providerID)
 	}
 	return ctx, recorder
+}
+
+func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupDistributorServiceTierTestDB(t)
+
+	const modelName = "service-tier-disabled-provider-affinity"
+	provider := &model.HubProvider{
+		OwnerUserId: 73001,
+		Name:        "Affinity Provider",
+		Slug:        "affinity-provider",
+		Status:      model.HubProviderStatusActive,
+	}
+	require.NoError(t, db.Create(provider).Error)
+
+	priority := int64(0)
+	providerChannel := &model.Channel{
+		Name:     "affinity-provider-channel",
+		Type:     constant.ChannelTypeOpenAI,
+		Key:      "provider-key",
+		Models:   modelName,
+		Group:    hub_routing_setting.ServiceTierMedium,
+		Status:   common.ChannelStatusEnabled,
+		Priority: &priority,
+	}
+	require.NoError(t, db.Create(providerChannel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
+		ChannelId: providerChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: providerChannel.Id, PriceMultiplier: 0.8,
+	}).Error)
+	model.InitChannelCache()
+
+	affinitySetting := operation_setting.GetChannelAffinitySetting()
+	originalRules := affinitySetting.Rules
+	originalEnabled := affinitySetting.Enabled
+	originalKeepDisabled := affinitySetting.KeepOnChannelDisabled
+	affinitySetting.Enabled = true
+	affinitySetting.KeepOnChannelDisabled = true
+	affinitySetting.Rules = append([]operation_setting.ChannelAffinityRule{{
+		Name:              "disabled-provider-affinity-test",
+		ModelRegex:        []string{"^" + modelName + "$"},
+		PathRegex:         []string{"^/v1/chat/completions$"},
+		KeySources:        []operation_setting.ChannelAffinityKeySource{{Type: "request_header", Key: "X-Test-Affinity"}},
+		TTLSeconds:        60,
+		IncludeUsingGroup: true,
+		IncludeModelName:  true,
+		IncludeRuleName:   true,
+	}}, originalRules...)
+	t.Cleanup(func() {
+		affinitySetting.Rules = originalRules
+		affinitySetting.Enabled = originalEnabled
+		affinitySetting.KeepOnChannelDisabled = originalKeepDisabled
+	})
+
+	seedCtx, seedRecorder := newDistributorServiceTierContextForModel(0, modelName)
+	seedCtx.Request.Header.Set("X-Test-Affinity", "disabled-provider-session")
+	Distribute()(seedCtx)
+	require.False(t, seedCtx.IsAborted())
+	require.Equal(t, http.StatusOK, seedRecorder.Code)
+	require.Equal(t, providerChannel.Id, common.GetContextKeyInt(seedCtx, constant.ContextKeyChannelId))
+
+	platformChannel := &model.Channel{
+		Name:     "affinity-platform-fallback",
+		Type:     constant.ChannelTypeOpenAI,
+		Key:      "platform-key",
+		Models:   modelName,
+		Group:    hub_routing_setting.ServiceTierMedium,
+		Status:   common.ChannelStatusEnabled,
+		Priority: &priority,
+	}
+	require.NoError(t, db.Create(platformChannel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: hub_routing_setting.ServiceTierMedium, Model: modelName,
+		ChannelId: platformChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	_, err := model.UpdateHubProviderStatus(provider.Id, model.HubProviderStatusDisabled)
+	require.NoError(t, err)
+	model.InitChannelCache()
+
+	fallbackCtx, fallbackRecorder := newDistributorServiceTierContextForModel(0, modelName)
+	fallbackCtx.Request.Header.Set("X-Test-Affinity", "disabled-provider-session")
+	Distribute()(fallbackCtx)
+	require.False(t, fallbackCtx.IsAborted())
+	require.Equal(t, http.StatusOK, fallbackRecorder.Code)
+	require.Equal(t, platformChannel.Id, common.GetContextKeyInt(fallbackCtx, constant.ContextKeyChannelId))
 }
 
 func TestDistributeServiceTierUnavailableRecoversWithoutChangingToken(t *testing.T) {
