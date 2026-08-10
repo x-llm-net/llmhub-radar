@@ -36,20 +36,24 @@ var (
 	hubProviderRoutingBySlug  = map[string]HubProviderRoutingInfo{}
 )
 
-func RefreshHubSupplyPricingCache() error {
+type hubSupplyPricingCacheData struct {
+	pricingByChannel map[int]HubSupplyPricing
+	providerBySlug   map[string]HubProviderRoutingInfo
+}
+
+func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	pricingByChannel := make(map[int]HubSupplyPricing)
 	providerBySlug := make(map[string]HubProviderRoutingInfo)
 	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) || !DB.Migrator().HasTable(&HubProvider{}) {
-		hubSupplyPricingMu.Lock()
-		hubSupplyPricingByChannel = pricingByChannel
-		hubProviderRoutingBySlug = providerBySlug
-		hubSupplyPricingMu.Unlock()
-		return nil
+		return &hubSupplyPricingCacheData{
+			pricingByChannel: pricingByChannel,
+			providerBySlug:   providerBySlug,
+		}, nil
 	}
 
 	var providers []HubProvider
 	if err := DB.Select("id", "slug", "status").Find(&providers).Error; err != nil {
-		return err
+		return nil, err
 	}
 	for _, provider := range providers {
 		providerBySlug[provider.Slug] = HubProviderRoutingInfo{
@@ -73,7 +77,7 @@ func RefreshHubSupplyPricingCache() error {
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
 		Scan(&rows).Error; err != nil {
-		return err
+		return nil, err
 	}
 	for _, row := range rows {
 		pricingByChannel[row.NewAPIChannelId] = HubSupplyPricing{
@@ -85,10 +89,35 @@ func RefreshHubSupplyPricingCache() error {
 		}
 	}
 
+	return &hubSupplyPricingCacheData{
+		pricingByChannel: pricingByChannel,
+		providerBySlug:   providerBySlug,
+	}, nil
+}
+
+func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
+	if data == nil {
+		return
+	}
+	// Keep the publication order aligned with memory-channel selection:
+	// channelSyncLock -> hubSupplyPricingMu. A refresh therefore exposes either
+	// the old pricing snapshot or the new one, never a partially rebuilt map.
+	channelSyncLock.Lock()
 	hubSupplyPricingMu.Lock()
-	hubSupplyPricingByChannel = pricingByChannel
-	hubProviderRoutingBySlug = providerBySlug
+	hubSupplyPricingByChannel = data.pricingByChannel
+	hubProviderRoutingBySlug = data.providerBySlug
 	hubSupplyPricingMu.Unlock()
+	channelSyncLock.Unlock()
+}
+
+func RefreshHubSupplyPricingCache() error {
+	channelCacheRefreshMu.Lock()
+	defer channelCacheRefreshMu.Unlock()
+	data, err := loadHubSupplyPricingCache()
+	if err != nil {
+		return err
+	}
+	publishHubSupplyPricingCache(data)
 	return nil
 }
 

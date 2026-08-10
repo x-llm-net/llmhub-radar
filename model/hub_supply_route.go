@@ -81,7 +81,8 @@ func hubSupplyChannelSupportsRequest(
 
 func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupplyChannelProbeKinds, error) {
 	result := make(hubSupplyChannelProbeKinds)
-	if query == nil || !query.Migrator().HasTable(&HubSupplyGroup{}) {
+	if query == nil || !query.Migrator().HasTable(&HubSupplyGroup{}) ||
+		!query.Migrator().HasTable(&HubSupplyGroupProbeTarget{}) {
 		return result, nil
 	}
 

@@ -23,19 +23,29 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
 var channel2HubSupplyProbeKinds hubSupplyChannelProbeKinds
 var channelSyncLock sync.RWMutex
+var channelCacheRefreshMu sync.Mutex
 
 func InitChannelCache() {
-	if err := RefreshHubSupplyPricingCache(); err != nil {
+	channelCacheRefreshMu.Lock()
+	defer channelCacheRefreshMu.Unlock()
+
+	pricingData, err := loadHubSupplyPricingCache()
+	if err != nil {
 		common.SysError("failed to refresh hub supply pricing cache: " + err.Error())
+		return
 	}
 	if !common.MemoryCacheEnabled {
+		publishHubSupplyPricingCache(pricingData)
 		InvalidatePricingCache()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
 	var channels []*Channel
-	DB.Find(&channels)
+	if err := DB.Find(&channels).Error; err != nil {
+		common.SysError("failed to refresh channel cache: " + err.Error())
+		return
+	}
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
 		if channel.Type == constant.ChannelTypeAdvancedCustom {
@@ -45,13 +55,14 @@ func InitChannelCache() {
 		}
 	}
 	var abilities []*Ability
-	DB.Where("enabled = ?", true).Find(&abilities)
+	if err := DB.Where("enabled = ?", true).Find(&abilities).Error; err != nil {
+		common.SysError("failed to refresh ability cache: " + err.Error())
+		return
+	}
 	newChannel2HubSupplyProbeKinds, err := loadHubSupplyChannelProbeKinds(DB, nil)
 	if err != nil {
 		common.SysError("failed to refresh hub supply route availability: " + err.Error())
-		channelSyncLock.RLock()
-		newChannel2HubSupplyProbeKinds = channel2HubSupplyProbeKinds
-		channelSyncLock.RUnlock()
+		return
 	}
 	newGroup2model2channels := make(map[string]map[string][]int)
 	for _, ability := range abilities {
@@ -78,6 +89,7 @@ func InitChannelCache() {
 	}
 
 	channelSyncLock.Lock()
+	hubSupplyPricingMu.Lock()
 	group2model2channels = newGroup2model2channels
 	//channelsIDM = newChannelId2channel
 	for i, channel := range newChannelId2channel {
@@ -96,6 +108,9 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channel2HubSupplyProbeKinds = newChannel2HubSupplyProbeKinds
+	hubSupplyPricingByChannel = pricingData.pricingByChannel
+	hubProviderRoutingBySlug = pricingData.providerBySlug
+	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
