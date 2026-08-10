@@ -43,7 +43,7 @@ func ClassifyHubPublicModelFamily(modelName string) string {
 	switch {
 	case strings.Contains(name, "claude"):
 		return "anthropic"
-	case strings.Contains(name, "gemini"), strings.Contains(name, "banana"), strings.Contains(name, "imagen"), strings.HasPrefix(name, "veo"):
+	case strings.Contains(name, "gemini"), strings.Contains(name, "banana"), strings.Contains(name, "imagen"), strings.HasPrefix(name, "veo"), name == "text-embedding-004":
 		return "google"
 	case strings.Contains(name, "grok"):
 		return "xai"
@@ -55,7 +55,14 @@ func ClassifyHubPublicModelFamily(modelName string) string {
 		return "bytedance"
 	case strings.HasPrefix(name, "glm"), strings.Contains(name, "cogview"), strings.Contains(name, "cogvideo"):
 		return "zhipu"
-	case strings.HasPrefix(name, "gpt-"), strings.HasPrefix(name, "chatgpt"), strings.HasPrefix(name, "o1"), strings.HasPrefix(name, "o3"), strings.HasPrefix(name, "o4"), strings.Contains(name, "codex"), strings.Contains(name, "dall-e"), strings.HasPrefix(name, "sora"):
+	case strings.HasPrefix(name, "gpt-"), strings.HasPrefix(name, "chatgpt"), strings.HasPrefix(name, "o1"), strings.HasPrefix(name, "o3"), strings.HasPrefix(name, "o4"), strings.Contains(name, "codex"), strings.Contains(name, "dall-e"), strings.HasPrefix(name, "sora"),
+		strings.HasPrefix(name, "text-embedding-3-"), name == "text-embedding-ada-002",
+		strings.HasPrefix(name, "text-moderation-"), strings.HasPrefix(name, "omni-moderation-"),
+		strings.HasPrefix(name, "whisper-"), strings.HasPrefix(name, "tts-"),
+		strings.HasPrefix(name, "text-ada-"), strings.HasPrefix(name, "text-babbage-"),
+		strings.HasPrefix(name, "text-curie-"), strings.HasPrefix(name, "text-davinci-"),
+		strings.HasPrefix(name, "code-davinci-"), strings.HasPrefix(name, "davinci-"),
+		strings.HasPrefix(name, "babbage-"):
 		return "openai"
 	default:
 		return "other"

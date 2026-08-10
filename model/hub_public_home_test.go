@@ -108,13 +108,18 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 
 func TestClassifyHubPublicHomeModel(t *testing.T) {
 	tests := map[string]string{
-		"claude-sonnet-4":    "anthropic",
-		"gpt-5.6-luna":       "openai",
-		"gemini-3-pro-image": "google",
-		"nano-banana-pro":    "google",
-		"grok-4":             "xai",
-		"qwen3-max":          "alibaba",
-		"custom-model":       "other",
+		"claude-sonnet-4":        "anthropic",
+		"gpt-5.6-luna":           "openai",
+		"gpt-image-1":            "openai",
+		"whisper-1":              "openai",
+		"text-embedding-3-small": "openai",
+		"text-moderation-latest": "openai",
+		"gemini-3-pro-image":     "google",
+		"nano-banana-pro":        "google",
+		"text-embedding-004":     "google",
+		"grok-4":                 "xai",
+		"qwen3-max":              "alibaba",
+		"custom-model":           "other",
 	}
 	for modelName, expected := range tests {
 		t.Run(modelName, func(t *testing.T) {
