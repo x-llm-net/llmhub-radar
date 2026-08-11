@@ -49,10 +49,12 @@ func TestMain(m *testing.M) {
 		&model.HubProvider{},
 		&model.HubSupplyGroup{},
 		&model.HubProviderEarning{},
+		&model.BillingRefund{},
 		&model.HubProviderWithdrawal{},
 		&model.Ability{},
 		&model.TopUp{},
 		&model.UserSubscription{},
+		&model.SubscriptionPreConsumeRecord{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 	); err != nil {
@@ -75,9 +77,11 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM hub_provider_earnings")
+		model.DB.Exec("DELETE FROM billing_refunds")
 		model.DB.Exec("DELETE FROM hub_provider_withdrawals")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 	})

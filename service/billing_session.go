@@ -81,11 +81,23 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	return tokenErr
 }
 
-// Refund 退还所有预扣费，幂等安全，异步执行。
+// Refund records a durable refund before returning the pre-consumed quota
+// asynchronously. A process restart can resume the pending record.
 func (s *BillingSession) Refund(c *gin.Context) {
 	s.mu.Lock()
 	if s.settled || s.refunded || !s.needsRefundLocked() {
 		s.mu.Unlock()
+		return
+	}
+	params, err := s.billingRefundParamsLocked()
+	if err != nil {
+		s.mu.Unlock()
+		common.SysLog("failed to build billing refund record: " + err.Error())
+		return
+	}
+	if _, err := model.CreateBillingRefund(params); err != nil {
+		s.mu.Unlock()
+		common.SysLog("failed to persist billing refund record: " + err.Error())
 		return
 	}
 	s.refunded = true
@@ -97,32 +109,48 @@ func (s *BillingSession) Refund(c *gin.Context) {
 		s.funding.Source(),
 	))
 
-	// 复制需要的值到闭包中
-	tokenId := s.relayInfo.TokenId
-	tokenKey := s.relayInfo.TokenKey
-	isPlayground := s.relayInfo.IsPlayground
-	tokenConsumed := s.tokenConsumed
-	extraReserved := s.extraReserved
-	subscriptionId := s.relayInfo.SubscriptionId
-	funding := s.funding
-
 	gopool.Go(func() {
-		// 1) 退还资金来源
-		if err := funding.Refund(); err != nil {
-			common.SysLog("error refunding billing source: " + err.Error())
-		}
-		if extraReserved > 0 && funding.Source() == BillingSourceSubscription && subscriptionId > 0 {
-			if err := model.PostConsumeUserSubscriptionDelta(subscriptionId, -int64(extraReserved)); err != nil {
-				common.SysLog("error refunding subscription extra reserved quota: " + err.Error())
-			}
-		}
-		// 2) 退还令牌额度
-		if tokenConsumed > 0 && !isPlayground {
-			if err := model.IncreaseTokenQuota(tokenId, tokenKey, tokenConsumed); err != nil {
-				common.SysLog("error refunding token quota: " + err.Error())
-			}
+		if _, err := model.ProcessBillingRefund(params.RequestId); err != nil {
+			common.SysLog("error processing billing refund: " + err.Error())
 		}
 	})
+}
+
+func (s *BillingSession) billingRefundParamsLocked() (model.BillingRefundParams, error) {
+	if s.relayInfo == nil || s.funding == nil {
+		return model.BillingRefundParams{}, errors.New("billing session is incomplete")
+	}
+	requestId := strings.TrimSpace(s.relayInfo.RequestId)
+	if requestId == "" {
+		requestId = common.NewRequestId()
+		s.relayInfo.RequestId = requestId
+	}
+	params := model.BillingRefundParams{
+		RequestId:  requestId,
+		UserId:     s.relayInfo.UserId,
+		TokenId:    s.relayInfo.TokenId,
+		TokenQuota: s.tokenConsumed,
+	}
+	if s.relayInfo.IsPlayground {
+		params.TokenQuota = 0
+	}
+
+	switch funding := s.funding.(type) {
+	case *WalletFunding:
+		params.FundingSource = BillingSourceWallet
+		params.FundingQuota = funding.consumed
+	case *SubscriptionFunding:
+		if funding.requestId != "" && funding.requestId != requestId {
+			return model.BillingRefundParams{}, errors.New("subscription billing refund request id mismatch")
+		}
+		params.FundingSource = BillingSourceSubscription
+		params.FundingQuota = int(funding.preConsumed)
+		params.SubscriptionId = funding.subscriptionId
+		params.SubscriptionExtraQuota = s.extraReserved
+	default:
+		return model.BillingRefundParams{}, fmt.Errorf("unsupported billing funding source: %s", s.funding.Source())
+	}
+	return params, nil
 }
 
 // NeedsRefund 返回是否存在需要退还的预扣状态。
