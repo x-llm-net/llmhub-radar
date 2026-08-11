@@ -458,7 +458,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		})
 	}
 
-	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
+	// Service-tier retries are stored in hub_attempts on the single final
+	// request log. Keep legacy groups' per-attempt error logs unchanged.
+	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) && !service.IsHubServiceTierRequest(c) {
 		// 保存错误日志到mysql中
 		userId := c.GetInt("id")
 		tokenName := c.GetString("token_name")

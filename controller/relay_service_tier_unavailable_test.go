@@ -35,7 +35,7 @@ func setupRelayServiceTierTestDB(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Log{}))
 
 	model.DB = db
 	model.LOG_DB = db
@@ -157,4 +157,58 @@ func TestFinalizeServiceTierRetryErrorPreservesNonExhaustedAndLegacyErrors(t *te
 	legacyCtx := newRelayChannelSelectionContext("default")
 	legacyInfo := &relaycommon.RelayInfo{OriginModelName: "test-model", TokenGroup: "default"}
 	assert.Same(t, upstreamErr, finalizeServiceTierRetryError(legacyCtx, legacyInfo, upstreamErr, true))
+}
+
+func TestServiceTierWritesOnlyFinalRequestErrorLog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupRelayServiceTierTestDB(t)
+	common.MemoryCacheEnabled = false
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	constant.ErrorLogEnabled = true
+	t.Cleanup(func() {
+		constant.ErrorLogEnabled = previousErrorLogEnabled
+	})
+
+	apiErr := types.NewOpenAIError(errors.New("upstream returned 503"), types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+	serviceTierCtx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	processChannelError(serviceTierCtx, *types.NewChannelError(1, constant.ChannelTypeOpenAI, "tier-channel", false, "", false), apiErr)
+
+	var count int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeError).Count(&count).Error)
+	assert.Zero(t, count)
+
+	recordHubFinalRelayError(serviceTierCtx, &relaycommon.RelayInfo{OriginModelName: "test-model"}, apiErr)
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeError).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+}
+
+func TestLegacyGroupKeepsPerAttemptErrorLog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupRelayServiceTierTestDB(t)
+	common.MemoryCacheEnabled = false
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	constant.ErrorLogEnabled = true
+	t.Cleanup(func() {
+		constant.ErrorLogEnabled = previousErrorLogEnabled
+	})
+
+	apiErr := types.NewOpenAIError(errors.New("upstream returned 503"), types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+	legacyCtx := newRelayChannelSelectionContext("default")
+	processChannelError(legacyCtx, *types.NewChannelError(1, constant.ChannelTypeOpenAI, "legacy-channel", false, "", false), apiErr)
+
+	var count int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeError).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }
