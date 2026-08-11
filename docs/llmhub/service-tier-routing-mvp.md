@@ -59,8 +59,8 @@
 - 未识别模型族默认不进入四档；管理员可临时允许 `other`，长期仍需补模型元数据。
 - 只使用现有 Channel 优先级和权重，不根据 TTFT、错误率或并发实时调权。
 - 暂无渠道商总并发和 Channel 并发上限，也没有自动熔断、冷却和半开恢复。
-- 失败尝试的 `upstream_charge_status` 默认记录为 `unknown`，不自动追扣用户或给失败渠道商结算。
-- 流式响应已经输出部分内容后中断的最终扣费规则仍待确认。
+- 失败尝试的 `upstream_charge_status` 默认记录为 `unknown`，`consumer_charge_status=not_charged`、`charged_quota=0`，不自动追扣用户或给失败渠道商结算。
+- 服务档位流式响应异常结束时，无有效输出记为 `failed` 并退回预扣；已有有效输出记为 `partial_success`，按可测量实际用量扣费并只给当前渠道商结算。客户端主动断开遵循同一规则，普通 New API 分组保持官方兼容行为。
 - 多密钥渠道目前按 Channel 排除失败，不做 `Channel + Key` 级隔离。
 - Token 创建时不校验档位的瞬时供给可用性；创建后供给变化统一由运行时 `service_tier_unavailable` 契约表达。
 - 后台任务轮询已在 10 个现有 `FetchTask` 适配器发出请求前统一写入初始 hop Header，未修改 `TaskAdaptor` 接口；少数其他历史直连适配器仍单列为后续加固项。

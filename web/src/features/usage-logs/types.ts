@@ -132,6 +132,8 @@ export interface HubRelayAttemptInfo {
   supply_multiplier?: number
   billing_ratio?: number
   upstream_charge_status?: string
+  consumer_charge_status?: string
+  charged_quota?: number
 }
 
 export interface LogOtherData {

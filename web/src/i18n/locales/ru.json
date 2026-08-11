@@ -5409,6 +5409,8 @@
     "Withdrawal history": "Withdrawal history",
     "Consumer": "Consumer",
     "Charged": "Charged",
+    "Charged quota": "Списанная квота",
+    "Partial success": "Частичный успех",
     "Provider income": "Provider income",
     "No earning records yet": "No earning records yet",
     "Manual adjustment": "Manual adjustment",

@@ -422,6 +422,12 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		}
 	}
 
+	hubAttemptResult := ClassifyHubFinalStreamResult(relayInfo, billingUsage)
+	summary.Quota, hubAttemptResult = ApplyHubStreamBillingPolicy(ctx, relayInfo, billingUsage, summary.Quota)
+	if hubAttemptResult == HubAttemptResultFailed {
+		extraContent = append(extraContent, "流式响应异常结束且没有有效输出，本次不扣费")
+	}
+
 	for _, item := range summary.ToolSurchargeItems {
 		q := decimal.NewFromFloat(item.Price).
 			Mul(decimal.NewFromInt(int64(item.Count))).
@@ -440,7 +446,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Audio Input 花费 %s", logger.LogQuota(common.QuotaFromDecimal(q))))
 	}
 
-	if !summary.hasBillableUsage() {
+	if hubAttemptResult == HubAttemptResultFailed {
+		logger.LogError(ctx, fmt.Sprintf("abnormal stream ended without usable output, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
+	} else if !summary.hasBillableUsage() {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
@@ -537,7 +545,10 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
-	})
+	relaySampleSuccess := !IsHubServiceTierRequest(ctx) || hubAttemptResult == HubAttemptResultSuccess
+	if ShouldRecordHubRelaySample(ctx, relayInfo) {
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, relaySampleSuccess, int64(summary.CompletionTokens))
+		})
+	}
 }

@@ -236,7 +236,16 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
       <div className='divide-y'>
         {attempts.map((attempt, index) => {
           const succeeded = attempt.result === 'success'
-          const resultLabel = succeeded ? t('Success') : t('Failed')
+          const partial = attempt.result === 'partial_success'
+          let resultLabel = t('Failed')
+          let resultVariant: StatusBadgeProps['variant'] = 'red'
+          if (succeeded) {
+            resultLabel = t('Success')
+            resultVariant = 'green'
+          } else if (partial) {
+            resultLabel = t('Partial success')
+            resultVariant = 'yellow'
+          }
           const channelLabel =
             attempt.channel_id && attempt.channel_id > 0
               ? `#${attempt.channel_id}`
@@ -257,7 +266,7 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                 </span>
                 <StatusBadge
                   label={resultLabel}
-                  variant={succeeded ? 'green' : 'red'}
+                  variant={resultVariant}
                   size='sm'
                   copyable={false}
                 />
@@ -300,6 +309,13 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                   <DetailRow
                     label={t('Group Ratio')}
                     value={`${attempt.billing_ratio}x`}
+                    mono
+                  />
+                )}
+                {attempt.charged_quota != null && (
+                  <DetailRow
+                    label={t('Charged quota')}
+                    value={formatLogQuota(attempt.charged_quota)}
                     mono
                   />
                 )}

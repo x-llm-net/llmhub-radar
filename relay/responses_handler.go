@@ -139,13 +139,18 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	usageDto, _ := usage.(*dto.Usage)
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-		return newAPIError
+		if usageDto == nil {
+			usageDto = &dto.Usage{}
+		}
+		if !service.IsHubPartialStreamResponse(c, info, usageDto) {
+			return newAPIError
+		}
 	}
 
-	usageDto := usage.(*dto.Usage)
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		originModelName := info.OriginModelName
 		originPriceData := info.PriceData

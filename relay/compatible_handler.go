@@ -205,19 +205,25 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
+	usageDto, _ := usage.(*dto.Usage)
 	if newApiErr != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
-		return newApiErr
+		if usageDto == nil {
+			usageDto = &dto.Usage{}
+		}
+		if !service.IsHubPartialStreamResponse(c, info, usageDto) {
+			return newApiErr
+		}
 	}
 
-	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
+	var containAudioTokens = usageDto.CompletionTokenDetails.AudioTokens > 0 || usageDto.PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 	if containAudioTokens && containsAudioRatios {
-		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")
+		service.PostAudioConsumeQuota(c, info, usageDto, "")
 	} else {
-		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
 }

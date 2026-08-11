@@ -216,12 +216,18 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	usageDto, _ := usage.(*dto.Usage)
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-		return newAPIError
+		if usageDto == nil {
+			usageDto = &dto.Usage{}
+		}
+		if !service.IsHubPartialStreamResponse(c, info, usageDto) {
+			return newAPIError
+		}
 	}
 
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	service.PostTextConsumeQuota(c, info, usageDto, nil)
 	return nil
 }

@@ -195,12 +195,18 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
+	usageDto, _ := usage.(*dto.Usage)
 	if openaiErr != nil {
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
-		return openaiErr
+		if usageDto == nil {
+			usageDto = &dto.Usage{}
+		}
+		if !service.IsHubPartialStreamResponse(c, info, usageDto) {
+			return openaiErr
+		}
 	}
 
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	service.PostTextConsumeQuota(c, info, usageDto, nil)
 	return nil
 }
 

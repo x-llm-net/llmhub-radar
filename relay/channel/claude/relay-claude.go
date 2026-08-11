@@ -207,7 +207,7 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		}
 	})
 	if err != nil {
-		return nil, err
+		return claudeInfo.Usage, err
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)

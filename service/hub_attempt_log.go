@@ -9,6 +9,7 @@ import (
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,11 @@ import (
 const (
 	HubSampleSourceRealRequest     = "real_request"
 	HubAttemptSkipReasonFailed     = "failed_attempt"
+	HubAttemptResultSuccess        = "success"
+	HubAttemptResultPartialSuccess = "partial_success"
+	HubAttemptResultFailed         = "failed"
+	HubConsumerChargeCharged       = "charged"
+	HubConsumerChargeNotCharged    = "not_charged"
 	HubFailureClassUpstream        = "upstream"
 	HubFailureClassConfiguration   = "configuration"
 	HubFailureClassClient          = "client"
@@ -28,7 +34,13 @@ const (
 	hubEndpointTypeMidjourneyProxy = "midjourney-proxy"
 	hubEndpointTypeUnknown         = "unknown"
 	hubRoutingMetricsRecordedKey   = "hub_routing_metrics_recorded"
+	hubFinalAttemptBillingKey      = "hub_final_attempt_billing"
 )
+
+type hubFinalAttemptBilling struct {
+	Result       string
+	ChargedQuota int
+}
 
 type HubRelayAttempt struct {
 	AttemptIndex         int     `json:"attempt_index"`
@@ -55,6 +67,8 @@ type HubRelayAttempt struct {
 	SupplyMultiplier     float64 `json:"supply_multiplier,omitempty"`
 	BillingRatio         float64 `json:"billing_ratio,omitempty"`
 	UpstreamChargeStatus string  `json:"upstream_charge_status"`
+	ConsumerChargeStatus string  `json:"consumer_charge_status,omitempty"`
+	ChargedQuota         *int    `json:"charged_quota,omitempty"`
 }
 
 func IsHubServiceTierRequest(ctx *gin.Context) bool {
@@ -96,7 +110,7 @@ func appendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 		return
 	}
 	attempt := buildHubRelayAttempt(ctx, relayInfo)
-	attempt.Result = "failed"
+	attempt.Result = HubAttemptResultFailed
 	attempt.StatusCode = relayErr.StatusCode
 	attempt.SkipReason = HubAttemptSkipReasonFailed
 	if failureClass == "" {
@@ -109,9 +123,68 @@ func appendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 		attempt.ErrorCategory = string(relayErr.GetErrorType())
 	}
 	attempt.UpstreamChargeStatus = "unknown"
+	attempt.ConsumerChargeStatus = HubConsumerChargeNotCharged
+	chargedQuota := 0
+	attempt.ChargedQuota = &chargedQuota
 	attempts := GetHubRelayAttempts(ctx)
 	attempts = append(attempts, attempt)
 	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttempts, attempts)
+}
+
+// ApplyHubStreamBillingPolicy keeps legacy groups unchanged while making the
+// service-tier contract deterministic for abnormal streamed responses.
+func ApplyHubStreamBillingPolicy(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, calculatedQuota int) (int, string) {
+	result := ClassifyHubFinalStreamResult(relayInfo, usage)
+	if !IsHubServiceTierRequest(ctx) {
+		return calculatedQuota, HubAttemptResultSuccess
+	}
+	chargedQuota := calculatedQuota
+	if result == HubAttemptResultFailed {
+		chargedQuota = 0
+	}
+	ctx.Set(hubFinalAttemptBillingKey, hubFinalAttemptBilling{
+		Result:       result,
+		ChargedQuota: chargedQuota,
+	})
+	return chargedQuota, result
+}
+
+func IsHubPartialStreamResponse(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	return IsHubServiceTierRequest(ctx) &&
+		ClassifyHubFinalStreamResult(relayInfo, effectiveBillingUsage(usage)) == HubAttemptResultPartialSuccess
+}
+
+func ShouldRecordHubRelaySample(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) bool {
+	return !IsHubServiceTierRequest(ctx) || relayInfo == nil || relayInfo.StreamStatus == nil ||
+		relayInfo.StreamStatus.EndReason != relaycommon.StreamEndReasonClientGone
+}
+
+func ClassifyHubFinalStreamResult(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
+	if relayInfo == nil || !relayInfo.IsStream || relayInfo.StreamStatus == nil {
+		return HubAttemptResultSuccess
+	}
+	if relayInfo.StreamStatus.IsNormalEnd() && !relayInfo.StreamStatus.HasErrors() {
+		return HubAttemptResultSuccess
+	}
+	if hasUsableHubStreamOutput(relayInfo, usage) {
+		return HubAttemptResultPartialSuccess
+	}
+	return HubAttemptResultFailed
+}
+
+func hasUsableHubStreamOutput(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	if relayInfo != nil && relayInfo.HasFirstToken() {
+		return true
+	}
+	if usage == nil {
+		return false
+	}
+	return usage.CompletionTokens > 0 ||
+		usage.OutputTokens > 0 ||
+		usage.CompletionTokenDetails.TextTokens > 0 ||
+		usage.CompletionTokenDetails.ReasoningTokens > 0 ||
+		usage.CompletionTokenDetails.ImageTokens > 0 ||
+		usage.CompletionTokenDetails.AudioTokens > 0
 }
 
 // IsHubFailureHealthEligible marks failures that may be recovered by trying
@@ -210,11 +283,7 @@ func AttachHubRelayLogInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 
 	attempts := GetHubRelayAttempts(ctx)
 	if includeCurrentSuccess {
-		attempt := buildHubRelayAttempt(ctx, relayInfo)
-		attempt.Result = "success"
-		attempt.StatusCode = 200
-		attempt.HealthEligible = true
-		attempt.UpstreamChargeStatus = "charged"
+		attempt := buildHubFinalRelayAttempt(ctx, relayInfo)
 		attempts = append(attempts, attempt)
 		RecordHubRelayAttemptMetrics(ctx, relayInfo, true)
 	}
@@ -232,11 +301,7 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 	}
 	attempts := GetHubRelayAttempts(ctx)
 	if includeCurrentSuccess {
-		attempt := buildHubRelayAttempt(ctx, relayInfo)
-		attempt.Result = "success"
-		attempt.StatusCode = 200
-		attempt.HealthEligible = true
-		attempt.UpstreamChargeStatus = "charged"
+		attempt := buildHubFinalRelayAttempt(ctx, relayInfo)
 		attempts = append(attempts, attempt)
 	}
 	if len(attempts) == 0 {
@@ -249,7 +314,7 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 			EndpointType:   attempt.EndpointType,
 			ProviderID:     attempt.ProviderID,
 			ChannelID:      attempt.ChannelID,
-			Success:        attempt.Result == "success",
+			Success:        attempt.Result == HubAttemptResultSuccess,
 			FailureClass:   attempt.FailureClass,
 			HealthEligible: attempt.HealthEligible,
 			LatencyMS:      attempt.LatencyMS,
@@ -258,6 +323,42 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 	}
 	perfmetrics.RecordHubRoutingAttempts(samples)
 	ctx.Set(hubRoutingMetricsRecordedKey, true)
+}
+
+func buildHubFinalRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) HubRelayAttempt {
+	attempt := buildHubRelayAttempt(ctx, relayInfo)
+	attempt.Result = ClassifyHubFinalStreamResult(relayInfo, nil)
+	if value, exists := ctx.Get(hubFinalAttemptBillingKey); exists {
+		if billing, ok := value.(hubFinalAttemptBilling); ok {
+			attempt.Result = billing.Result
+			chargedQuota := billing.ChargedQuota
+			attempt.ChargedQuota = &chargedQuota
+			attempt.ConsumerChargeStatus = HubConsumerChargeNotCharged
+			if chargedQuota > 0 {
+				attempt.ConsumerChargeStatus = HubConsumerChargeCharged
+			}
+		}
+	}
+	attempt.StatusCode = http.StatusOK
+	attempt.HealthEligible = true
+	attempt.UpstreamChargeStatus = "charged"
+	if attempt.Result == HubAttemptResultSuccess {
+		return attempt
+	}
+
+	attempt.FailureClass = HubFailureClassResponseStarted
+	if relayInfo != nil && relayInfo.StreamStatus != nil {
+		attempt.ErrorCategory = string(relayInfo.StreamStatus.EndReason)
+		if relayInfo.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
+			attempt.FailureClass = HubFailureClassClient
+		}
+	}
+	attempt.HealthEligible = IsHubFailureHealthEligible(attempt.FailureClass)
+	if attempt.Result == HubAttemptResultFailed {
+		attempt.SkipReason = HubAttemptSkipReasonFailed
+		attempt.UpstreamChargeStatus = "unknown"
+	}
+	return attempt
 }
 
 func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) HubRelayAttempt {

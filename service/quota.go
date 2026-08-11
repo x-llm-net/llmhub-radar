@@ -314,6 +314,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredOk {
 		quota = tieredQuota
 	}
+	billingUsage := effectiveBillingUsage(usage)
+	hubAttemptResult := ClassifyHubFinalStreamResult(relayInfo, billingUsage)
+	quota, hubAttemptResult = ApplyHubStreamBillingPolicy(ctx, relayInfo, billingUsage, quota)
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -325,7 +328,10 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 
 	// record all the consume log even if quota is 0
-	if totalTokens == 0 {
+	if hubAttemptResult == HubAttemptResultFailed {
+		logContent += "，流式响应异常结束且没有有效输出，本次不扣费"
+		logger.LogError(ctx, fmt.Sprintf("abnormal audio stream ended without usable output, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, relayInfo.OriginModelName, relayInfo.FinalPreConsumedQuota))
+	} else if totalTokens == 0 {
 		// in this case, must be some error happened
 		// we cannot just return, because we may have to return the pre-consumed quota
 		quota = 0
@@ -365,9 +371,12 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
-	})
+	relaySampleSuccess := !IsHubServiceTierRequest(ctx) || hubAttemptResult == HubAttemptResultSuccess
+	if ShouldRecordHubRelaySample(ctx, relayInfo) {
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, relaySampleSuccess, int64(usage.CompletionTokens))
+		})
+	}
 }
 
 func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
