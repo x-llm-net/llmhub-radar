@@ -287,7 +287,9 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 	}
 	if relayInfo != nil {
 		attempt.FirstEventMS = elapsedMilliseconds(startedAt, relayInfo.FirstResponseTime)
-		attempt.FirstTokenMS = elapsedMilliseconds(startedAt, relayInfo.FirstTokenTime)
+		if relayInfo.IsStream {
+			attempt.FirstTokenMS = elapsedMilliseconds(startedAt, relayInfo.FirstTokenTime)
+		}
 	}
 	return attempt
 }

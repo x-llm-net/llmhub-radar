@@ -145,7 +145,7 @@ Channel + Model + EndpointType + ProbeKind
 
 暂无样本、已禁用和未上架渠道必须通过左连接展示，不能只展示成功探测过的渠道。
 
-真实请求指标暂时只在单条请求日志中查看 `hub_attempts`，不在首版排行中宣称已经统计真实流量。后续如进入 `observe`，必须先补齐尝试中的 `model`、`endpoint_type`、`sample_source` 和 `skip_reason`，再决定聚合存储。
+真实请求指标暂时只在单条请求日志中查看 `hub_attempts`，不在首版排行中宣称已经统计真实流量。后续如进入 `observe`，必须先补齐尝试中的 `model`、`endpoint_type`、`sample_source` 和 `skip_reason`，再决定聚合存储。TTFT 只取流式响应中的有效文本或推理增量；角色、usage、结束事件、图片元数据和非流式请求不会生成 TTFT。
 
 ### 3.4 探测口径
 

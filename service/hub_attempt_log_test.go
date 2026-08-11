@@ -80,6 +80,32 @@ func TestAppendHubRelayAttemptNonChannelFailureIsNotHealthEligible(t *testing.T)
 	assert.Equal(t, "invalid_task_request", attempts[0].ErrorCategory)
 }
 
+func TestTTFTIsOmittedForNonStreamLogs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	startedAt := time.Now().Add(-time.Second)
+	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttemptStartedAt, startedAt)
+
+	info := &relaycommon.RelayInfo{
+		StartTime:         startedAt,
+		FirstResponseTime: startedAt.Add(100 * time.Millisecond),
+		FirstTokenTime:    startedAt.Add(200 * time.Millisecond),
+		ChannelMeta:       &relaycommon.ChannelMeta{},
+	}
+	attempt := buildHubRelayAttempt(ctx, info)
+	require.NotNil(t, attempt.FirstEventMS)
+	assert.Nil(t, attempt.FirstTokenMS)
+	other := GenerateTextOtherInfo(ctx, info, 1, 1, 1, 0, 0, 0, 1)
+	assert.NotContains(t, other, "ttft")
+
+	info.IsStream = true
+	attempt = buildHubRelayAttempt(ctx, info)
+	require.NotNil(t, attempt.FirstTokenMS)
+	assert.Equal(t, int64(200), *attempt.FirstTokenMS)
+	other = GenerateTextOtherInfo(ctx, info, 1, 1, 1, 0, 0, 0, 1)
+	assert.Equal(t, float64(200), other["ttft"])
+}
+
 func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	original := *hub_routing_setting.Get()
 	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })
@@ -103,6 +129,7 @@ func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	AppendHubRelayAttemptFailure(ctx, &relaycommon.RelayInfo{
 		OriginModelName:   "claude-opus-5",
 		RelayFormat:       types.RelayFormatClaude,
+		IsStream:          true,
 		FirstResponseTime: failureStartedAt.Add(10 * time.Millisecond),
 		FirstTokenTime:    failureStartedAt.Add(20 * time.Millisecond),
 	}, failure)
@@ -121,6 +148,7 @@ func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	AttachHubRelayLogInfo(ctx, &relaycommon.RelayInfo{
 		OriginModelName:   "gpt-5",
 		RelayFormat:       types.RelayFormatOpenAI,
+		IsStream:          true,
 		FirstResponseTime: successStartedAt.Add(15 * time.Millisecond),
 		FirstTokenTime:    successStartedAt.Add(25 * time.Millisecond),
 	}, other, true)
