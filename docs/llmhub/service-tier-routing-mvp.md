@@ -36,6 +36,7 @@
 - 模型家族首版按已维护的模型标识覆盖常见 OpenAI/Google 文本、图片、音频、Embedding 和 Moderation 模型；未知模型不会默认进入服务档位，管理员可通过 `allow_other_family` 临时放行。
 - 循环保护使用平台签名的 `X-LLM-Hub-Hop` 和并发请求指纹：标准 HTTP、multipart/form、任务提交、Midjourney 与 Realtime WebSocket 入口达到第 3 跳时固定返回 `508 request_loop_detected`；非空非 JSON `POST` 也进入原始请求体指纹保护。该错误不重试、不扣费、不结算，也不自动禁用 Channel。
 - 流式上游请求默认使用 `Accept-Encoding: identity`，减少 gzip/代理缓冲导致的小 SSE 数据块延迟；渠道显式 Header Override 仍优先。管理员日志详情可按响应头、首响应体字节、首事件和有效首字四个阶段定位用户可见 TTFT，Responses 下游写入失败会进入现有流失败处理。
+- 2026-08-12 本地真实复验通过：标准档客户端首事件约 `1.55s`、首字约 `3.14s`、完成约 `3.41s`；特价档首字约 `1.73s`、完成约 `1.74s`。日志中的四阶段时间与客户端相差约 `0.2s`，不再出现此前标准档 `15-65s` 的传输延迟。
 
 ## 自动化闭环验证
 
