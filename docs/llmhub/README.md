@@ -4,6 +4,7 @@
 
 - [用户令牌路由与平台兜底算法](routing-and-fallback-design.md)：渠道商子域名优先、同组平台兜底、动态质量调度、循环保护和结算追踪的讨论草案。
 - [服务档位路由 MVP 实施状态](service-tier-routing-mvp.md)：第一版已实现范围、验收流程、已知边界和后续阶段。
+- [服务档位路由人工验收计划](service-tier-routing-test-plan.md)：三家渠道商、六条渠道的可重复验收数据、操作顺序和最终账务核验口径。
 - [服务档位路由加固清单](service-tier-routing-hardening.md)：核心代码审查发现、已确认修复决策、分批实施顺序和验收条件。
 
 ## 基座
