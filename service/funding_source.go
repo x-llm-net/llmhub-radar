@@ -37,8 +37,12 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	if err := model.DecreaseUserQuota(w.userId, amount, false); err != nil {
+	reserved, err := model.TryDecreaseUserQuota(w.userId, amount)
+	if err != nil {
 		return err
+	}
+	if !reserved {
+		return errWalletQuotaInsufficient
 	}
 	w.consumed = amount
 	return nil

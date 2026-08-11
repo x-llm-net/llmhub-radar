@@ -1271,6 +1271,33 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	return decreaseUserQuota(id, quota)
 }
 
+// TryDecreaseUserQuota atomically reserves quota only when the current
+// database balance covers it. Reservation paths must not use the batched
+// updater because a later retry needs an immediately authoritative result.
+func TryDecreaseUserQuota(id int, quota int) (bool, error) {
+	if quota < 0 {
+		return false, errors.New("quota 不能为负数！")
+	}
+	if quota == 0 {
+		return true, nil
+	}
+	result := DB.Model(&User{}).
+		Where("id = ? AND quota >= ?", id, quota).
+		Update("quota", gorm.Expr("quota - ?", quota))
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	gopool.Go(func() {
+		if err := cacheDecrUserQuota(id, int64(quota)); err != nil {
+			common.SysLog("failed to decrease user quota cache: " + err.Error())
+		}
+	})
+	return true, nil
+}
+
 func decreaseUserQuota(id int, quota int) (err error) {
 	err = DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota - ?", quota)).Error
 	if err != nil {

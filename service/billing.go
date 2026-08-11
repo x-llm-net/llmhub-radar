@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -90,6 +91,10 @@ func PrepareBillingForSelectedChannel(c *gin.Context, relayInfo *relaycommon.Rel
 		return PreConsumeBilling(c, targetQuota, relayInfo)
 	}
 	if err := relayInfo.Billing.Reserve(targetQuota); err != nil {
+		var apiErr *types.NewAPIError
+		if errors.As(err, &apiErr) {
+			return apiErr
+		}
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	relayInfo.FinalPreConsumedQuota = relayInfo.Billing.GetPreConsumedQuota()

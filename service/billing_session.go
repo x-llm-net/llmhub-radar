@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -34,6 +35,8 @@ type BillingSession struct {
 	refunded         bool // Refund 已调用
 	mu               sync.Mutex
 }
+
+var errWalletQuotaInsufficient = errors.New("wallet quota is insufficient")
 
 // Settle 根据实际消耗额度进行结算。
 // 资金来源和令牌额度分两步提交：若资金来源已提交但令牌调整失败，
@@ -213,6 +216,15 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			}
 			s.tokenConsumed = 0
 		}
+		if errors.Is(err, errWalletQuotaInsufficient) {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("用户额度不足，无法预扣 %s", logger.FormatQuota(effectiveQuota)),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
@@ -232,12 +244,18 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 func (s *BillingSession) reserveFunding(delta int) error {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		// 与结算补扣（SettleBilling 正差额 → WalletFunding.Settle）语义一致：
-		// 全额无条件扣减，余额不足的部分记为欠费（余额可为负），不中断请求，
-		// 保证日志记录的预扣额度与用户余额的实际变动始终对账一致。
-		// DecreaseUserQuota 仅在数据库错误时失败。
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+		reserved, err := model.TryDecreaseUserQuota(funding.userId, delta)
+		if err != nil {
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
+		if !reserved {
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("用户额度不足，无法为更高价格的重试预留 %s", logger.FormatQuota(delta)),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
 		}
 		funding.consumed += delta
 		return nil
