@@ -99,7 +99,7 @@ func ProcessBillingTokenAdjustment(requestId string) (*BillingTokenAdjustment, e
 		}
 
 		now := common.GetTimestamp()
-		result := tx.Model(&Token{}).Where("id = ?", adjustment.TokenId).Updates(map[string]any{
+		result := tx.Unscoped().Model(&Token{}).Where("id = ?", adjustment.TokenId).Updates(map[string]any{
 			"remain_quota":  gorm.Expr("remain_quota - ?", adjustment.DeltaQuota),
 			"used_quota":    gorm.Expr("used_quota + ?", adjustment.DeltaQuota),
 			"accessed_time": now,
@@ -186,7 +186,7 @@ func invalidateBillingTokenAdjustmentCache(tokenId int) {
 	}
 	gopool.Go(func() {
 		var token Token
-		if err := DB.Select("key").Where("id = ?", tokenId).First(&token).Error; err != nil {
+		if err := DB.Unscoped().Select("key").Where("id = ?", tokenId).First(&token).Error; err != nil {
 			return
 		}
 		if err := cacheDeleteToken(token.Key); err != nil {

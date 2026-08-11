@@ -102,23 +102,35 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
 // 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
-func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
+func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int, operation string) {
 	if task.PrivateData.TokenId <= 0 || delta == 0 {
 		return
 	}
 	tokenKey := resolveTokenKey(ctx, task.PrivateData.TokenId, task.TaskID)
-	if tokenKey == "" {
-		return
-	}
 	var err error
-	if delta > 0 {
+	if tokenKey == "" {
+		err = fmt.Errorf("token key unavailable")
+	} else if delta > 0 {
 		err = model.DecreaseTokenQuota(task.PrivateData.TokenId, tokenKey, delta)
 	} else {
 		err = model.IncreaseTokenQuota(task.PrivateData.TokenId, tokenKey, -delta)
 	}
 	if err != nil {
+		requestId := taskTokenAdjustmentRequestId(task, operation)
+		if _, persistErr := model.CreateBillingTokenAdjustment(requestId, task.PrivateData.TokenId, delta, err); persistErr != nil {
+			logger.LogError(ctx, fmt.Sprintf("持久化令牌额度调整失败 (delta=%d, task=%s, request_id=%s): %s",
+				delta, task.TaskID, requestId, persistErr.Error()))
+		}
 		logger.LogWarn(ctx, fmt.Sprintf("调整令牌额度失败 (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
 	}
+}
+
+func taskTokenAdjustmentRequestId(task *model.Task, operation string) string {
+	seed := task.TaskID
+	if task.PrivateData.RequestId != "" {
+		seed = task.PrivateData.RequestId
+	}
+	return fmt.Sprintf("task-token:%s:%s", operation, common.GenerateHMAC(seed))
 }
 
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
@@ -189,7 +201,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	}
 
 	// 2. 退还令牌额度
-	taskAdjustTokenQuota(ctx, task, -quota)
+	taskAdjustTokenQuota(ctx, task, -quota, "refund")
 
 	// 3. 记录日志
 	other := taskBillingOther(task)
@@ -251,7 +263,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	}
 
 	// 调整令牌额度
-	taskAdjustTokenQuota(ctx, task, quotaDelta)
+	taskAdjustTokenQuota(ctx, task, quotaDelta, "settlement")
 
 	task.Quota = actualQuota
 	if err := task.UpdateQuota(); err != nil {

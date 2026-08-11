@@ -494,6 +494,28 @@ func TestRefundTaskQuota_NoToken(t *testing.T) {
 	assert.Zero(t, getTaskQuota(t, task.ID))
 }
 
+func TestTaskTokenAdjustmentFailureLeavesRecoverableRecord(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID, tokenID = 45, 46
+	seedUser(t, userID, 5000)
+	task := makeTask(userID, 0, 200, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task-token-adjustment-recovery"
+
+	// The token is unavailable during the task update. The funding path has
+	// already completed, so the token delta must remain recoverable.
+	taskAdjustTokenQuota(ctx, task, 125, "settlement")
+	var adjustment model.BillingTokenAdjustment
+	require.NoError(t, model.DB.Where("request_id = ?", taskTokenAdjustmentRequestId(task, "settlement")).First(&adjustment).Error)
+	assert.Equal(t, model.BillingTokenAdjustmentStatusPending, adjustment.Status)
+
+	seedToken(t, tokenID, userID, "sk-task-token-adjustment", 700)
+	result, err := RecoverPendingBillingTokenAdjustments(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Completed)
+	assert.Equal(t, 575, getTokenRemainQuota(t, tokenID))
+}
+
 func TestRefundTaskQuota_FundingFailureKeepsPendingMarker(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
