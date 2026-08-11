@@ -86,6 +86,7 @@ func (logCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runner
 func init() {
 	RegisterSystemTaskHandler(logCleanupHandler{})
 	RegisterSystemTaskHandler(billingRefundRecoveryHandler{})
+	RegisterSystemTaskHandler(billingTokenAdjustmentRecoveryHandler{})
 	RegisterSystemTaskHandler(hubProviderEarningRecoveryHandler{})
 }
 

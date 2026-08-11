@@ -50,6 +50,7 @@ func TestMain(m *testing.M) {
 		&model.HubSupplyGroup{},
 		&model.HubProviderEarning{},
 		&model.BillingRefund{},
+		&model.BillingTokenAdjustment{},
 		&model.HubProviderWithdrawal{},
 		&model.Ability{},
 		&model.TopUp{},
@@ -78,6 +79,7 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM hub_provider_earnings")
 		model.DB.Exec("DELETE FROM billing_refunds")
+		model.DB.Exec("DELETE FROM billing_token_adjustments")
 		model.DB.Exec("DELETE FROM hub_provider_withdrawals")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")

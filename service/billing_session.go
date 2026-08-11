@@ -68,7 +68,16 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
 		}
 		if tokenErr != nil {
-			// 资金来源已提交，令牌调整失败只能记录日志；标记 settled 防止 Refund 误退资金
+			requestId := strings.TrimSpace(s.relayInfo.RequestId)
+			if requestId == "" {
+				requestId = common.NewRequestId()
+				s.relayInfo.RequestId = requestId
+			}
+			if _, err := model.CreateBillingTokenAdjustment(requestId, s.relayInfo.TokenId, delta, tokenErr); err != nil {
+				common.SysLog(fmt.Sprintf("error persisting token quota adjustment (requestId=%s, userId=%d, tokenId=%d, delta=%d): %s",
+					requestId, s.relayInfo.UserId, s.relayInfo.TokenId, delta, err.Error()))
+			}
+			// 资金来源已提交，令牌调整失败交给持久化任务恢复；标记 settled 防止 Refund 误退资金。
 			common.SysLog(fmt.Sprintf("error adjusting token quota after funding settled (userId=%d, tokenId=%d, delta=%d): %s",
 				s.relayInfo.UserId, s.relayInfo.TokenId, delta, tokenErr.Error()))
 		}
