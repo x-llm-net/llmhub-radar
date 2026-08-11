@@ -504,9 +504,9 @@ func TestTaskTokenAdjustmentFailureLeavesRecoverableRecord(t *testing.T) {
 
 	// The token is unavailable during the task update. The funding path has
 	// already completed, so the token delta must remain recoverable.
-	taskAdjustTokenQuota(ctx, task, 125, "settlement")
+	taskAdjustTokenQuota(ctx, task, 125)
 	var adjustment model.BillingTokenAdjustment
-	require.NoError(t, model.DB.Where("request_id = ?", taskTokenAdjustmentRequestId(task, "settlement")).First(&adjustment).Error)
+	require.NoError(t, model.DB.Where("token_id = ?", tokenID).First(&adjustment).Error)
 	assert.Equal(t, model.BillingTokenAdjustmentStatusPending, adjustment.Status)
 
 	seedToken(t, tokenID, userID, "sk-task-token-adjustment", 700)

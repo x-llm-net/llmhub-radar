@@ -33,10 +33,14 @@ func RecoverPendingBillingRefunds(ctx context.Context, limit int) (BillingRefund
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if _, err := model.ProcessBillingRefund(requestId); err != nil {
+		refund, err := model.ProcessBillingRefund(requestId)
+		if err != nil {
 			result.Failed++
 			logger.LogWarn(ctx, fmt.Sprintf("billing refund recovery failed (request_id=%s): %v", requestId, err))
 			continue
+		}
+		if err := model.CancelHubProviderEarning(refund.RequestId); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("cancel provider earning after refund recovery failed (request_id=%s): %v", requestId, err))
 		}
 		result.Completed++
 	}

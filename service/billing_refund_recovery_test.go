@@ -116,3 +116,38 @@ func TestRecoverPendingBillingRefundsCompletesDurableRecord(t *testing.T) {
 	assert.Equal(t, 600, getUserQuota(t, userID))
 	assert.Equal(t, 400, getTokenRemainQuota(t, tokenID))
 }
+
+func TestRecoverTaskRefundClearsQuotaAndCancelsProviderEarning(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID = 204, 204
+	const requestID = "task-refund-recovery"
+	seedUser(t, userID, 500)
+	seedToken(t, tokenID, userID, "sk-task-refund-recovery", 300)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Update("used_quota", 200).Error)
+	task := makeTask(userID, 0, 200, tokenID, BillingSourceWallet, 0)
+	task.PrivateData.RequestId = requestID
+	require.NoError(t, model.DB.Create(task).Error)
+	_, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
+		RequestId: requestID, ProviderId: 301, OwnerUserId: 302, ConsumerUserId: userID,
+		TokenId: tokenID, SupplyGroupId: 303, ChannelId: 304, ModelName: "task-model",
+		BillingSource: BillingSourceWallet, GrossQuota: 200,
+	})
+	require.NoError(t, err)
+	_, err = model.CreateBillingRefund(model.BillingRefundParams{
+		RequestId: requestID, UserId: userID, TokenId: tokenID, TaskId: task.ID,
+		FundingSource: BillingSourceWallet, FundingQuota: 200, TokenQuota: 200,
+	})
+	require.NoError(t, err)
+
+	result, err := RecoverPendingBillingRefunds(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Completed)
+	assert.Equal(t, 700, getUserQuota(t, userID))
+	assert.Equal(t, 500, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTaskQuota(t, task.ID))
+
+	var earning model.HubProviderEarning
+	require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&earning).Error)
+	assert.Equal(t, model.HubProviderEarningStatusCancelled, earning.Status)
+}

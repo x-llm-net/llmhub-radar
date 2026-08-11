@@ -29,6 +29,7 @@ type BillingRefund struct {
 	Status                 string `json:"status" gorm:"type:varchar(24);not null;index"`
 	UserId                 int    `json:"user_id" gorm:"not null;index"`
 	TokenId                int    `json:"token_id" gorm:"not null;default:0;index"`
+	TaskId                 int64  `json:"task_id" gorm:"not null;default:0;index"`
 	FundingSource          string `json:"funding_source" gorm:"type:varchar(24);not null"`
 	FundingQuota           int    `json:"funding_quota" gorm:"not null;default:0"`
 	SubscriptionId         int    `json:"subscription_id" gorm:"not null;default:0;index"`
@@ -46,6 +47,7 @@ type BillingRefundParams struct {
 	RequestId              string
 	UserId                 int
 	TokenId                int
+	TaskId                 int64
 	FundingSource          string
 	FundingQuota           int
 	SubscriptionId         int
@@ -76,6 +78,7 @@ func CreateBillingRefund(params BillingRefundParams) (*BillingRefund, error) {
 		Status:                 BillingRefundStatusPending,
 		UserId:                 params.UserId,
 		TokenId:                params.TokenId,
+		TaskId:                 params.TaskId,
 		FundingSource:          params.FundingSource,
 		FundingQuota:           params.FundingQuota,
 		SubscriptionId:         params.SubscriptionId,
@@ -157,6 +160,13 @@ func ProcessBillingRefund(requestId string) (*BillingRefund, error) {
 				return result.Error
 			}
 		}
+		if refund.TaskId > 0 {
+			if err := tx.Model(&Task{}).
+				Where("id = ? AND user_id = ?", refund.TaskId, refund.UserId).
+				Update("quota", 0).Error; err != nil {
+				return err
+			}
+		}
 
 		if err := tx.Model(&BillingRefund{}).Where("id = ? AND status = ?", refund.Id, BillingRefundStatusPending).Updates(map[string]any{
 			"status":          BillingRefundStatusComplete,
@@ -231,7 +241,7 @@ func validateBillingRefundParams(params BillingRefundParams) error {
 	if params.RequestId == "" || params.UserId <= 0 {
 		return errors.New("invalid billing refund reference")
 	}
-	if params.TokenId < 0 || params.FundingQuota < 0 || params.SubscriptionId < 0 ||
+	if params.TokenId < 0 || params.TaskId < 0 || params.FundingQuota < 0 || params.SubscriptionId < 0 ||
 		params.SubscriptionExtraQuota < 0 || params.TokenQuota < 0 {
 		return errors.New("billing refund quota cannot be negative")
 	}
@@ -257,6 +267,7 @@ func billingRefundMatches(refund *BillingRefund, params BillingRefundParams) boo
 		refund.RequestId == params.RequestId &&
 		refund.UserId == params.UserId &&
 		refund.TokenId == params.TokenId &&
+		refund.TaskId == params.TaskId &&
 		refund.FundingSource == params.FundingSource &&
 		refund.FundingQuota == params.FundingQuota &&
 		refund.SubscriptionId == params.SubscriptionId &&

@@ -64,8 +64,8 @@
 - [x] 用户资金已提交但 Token 调整失败时，不再错误取消渠道商收益；当前结算通过 `FundingCommitted()` 区分“资金尚未提交”和“资金已提交、Token 调整失败”。后者的渠道商收益保持待结算，并由 `billing_token_adjustments` 保存 Token 差额。
 - [x] 同步请求在用户扣费后崩溃时，后台能够扫描和完成待结算收益；只有 `settlement_deferred=false` 的新记录进入恢复队列，避免旧异步任务被误结算。
 - [x] 异步任务使用提交时保存的模型价格和倍率快照；按 token 重算优先读取 `TaskBillingContext.ModelRatio` 和已保存的综合/供给倍率，管理员在任务运行期间改价不会改变旧任务账单。历史任务缺少有效快照时才回退当前模型倍率配置。
-- [x] 异步任务只有在任务成功路径释放 `settlement_deferred` 后才能结算渠道商收益；恢复扫描固定排除仍处于 deferred 的任务收益。Token 差额已具备持久化恢复，异步任务自身 `Task.Quota` 回写失败和多次终态重试仍待单独加固。
-- [x] 资金已提交但 Token 回写失败时，`BillingSession` 和异步任务差额/退款路径都会写入 `billing_token_adjustments` 的 pending 记录；记录以稳定引用唯一，系统任务每 15 秒在同一事务中补写 Token 并标记 complete，重复执行不会重复调整。记录只保存 Token ID 和额度差额，不保存明文 Token key。若恢复记录本身也无法落库，当前仍只能记录日志，属于数据库不可用期间的残余风险。
+- [x] 异步任务只有在任务成功路径释放 `settlement_deferred` 后才能结算渠道商收益；恢复扫描固定排除仍处于 deferred 的任务收益。任务失败退款复用 `billing_refunds`，资金、Token 和持久化 `Task.Quota=0` 在同一事务完成，后台恢复后取消渠道商待收益。成功任务的最终差额与 `Task.Quota` 原子性仍待单独加固。
+- [x] 资金已提交但 Token 回写失败时，`BillingSession` 和异步任务完成差额路径都会写入 `billing_token_adjustments` 的 pending 记录；任务失败退款由 `billing_refunds` 原子包含 Token 退款。恢复记录以稳定引用唯一，系统任务每 15 秒补写，重复执行不会重复调整；两类记录都不保存明文 Token key。若恢复记录本身也无法落库，当前仍只能记录日志，属于数据库不可用期间的残余风险。
 - [ ] 失败但上游可能扣费的人工补偿关联 `request_id + attempt_index`，并具有唯一幂等约束。
 - [ ] 首版提现后端固定 CNY，实际金额和有效汇率由服务端按统一舍入规则计算，不信任任意客户端币种或汇率。
 

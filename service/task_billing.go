@@ -102,7 +102,7 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
 // 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
-func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int, operation string) {
+func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 	if task.PrivateData.TokenId <= 0 || delta == 0 {
 		return
 	}
@@ -116,21 +116,17 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int, oper
 		err = model.IncreaseTokenQuota(task.PrivateData.TokenId, tokenKey, -delta)
 	}
 	if err != nil {
-		requestId := taskTokenAdjustmentRequestId(task, operation)
+		seed := task.TaskID
+		if task.PrivateData.RequestId != "" {
+			seed = task.PrivateData.RequestId
+		}
+		requestId := fmt.Sprintf("task-token:settlement:%s", common.GenerateHMAC(seed))
 		if _, persistErr := model.CreateBillingTokenAdjustment(requestId, task.PrivateData.TokenId, delta, err); persistErr != nil {
 			logger.LogError(ctx, fmt.Sprintf("持久化令牌额度调整失败 (delta=%d, task=%s, request_id=%s): %s",
 				delta, task.TaskID, requestId, persistErr.Error()))
 		}
 		logger.LogWarn(ctx, fmt.Sprintf("调整令牌额度失败 (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
 	}
-}
-
-func taskTokenAdjustmentRequestId(task *model.Task, operation string) string {
-	seed := task.TaskID
-	if task.PrivateData.RequestId != "" {
-		seed = task.PrivateData.RequestId
-	}
-	return fmt.Sprintf("task-token:%s:%s", operation, common.GenerateHMAC(seed))
 }
 
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
@@ -194,16 +190,44 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		return true
 	}
 
-	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
-		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
+	requestId := task.PrivateData.RequestId
+	if requestId == "" {
+		requestId = "task-refund:" + common.GenerateHMAC(task.TaskID)
+	}
+	params := model.BillingRefundParams{
+		RequestId:     requestId,
+		UserId:        task.UserId,
+		TokenId:       task.PrivateData.TokenId,
+		TaskId:        task.ID,
+		FundingSource: task.PrivateData.BillingSource,
+	}
+	if params.TokenId > 0 {
+		params.TokenQuota = quota
+	}
+	if params.FundingSource == BillingSourceSubscription {
+		params.SubscriptionId = task.PrivateData.SubscriptionId
+		params.SubscriptionExtraQuota = quota
+	} else {
+		params.FundingSource = BillingSourceWallet
+		params.FundingQuota = quota
+	}
+	refund, err := model.CreateBillingRefund(params)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("持久化任务退款失败 task %s: %s", task.TaskID, err.Error()))
+		return false
+	}
+	if refund.Status == model.BillingRefundStatusComplete {
+		task.Quota = 0
+		CancelTaskProviderEarning(ctx, task)
+		return true
+	}
+	if _, err := model.ProcessBillingRefund(requestId); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("执行任务退款失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}
 
-	// 2. 退还令牌额度
-	taskAdjustTokenQuota(ctx, task, -quota, "refund")
-
-	// 3. 记录日志
+	// 退款事务已同时退还资金、Token 并清除持久化 Task.Quota。
+	task.Quota = 0
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
@@ -219,14 +243,6 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		Other:     other,
 	})
 
-	// 4. 资金退款完成后再清除持久化标记。
-	// 回写失败必须显式告警，避免漏掉潜在的重复退款风险。
-	task.Quota = 0
-	if task.ID > 0 {
-		if err := task.UpdateQuota(); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("退款成功但清除 task quota 失败 task %s: %s", task.TaskID, err.Error()))
-		}
-	}
 	CancelTaskProviderEarning(ctx, task)
 	return true
 }
@@ -263,7 +279,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	}
 
 	// 调整令牌额度
-	taskAdjustTokenQuota(ctx, task, quotaDelta, "settlement")
+	taskAdjustTokenQuota(ctx, task, quotaDelta)
 
 	task.Quota = actualQuota
 	if err := task.UpdateQuota(); err != nil {
