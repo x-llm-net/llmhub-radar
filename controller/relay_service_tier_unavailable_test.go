@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -211,4 +212,29 @@ func TestLegacyGroupKeepsPerAttemptErrorLog(t *testing.T) {
 	var count int64
 	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeError).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
+}
+
+func TestServiceTierTaskErrorWritesFinalRequestLog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupRelayServiceTierTestDB(t)
+	common.MemoryCacheEnabled = false
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	ctx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	recordHubFinalTaskError(ctx, &relaycommon.RelayInfo{OriginModelName: "task-model"}, &taskdto.TaskError{
+		Code:       string(types.ErrorCodeBadResponseStatusCode),
+		Message:    "task upstream returned 503",
+		StatusCode: http.StatusServiceUnavailable,
+		Error:      errors.New("task upstream returned 503"),
+	})
+
+	var logs []model.Log
+	require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeError).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.Equal(t, "relay-service-tier-request-id", logs[0].RequestId)
+	assert.Contains(t, logs[0].Content, "task upstream returned 503")
 }

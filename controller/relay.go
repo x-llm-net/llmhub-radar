@@ -552,6 +552,25 @@ func recordHubFinalRelayError(c *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	)
 }
 
+func recordHubFinalTaskError(c *gin.Context, relayInfo *relaycommon.RelayInfo, taskErr *taskdto.TaskError) {
+	if taskErr == nil || !service.IsHubServiceTierRequest(c) {
+		return
+	}
+	cause := taskErr.Error
+	if cause == nil {
+		cause = errors.New(taskErr.Message)
+	}
+	errorCode := types.ErrorCode(taskErr.Code)
+	if errorCode == "" {
+		errorCode = types.ErrorCodeBadResponseStatusCode
+	}
+	statusCode := taskErr.StatusCode
+	if statusCode <= 0 {
+		statusCode = http.StatusInternalServerError
+	}
+	recordHubFinalRelayError(c, relayInfo, types.NewErrorWithStatusCode(cause, errorCode, statusCode))
+}
+
 func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
@@ -789,6 +808,7 @@ func RelayTask(c *gin.Context) {
 	}
 
 	if taskErr != nil {
+		recordHubFinalTaskError(c, relayInfo, taskErr)
 		respondTaskError(c, taskErr)
 	}
 }
