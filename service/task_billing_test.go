@@ -281,6 +281,7 @@ func TestRecalculateTaskQuotaByTokensUsesSupplyPricingSnapshot(t *testing.T) {
 		SupplyProviderId: 7,
 		OriginModelName:  "supply-task-model",
 	}
+	task.PrivateData.RequestId = "req-task-billing-snapshot"
 	require.NoError(t, model.DB.Create(task).Error)
 
 	RecalculateTaskQuotaByTokens(ctx, task, 100)
@@ -299,6 +300,7 @@ func TestRecalculateTaskQuotaByTokensUsesSupplyPricingSnapshot(t *testing.T) {
 	assert.Equal(t, 0.6, other["billing_ratio"])
 	assert.Equal(t, float64(12), other["hub_supply_group_id"])
 	assert.Equal(t, float64(7), other["hub_provider_id"])
+	assert.Equal(t, "req-task-billing-snapshot", other["request_id"])
 }
 
 // ---------------------------------------------------------------------------
