@@ -112,7 +112,31 @@ export interface ToolSurchargeItem {
   price: number
 }
 
+export interface HubRelayAttemptInfo {
+  attempt_index?: number
+  model?: string
+  endpoint_type?: string
+  service_tier?: string
+  routing_phase?: string
+  provider_id?: number
+  supply_group_id?: number
+  channel_id?: number
+  result?: string
+  failure_class?: string
+  error_category?: string
+  status_code?: number
+  started_at?: number
+  latency_ms?: number
+  first_event_ms?: number
+  first_token_ms?: number
+  supply_multiplier?: number
+  billing_ratio?: number
+  upstream_charge_status?: string
+}
+
 export interface LogOtherData {
+  // Full service-tier attempt chain; rendered only in admin log details.
+  hub_attempts?: HubRelayAttemptInfo[]
   admin_info?: {
     is_multi_key?: boolean
     multi_key_index?: number

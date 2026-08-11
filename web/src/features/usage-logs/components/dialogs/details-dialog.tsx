@@ -81,7 +81,11 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import {
+  USAGE_BILLING_PATH,
+  type HubRelayAttemptInfo,
+  type LogOtherData,
+} from '../../types'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -169,6 +173,12 @@ function formatRatio(ratio: number | undefined): string {
   return ratio.toFixed(4)
 }
 
+function formatLatency(value: number | undefined): string {
+  if (value == null || value <= 0) return '-'
+  if (value < 1000) return `${value} ms`
+  return `${(value / 1000).toFixed(2)} s`
+}
+
 function getUsageBillingPathLabel(
   t: TFunction,
   adminInfo: LogOtherData['admin_info']
@@ -213,6 +223,103 @@ function quotaSaturationKindLabel(
   if (kind === 'overflow') return t('Overflow')
   if (kind === 'underflow') return t('Underflow')
   return t('Invalid (NaN)')
+}
+
+function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
+  const { t } = useTranslation()
+  return (
+    <DetailSection
+      icon={<Route className='size-3.5' aria-hidden='true' />}
+      iconTone='info'
+      label={`${t('Attempts')} (${attempts.length})`}
+    >
+      <div className='divide-y'>
+        {attempts.map((attempt, index) => {
+          const succeeded = attempt.result === 'success'
+          const resultLabel = succeeded ? t('Success') : t('Failed')
+          const channelLabel =
+            attempt.channel_id && attempt.channel_id > 0
+              ? `#${attempt.channel_id}`
+              : t('Platform-owned')
+          const providerLabel =
+            attempt.provider_id && attempt.provider_id > 0
+              ? `#${attempt.provider_id}`
+              : t('Platform-owned')
+          return (
+            <div
+              key={`${attempt.attempt_index ?? 'unknown'}-${attempt.started_at ?? 'unknown'}-${attempt.channel_id ?? 'unknown'}`}
+              className='min-w-0 space-y-1.5 py-2 first:pt-0 last:pb-0'
+            >
+              <div className='flex min-w-0 items-center justify-between gap-2'>
+                <span className='min-w-0 truncate font-mono text-xs font-medium'>
+                  #{(attempt.attempt_index ?? index) + 1}{' '}
+                  {attempt.routing_phase || '-'}
+                </span>
+                <StatusBadge
+                  label={resultLabel}
+                  variant={succeeded ? 'green' : 'red'}
+                  size='sm'
+                  copyable={false}
+                />
+              </div>
+              <div className='grid min-w-0 gap-1 sm:grid-cols-2 sm:gap-x-4'>
+                {attempt.model && (
+                  <DetailRow label={t('Model')} value={attempt.model} mono />
+                )}
+                {attempt.endpoint_type && (
+                  <DetailRow
+                    label={t('Endpoint')}
+                    value={attempt.endpoint_type}
+                    mono
+                  />
+                )}
+                <DetailRow label={t('Provider')} value={providerLabel} mono />
+                <DetailRow label={t('Channel')} value={channelLabel} mono />
+                {(attempt.latency_ms ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('Latency')}
+                    value={formatLatency(attempt.latency_ms)}
+                    mono
+                  />
+                )}
+                {(attempt.first_token_ms ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('TTFT')}
+                    value={formatLatency(attempt.first_token_ms)}
+                    mono
+                  />
+                )}
+                {(attempt.supply_multiplier ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('Supply multiplier')}
+                    value={`${attempt.supply_multiplier}x`}
+                    mono
+                  />
+                )}
+                {(attempt.billing_ratio ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('Group Ratio')}
+                    value={`${attempt.billing_ratio}x`}
+                    mono
+                  />
+                )}
+              </div>
+              {(attempt.failure_class ||
+                attempt.error_category ||
+                attempt.status_code) && (
+                <p className='text-muted-foreground min-w-0 text-xs break-all'>
+                  {[attempt.failure_class, attempt.error_category]
+                    .filter(Boolean)
+                    .join(': ')}
+                  {attempt.status_code ? ` (${attempt.status_code})` : ''}
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </DetailSection>
+  )
 }
 
 function BillingBreakdown(props: {
@@ -481,6 +588,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
+  const hubAttempts =
+    props.isAdmin && Array.isArray(other?.hub_attempts)
+      ? other.hub_attempts
+      : []
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)
@@ -630,7 +741,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
       contentClassName={cn(
         'min-w-0 overflow-hidden',
         'max-sm:max-h-[calc(100dvh-1.5rem)] max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)] max-sm:p-4',
-        isTieredBilling ? 'sm:max-w-4xl lg:max-w-5xl' : 'sm:max-w-lg'
+        isTieredBilling || hubAttempts.length > 0
+          ? 'sm:max-w-4xl lg:max-w-5xl'
+          : 'sm:max-w-lg'
       )}
       headerClassName='max-sm:gap-1'
       titleClassName='flex items-center gap-2 text-base'
@@ -739,6 +852,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
         </div>
+
+        {/* Full service-tier attempt chain (admin only) */}
+        {hubAttempts.length > 0 && <HubAttemptChain attempts={hubAttempts} />}
 
         {/* Request conversion (admin only, not for refund) */}
         {showConversion && (
