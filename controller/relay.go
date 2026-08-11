@@ -518,9 +518,8 @@ func recordHubFinalRelayError(c *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	if relayErr == nil || !service.IsHubServiceTierRequest(c) {
 		return
 	}
-	if constant.ErrorLogEnabled && len(service.GetHubRelayAttempts(c)) > 0 {
+	if len(service.GetHubRelayAttempts(c)) > 0 {
 		service.RecordHubRelayAttemptMetrics(c, relayInfo, false)
-		return
 	}
 	other := map[string]interface{}{
 		"error_type":  string(relayErr.GetErrorType()),
