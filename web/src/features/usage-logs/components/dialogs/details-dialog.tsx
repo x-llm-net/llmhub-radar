@@ -297,10 +297,38 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                     mono
                   />
                 )}
+                {attempt.response_headers_ms != null && (
+                  <DetailRow
+                    label={t('Response headers')}
+                    value={formatLatency(attempt.response_headers_ms)}
+                    mono
+                  />
+                )}
+                {attempt.first_body_byte_ms != null && (
+                  <DetailRow
+                    label={t('First body byte')}
+                    value={formatLatency(attempt.first_body_byte_ms)}
+                    mono
+                  />
+                )}
                 {(attempt.first_event_ms ?? 0) > 0 && (
                   <DetailRow
                     label={t('First event')}
                     value={formatLatency(attempt.first_event_ms)}
+                    mono
+                  />
+                )}
+                {attempt.upstream_protocol && (
+                  <DetailRow
+                    label={t('Upstream protocol')}
+                    value={attempt.upstream_protocol}
+                    mono
+                  />
+                )}
+                {attempt.content_encoding && (
+                  <DetailRow
+                    label={t('Content encoding')}
+                    value={attempt.content_encoding}
                     mono
                   />
                 )}

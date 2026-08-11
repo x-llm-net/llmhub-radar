@@ -200,12 +200,22 @@ func TestTTFTIsOmittedForNonStreamLogs(t *testing.T) {
 	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttemptStartedAt, startedAt)
 
 	info := &relaycommon.RelayInfo{
-		StartTime:         startedAt,
-		FirstResponseTime: startedAt.Add(100 * time.Millisecond),
-		FirstTokenTime:    startedAt.Add(200 * time.Millisecond),
-		ChannelMeta:       &relaycommon.ChannelMeta{},
+		StartTime:               startedAt,
+		ResponseHeadersTime:     startedAt.Add(40 * time.Millisecond),
+		FirstBodyByteTime:       startedAt.Add(60 * time.Millisecond),
+		FirstResponseTime:       startedAt.Add(100 * time.Millisecond),
+		FirstTokenTime:          startedAt.Add(200 * time.Millisecond),
+		UpstreamProtocol:        "HTTP/2.0",
+		UpstreamContentEncoding: "identity",
+		ChannelMeta:             &relaycommon.ChannelMeta{},
 	}
 	attempt := buildHubRelayAttempt(ctx, info)
+	require.NotNil(t, attempt.ResponseHeadersMS)
+	require.NotNil(t, attempt.FirstBodyByteMS)
+	assert.Equal(t, int64(40), *attempt.ResponseHeadersMS)
+	assert.Equal(t, int64(60), *attempt.FirstBodyByteMS)
+	assert.Equal(t, "HTTP/2.0", attempt.UpstreamProtocol)
+	assert.Equal(t, "identity", attempt.ContentEncoding)
 	require.NotNil(t, attempt.FirstEventMS)
 	assert.Nil(t, attempt.FirstTokenMS)
 	other := GenerateTextOtherInfo(ctx, info, 1, 1, 1, 0, 0, 0, 1)

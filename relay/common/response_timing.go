@@ -1,10 +1,44 @@
 package common
 
 import (
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
 )
+
+type firstByteReadCloser struct {
+	io.ReadCloser
+	info *RelayInfo
+}
+
+func (r *firstByteReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 {
+		r.info.SetFirstBodyByteTime()
+	}
+	return n, err
+}
+
+// ObserveUpstreamResponse records transport milestones without consuming the body.
+func (info *RelayInfo) ObserveUpstreamResponse(resp *http.Response) {
+	if info == nil || resp == nil {
+		return
+	}
+	info.ResponseHeadersTime = time.Now()
+	info.UpstreamProtocol = resp.Proto
+	info.UpstreamContentEncoding = strings.TrimSpace(resp.Header.Get("Content-Encoding"))
+	if info.UpstreamContentEncoding == "" {
+		info.UpstreamContentEncoding = "identity"
+	}
+	info.UpstreamTransferEncoding = strings.Join(resp.TransferEncoding, ",")
+	info.UpstreamUncompressed = resp.Uncompressed
+	if resp.Body != nil {
+		resp.Body = &firstByteReadCloser{ReadCloser: resp.Body, info: info}
+	}
+}
 
 // ObserveMeaningfulStreamData records TTFT only for content-bearing events.
 // Protocol lifecycle, usage, stop, and image metadata events are deliberately

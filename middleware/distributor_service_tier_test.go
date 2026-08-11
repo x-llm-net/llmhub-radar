@@ -492,3 +492,19 @@ func TestUnavailableChannelErrorCodePreservesLegacyGroups(t *testing.T) {
 	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")
 	assert.Equal(t, "model_not_found", string(unavailableChannelErrorCode(ctx)))
 }
+
+func TestAffinityRoutingPhasePreservesRequestOrigin(t *testing.T) {
+	publicCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(publicCtx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
+	assert.Equal(t, "public_pool", affinityRoutingPhase(publicCtx))
+
+	providerCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(providerCtx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
+	common.SetContextKey(providerCtx, constant.ContextKeyHubRequestedProviderId, 7)
+	assert.Equal(t, "preferred", affinityRoutingPhase(providerCtx))
+
+	legacyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(legacyCtx, constant.ContextKeyUsingGroup, "default")
+	common.SetContextKey(legacyCtx, constant.ContextKeyHubRoutingPhase, "legacy")
+	assert.Equal(t, "legacy", affinityRoutingPhase(legacyCtx))
+}

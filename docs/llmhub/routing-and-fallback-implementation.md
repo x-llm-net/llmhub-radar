@@ -317,6 +317,19 @@ M4-D 在 M4-B 的短窗口桶上增加可切换请求口径：成功请求始终
 
 同一请求在 LLM-Hub 与渠道商服务器上的首 T 可能不同：LLM-Hub 统计的是客户端到 LLM-Hub 的完整可见链路，渠道商日志通常统计的是它收到上游事件的时间。两者差值可能发生在渠道商向下游转发、代理/CDN 缓冲或连接传输阶段。现阶段先以 LLM-Hub 的 `ttft` 作为用户体验指标，并通过 `first_event_ms`、`first_token_ms` 和请求 ID 对照定位；没有证据前不强制更换 HTTP 协议或压缩设置。
 
+### 5.9 流式首 T 传输诊断（已实现，待真实请求复验）
+
+本轮标准档真实请求分别记录到约 `15.2s` 和 `65.0s` 的 TTFT，而渠道商内部日志约 `3-4s` 收到首字。LLM-Hub 在收到首个上游事件后约 `150ms` 即识别有效首字并写出，因此该差值不是简单的页面展示误差：用户很可能真实等待了 `15-65s`，主要延迟位于渠道商应用向 LLM-Hub 输出首个 SSE 之前。对应渠道的 Nginx 会按客户端声明返回 gzip，压缩或代理缓冲是当前最小可验证因素。
+
+首轮修复不改变路由、Affinity、探测任务或账务：
+
+- 流式上游请求在渠道未显式覆盖 `Accept-Encoding` 时默认发送 `identity`，避免 gzip 中间层积攒小 SSE 数据块；渠道 Header Override 仍具有最高优先级。
+- `hub_attempts` 增加 `response_headers_ms`、`first_body_byte_ms`、`upstream_protocol`、`content_encoding`、`transfer_encoding` 和 `upstream_uncompressed`，并继续保留 `first_event_ms` 与 `first_token_ms`。
+- Responses 流式下游写入或 Flush 失败不再被忽略，而是终止本次流并进入现有失败/部分成功判定。
+- 根域名服务档位的 Affinity 命中仍记录为 `public_pool`；只有渠道商子域入口的优先命中记录为 `preferred`，避免诊断数据误报路由阶段。
+
+复测时按以下顺序判读：响应头已经很慢，说明上游或渠道商应用迟迟没有开始响应；响应头很快但首响应体字节很慢，说明渠道商应用、Nginx、CDN 或传输层在缓冲；首响应体字节快但首事件/首字慢，再检查 SSE 分帧和协议解析。`Accept-Encoding: identity` 若显著改善 TTFT，保留该修复；若没有改善，再对单一渠道做 HTTP/1.1 对照，不能直接全局切换协议。
+
 ## 6. 状态和账务不变量
 
 - 服务档位只决定候选边界，不跨档切换。

@@ -144,7 +144,7 @@ func Distribute() func(c *gin.Context) {
 					}
 					if affinityUsable {
 						common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, preferredPricingSnapshot)
-						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, "preferred")
+						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, affinityRoutingPhase(c))
 						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, false)
 					}
 					if !affinityUsable && (service.IsHubServiceTierRequest(c) || !providerActive || !service.ShouldKeepChannelAffinityOnChannelDisabled()) {
@@ -198,6 +198,16 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func affinityRoutingPhase(c *gin.Context) string {
+	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) > 0 {
+		return "preferred"
+	}
+	if service.IsHubServiceTierRequest(c) {
+		return "public_pool"
+	}
+	return common.GetContextKeyString(c, constant.ContextKeyHubRoutingPhase)
 }
 
 // validateSpecificChannelForServiceTier keeps an administrator's fixed-channel

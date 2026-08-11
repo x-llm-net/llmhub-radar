@@ -13,15 +13,23 @@ import (
 func TestRelayInfoResetResponseTiming(t *testing.T) {
 	start := time.Now().Add(-time.Second)
 	info := &RelayInfo{
-		StartTime:         start,
-		FirstResponseTime: start.Add(100 * time.Millisecond),
-		FirstTokenTime:    start.Add(200 * time.Millisecond),
+		StartTime:               start,
+		ResponseHeadersTime:     start.Add(50 * time.Millisecond),
+		FirstBodyByteTime:       start.Add(75 * time.Millisecond),
+		FirstResponseTime:       start.Add(100 * time.Millisecond),
+		FirstTokenTime:          start.Add(200 * time.Millisecond),
+		UpstreamProtocol:        "HTTP/2.0",
+		UpstreamContentEncoding: "gzip",
 	}
 
 	info.ResetResponseTiming()
 
 	assert.True(t, info.FirstResponseTime.IsZero())
 	assert.True(t, info.FirstTokenTime.IsZero())
+	assert.True(t, info.ResponseHeadersTime.IsZero())
+	assert.True(t, info.FirstBodyByteTime.IsZero())
+	assert.Empty(t, info.UpstreamProtocol)
+	assert.Empty(t, info.UpstreamContentEncoding)
 	assert.False(t, info.HasSendResponse())
 	assert.False(t, info.HasFirstToken())
 

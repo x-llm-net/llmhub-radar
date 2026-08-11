@@ -173,6 +173,31 @@ func TestApplyInitialRequestHopHeaderStartsAtOne(t *testing.T) {
 	require.Equal(t, 1, hop)
 }
 
+func TestEnsureStreamingIdentityEncoding(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		stream   bool
+		existing string
+		want     string
+	}{
+		{name: "stream defaults to identity", stream: true, want: "identity"},
+		{name: "explicit channel encoding wins", stream: true, existing: "gzip", want: "gzip"},
+		{name: "non stream remains automatic", stream: false, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "https://example.com/v1/responses", nil)
+			if test.existing != "" {
+				req.Header.Set("Accept-Encoding", test.existing)
+			}
+			ensureStreamingIdentityEncoding(req, &relaycommon.RelayInfo{IsStream: test.stream})
+			require.Equal(t, test.want, req.Header.Get("Accept-Encoding"))
+		})
+	}
+}
+
 func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.T) {
 	t.Parallel()
 

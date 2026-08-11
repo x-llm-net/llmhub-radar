@@ -61,8 +61,14 @@ type HubRelayAttempt struct {
 	StatusCode           int     `json:"status_code,omitempty"`
 	StartedAt            int64   `json:"started_at"`
 	LatencyMS            int64   `json:"latency_ms"`
+	ResponseHeadersMS    *int64  `json:"response_headers_ms,omitempty"`
+	FirstBodyByteMS      *int64  `json:"first_body_byte_ms,omitempty"`
 	FirstEventMS         *int64  `json:"first_event_ms,omitempty"`
 	FirstTokenMS         *int64  `json:"first_token_ms,omitempty"`
+	UpstreamProtocol     string  `json:"upstream_protocol,omitempty"`
+	ContentEncoding      string  `json:"content_encoding,omitempty"`
+	TransferEncoding     string  `json:"transfer_encoding,omitempty"`
+	UpstreamUncompressed bool    `json:"upstream_uncompressed,omitempty"`
 	UpstreamRequestID    string  `json:"upstream_request_id,omitempty"`
 	SupplyMultiplier     float64 `json:"supply_multiplier,omitempty"`
 	BillingRatio         float64 `json:"billing_ratio,omitempty"`
@@ -387,10 +393,16 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		BillingRatio:      ctx.GetFloat64(string(constant.ContextKeyHubRelayAttemptBillingRatio)),
 	}
 	if relayInfo != nil {
+		attempt.ResponseHeadersMS = elapsedMilliseconds(startedAt, relayInfo.ResponseHeadersTime)
+		attempt.FirstBodyByteMS = elapsedMilliseconds(startedAt, relayInfo.FirstBodyByteTime)
 		attempt.FirstEventMS = elapsedMilliseconds(startedAt, relayInfo.FirstResponseTime)
 		if relayInfo.IsStream {
 			attempt.FirstTokenMS = elapsedMilliseconds(startedAt, relayInfo.FirstTokenTime)
 		}
+		attempt.UpstreamProtocol = relayInfo.UpstreamProtocol
+		attempt.ContentEncoding = relayInfo.UpstreamContentEncoding
+		attempt.TransferEncoding = relayInfo.UpstreamTransferEncoding
+		attempt.UpstreamUncompressed = relayInfo.UpstreamUncompressed
 	}
 	return attempt
 }

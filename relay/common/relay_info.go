@@ -81,20 +81,26 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
-	TokenId           int
-	TokenKey          string
-	TokenGroup        string
-	UserId            int
-	UsingGroup        string // 使用的分组，当auto跨分组重试时，会变动
-	UserGroup         string // 用户所在分组
-	TokenUnlimited    bool
-	StartTime         time.Time
-	FirstResponseTime time.Time
+	TokenId             int
+	TokenKey            string
+	TokenGroup          string
+	UserId              int
+	UsingGroup          string // 使用的分组，当auto跨分组重试时，会变动
+	UserGroup           string // 用户所在分组
+	TokenUnlimited      bool
+	StartTime           time.Time
+	FirstResponseTime   time.Time
+	ResponseHeadersTime time.Time
+	FirstBodyByteTime   time.Time
 	// FirstTokenTime is the first meaningful text or reasoning increment.
 	// FirstResponseTime intentionally remains the first upstream event for
 	// transport diagnostics and backwards-compatible request logs.
-	FirstTokenTime  time.Time
-	isFirstResponse bool
+	FirstTokenTime           time.Time
+	isFirstResponse          bool
+	UpstreamProtocol         string
+	UpstreamContentEncoding  string
+	UpstreamTransferEncoding string
+	UpstreamUncompressed     bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -830,6 +836,13 @@ func (info *RelayInfo) SetFirstTokenTime() {
 	info.FirstTokenTime = time.Now()
 }
 
+func (info *RelayInfo) SetFirstBodyByteTime() {
+	if info == nil || !info.FirstBodyByteTime.IsZero() {
+		return
+	}
+	info.FirstBodyByteTime = time.Now()
+}
+
 // ResetResponseTiming starts a fresh timing window for a retry attempt.
 // Retry attempts must not inherit first-event or first-token timestamps from
 // the channel that failed before them.
@@ -839,6 +852,12 @@ func (info *RelayInfo) ResetResponseTiming() {
 	}
 	info.FirstResponseTime = time.Time{}
 	info.FirstTokenTime = time.Time{}
+	info.ResponseHeadersTime = time.Time{}
+	info.FirstBodyByteTime = time.Time{}
+	info.UpstreamProtocol = ""
+	info.UpstreamContentEncoding = ""
+	info.UpstreamTransferEncoding = ""
+	info.UpstreamUncompressed = false
 	info.isFirstResponse = true
 }
 

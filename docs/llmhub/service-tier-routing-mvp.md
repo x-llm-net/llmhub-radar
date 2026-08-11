@@ -20,7 +20,7 @@
 - 公共池先按渠道商选择，再在渠道商内部按 Channel 优先级和权重选择，避免拆分多个 Channel 人为放大份额。管理员创建、无渠道商归属的渠道作为一个平台虚拟提供者参与。
 - 最终实际命中的供给倍率参与预扣、重试后的预扣调整、最终扣费和渠道商收益结算。
 - 成功异步任务的最终差额通过 `billing_task_settlements` 持久化：成功终态 CAS 与结算意图同事务提交，钱包或订阅、Token、用户/渠道 `used_quota` 和 `Task.Quota` 在同一主库事务更新；异步 Token 预扣绕过内存批量队列，零差额也保留完成记录，失败由 15 秒恢复任务按退避时间重试。渠道商收益只在该结算完成后释放，Suno 成功任务也复用该流程。失败异步任务继续通过 `billing_refunds` 原子退款。
-- 请求日志保存结构化 `hub_attempts`，包括尝试顺序、模型、端点类型、样本来源、服务档位、路由阶段、渠道商、Channel、状态、耗时、首事件时间、TTFT、倍率和上游扣费状态；真实请求暂只用于观测和单请求追踪，不参与自动选路。
+- 请求日志保存结构化 `hub_attempts`，包括尝试顺序、模型、端点类型、样本来源、服务档位、路由阶段、渠道商、Channel、状态、总耗时、响应头时间、首响应体字节、首事件、TTFT、上游协议/编码、倍率和上游扣费状态；真实请求暂只用于观测和单请求追踪，不参与自动选路。
 - M4-A 额外将真实请求的完整尝试链按 `model + endpoint_type + provider_id + channel_id + bucket_ts` 聚合到 `hub_routing_metrics`，管理员可通过 `/api/hub/admin/routing-metrics` 查询，并在 `/system-settings/models/channel-health-routing` 下方查看最近 24 小时的尝试数、尝试级成功率、平均完整响应耗时和平均 TTFT；该聚合不参与选路和结算。
 - M4-B 在同一记录入口增加 1 分钟内存/Redis 桶：页面展示 5 分钟和 1 小时成功率，以及默认 15 分钟成功尝试的完整响应耗时和 TTFT P50/P95。短窗口不落库，进程重启后本机窗口从空开始；Redis 可用时合并多实例数据。该数据仍只观察，不参与选路和结算。
 - M4-C 为失败尝试增加 `failure_class` 观测和 5 分钟/1 小时类别计数，区分上游、渠道配置、客户端、循环保护、已开始响应和未知错误；不复制重试策略，也不改变重试、选路或结算。平台生成的 `request_loop_detected` 固定不触发 Channel 自动禁用，`channel:model_mapped_error` 不触发 Channel 级自动禁用。
@@ -35,6 +35,7 @@
 - 高品质渠道商审批列表使用服务端搜索和分页，每页 20 条，已选渠道商 ID 不因翻页或搜索而丢失；列表接口失败时可单独重试。
 - 模型家族首版按已维护的模型标识覆盖常见 OpenAI/Google 文本、图片、音频、Embedding 和 Moderation 模型；未知模型不会默认进入服务档位，管理员可通过 `allow_other_family` 临时放行。
 - 循环保护使用平台签名的 `X-LLM-Hub-Hop` 和并发请求指纹：标准 HTTP、multipart/form、任务提交、Midjourney 与 Realtime WebSocket 入口达到第 3 跳时固定返回 `508 request_loop_detected`；非空非 JSON `POST` 也进入原始请求体指纹保护。该错误不重试、不扣费、不结算，也不自动禁用 Channel。
+- 流式上游请求默认使用 `Accept-Encoding: identity`，减少 gzip/代理缓冲导致的小 SSE 数据块延迟；渠道显式 Header Override 仍优先。管理员日志详情可按响应头、首响应体字节、首事件和有效首字四个阶段定位用户可见 TTFT，Responses 下游写入失败会进入现有流失败处理。
 
 ## 自动化闭环验证
 
@@ -55,6 +56,7 @@
 6. 确认系统重试次数至少为 `1`，再使用 `{slug}.localhost:3100/v1` 调用：先确认命中该渠道商，停用或制造其渠道失败后确认切换到平台同档公共池。`RetryTimes=0` 表示不进行第二次上游尝试，因此不会触发失败后的公共池兜底。
 7. 查看使用日志，确认入口渠道商、最终渠道商、路由阶段、实际倍率、扣费和 `hub_attempts` 与调用结果一致。
 8. 管理员进入 `/system-settings/models/channel-health-routing`，确认探测指标和真实请求指标分开展示，并在产生新请求后检查 5 分钟/1 小时成功率和 15 分钟 P50/P95；若菜单未出现，先重新构建嵌入式前端并重启本地 Go 服务，不能只刷新旧二进制提供的页面。
+9. 使用 `/v1/responses` 发起一条标准档流式请求，在管理员日志详情中依次检查响应头、首响应体字节、首事件和 TTFT。若响应头快而首响应体字节慢，优先检查渠道商应用/Nginx/CDN 缓冲；不能用 Chat 探测 TTFT 代替 Responses 端点的真实结果。
 
 ## 第一版边界
 
