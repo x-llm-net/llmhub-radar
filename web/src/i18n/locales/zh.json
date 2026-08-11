@@ -5665,6 +5665,7 @@
     "Admin-approved high-quality sources": "仅使用管理员批准的高品质来源",
     "Please select a service tier": "请选择服务档位",
     "Service tier": "服务档位",
+    "Service tier / Group": "服务档位 / 分组",
     "No service tier found.": "未找到服务档位。",
     "Channel Health & Routing": "渠道健康与路由",
     "Real Request Metrics": "真实请求指标",

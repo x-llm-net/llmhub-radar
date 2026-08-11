@@ -36,6 +36,7 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousMemoryCacheEnabled := common.MemoryCacheEnabled
+	previousRedisEnabled := common.RedisEnabled
 	previousRetryTimes := common.RetryTimes
 	previousMainDatabaseType := common.MainDatabaseType()
 	previousLogDatabaseType := common.LogDatabaseType()
@@ -49,12 +50,14 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 		&model.HubProvider{},
 		&model.HubSupplyGroup{},
 		&model.HubSupplyGroupProbeTarget{},
+		&model.Log{},
 	))
 
 	model.DB = db
 	model.LOG_DB = db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	common.MemoryCacheEnabled = true
+	common.RedisEnabled = false
 	common.RetryTimes = 2
 	model.InitChannelCache()
 
@@ -63,6 +66,7 @@ func setupDistributorServiceTierTestDB(t *testing.T) *gorm.DB {
 		model.LOG_DB = previousLogDB
 		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)
 		common.MemoryCacheEnabled = previousMemoryCacheEnabled
+		common.RedisEnabled = previousRedisEnabled
 		common.RetryTimes = previousRetryTimes
 		if previousDB != nil {
 			model.InitChannelCache()
@@ -485,6 +489,34 @@ func TestDistributeServiceTierUnavailableRecoversWithoutChangingToken(t *testing
 			assert.Equal(t, test.expectedPhase, common.GetContextKeyString(recoveredCtx, constant.ContextKeyHubRoutingPhase))
 		})
 	}
+}
+
+func TestDistributeServiceTierUnavailableRecordsSelectionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	db := setupDistributorServiceTierTestDB(t)
+
+	ctx, recorder := newDistributorServiceTierContextForModel(0, "selection-log-model")
+	ctx.Set("id", 73001)
+	ctx.Set("username", "selection-log-user")
+	ctx.Set("token_id", 4)
+	ctx.Set("token_name", "test-mid")
+	ctx.Set("group", hub_routing_setting.ServiceTierMedium)
+
+	Distribute()(ctx)
+
+	assertServiceTierUnavailable(t, recorder)
+	var logs []model.Log
+	require.NoError(t, db.Where("request_id = ?", "service-tier-request-id").Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.Equal(t, model.LogTypeError, logs[0].Type)
+	assert.Equal(t, 4, logs[0].TokenId)
+	assert.Equal(t, "selection-log-model", logs[0].ModelName)
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(logs[0].Other), &other))
+	assert.Equal(t, "service_tier_unavailable", other["error_code"])
+	assert.Equal(t, float64(http.StatusServiceUnavailable), other["status_code"])
+	assert.Equal(t, "/v1/chat/completions", other["request_path"])
 }
 
 func TestUnavailableChannelErrorCodePreservesLegacyGroups(t *testing.T) {

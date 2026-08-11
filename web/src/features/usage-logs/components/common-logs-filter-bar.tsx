@@ -314,7 +314,7 @@ export function CommonLogsFilterBar<TData>(
   const groupFilter = (
     <LogsFilterField>
       <LogsFilterInput
-        placeholder={t('Group')}
+        placeholder={t('Service tier / Group')}
         type={sensitiveType}
         value={filters.group || ''}
         onChange={(e) => handleChange('group', e.target.value)}
