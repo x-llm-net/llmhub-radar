@@ -257,7 +257,7 @@ func TestRecalculateTaskQuotaByTokensUsesSupplyPricingSnapshot(t *testing.T) {
 	ctx := context.Background()
 
 	originalModelRatios := ratio_setting.ModelRatio2JSONString()
-	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"supply-task-model":2}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"supply-task-model":9}`))
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
 	})
