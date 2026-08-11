@@ -160,6 +160,14 @@ func (s *BillingSession) NeedsRefund() bool {
 	return s.needsRefundLocked()
 }
 
+// FundingCommitted reports whether the wallet or subscription adjustment has
+// reached the database. Token quota reconciliation may still be pending.
+func (s *BillingSession) FundingCommitted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fundingSettled
+}
+
 func (s *BillingSession) needsRefundLocked() bool {
 	if s.settled || s.refunded || s.fundingSettled {
 		// fundingSettled 时资金来源已提交结算，不能再退预扣费

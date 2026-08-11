@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -87,6 +88,14 @@ func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 	var earning model.HubProviderEarning
 	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)
 	assert.Equal(t, model.HubProviderEarningStatusPending, earning.Status)
+	require.NotNil(t, earning.SettlementDeferred)
+	assert.True(t, *earning.SettlementDeferred)
+
+	recovery, err := RecoverReadyHubProviderEarnings(ctx, 10)
+	require.NoError(t, err)
+	assert.Zero(t, recovery.Scanned)
+	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)
+	assert.Equal(t, model.HubProviderEarningStatusPending, earning.Status)
 
 	task := &model.Task{
 		TaskID: "task-settlement-success",
@@ -98,8 +107,35 @@ func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 	FinalizeTaskProviderEarning(ctx, task)
 	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)
 	assert.Equal(t, model.HubProviderEarningStatusSettled, earning.Status)
+	require.NotNil(t, earning.SettlementDeferred)
+	assert.False(t, *earning.SettlementDeferred)
 	assert.Equal(t, 2100, earning.GrossQuota)
 	assert.Equal(t, 1890, earning.ProviderIncomeQuota)
+}
+
+func TestRecoverReadyHubProviderEarningAfterConsumerBilling(t *testing.T) {
+	truncate(t)
+	ready := false
+	params := model.HubProviderEarningParams{
+		RequestId: "req-service-recover-ready", ProviderId: 71, OwnerUserId: 81,
+		ConsumerUserId: 91, TokenId: 101, SupplyGroupId: 111, ChannelId: 121,
+		ModelName: "claude-sonnet-5", BillingSource: BillingSourceWallet, GrossQuota: 1200,
+		BaseGroupRatio: 1, SupplyMultiplier: 0.8, BillingRatio: 0.8,
+		SettlementDeferred: &ready,
+	}
+	_, err := model.PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+
+	result, err := RecoverReadyHubProviderEarnings(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Scanned)
+	assert.Equal(t, 1, result.Completed)
+	assert.Zero(t, result.Failed)
+
+	var earning model.HubProviderEarning
+	require.NoError(t, model.DB.Where("request_id = ?", params.RequestId).First(&earning).Error)
+	assert.Equal(t, model.HubProviderEarningStatusSettled, earning.Status)
+	assert.Equal(t, 1080, earning.ProviderIncomeQuota)
 }
 
 func TestCancelTaskProviderEarningCancelsPendingEntry(t *testing.T) {

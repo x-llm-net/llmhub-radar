@@ -46,14 +46,15 @@ const (
 )
 
 var (
-	ErrHubProviderEarningReferenceConflict = errors.New("hub provider earning reference conflict")
-	ErrHubProviderEarningCancelled         = errors.New("hub provider earning is cancelled")
-	ErrHubProviderWithdrawalPending        = errors.New("hub provider already has a pending withdrawal")
-	ErrHubProviderWithdrawalInsufficient   = errors.New("hub provider withdrawable balance is insufficient")
-	ErrHubProviderWithdrawalTransition     = errors.New("invalid hub provider withdrawal status transition")
-	ErrHubProviderWithdrawalPayoutRequired = errors.New("hub provider withdrawal payout information is required")
-	ErrHubProviderWithdrawalRemarkRequired = errors.New("hub provider withdrawal review remark is required")
-	ErrHubProviderWithdrawalPaymentInvalid = errors.New("hub provider withdrawal payment details are invalid")
+	ErrHubProviderEarningReferenceConflict  = errors.New("hub provider earning reference conflict")
+	ErrHubProviderEarningCancelled          = errors.New("hub provider earning is cancelled")
+	ErrHubProviderEarningSettlementDeferred = errors.New("hub provider earning settlement is deferred")
+	ErrHubProviderWithdrawalPending         = errors.New("hub provider already has a pending withdrawal")
+	ErrHubProviderWithdrawalInsufficient    = errors.New("hub provider withdrawable balance is insufficient")
+	ErrHubProviderWithdrawalTransition      = errors.New("invalid hub provider withdrawal status transition")
+	ErrHubProviderWithdrawalPayoutRequired  = errors.New("hub provider withdrawal payout information is required")
+	ErrHubProviderWithdrawalRemarkRequired  = errors.New("hub provider withdrawal review remark is required")
+	ErrHubProviderWithdrawalPaymentInvalid  = errors.New("hub provider withdrawal payment details are invalid")
 )
 
 var hubProviderPayoutCurrencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
@@ -66,6 +67,7 @@ type HubProviderEarning struct {
 	RequestId              string  `json:"request_id" gorm:"type:varchar(96);not null;uniqueIndex"`
 	EntryType              string  `json:"entry_type" gorm:"type:varchar(24);not null;index"`
 	Status                 string  `json:"status" gorm:"type:varchar(24);not null;index"`
+	SettlementDeferred     *bool   `json:"settlement_deferred,omitempty" gorm:"index"`
 	ProviderId             int     `json:"provider_id" gorm:"not null;index"`
 	OwnerUserId            int     `json:"owner_user_id" gorm:"not null;index"`
 	ConsumerUserId         int     `json:"consumer_user_id" gorm:"not null;index"`
@@ -175,19 +177,20 @@ func normalizeHubProviderWithdrawalPayment(payment HubProviderWithdrawalPayment)
 }
 
 type HubProviderEarningParams struct {
-	RequestId        string
-	ProviderId       int
-	OwnerUserId      int
-	ConsumerUserId   int
-	TokenId          int
-	SupplyGroupId    int
-	ChannelId        int
-	ModelName        string
-	BillingSource    string
-	GrossQuota       int
-	BaseGroupRatio   float64
-	SupplyMultiplier float64
-	BillingRatio     float64
+	RequestId          string
+	ProviderId         int
+	OwnerUserId        int
+	ConsumerUserId     int
+	TokenId            int
+	SupplyGroupId      int
+	ChannelId          int
+	ModelName          string
+	BillingSource      string
+	GrossQuota         int
+	BaseGroupRatio     float64
+	SupplyMultiplier   float64
+	BillingRatio       float64
+	SettlementDeferred *bool
 }
 
 type HubProviderSettlementSummary struct {
@@ -237,6 +240,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		RequestId:              params.RequestId,
 		EntryType:              HubProviderEarningTypeUsage,
 		Status:                 HubProviderEarningStatusPending,
+		SettlementDeferred:     params.SettlementDeferred,
 		ProviderId:             params.ProviderId,
 		OwnerUserId:            params.OwnerUserId,
 		ConsumerUserId:         params.ConsumerUserId,
@@ -274,6 +278,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 			Where("id = ? AND status = ?", existing.Id, HubProviderEarningStatusCancelled).
 			Updates(map[string]any{
 				"status":                    HubProviderEarningStatusPending,
+				"settlement_deferred":       params.SettlementDeferred,
 				"billing_source":            strings.TrimSpace(params.BillingSource),
 				"gross_quota":               params.GrossQuota,
 				"platform_fee_basis_points": HubProviderPlatformFeeBasisPoints,
@@ -309,6 +314,9 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 		if earning.Status == HubProviderEarningStatusCancelled {
 			return ErrHubProviderEarningCancelled
 		}
+		if earning.SettlementDeferred != nil && *earning.SettlementDeferred {
+			return ErrHubProviderEarningSettlementDeferred
+		}
 		platformFee, providerIncome := CalculateHubProviderRevenueSplit(
 			grossQuota,
 			earning.PlatformFeeBasisPoints,
@@ -330,6 +338,55 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 			"updated_at":            now,
 		}).Error
 	})
+}
+
+// MarkHubProviderEarningReady releases a deferred earning after the consumer
+// billing and its asynchronous task success are durable.
+func MarkHubProviderEarningReady(requestId string) error {
+	requestId = strings.TrimSpace(requestId)
+	if requestId == "" {
+		return errors.New("invalid hub provider earning request id")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var earning HubProviderEarning
+		if err := lockForUpdate(tx).Where("request_id = ?", requestId).First(&earning).Error; err != nil {
+			return err
+		}
+		switch earning.Status {
+		case HubProviderEarningStatusSettled:
+			return nil
+		case HubProviderEarningStatusCancelled:
+			return ErrHubProviderEarningCancelled
+		}
+		falseValue := false
+		return tx.Model(&HubProviderEarning{}).
+			Where("id = ? AND status = ?", earning.Id, HubProviderEarningStatusPending).
+			Updates(map[string]any{
+				"settlement_deferred": &falseValue,
+				"updated_at":          common.GetTimestamp(),
+			}).Error
+	})
+}
+
+func ListReadyPendingHubProviderEarnings(limit int) ([]HubProviderEarning, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	var earnings []HubProviderEarning
+	err := DB.Where("status = ? AND settlement_deferred = ?", HubProviderEarningStatusPending, false).
+		Order("id asc").Limit(limit).Find(&earnings).Error
+	return earnings, err
+}
+
+func HasReadyPendingHubProviderEarnings() (bool, error) {
+	var count int64
+	err := DB.Model(&HubProviderEarning{}).
+		Where("status = ? AND settlement_deferred = ?", HubProviderEarningStatusPending, false).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func CancelHubProviderEarning(requestId string) error {

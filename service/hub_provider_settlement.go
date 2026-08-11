@@ -29,7 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) string {
+func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.RelayInfo, actualQuota int, settlementDeferred *bool) string {
 	if relayInfo == nil || actualQuota <= 0 {
 		return ""
 	}
@@ -44,19 +44,20 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 		relayInfo.RequestId = requestId
 	}
 	_, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
-		RequestId:        requestId,
-		ProviderId:       pricing.SupplyProviderId,
-		OwnerUserId:      pricing.SupplyOwnerUserId,
-		ConsumerUserId:   relayInfo.UserId,
-		TokenId:          relayInfo.TokenId,
-		SupplyGroupId:    pricing.SupplyGroupId,
-		ChannelId:        relayInfo.ChannelId,
-		ModelName:        relayInfo.OriginModelName,
-		BillingSource:    relayInfo.BillingSource,
-		GrossQuota:       actualQuota,
-		BaseGroupRatio:   pricing.BaseGroupRatio,
-		SupplyMultiplier: pricing.SupplyMultiplier,
-		BillingRatio:     pricing.GroupRatio,
+		RequestId:          requestId,
+		ProviderId:         pricing.SupplyProviderId,
+		OwnerUserId:        pricing.SupplyOwnerUserId,
+		ConsumerUserId:     relayInfo.UserId,
+		TokenId:            relayInfo.TokenId,
+		SupplyGroupId:      pricing.SupplyGroupId,
+		ChannelId:          relayInfo.ChannelId,
+		ModelName:          relayInfo.OriginModelName,
+		BillingSource:      relayInfo.BillingSource,
+		GrossQuota:         actualQuota,
+		BaseGroupRatio:     pricing.BaseGroupRatio,
+		SupplyMultiplier:   pricing.SupplyMultiplier,
+		BillingRatio:       pricing.GroupRatio,
+		SettlementDeferred: settlementDeferred,
 	})
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf(
@@ -75,24 +76,20 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 // makes the final provider share available. Provider bookkeeping failures are
 // audited but do not rewrite New API's established consumer billing result.
 func SettleBillingAndProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
-	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota)
+	deferred := true
+	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota, &deferred)
 	if err := SettleBilling(ctx, relayInfo, actualQuota); err != nil {
 		if requestId != "" {
-			if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
+			if billingFundingCommitted(relayInfo) {
+				settlePreparedHubProviderEarning(ctx, requestId, actualQuota)
+			} else if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
 				logger.LogError(ctx, "cancel hub provider earning after billing failure: "+cancelErr.Error())
 			}
 		}
 		return err
 	}
 	if requestId != "" {
-		if err := model.SettleHubProviderEarning(requestId, actualQuota); err != nil {
-			logger.LogError(ctx, fmt.Sprintf(
-				"settle hub provider earning failed (request_id=%s, quota=%d): %s",
-				requestId,
-				actualQuota,
-				err.Error(),
-			))
-		}
+		settlePreparedHubProviderEarning(ctx, requestId, actualQuota)
 	}
 	return nil
 }
@@ -101,11 +98,14 @@ func SettleBillingAndProviderEarning(ctx *gin.Context, relayInfo *relaycommon.Re
 // accepted asynchronous task but leaves provider income pending until the task
 // reaches a successful terminal state.
 func SettleTaskBillingAndPrepareProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
-	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota)
+	deferred := true
+	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota, &deferred)
 	if err := SettleBilling(ctx, relayInfo, actualQuota); err != nil {
 		if requestId != "" {
-			if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
-				logger.LogError(ctx, "cancel pending task earning after billing failure: "+cancelErr.Error())
+			if !billingFundingCommitted(relayInfo) {
+				if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
+					logger.LogError(ctx, "cancel pending task earning after billing failure: "+cancelErr.Error())
+				}
 			}
 		}
 		return err
@@ -116,7 +116,8 @@ func SettleTaskBillingAndPrepareProviderEarning(ctx *gin.Context, relayInfo *rel
 // SettleLegacyProviderEarning records revenue for legacy paths that already
 // completed consumer billing through PostConsumeQuota.
 func SettleLegacyProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) {
-	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota)
+	ready := false
+	requestId := prepareHubProviderEarning(ctx, relayInfo, actualQuota, &ready)
 	if requestId == "" {
 		return
 	}
@@ -130,8 +131,47 @@ func SettleLegacyProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayI
 	}
 }
 
+func billingFundingCommitted(relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo == nil || relayInfo.Billing == nil {
+		return false
+	}
+	committed, ok := relayInfo.Billing.(interface{ FundingCommitted() bool })
+	return ok && committed.FundingCommitted()
+}
+
+func settlePreparedHubProviderEarning(ctx *gin.Context, requestId string, actualQuota int) {
+	if requestId == "" {
+		return
+	}
+	if err := model.MarkHubProviderEarningReady(requestId); err != nil {
+		logger.LogError(ctx, fmt.Sprintf(
+			"mark hub provider earning ready failed (request_id=%s): %s",
+			requestId,
+			err.Error(),
+		))
+		return
+	}
+	if err := model.SettleHubProviderEarning(requestId, actualQuota); err != nil {
+		logger.LogError(ctx, fmt.Sprintf(
+			"settle hub provider earning failed (request_id=%s, quota=%d): %s",
+			requestId,
+			actualQuota,
+			err.Error(),
+		))
+	}
+}
+
 func FinalizeTaskProviderEarning(ctx context.Context, task *model.Task) {
 	if task == nil || task.Quota <= 0 || task.PrivateData.RequestId == "" {
+		return
+	}
+	if err := model.MarkHubProviderEarningReady(task.PrivateData.RequestId); err != nil {
+		logger.LogError(ctx, fmt.Sprintf(
+			"mark task provider earning ready failed (task=%s, request_id=%s): %s",
+			task.TaskID,
+			task.PrivateData.RequestId,
+			err.Error(),
+		))
 		return
 	}
 	if err := model.SettleHubProviderEarning(task.PrivateData.RequestId, task.Quota); err != nil {
