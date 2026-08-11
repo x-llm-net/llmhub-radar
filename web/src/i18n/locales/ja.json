@@ -5727,6 +5727,10 @@
     "No routable service tier ability": "No routable service tier ability",
     "Family": "Family",
     "Supply multiplier": "Supply multiplier",
+    "First event": "最初のイベント",
+    "Billing ratio": "課金倍率",
+    "Observation only": "観測のみ",
+    "These metrics are for review only and do not affect live routing yet.": "これらの指標は確認用であり、まだリアルタイムルーティングには影響しません。",
     "samples": "samples"
   }
 }

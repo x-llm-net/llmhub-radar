@@ -5727,6 +5727,10 @@
     "No routable service tier ability": "无可路由的服务档位能力",
     "Family": "模型家族",
     "Supply multiplier": "供给倍率",
+    "First event": "首事件",
+    "Billing ratio": "计费倍率",
+    "Observation only": "仅观测",
+    "These metrics are for review only and do not affect live routing yet.": "当前指标仅用于查看，尚未影响实时选路。",
     "samples": "个样本"
   }
 }

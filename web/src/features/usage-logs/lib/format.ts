@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { isServiceTierGroup } from '@/components/group-badge-utils'
 import type { StatusBadgeProps } from '@/components/status-badge'
 import {
   BILLING_PRICING_VARS,
@@ -28,6 +29,31 @@ import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
 
 export { normalizeTierLabel }
+
+export function getServiceTierBillingRatio(
+  group: string | undefined,
+  other: LogOtherData | null
+): number | null {
+  const serviceTier = group || other?.service_tier || other?.group
+  if (!isServiceTierGroup(serviceTier)) return null
+
+  const billingRatio = other?.billing_ratio
+  if (
+    billingRatio == null ||
+    !Number.isFinite(billingRatio) ||
+    billingRatio <= 0
+  ) {
+    return null
+  }
+  return billingRatio
+}
+
+export function getLogFirstTokenMs(
+  other: LogOtherData | null
+): number | undefined {
+  const ttft = other?.ttft
+  return ttft != null && Number.isFinite(ttft) && ttft > 0 ? ttft : undefined
+}
 
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {
   set: 'Set',

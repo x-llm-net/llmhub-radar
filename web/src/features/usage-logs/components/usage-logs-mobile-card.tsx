@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils'
 
 import { LOG_TYPE_ENUM } from '../constants'
 import type { UsageLog } from '../data/schema'
-import { parseLogOther } from '../lib/format'
+import { getLogFirstTokenMs, parseLogOther } from '../lib/format'
 import {
   getLogTypeConfig,
   isDisplayableLogType,
@@ -293,7 +293,7 @@ function MobileStreamTimingField({ log }: { log: UsageLog }) {
       <TimingMetricsCell
         useTimeSec={useTime}
         completionTokens={log.completion_tokens}
-        frtMs={other?.frt}
+        firstTokenMs={getLogFirstTokenMs(other)}
         isStream={log.is_stream}
         indicator='dot'
         className='min-w-0 flex-1'

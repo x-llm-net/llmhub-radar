@@ -44,6 +44,8 @@ import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
+  getLogFirstTokenMs,
+  getServiceTierBillingRatio,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   parseLogOther,
@@ -76,7 +78,13 @@ function formatRatioCompact(ratio: number | undefined): string {
     : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
-function getGroupRatio(other: LogOtherData | null): number | null {
+function getGroupRatio(
+  group: string | undefined,
+  other: LogOtherData | null
+): number | null {
+  const serviceTierRatio = getServiceTierBillingRatio(group, other)
+  if (serviceTierRatio != null) return serviceTierRatio
+
   const userGroupRatio = other?.user_group_ratio
   if (
     userGroupRatio != null &&
@@ -550,7 +558,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const displayName = sensitiveVisible ? tokenName : '••••'
       let group = log.group
       if (!group) group = other?.group || ''
-      const groupRatio = getGroupRatio(other)
+      const groupRatio = getGroupRatio(group, other)
 
       return (
         <div className='flex max-w-[200px] flex-col gap-0.5'>
@@ -716,7 +724,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           <TimingMetricsCell
             useTimeSec={useTime}
             completionTokens={log.completion_tokens}
-            frtMs={other?.frt}
+            firstTokenMs={getLogFirstTokenMs(other)}
             isStream={log.is_stream}
           />
         )

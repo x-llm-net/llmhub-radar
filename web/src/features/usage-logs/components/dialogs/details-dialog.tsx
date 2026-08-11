@@ -53,6 +53,10 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
+import {
+  getLocalizedGroupLabel,
+  isServiceTierGroup,
+} from '@/components/group-badge-utils'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
@@ -73,7 +77,9 @@ import {
   hasAnyCacheTokens,
   isViolationFeeLog,
   getFirstResponseTimeColor,
+  getLogFirstTokenMs,
   getResponseTimeColor,
+  getServiceTierBillingRatio,
   renderAuditContent,
 } from '../../lib/format'
 import {
@@ -291,6 +297,13 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                     mono
                   />
                 )}
+                {(attempt.first_event_ms ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('First event')}
+                    value={formatLatency(attempt.first_event_ms)}
+                    mono
+                  />
+                )}
                 {(attempt.first_token_ms ?? 0) > 0 && (
                   <DetailRow
                     label={t('TTFT')}
@@ -307,8 +320,8 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                 )}
                 {(attempt.billing_ratio ?? 0) > 0 && (
                   <DetailRow
-                    label={t('Group Ratio')}
-                    value={`${attempt.billing_ratio}x`}
+                    label={t('Billing ratio')}
+                    value={`${formatRatio(attempt.billing_ratio)}x`}
                     mono
                   />
                 )}
@@ -403,14 +416,22 @@ function BillingBreakdown(props: {
     }
   }
 
-  const userGR = other.user_group_ratio
-  const isUserGR = userGR != null && Number.isFinite(userGR) && userGR !== -1
-  const effectiveGR = isUserGR ? userGR : other.group_ratio
-  if (effectiveGR != null && Number.isFinite(effectiveGR)) {
+  const serviceTierBillingRatio = getServiceTierBillingRatio(log.group, other)
+  if (serviceTierBillingRatio != null) {
     rows.push({
-      label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
-      value: `${formatRatio(effectiveGR)}x`,
+      label: t('Billing ratio'),
+      value: `${formatRatio(serviceTierBillingRatio)}x`,
     })
+  } else {
+    const userGR = other.user_group_ratio
+    const isUserGR = userGR != null && Number.isFinite(userGR) && userGR !== -1
+    const effectiveGR = isUserGR ? userGR : other.group_ratio
+    if (effectiveGR != null && Number.isFinite(effectiveGR)) {
+      rows.push({
+        label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
+        value: `${formatRatio(effectiveGR)}x`,
+      })
+    }
   }
 
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
@@ -604,6 +625,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
+  const group = props.log.group || other?.service_tier || other?.group || ''
+  const firstTokenMs = getLogFirstTokenMs(other)
   const hubAttempts =
     props.isAdmin && Array.isArray(other?.hub_attempts)
       ? other.hub_attempts
@@ -811,10 +834,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Token')} value={props.log.token_name} mono />
           )}
 
-          {(props.log.group || other?.group) && (
+          {group && (
             <DetailRow
-              label={t('Group')}
-              value={props.log.group || other?.group || ''}
+              label={t(isServiceTierGroup(group) ? 'Service tier' : 'Group')}
+              value={getLocalizedGroupLabel(group, t)}
               mono
             />
           )}
@@ -848,21 +871,45 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   )}
                 >
                   {formatUseTime(props.log.use_time)}
-                  {props.log.is_stream &&
-                    other?.frt != null &&
-                    other.frt > 0 && (
-                      <span
-                        className={cn(
-                          'font-normal',
-                          timingTextColorClass(
-                            getFirstResponseTimeColor(other.frt / 1000)
-                          )
-                        )}
-                      >
-                        {' '}
-                        (FRT: {formatUseTime(other.frt / 1000)})
-                      </span>
+                </span>
+              }
+            />
+          )}
+
+          {showTiming &&
+            props.log.is_stream &&
+            other?.frt != null &&
+            other.frt > 0 && (
+              <DetailRow
+                label={t('First event')}
+                value={
+                  <span
+                    className={cn(
+                      'font-medium',
+                      timingTextColorClass(
+                        getFirstResponseTimeColor(other.frt / 1000)
+                      )
                     )}
+                  >
+                    {formatLatency(other.frt)}
+                  </span>
+                }
+              />
+            )}
+
+          {showTiming && props.log.is_stream && firstTokenMs != null && (
+            <DetailRow
+              label={t('TTFT')}
+              value={
+                <span
+                  className={cn(
+                    'font-medium',
+                    timingTextColorClass(
+                      getFirstResponseTimeColor(firstTokenMs / 1000)
+                    )
+                  )}
+                >
+                  {formatLatency(firstTokenMs)}
                 </span>
               }
             />

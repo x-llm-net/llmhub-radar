@@ -5727,6 +5727,10 @@
     "No routable service tier ability": "No routable service tier ability",
     "Family": "Family",
     "Supply multiplier": "Supply multiplier",
+    "First event": "Premier événement",
+    "Billing ratio": "Coefficient de facturation",
+    "Observation only": "Observation uniquement",
+    "These metrics are for review only and do not affect live routing yet.": "Ces métriques servent uniquement à l'analyse et n'influencent pas encore le routage en temps réel.",
     "samples": "samples"
   }
 }

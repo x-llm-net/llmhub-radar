@@ -53,7 +53,7 @@ const barColorMap: Record<StatusVariant, string> = {
 interface TimingMetricsCellProps {
   useTimeSec: number
   completionTokens: number
-  frtMs?: number
+  firstTokenMs?: number
   isStream: boolean
   className?: string
   /**
@@ -70,7 +70,9 @@ export function TimingMetricsCell(props: TimingMetricsCellProps) {
   const indicator = props.indicator ?? 'bar'
   const showFirstToken = props.isStream
   const firstTokenSeconds =
-    props.frtMs != null && props.frtMs > 0 ? props.frtMs / 1000 : null
+    props.firstTokenMs != null && props.firstTokenMs > 0
+      ? props.firstTokenMs / 1000
+      : null
   const firstTokenVariant: StatusVariant =
     firstTokenSeconds == null
       ? 'neutral'

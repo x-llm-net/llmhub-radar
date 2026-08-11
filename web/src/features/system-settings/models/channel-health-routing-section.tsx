@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   ChevronLeft,
   ChevronRight,
+  Info,
   Loader2,
   RefreshCw,
   Search,
@@ -336,6 +337,20 @@ export function ChannelHealthRoutingSection() {
 
   return (
     <SettingsSection title={t('Channel Health & Routing')}>
+      <div className='bg-muted/30 flex items-start gap-2 rounded-md border px-3 py-2.5'>
+        <Info
+          className='text-muted-foreground mt-0.5 size-4 shrink-0'
+          aria-hidden='true'
+        />
+        <div className='min-w-0'>
+          <p className='text-sm font-medium'>{t('Observation only')}</p>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'These metrics are for review only and do not affect live routing yet.'
+            )}
+          </p>
+        </div>
+      </div>
       <form
         className='flex flex-wrap items-center gap-2'
         onSubmit={submitSearch}

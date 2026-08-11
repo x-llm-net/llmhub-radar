@@ -5727,6 +5727,10 @@
     "No routable service tier ability": "No routable service tier ability",
     "Family": "Family",
     "Supply multiplier": "Supply multiplier",
+    "First event": "First event",
+    "Billing ratio": "Billing ratio",
+    "Observation only": "Observation only",
+    "These metrics are for review only and do not affect live routing yet.": "These metrics are for review only and do not affect live routing yet.",
     "samples": "samples"
   }
 }

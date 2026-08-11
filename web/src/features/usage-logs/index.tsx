@@ -132,7 +132,7 @@ function UsageLogsContent() {
           <SectionPageLayout.Actions>
             <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
               <TabsList>
-                <TabsTrigger value='all'>{t('All')}</TabsTrigger>
+                <TabsTrigger value='all'>{t('All users')}</TabsTrigger>
                 <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
               </TabsList>
             </Tabs>
