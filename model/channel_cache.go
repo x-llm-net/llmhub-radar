@@ -117,6 +117,7 @@ func InitChannelCache() {
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channel2HubSupplyProbeKinds = newChannel2HubSupplyProbeKinds
 	hubSupplyPricingByChannel = pricingData.pricingByChannel
+	hubSupplyConfiguredIDs = pricingData.configuredIDs
 	hubProviderRoutingBySlug = pricingData.providerBySlug
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()

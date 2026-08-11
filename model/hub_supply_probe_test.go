@@ -179,6 +179,42 @@ func TestHubSupplyRoutingIsolatesTextAndImageProbeKinds(t *testing.T) {
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
 }
 
+func TestInitChannelCacheReplacesConfiguredSupplyChannelSet(t *testing.T) {
+	truncateTables(t)
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		InitChannelCache()
+	})
+
+	provider := &HubProvider{OwnerUserId: 99101, Name: "cache generation provider", Slug: "cache-generation-provider"}
+	require.NoError(t, DB.Create(provider).Error)
+	channel := &Channel{
+		Name: "cache-generation-channel", Type: constant.ChannelTypeOpenAI,
+		Key: "cache-generation-key", Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	group := &HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id,
+		PriceMultiplier: 0.5, Status: HubSupplyGroupStatusAvailable,
+	}
+	require.NoError(t, DB.Create(group).Error)
+
+	require.NoError(t, RefreshHubSupplyPricingCache())
+	initial := CaptureHubSupplyPricingSnapshot(channel.Id)
+	assert.True(t, initial.Found)
+	assert.True(t, initial.Configured)
+
+	require.NoError(t, DB.Delete(&HubSupplyGroup{}, group.Id).Error)
+	InitChannelCache()
+
+	refreshed := CaptureHubSupplyPricingSnapshot(channel.Id)
+	assert.False(t, refreshed.Found)
+	assert.False(t, refreshed.Configured)
+}
+
 func assertHubSupplyProbeKindSelection(t *testing.T, group string, channelID int, requestPath string, expected bool) {
 	t.Helper()
 	for _, memoryCacheEnabled := range []bool{false, true} {
