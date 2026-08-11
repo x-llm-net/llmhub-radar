@@ -556,6 +556,13 @@ func recordHubFinalTaskError(c *gin.Context, relayInfo *relaycommon.RelayInfo, t
 	if taskErr == nil || !service.IsHubServiceTierRequest(c) {
 		return
 	}
+	recordHubFinalRelayError(c, relayInfo, newAPIErrorFromTaskError(taskErr))
+}
+
+func newAPIErrorFromTaskError(taskErr *taskdto.TaskError) *types.NewAPIError {
+	if taskErr == nil {
+		return nil
+	}
 	cause := taskErr.Error
 	if cause == nil {
 		cause = errors.New(taskErr.Message)
@@ -568,7 +575,20 @@ func recordHubFinalTaskError(c *gin.Context, relayInfo *relaycommon.RelayInfo, t
 	if statusCode <= 0 {
 		statusCode = http.StatusInternalServerError
 	}
-	recordHubFinalRelayError(c, relayInfo, types.NewErrorWithStatusCode(cause, errorCode, statusCode))
+	return types.NewErrorWithStatusCode(cause, errorCode, statusCode)
+}
+
+func appendHubTaskAttemptFailure(c *gin.Context, relayInfo *relaycommon.RelayInfo, taskErr *taskdto.TaskError) *types.NewAPIError {
+	relayErr := newAPIErrorFromTaskError(taskErr)
+	if relayErr == nil {
+		return nil
+	}
+	if taskErr.LocalError {
+		service.AppendHubRelayAttemptNonChannelFailure(c, relayInfo, relayErr)
+		return relayErr
+	}
+	service.AppendHubRelayAttemptFailure(c, relayInfo, relayErr)
+	return types.NewOpenAIError(relayErr.Err, types.ErrorCodeBadResponseStatusCode, relayErr.StatusCode)
 }
 
 func RelayMidjourney(c *gin.Context) {
@@ -656,15 +676,14 @@ func RelayTaskFetch(c *gin.Context) {
 func RelayTask(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &taskdto.TaskError{
-			Code:       "gen_relay_info_failed",
-			Message:    err.Error(),
-			StatusCode: http.StatusInternalServerError,
-		})
+		taskErr := service.TaskErrorWrapperLocal(err, "gen_relay_info_failed", http.StatusInternalServerError)
+		recordHubFinalTaskError(c, nil, taskErr)
+		respondTaskError(c, taskErr)
 		return
 	}
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
+		recordHubFinalTaskError(c, relayInfo, taskErr)
 		respondTaskError(c, taskErr)
 		return
 	}
@@ -717,6 +736,7 @@ func RelayTask(c *gin.Context) {
 			} else {
 				taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusBadRequest)
 			}
+			appendHubTaskAttemptFailure(c, relayInfo, taskErr)
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
@@ -727,12 +747,12 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 
+		relayErr := appendHubTaskAttemptFailure(c, relayInfo, taskErr)
 		if !taskErr.LocalError {
-			service.AppendHubRelayAttemptFailure(c, relayInfo, types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
-				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
+				relayErr)
 		}
 
 		retriesRemaining := common.RetryTimes - retryParam.GetRetry()

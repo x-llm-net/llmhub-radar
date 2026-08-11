@@ -82,6 +82,16 @@ func GetHubRelayAttempts(ctx *gin.Context) []HubRelayAttempt {
 }
 
 func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, relayErr *types.NewAPIError) {
+	appendHubRelayAttemptFailure(ctx, relayInfo, relayErr, "")
+}
+
+// AppendHubRelayAttemptNonChannelFailure records an attempt that ended after a
+// channel was selected but must not affect channel health or auto-disable.
+func AppendHubRelayAttemptNonChannelFailure(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, relayErr *types.NewAPIError) {
+	appendHubRelayAttemptFailure(ctx, relayInfo, relayErr, HubFailureClassClient)
+}
+
+func appendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, relayErr *types.NewAPIError, failureClass string) {
 	if !IsHubServiceTierRequest(ctx) || relayErr == nil {
 		return
 	}
@@ -89,11 +99,14 @@ func AppendHubRelayAttemptFailure(ctx *gin.Context, relayInfo *relaycommon.Relay
 	attempt.Result = "failed"
 	attempt.StatusCode = relayErr.StatusCode
 	attempt.SkipReason = HubAttemptSkipReasonFailed
-	attempt.FailureClass = ClassifyHubAttemptFailure(ctx, relayErr)
+	if failureClass == "" {
+		failureClass = ClassifyHubAttemptFailure(ctx, relayErr)
+	}
+	attempt.FailureClass = failureClass
 	attempt.HealthEligible = IsHubFailureHealthEligible(attempt.FailureClass)
-	attempt.ErrorCategory = string(relayErr.GetErrorType())
+	attempt.ErrorCategory = string(relayErr.GetErrorCode())
 	if attempt.ErrorCategory == "" {
-		attempt.ErrorCategory = string(relayErr.GetErrorCode())
+		attempt.ErrorCategory = string(relayErr.GetErrorType())
 	}
 	attempt.UpstreamChargeStatus = "unknown"
 	attempts := GetHubRelayAttempts(ctx)

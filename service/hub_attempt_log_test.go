@@ -58,6 +58,28 @@ func TestIsHubFailureHealthEligible(t *testing.T) {
 	assert.False(t, IsHubFailureHealthEligible(HubFailureClassLoop))
 }
 
+func TestAppendHubRelayAttemptNonChannelFailureIsNotHealthEligible(t *testing.T) {
+	original := *hub_routing_setting.Get()
+	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/videos", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, hub_routing_setting.ServiceTierMedium)
+	common.SetContextKey(ctx, constant.ContextKeyChannelId, 101)
+	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttemptStartedAt, time.Now())
+	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttemptRetry, 0)
+
+	relayErr := types.NewErrorWithStatusCode(errors.New("invalid task request"), types.ErrorCode("invalid_task_request"), http.StatusBadRequest)
+	AppendHubRelayAttemptNonChannelFailure(ctx, &relaycommon.RelayInfo{OriginModelName: "video-model"}, relayErr)
+
+	attempts := GetHubRelayAttempts(ctx)
+	require.Len(t, attempts, 1)
+	assert.Equal(t, HubFailureClassClient, attempts[0].FailureClass)
+	assert.False(t, attempts[0].HealthEligible)
+	assert.Equal(t, "invalid_task_request", attempts[0].ErrorCategory)
+}
+
 func TestHubRelayAttemptLogPreservesFailureBeforeSuccess(t *testing.T) {
 	original := *hub_routing_setting.Get()
 	t.Cleanup(func() { require.NoError(t, hub_routing_setting.Publish(original)) })

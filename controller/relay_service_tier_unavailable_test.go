@@ -238,3 +238,66 @@ func TestServiceTierTaskErrorWritesFinalRequestLog(t *testing.T) {
 	assert.Equal(t, "relay-service-tier-request-id", logs[0].RequestId)
 	assert.Contains(t, logs[0].Content, "task upstream returned 503")
 }
+
+func TestServiceTierLocalTaskErrorPreservesAttemptInFinalLog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupRelayServiceTierTestDB(t)
+	common.MemoryCacheEnabled = false
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	ctx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	common.SetContextKey(ctx, constant.ContextKeyChannelId, 17)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "task-model",
+		RetryIndex:      0,
+	}
+	beginHubRelayAttemptContext(ctx, info)
+	taskErr := &taskdto.TaskError{
+		Code:       "invalid_task_request",
+		Message:    "invalid task request",
+		StatusCode: http.StatusBadRequest,
+		LocalError: true,
+		Error:      errors.New("invalid task request"),
+	}
+	appendHubTaskAttemptFailure(ctx, info, taskErr)
+	recordHubFinalTaskError(ctx, info, taskErr)
+
+	var logs []model.Log
+	require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeError).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	other, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	attempts, ok := other["hub_attempts"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, attempts, 1)
+	attempt, ok := attempts[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "failed", attempt["result"])
+	assert.Equal(t, service.HubFailureClassClient, attempt["failure_class"])
+	assert.Equal(t, false, attempt["health_eligible"])
+}
+
+func TestTaskAttemptKeepsLegacyChannelErrorContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := newRelayChannelSelectionContext(hub_routing_setting.ServiceTierMedium)
+	common.SetContextKey(ctx, constant.ContextKeyChannelId, 17)
+	info := &relaycommon.RelayInfo{OriginModelName: "task-model"}
+	beginHubRelayAttemptContext(ctx, info)
+
+	relayErr := appendHubTaskAttemptFailure(ctx, info, &taskdto.TaskError{
+		Code:       "do_request_failed",
+		Message:    "upstream unavailable",
+		StatusCode: http.StatusServiceUnavailable,
+		Error:      errors.New("upstream unavailable"),
+	})
+
+	require.NotNil(t, relayErr)
+	assert.Equal(t, types.ErrorCodeBadResponseStatusCode, relayErr.GetErrorCode())
+	attempts := service.GetHubRelayAttempts(ctx)
+	require.Len(t, attempts, 1)
+	assert.Equal(t, "do_request_failed", attempts[0].ErrorCategory)
+}
