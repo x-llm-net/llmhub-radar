@@ -234,8 +234,10 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
 	other["reason"] = reason
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
+	_ = model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
+		RequestId: task.PrivateData.RequestId,
+		Force:     true,
 		LogType:   model.LogTypeRefund,
 		Content:   "",
 		ChannelId: task.ChannelId,
@@ -254,9 +256,12 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 // actualQuota 是任务完成后的实际应扣额度，与预扣额度 (task.Quota) 做差额结算。
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。
 // clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
-func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
+func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) error {
 	if actualQuota <= 0 {
-		return
+		return nil
+	}
+	if task != nil && task.ID > 0 {
+		return recalculatePersistedTaskQuota(ctx, task, actualQuota, reason, clamps...)
 	}
 	preConsumedQuota := task.Quota
 	quotaDelta := actualQuota - preConsumedQuota
@@ -264,7 +269,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	if quotaDelta == 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
-		return
+		return nil
 	}
 
 	logger.LogInfo(ctx, fmt.Sprintf("任务 %s 差额结算：delta=%s（实际：%s，预扣：%s，%s）",
@@ -278,7 +283,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	// 调整资金来源
 	if err := taskAdjustFunding(task, quotaDelta); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
-		return
+		return err
 	}
 
 	// 调整令牌额度
@@ -289,16 +294,63 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		logger.LogError(ctx, fmt.Sprintf("差额结算回写 quota 失败 task %s: %s", task.TaskID, err.Error()))
 	}
 
-	var logType int
-	var logQuota int
+	_ = recordTaskQuotaAdjustment(ctx, task, preConsumedQuota, actualQuota, reason, false, clamps...)
+	return nil
+}
+
+func recalculatePersistedTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) error {
+	preConsumedQuota := task.Quota
+	fundingSource := task.PrivateData.BillingSource
+	if fundingSource == "" {
+		fundingSource = BillingSourceWallet
+	}
+	settlement, err := model.CreateBillingTaskSettlement(model.BillingTaskSettlementParams{
+		TaskId:         task.ID,
+		RequestId:      task.PrivateData.RequestId,
+		UserId:         task.UserId,
+		TokenId:        task.PrivateData.TokenId,
+		FundingSource:  fundingSource,
+		SubscriptionId: task.PrivateData.SubscriptionId,
+		PreQuota:       preConsumedQuota,
+		ActualQuota:    actualQuota,
+		Reason:         reason,
+	})
+	if err != nil {
+		return err
+	}
+	return completePersistedTaskQuotaSettlement(ctx, task, settlement.TaskId, reason, clamps...)
+}
+
+func completePersistedTaskQuotaSettlement(ctx context.Context, task *model.Task, taskId int64, reason string, clamps ...*common.QuotaClamp) error {
+	completed, err := model.ProcessBillingTaskSettlement(taskId)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("task quota settlement failed task %s: %s", task.TaskID, err.Error()))
+		return err
+	}
+	task.Quota = completed.ActualQuota
+	if err := recordTaskQuotaAdjustment(ctx, task, completed.PreQuota, completed.ActualQuota, reason, true, clamps...); err != nil {
+		return err
+	}
+	if err := model.MarkBillingTaskSettlementAccountingRecorded(task.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func recordTaskQuotaAdjustment(ctx context.Context, task *model.Task, preConsumedQuota, actualQuota int, reason string, statsAlreadySettled bool, clamps ...*common.QuotaClamp) error {
+	quotaDelta := actualQuota - preConsumedQuota
+	if quotaDelta == 0 {
+		return nil
+	}
+	logType := model.LogTypeRefund
+	logQuota := -quotaDelta
 	if quotaDelta > 0 {
 		logType = model.LogTypeConsume
 		logQuota = quotaDelta
-		model.UpdateUserUsedQuotaAndRequestCount(task.UserId, quotaDelta)
-		model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
-	} else {
-		logType = model.LogTypeRefund
-		logQuota = -quotaDelta
+		if !statsAlreadySettled {
+			model.UpdateUserUsedQuotaAndRequestCount(task.UserId, quotaDelta)
+			model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
+		}
 	}
 	other := taskBillingOther(task)
 	other["task_id"] = task.TaskID
@@ -307,8 +359,10 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
+	return model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
+		RequestId: task.PrivateData.RequestId,
+		Force:     true,
 		LogType:   logType,
 		Content:   reason,
 		ChannelId: task.ChannelId,
@@ -324,9 +378,17 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。
 // 当任务成功且返回了 totalTokens 时，根据模型倍率和分组倍率重新计算实际扣费额度，
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
-func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) {
+func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) error {
 	if totalTokens <= 0 {
-		return
+		return nil
+	}
+	actualQuota, reason, clamp := calculateTaskQuotaByTokens(task, totalTokens)
+	return RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
+}
+
+func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, string, *common.QuotaClamp) {
+	if task == nil || totalTokens <= 0 {
+		return 0, "invalid token adjustment", nil
 	}
 
 	modelName := taskModelName(task)
@@ -342,7 +404,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
-		return
+		return task.Quota, "no token ratio adjustment", nil
 	}
 
 	// 获取用户和组的倍率信息
@@ -354,7 +416,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		}
 	}
 	if group == "" {
-		return
+		return task.Quota, "no task group adjustment", nil
 	}
 
 	var finalGroupRatio float64
@@ -380,5 +442,5 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, finalGroupRatio, otherMultiplier)
-	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
+	return actualQuota, reason, clamp
 }

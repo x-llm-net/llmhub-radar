@@ -405,7 +405,9 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 
 type RecordTaskBillingLogParams struct {
 	UserId    int
+	RequestId string
 	LogType   int
+	Force     bool
 	Content   string
 	ChannelId int
 	ModelName string
@@ -416,9 +418,9 @@ type RecordTaskBillingLogParams struct {
 	NodeName  string // 任务发起节点；为空时回退当前节点
 }
 
-func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
-	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
-		return
+func RecordTaskBillingLog(params RecordTaskBillingLogParams) error {
+	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled && !params.Force {
+		return nil
 	}
 	username, _ := GetUsernameById(params.UserId, false)
 	tokenName := ""
@@ -430,6 +432,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	createdAt := common.GetTimestamp()
 	log := &Log{
 		UserId:    params.UserId,
+		RequestId: params.RequestId,
 		Username:  username,
 		CreatedAt: createdAt,
 		Type:      params.LogType,
@@ -445,6 +448,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+		return err
 	}
 	if params.LogType == LogTypeConsume && common.DataExportEnabled {
 		nodeName := params.NodeName
@@ -463,6 +467,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 			NodeName:  nodeName,
 		})
 	}
+	return nil
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {

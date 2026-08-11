@@ -34,6 +34,8 @@ type sunoFailurePollingAdaptor struct {
 	failReason string
 }
 
+type sunoSuccessPollingAdaptor struct{}
+
 func (a *sunoFailurePollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
 func (a *sunoFailurePollingAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
@@ -66,6 +68,36 @@ func (a *sunoFailurePollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskIn
 }
 
 func (a *sunoFailurePollingAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
+	return 0
+}
+
+func (a *sunoSuccessPollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
+
+func (a *sunoSuccessPollingAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
+	taskIDs, _ := body["ids"].([]string)
+	items := make([]taskdto.SunoDataResponse, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		items = append(items, taskdto.SunoDataResponse{
+			TaskID:     taskID,
+			Status:     string(model.TaskStatusSuccess),
+			FinishTime: time.Now().Unix(),
+		})
+	}
+	responseBody, err := common.Marshal(taskdto.TaskResponse[[]taskdto.SunoDataResponse]{
+		Code: taskdto.TaskSuccessCode,
+		Data: items,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(responseBody))}, nil
+}
+
+func (a *sunoSuccessPollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+	return nil, nil
+}
+
+func (a *sunoSuccessPollingAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
 	return 0
 }
 
@@ -424,6 +456,65 @@ func TestUpdateSunoTasksStalePollsRefundExactlyOnce(t *testing.T) {
 	assert.Equal(t, initialUserQuota+taskQuota, getUserQuota(t, userID))
 	assert.Equal(t, initialTokenQuota+taskQuota, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, int64(1), countLogs(t))
+}
+
+func TestUpdateSunoTasksSuccessFinalizesSettlementAndProviderEarning(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID, channelID = 404, 404, 404
+	const currentUserQuota, currentTokenQuota, taskQuota = 10_000, 6_000, 2_500
+	const publicTaskID, upstreamTaskID = "suno_public_settlement", "suno_upstream_settlement"
+	const requestID = "suno-settlement-request"
+
+	seedUser(t, userID, currentUserQuota)
+	seedToken(t, tokenID, userID, "sk-suno-settlement", currentTokenQuota)
+	baseURL := "https://suno.invalid"
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id: channelID, Type: constant.ChannelTypeSunoAPI, Name: "suno_settlement",
+		Key: "sk-suno-channel", Status: common.ChannelStatusEnabled, BaseURL: &baseURL,
+	}).Error)
+
+	task := makeTask(userID, channelID, taskQuota, tokenID, BillingSourceWallet, 0)
+	task.TaskID = publicTaskID
+	task.Platform = constant.TaskPlatformSuno
+	task.Status = model.TaskStatusInProgress
+	task.Progress = "50%"
+	task.SubmitTime = time.Now().Unix()
+	task.PrivateData.UpstreamTaskID = upstreamTaskID
+	task.PrivateData.RequestId = requestID
+	require.NoError(t, model.DB.Create(task).Error)
+	deferred := true
+	_, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
+		RequestId: requestID, ProviderId: 420, OwnerUserId: 421, ConsumerUserId: userID,
+		TokenId: tokenID, SupplyGroupId: 422, ChannelId: channelID, ModelName: "suno-model",
+		BillingSource: BillingSourceWallet, GrossQuota: taskQuota,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1, SettlementDeferred: &deferred,
+	})
+	require.NoError(t, err)
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return &sunoSuccessPollingAdaptor{} }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	var polledTask model.Task
+	require.NoError(t, model.DB.First(&polledTask, task.ID).Error)
+	require.NoError(t, updateSunoTasks(context.Background(), channelID, []string{upstreamTaskID}, map[string]*model.Task{
+		upstreamTaskID: &polledTask,
+	}))
+
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusSuccess, reloaded.Status)
+	assert.Equal(t, taskQuota, reloaded.Quota)
+	assert.Equal(t, currentUserQuota, getUserQuota(t, userID))
+	assert.Equal(t, currentTokenQuota, getTokenRemainQuota(t, tokenID))
+	var settlement model.BillingTaskSettlement
+	require.NoError(t, model.DB.Where("task_id = ?", task.ID).First(&settlement).Error)
+	assert.Equal(t, model.BillingTaskSettlementStatusComplete, settlement.Status)
+	assert.NotZero(t, settlement.AccountingRecordedAt)
+	assert.NotZero(t, settlement.EarningReleasedAt)
+	var earning model.HubProviderEarning
+	require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&earning).Error)
+	assert.Equal(t, model.HubProviderEarningStatusSettled, earning.Status)
 }
 
 func TestRunTaskPollingOnceDoesNotRefundHistoricalFailedTask(t *testing.T) {

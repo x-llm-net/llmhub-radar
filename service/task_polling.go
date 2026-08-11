@@ -298,11 +298,27 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		task.Data = responseItem.Data
 
 		// 持久化走 CAS，防止重叠轮询/sweep/多实例/持久化失败重试导致重复退款或覆盖终态。
-		won, err := task.UpdateWithStatus(prevStatus)
+		isSuccess := task.Status == model.TaskStatusSuccess && prevStatus != model.TaskStatusSuccess && !isFailure
+		var won bool
+		var err error
+		if isSuccess {
+			finalBilling := taskFinalBilling{actualQuota: task.Quota, reason: "pre-consumed quota finalization"}
+			won, _, err = task.UpdateWithStatusAndBillingSettlement(prevStatus, newBillingTaskSettlementParams(task, finalBilling))
+		} else {
+			won, err = task.UpdateWithStatus(prevStatus)
+		}
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateSunoTask task %s error: %v", task.TaskID, err))
 		} else if !won {
 			logger.LogWarn(ctx, fmt.Sprintf("Task %s CAS lost or no-op update, skip billing", task.TaskID))
+		} else if isSuccess {
+			if settleErr := completePersistedTaskQuotaSettlement(ctx, task, task.ID, "pre-consumed quota finalization"); settleErr != nil {
+				logger.LogError(ctx, fmt.Sprintf("Suno task billing settlement pending for %s: %s", task.TaskID, settleErr.Error()))
+			} else if earningErr := FinalizeTaskProviderEarning(ctx, task); earningErr != nil {
+				logger.LogError(ctx, fmt.Sprintf("Suno task provider earning remains pending for %s: %s", task.TaskID, earningErr.Error()))
+			} else if markerErr := model.MarkBillingTaskSettlementEarningReleased(task.ID); markerErr != nil {
+				logger.LogError(ctx, fmt.Sprintf("Suno task earning marker remains pending for %s: %s", task.TaskID, markerErr.Error()))
+			}
 		} else if isFailure && prevStatus != model.TaskStatusFailure && task.Quota != 0 {
 			RefundTaskQuota(ctx, task, task.FailReason)
 		}
@@ -570,9 +586,21 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		task.Progress = taskResult.Progress
 	}
 
+	var finalBilling *taskFinalBilling
+	if shouldSettle {
+		calculated := calculateTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+		finalBilling = &calculated
+	}
+
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 	if isDone && snap.Status != task.Status {
-		won, err := task.UpdateWithStatus(snap.Status)
+		var won bool
+		var err error
+		if shouldSettle && finalBilling != nil {
+			won, _, err = task.UpdateWithStatusAndBillingSettlement(snap.Status, newBillingTaskSettlementParams(task, *finalBilling))
+		} else {
+			won, err = task.UpdateWithStatus(snap.Status)
+		}
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
 			shouldRefund = false
@@ -592,8 +620,13 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	if shouldSettle {
-		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
-		FinalizeTaskProviderEarning(ctx, task)
+		if settleErr := completePersistedTaskQuotaSettlement(ctx, task, task.ID, finalBilling.reason, finalBilling.clamps...); settleErr != nil {
+			logger.LogError(ctx, fmt.Sprintf("task billing settlement pending for %s: %s", task.TaskID, settleErr.Error()))
+		} else if earningErr := FinalizeTaskProviderEarning(ctx, task); earningErr != nil {
+			logger.LogError(ctx, fmt.Sprintf("task provider earning remains pending for %s: %s", task.TaskID, earningErr.Error()))
+		} else {
+			_ = model.MarkBillingTaskSettlementEarningReleased(task.ID)
+		}
 	}
 	if shouldRefund {
 		RefundTaskQuota(ctx, task, task.FailReason)
@@ -636,26 +669,62 @@ func truncateBase64(s string) string {
 	return s[:maxKeep] + "..."
 }
 
-// settleTaskBillingOnComplete 任务完成时的统一计费调整。
+type taskFinalBilling struct {
+	actualQuota int
+	reason      string
+	clamps      []*common.QuotaClamp
+}
+
+func newBillingTaskSettlementParams(task *model.Task, billing taskFinalBilling) model.BillingTaskSettlementParams {
+	fundingSource := task.PrivateData.BillingSource
+	if fundingSource == "" {
+		fundingSource = BillingSourceWallet
+	}
+	return model.BillingTaskSettlementParams{
+		TaskId:         task.ID,
+		RequestId:      task.PrivateData.RequestId,
+		UserId:         task.UserId,
+		TokenId:        task.PrivateData.TokenId,
+		FundingSource:  fundingSource,
+		SubscriptionId: task.PrivateData.SubscriptionId,
+		PreQuota:       task.Quota,
+		ActualQuota:    billing.actualQuota,
+		Reason:         billing.reason,
+	}
+}
+
+// calculateTaskBillingOnComplete computes the final quota without changing
+// persistent state, so terminal CAS and settlement intent can share one transaction.
 // 优先级：1. adaptor.AdjustBillingOnComplete 返回正数 → 使用 adaptor 计算的额度
 //
 //  2. taskResult.TotalTokens > 0 → 按 token 重算
 //  3. 都不满足 → 保持预扣额度不变
-func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
+func calculateTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) taskFinalBilling {
 	// 0. 按次计费的任务不做差额结算
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 按次计费，跳过差额结算", task.TaskID))
-		return
+		return taskFinalBilling{actualQuota: task.Quota, reason: "per-call billing finalization"}
 	}
 	// 1. 优先让 adaptor 决定最终额度
 	if actualQuota := adaptor.AdjustBillingOnComplete(task, taskResult); actualQuota > 0 {
-		RecalculateTaskQuota(ctx, task, actualQuota, "adaptor计费调整")
-		return
+		return taskFinalBilling{actualQuota: actualQuota, reason: "adaptor计费调整"}
 	}
 	// 2. 回退到 token 重算
 	if taskResult.TotalTokens > 0 {
-		RecalculateTaskQuotaByTokens(ctx, task, taskResult.TotalTokens)
-		return
+		actualQuota, reason, clamp := calculateTaskQuotaByTokens(task, taskResult.TotalTokens)
+		if actualQuota > 0 {
+			return taskFinalBilling{actualQuota: actualQuota, reason: reason, clamps: []*common.QuotaClamp{clamp}}
+		}
+		logger.LogWarn(ctx, fmt.Sprintf("任务 %s token 重算结果为 0，保留预扣额度", task.TaskID))
 	}
 	// 3. 无调整，保持预扣额度
+	return taskFinalBilling{actualQuota: task.Quota, reason: "pre-consumed quota finalization"}
+}
+
+// settleTaskBillingOnComplete remains the direct helper used by focused tests
+// and non-polling callers. Polling terminal transitions use the transactional
+// intent path above.
+func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) error {
+	billing := calculateTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+	return RecalculateTaskQuota(ctx, task, billing.actualQuota, billing.reason, billing.clamps...)
 }

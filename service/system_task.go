@@ -87,6 +87,7 @@ func init() {
 	RegisterSystemTaskHandler(logCleanupHandler{})
 	RegisterSystemTaskHandler(billingRefundRecoveryHandler{})
 	RegisterSystemTaskHandler(billingTokenAdjustmentRecoveryHandler{})
+	RegisterSystemTaskHandler(billingTaskSettlementRecoveryHandler{})
 	RegisterSystemTaskHandler(hubProviderEarningRecoveryHandler{})
 }
 

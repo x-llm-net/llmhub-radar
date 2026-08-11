@@ -20,6 +20,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
@@ -27,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.RelayInfo, actualQuota int, settlementDeferred *bool) string {
@@ -161,18 +163,21 @@ func settlePreparedHubProviderEarning(ctx *gin.Context, requestId string, actual
 	}
 }
 
-func FinalizeTaskProviderEarning(ctx context.Context, task *model.Task) {
+func FinalizeTaskProviderEarning(ctx context.Context, task *model.Task) error {
 	if task == nil || task.Quota <= 0 || task.PrivateData.RequestId == "" {
-		return
+		return nil
 	}
 	if err := model.MarkHubProviderEarningReady(task.PrivateData.RequestId); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		logger.LogError(ctx, fmt.Sprintf(
 			"mark task provider earning ready failed (task=%s, request_id=%s): %s",
 			task.TaskID,
 			task.PrivateData.RequestId,
 			err.Error(),
 		))
-		return
+		return err
 	}
 	if err := model.SettleHubProviderEarning(task.PrivateData.RequestId, task.Quota); err != nil {
 		logger.LogError(ctx, fmt.Sprintf(
@@ -182,7 +187,9 @@ func FinalizeTaskProviderEarning(ctx context.Context, task *model.Task) {
 			task.Quota,
 			err.Error(),
 		))
+		return err
 	}
+	return nil
 }
 
 func CancelTaskProviderEarning(ctx context.Context, task *model.Task) {

@@ -403,6 +403,16 @@ func DeleteTokenById(id int, userId int) (err error) {
 }
 
 func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
+	return increaseTokenQuotaWithMode(tokenId, key, quota, false)
+}
+
+// IncreaseTokenQuotaDirect bypasses the in-memory batch queue. Durable billing
+// flows use it when a later recovery step depends on the database value.
+func IncreaseTokenQuotaDirect(tokenId int, key string, quota int) error {
+	return increaseTokenQuotaWithMode(tokenId, key, quota, true)
+}
+
+func increaseTokenQuotaWithMode(tokenId int, key string, quota int, direct bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
@@ -414,7 +424,7 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 			}
 		})
 	}
-	if common.BatchUpdateEnabled {
+	if common.BatchUpdateEnabled && !direct {
 		addNewRecord(BatchUpdateTypeTokenQuota, tokenId, quota)
 		return nil
 	}
@@ -433,6 +443,16 @@ func increaseTokenQuota(id int, quota int) (err error) {
 }
 
 func DecreaseTokenQuota(id int, key string, quota int) (err error) {
+	return decreaseTokenQuotaWithMode(id, key, quota, false)
+}
+
+// DecreaseTokenQuotaDirect bypasses the in-memory batch queue. Durable billing
+// flows use it when a later recovery step depends on the database value.
+func DecreaseTokenQuotaDirect(id int, key string, quota int) error {
+	return decreaseTokenQuotaWithMode(id, key, quota, true)
+}
+
+func decreaseTokenQuotaWithMode(id int, key string, quota int, direct bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
@@ -444,7 +464,7 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 			}
 		})
 	}
-	if common.BatchUpdateEnabled {
+	if common.BatchUpdateEnabled && !direct {
 		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
 		return nil
 	}
