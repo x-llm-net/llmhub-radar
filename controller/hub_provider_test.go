@@ -21,6 +21,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -50,11 +51,15 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
-		"name":        "Acme AI",
-		"slug":        "acme-ai",
-		"website":     "https://acme.example",
-		"description": "Reliable model access",
-		"logo_url":    "https://acme.example/logo.png",
+		"name":          "Acme AI",
+		"slug":          "acme-ai",
+		"website":       "https://acme.example",
+		"description":   "Reliable model access",
+		"logo_url":      "https://acme.example/logo.png",
+		"contact_type":  "email",
+		"contact_value": "owner@acme.example",
+		"support_type":  "community",
+		"support_value": "https://acme.example/community",
 	}, 42)
 	CreateHubProvider(ctx)
 
@@ -63,7 +68,9 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	require.NotNil(t, response.Data)
 	assert.Equal(t, "Acme AI", response.Data.Name)
 	assert.Equal(t, "acme-ai", response.Data.Slug)
-	assert.Equal(t, model.HubProviderStatusActive, response.Data.Status)
+	assert.Equal(t, "owner@acme.example", response.Data.ContactValue)
+	assert.Equal(t, "https://acme.example/community", response.Data.SupportValue)
+	assert.Equal(t, model.HubProviderStatusPending, response.Data.Status)
 
 	stored, err := model.GetHubProviderByOwnerUserID(42)
 	require.NoError(t, err)
@@ -77,8 +84,10 @@ func TestCreateHubProviderRejectsSecondProviderForCurrentUser(t *testing.T) {
 	require.NoError(t, model.CreateHubProvider(&model.HubProvider{OwnerUserId: 42, Name: "First"}))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
-		"name": "Second",
-		"slug": "second",
+		"name":          "Second",
+		"slug":          "second",
+		"contact_type":  "email",
+		"contact_value": "second@example.com",
 	}, 42)
 	CreateHubProvider(ctx)
 
@@ -104,11 +113,15 @@ func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
 	require.NoError(t, model.CreateHubProvider(provider))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider", map[string]string{
-		"name":        "New name",
-		"slug":        provider.Slug,
-		"website":     "https://new.example",
-		"description": "New description",
-		"logo_url":    "https://new.example/logo.png",
+		"name":          "New name",
+		"slug":          provider.Slug,
+		"website":       "https://new.example",
+		"description":   "New description",
+		"logo_url":      "https://new.example/logo.png",
+		"contact_type":  "telegram",
+		"contact_value": "@acme_support",
+		"support_type":  "customer_service",
+		"support_value": "https://t.me/acme_support",
 	}, 42)
 	UpdateHubProviderProfile(ctx)
 
@@ -119,6 +132,8 @@ func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
 	assert.Equal(t, "https://new.example", response.Data.Website)
 	assert.Equal(t, "New description", response.Data.Description)
 	assert.Equal(t, "https://new.example/logo.png", response.Data.LogoURL)
+	assert.Equal(t, "@acme_support", response.Data.ContactValue)
+	assert.Equal(t, "https://t.me/acme_support", response.Data.SupportValue)
 	assert.Equal(t, model.HubProviderStatusActive, response.Data.Status)
 
 	stored, err := model.GetHubProviderByOwnerUserID(42)
@@ -132,14 +147,50 @@ func TestUpdateHubProviderRequiresExistingProfile(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider", map[string]string{
-		"name": "Missing provider",
-		"slug": "missing-provider",
+		"name":          "Missing provider",
+		"slug":          "missing-provider",
+		"contact_type":  "email",
+		"contact_value": "missing@example.com",
 	}, 42)
 	UpdateHubProviderProfile(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
 	assert.False(t, response.Success)
 	assert.Nil(t, response.Data)
+}
+
+func TestRejectedHubProviderProfileUpdateResubmitsApplication(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+	provider := &model.HubProvider{OwnerUserId: 42, Name: "Rejected provider"}
+	require.NoError(t, model.CreateHubProvider(provider))
+	require.NoError(t, db.Model(&model.HubProvider{Id: provider.Id}).Updates(map[string]any{
+		"status":              model.HubProviderStatusRejected,
+		"review_remark":       "Missing service details",
+		"reviewed_by_user_id": 7,
+		"reviewed_at":         int64(12345),
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider", map[string]string{
+		"name":          "Updated provider",
+		"slug":          provider.Slug,
+		"website":       "https://updated.example",
+		"description":   "Service details added",
+		"logo_url":      "",
+		"contact_type":  "wechat",
+		"contact_value": "acme-owner",
+		"support_type":  "community",
+		"support_value": "",
+	}, 42)
+	UpdateHubProviderProfile(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	assert.Equal(t, model.HubProviderStatusPending, response.Data.Status)
+	assert.Empty(t, response.Data.ReviewRemark)
+	assert.Zero(t, response.Data.ReviewedByUserId)
+	assert.Zero(t, response.Data.ReviewedAt)
 }
 
 func TestHubProviderHTTPURLValidation(t *testing.T) {
@@ -167,6 +218,12 @@ func TestGetPublicHubProviderOnlyReturnsActiveProvider(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 52)
+	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Updates(map[string]any{
+		"contact_type":  "email",
+		"contact_value": "private@example.com",
+		"support_type":  "community",
+		"support_value": "https://example.com/community",
+	}).Error)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/"+provider.Slug, nil, 0)
 	ctx.Params = gin.Params{{Key: "slug", Value: provider.Slug}}
@@ -181,12 +238,30 @@ func TestGetPublicHubProviderOnlyReturnsActiveProvider(t *testing.T) {
 	require.NotNil(t, response.Data)
 	assert.Equal(t, provider.Id, response.Data.Provider.Id)
 	assert.Equal(t, provider.Slug, response.Data.Provider.Slug)
+	assert.Equal(t, "https://example.com/community", response.Data.Provider.SupportValue)
+	assert.NotContains(t, recorder.Body.String(), "contact_value")
 
 	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update("status", model.HubProviderStatusDisabled).Error)
 	disabledCtx, disabledRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/"+provider.Slug, nil, 0)
 	disabledCtx.Params = gin.Params{{Key: "slug", Value: provider.Slug}}
 	GetPublicHubProvider(disabledCtx)
 	assert.Equal(t, http.StatusNotFound, disabledRecorder.Code)
+}
+
+func TestCreateHubProviderRequiresPrivateReviewContact(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
+		"name": "Missing contact", "slug": "missing-contact",
+	}, 42)
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	assert.False(t, response.Success)
+	var count int64
+	require.NoError(t, db.Model(&model.HubProvider{}).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T) {
@@ -336,4 +411,80 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 	require.NoError(t, common.Unmarshal(enableRecorder.Body.Bytes(), &enableResponse))
 	require.True(t, enableResponse.Success, enableRecorder.Body.String())
 	assertHubProviderRouteState(model.HubProviderStatusActive, common.ChannelStatusEnabled, 1)
+}
+
+func TestAdminRejectHubProviderRequiresReason(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update(
+		"status", model.HubProviderStatusPending,
+	).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/status", map[string]string{
+		"status": model.HubProviderStatusRejected,
+	}, 7)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
+	AdminUpdateHubProviderStatus(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	var stored model.HubProvider
+	require.NoError(t, model.DB.First(&stored, provider.Id).Error)
+	assert.Equal(t, model.HubProviderStatusPending, stored.Status)
+	assert.Empty(t, stored.ReviewRemark)
+}
+
+func TestAdminRejectHubProviderLimitsReviewReasonLength(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update(
+		"status", model.HubProviderStatusPending,
+	).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/status", map[string]string{
+		"status":        model.HubProviderStatusRejected,
+		"review_remark": strings.Repeat("x", hubProviderReviewRemarkMaxLength+1),
+	}, 7)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
+	AdminUpdateHubProviderStatus(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	var stored model.HubProvider
+	require.NoError(t, model.DB.First(&stored, provider.Id).Error)
+	assert.Equal(t, model.HubProviderStatusPending, stored.Status)
+}
+
+func TestAdminApproveHubProviderRecordsReview(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update(
+		"status", model.HubProviderStatusPending,
+	).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/status", map[string]string{
+		"status":        model.HubProviderStatusActive,
+		"review_remark": "Upstream information verified",
+	}, 7)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
+	AdminUpdateHubProviderStatus(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	var stored model.HubProvider
+	require.NoError(t, model.DB.First(&stored, provider.Id).Error)
+	assert.Equal(t, model.HubProviderStatusActive, stored.Status)
+	assert.Equal(t, "Upstream information verified", stored.ReviewRemark)
+	assert.Equal(t, 7, stored.ReviewedByUserId)
+	assert.Positive(t, stored.ReviewedAt)
 }

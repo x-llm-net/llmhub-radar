@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   HubProviderAdminListParams,
   HubProviderAdminListResponse,
+  HubProviderAdminItem,
   HubProviderEarning,
   HubProviderSettlementSummary,
   HubProviderWithdrawalAdminItem,
@@ -39,11 +40,12 @@ export async function getAdminProviders(
 
 export async function updateAdminProviderStatus(
   providerId: number,
-  status: 'active' | 'disabled'
+  status: HubProviderAdminItem['status'],
+  reviewRemark = ''
 ): Promise<{ success: boolean; message?: string }> {
   const response = await api.put(
     `/api/hub/admin/providers/${providerId}/status`,
-    { status }
+    { status, review_remark: reviewRemark }
   )
   return response.data
 }

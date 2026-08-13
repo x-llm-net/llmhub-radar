@@ -195,7 +195,10 @@ func Distribute() func(c *gin.Context) {
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
+			abortWithOpenAiMessage(c, setupErr.StatusCode, setupErr.Error(), setupErr.GetErrorCode())
+			return
+		}
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
@@ -567,8 +570,19 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, channel.GetAutoBan())
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
-	if snapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](c, constant.ContextKeyHubSupplyPricingSnapshot); !ok || snapshot.ChannelID != channel.Id {
-		common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(channel.Id))
+	snapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](c, constant.ContextKeyHubSupplyPricingSnapshot)
+	if !ok || snapshot.ChannelID != channel.Id {
+		snapshot = model.CaptureHubSupplyPricingSnapshot(channel.Id)
+	}
+	common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
+	common.SetContextKey(c, constant.ContextKeyHubSupplyChannel, snapshot.Configured)
+	if snapshot.Configured && (channel.Type == constant.ChannelTypeMidjourney || channel.Type == constant.ChannelTypeMidjourneyPlus) {
+		return types.NewErrorWithStatusCode(
+			errors.New(i18n.T(c, i18n.MsgHubProviderChannelTypeUnsupported)),
+			types.ErrorCodeChannelEndpointUnsupported,
+			http.StatusServiceUnavailable,
+			types.ErrOptionWithSkipRetry(),
+		)
 	}
 
 	key, index, newAPIError := channel.GetNextEnabledKey()

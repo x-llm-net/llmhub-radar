@@ -104,12 +104,14 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 	providerIdentities := make(map[int]HubProviderPublicIdentity, len(providers))
 	for _, provider := range providers {
 		providerIdentities[provider.Id] = HubProviderPublicIdentity{
-			Id:          provider.Id,
-			Name:        provider.Name,
-			Slug:        provider.Slug,
-			Website:     provider.Website,
-			Description: provider.Description,
-			LogoURL:     provider.LogoURL,
+			Id:           provider.Id,
+			Name:         provider.Name,
+			Slug:         provider.Slug,
+			Website:      provider.Website,
+			Description:  provider.Description,
+			LogoURL:      provider.LogoURL,
+			SupportType:  provider.SupportType,
+			SupportValue: provider.SupportValue,
 		}
 	}
 

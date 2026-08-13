@@ -112,8 +112,30 @@ func getCurrentHubProviderChannel(c *gin.Context) (*model.HubSupplyGroup, *model
 	return group, channel, true
 }
 
+func getCurrentActiveHubProviderChannel(c *gin.Context) (*model.HubSupplyGroup, *model.Channel, bool) {
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
+		return nil, nil, false
+	}
+	channelID, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
+	if err != nil || channelID <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
+		return nil, nil, false
+	}
+	group, channel, err := getOwnedHubSupplyChannel(provider.Id, channelID)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, nil, false
+	}
+	if group == nil || channel == nil {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
+		return nil, nil, false
+	}
+	return group, channel, true
+}
+
 func RequestHubProviderChannelProbe(c *gin.Context) {
-	group, _, ok := getCurrentHubProviderChannel(c)
+	group, _, ok := getCurrentActiveHubProviderChannel(c)
 	if !ok {
 		return
 	}
@@ -226,7 +248,7 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 }
 
 func RequestHubProviderChannelModelProbe(c *gin.Context) {
-	group, _, ok := getCurrentHubProviderChannel(c)
+	group, _, ok := getCurrentActiveHubProviderChannel(c)
 	if !ok {
 		return
 	}
@@ -260,7 +282,7 @@ func RequestHubProviderChannelModelProbe(c *gin.Context) {
 }
 
 func UpdateHubProviderChannelModelProbeEndpoint(c *gin.Context) {
-	group, _, ok := getCurrentHubProviderChannel(c)
+	group, _, ok := getCurrentActiveHubProviderChannel(c)
 	if !ok {
 		return
 	}
@@ -299,7 +321,7 @@ func UpdateHubProviderChannelModelProbeEndpoint(c *gin.Context) {
 }
 
 func UpdateHubProviderChannelModelPublication(c *gin.Context) {
-	group, channel, ok := getCurrentHubProviderChannel(c)
+	group, channel, ok := getCurrentActiveHubProviderChannel(c)
 	if !ok {
 		return
 	}
@@ -351,7 +373,7 @@ func UpdateHubProviderChannelModelPublication(c *gin.Context) {
 }
 
 func UpdateHubProviderChannelModelsPublication(c *gin.Context) {
-	group, channel, ok := getCurrentHubProviderChannel(c)
+	group, channel, ok := getCurrentActiveHubProviderChannel(c)
 	if !ok {
 		return
 	}
@@ -415,6 +437,23 @@ func normalizeHubProviderChannelPublicationModels(modelNames []string) ([]string
 
 func getCurrentHubProvider(c *gin.Context) (*model.HubProvider, error) {
 	return model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+}
+
+func requireActiveHubProvider(c *gin.Context) (*model.HubProvider, bool) {
+	provider, err := getCurrentHubProvider(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	if provider == nil {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
+		return nil, false
+	}
+	if provider.Status != model.HubProviderStatusActive {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderNotActive)
+		return nil, false
+	}
+	return provider, true
 }
 
 func validHubProviderChannelProbeMinutes(textMinutes int, imageMinutes int) bool {

@@ -29,12 +29,14 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	isHubSupply bool
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
 	a.apiKey = info.ApiKey
+	a.isHubSupply = info.IsHubSupplyChannel
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
@@ -128,7 +130,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
 
-	client, err := service.GetHttpClientWithProxy(proxy)
+	client, err := service.GetTaskPollingHTTPClient(proxy)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
@@ -262,7 +264,11 @@ func (a *TaskAdaptor) buildVideoURL(_, fileID string) string {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+a.apiKey)
 
-	resp, err := service.GetHttpClient().Do(req)
+	client, err := service.GetHubSupplyHTTPClient(a.isHubSupply, dto.ChannelSettings{})
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}

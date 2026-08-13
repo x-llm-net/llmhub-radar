@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/service"
 )
 
 func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) (string, error) {
@@ -36,6 +37,11 @@ func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) 
 	}
 
 	proxy := channel.GetSetting().Proxy
+	if isSupply, lookupErr := model.IsHubSupplyChannelConfigured(channel.Id); lookupErr != nil {
+		return "", lookupErr
+	} else if isSupply {
+		proxy = service.HubSupplyTaskProxyMarker
+	}
 	resp, err := adaptor.FetchTask(baseURL, apiKey, map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
@@ -171,10 +177,16 @@ func getVertexVideoURL(channel *model.Channel, task *model.Task) (string, error)
 		return "", fmt.Errorf("vertex key not available for task")
 	}
 
+	proxy := channel.GetSetting().Proxy
+	if isSupply, lookupErr := model.IsHubSupplyChannelConfigured(channel.Id); lookupErr != nil {
+		return "", lookupErr
+	} else if isSupply {
+		proxy = service.HubSupplyTaskProxyMarker
+	}
 	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
-	}, channel.GetSetting().Proxy)
+	}, proxy)
 	if err != nil {
 		return "", fmt.Errorf("fetch task failed: %w", err)
 	}

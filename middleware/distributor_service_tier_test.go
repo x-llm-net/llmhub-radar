@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -252,6 +253,32 @@ func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T
 
 		require.Equal(t, http.StatusBadRequest, recorder.Code)
 	})
+}
+
+func TestSetupContextRejectsLegacyProviderMidjourneyChannel(t *testing.T) {
+	db := setupDistributorServiceTierTestDB(t)
+	provider := &model.HubProvider{
+		OwnerUserId: 73010, Name: "Legacy Midjourney Provider", Slug: "legacy-midjourney-provider",
+		Status: model.HubProviderStatusActive,
+	}
+	require.NoError(t, db.Create(provider).Error)
+	channel := &model.Channel{
+		Name: "legacy-midjourney-supply", Type: constant.ChannelTypeMidjourney,
+		Key: "secret", Models: "midjourney", Group: hub_routing_setting.ServiceTierMedium,
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id, PriceMultiplier: 1,
+	}).Error)
+	model.InitChannelCache()
+
+	ctx, _ := newDistributorServiceTierContextForModel(0, "midjourney")
+	err := SetupContextForSelectedChannel(ctx, channel, "midjourney")
+	require.NotNil(t, err)
+	assert.Equal(t, types.ErrorCodeChannelEndpointUnsupported, err.GetErrorCode())
+	assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
+	assert.True(t, types.IsSkipRetryError(err))
 }
 
 func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {

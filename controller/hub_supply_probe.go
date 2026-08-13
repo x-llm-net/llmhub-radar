@@ -58,7 +58,10 @@ type hubSupplyProbeSummary struct {
 	Groups    int `json:"groups"`
 }
 
-var hubSupplyProbePersistenceMu sync.Mutex
+var (
+	hubSupplyProbePersistenceMu     sync.Mutex
+	immediateHubSupplyProbeExecutor = executeHubSupplyProbe
+)
 
 func persistHubSupplyProbeResult(result hubSupplyProbeResult) (int, bool, error) {
 	hubSupplyProbePersistenceMu.Lock()
@@ -244,7 +247,7 @@ func runImmediateHubSupplyModelProbe(ctx context.Context, groupID int, modelName
 			if job.ProbeKind == model.HubSupplyProbeKindImage {
 				timeout = hubSupplyProbeImageTimeout
 			}
-			results <- executeHubSupplyProbe(ctx, job, testUserID, timeout)
+			results <- immediateHubSupplyProbeExecutor(ctx, job, testUserID, timeout)
 		}(job)
 	}
 	go func() {

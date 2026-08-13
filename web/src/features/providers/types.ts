@@ -1,3 +1,4 @@
+import type { HubProviderStatus } from '@/features/provider/types'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -29,10 +30,18 @@ export type HubProviderAdminItem = {
   owner_email: string
   owner_status: number
   name: string
+  slug: string
   website: string
   description: string
   logo_url: string
-  status: 'active' | 'disabled'
+  contact_type: string
+  contact_value: string
+  support_type: string
+  support_value: string
+  status: HubProviderStatus
+  review_remark: string
+  reviewed_by_user_id: number
+  reviewed_at: number
   channel_count: number
   online_channel_count: number
   available_model_count: number

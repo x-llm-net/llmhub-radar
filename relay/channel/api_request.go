@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
 	"sync"
@@ -266,6 +267,9 @@ func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]s
 		if key == "" {
 			continue
 		}
+		if info.IsHubSupplyChannel && strings.EqualFold(key, "Host") {
+			return nil, types.NewError(fmt.Errorf("provider supply channels cannot override Host"), types.ErrorCodeChannelHeaderOverrideInvalid)
+		}
 
 		str, ok := v.(string)
 		if !ok {
@@ -412,7 +416,14 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	}
 	targetHeader.Set(common2.RequestHopHeader, common2.NextRequestHop(c.GetHeader(common2.RequestHopHeader)))
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
-	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
+	dialer := websocket.DefaultDialer
+	if info.IsHubSupplyChannel {
+		copy := *websocket.DefaultDialer
+		copy.Proxy = nil
+		copy.NetDialContext = service.GetPublicNetworkDialContext()
+		dialer = &copy
+	}
+	targetConn, _, err := dialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed to %s: %w", common.SanitizeURLForLog(fullRequestURL), err)
 	}
@@ -501,7 +512,7 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
-	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
+	client, err := service.GetHubSupplyHTTPClient(info.IsHubSupplyChannel, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
@@ -540,6 +551,18 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	// so upstream configuration cannot forge, delete, or reset the hop count.
 	ensureStreamingIdentityEncoding(req, info)
 	applyRequestHopHeader(req, c)
+	info.SetOutboundRequestReadyTime()
+	trace := &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			info.SetUpstreamConnectionReadyTime(connInfo.Reused)
+		},
+		WroteRequest: func(traceInfo httptrace.WroteRequestInfo) {
+			if traceInfo.Err == nil {
+				info.SetUpstreamRequestWrittenTime()
+			}
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())

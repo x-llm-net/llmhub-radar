@@ -131,7 +131,8 @@ For commercial licensing, please contact support@quantumnous.com
   font-size: 12px;
 }
 
-.hub-provider-links a {
+.hub-provider-links a,
+.hub-provider-links span {
   display: inline-flex;
   align-items: center;
   gap: 6px;

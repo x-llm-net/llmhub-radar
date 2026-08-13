@@ -322,6 +322,7 @@ func TestFetchModelsAdvancedCustomEditPreviewUsesSavedKeyAndExplicitClears(t *te
 
 func TestFailedAdvancedCustomDetectionDoesNotStageFullRemoval(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubSupplyGroup{}))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
@@ -406,6 +407,34 @@ func TestFetchNewAPIModelsUsesOpenAIContract(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-5", "gpt-5-mini"}, models)
+}
+
+func TestScheduledModelDiscoveryProtectsProviderSupplyUpstream(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubSupplyGroup{}))
+
+	var upstreamRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamRequests++
+		_, _ = w.Write([]byte(`{"data":[{"id":"must-not-be-reached"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	channel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "provider supply",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroup{
+		ProviderId: 1, NewAPIChannelId: channel.Id, PriceMultiplier: 1,
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}).Error)
+
+	_, err := fetchChannelUpstreamModelIDs(channel)
+	require.ErrorContains(t, err, "private IP address not allowed")
+	assert.Zero(t, upstreamRequests)
 }
 
 func TestNormalizeModelNames(t *testing.T) {

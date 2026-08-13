@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/require"
 )
@@ -314,4 +315,22 @@ func TestProtectedFetchRoundTripperReusesTransportPerProxy(t *testing.T) {
 	require.NotSame(t, direct, proxied)
 	require.True(t, direct.ForceAttemptHTTP2)
 	require.False(t, direct.DisableKeepAlives)
+}
+
+func TestHubSupplyHTTPClientRejectsProxyAndKeepsTransportPolicy(t *testing.T) {
+	_, err := GetHubSupplyHTTPClient(true, dto.ChannelSettings{Proxy: "http://127.0.0.1:8080"})
+	require.ErrorContains(t, err, "cannot use a proxy")
+
+	http1Client, err := GetHubSupplyHTTPClient(true, dto.ChannelSettings{HTTPProtocol: dto.HTTPProtocolHTTP1})
+	require.NoError(t, err)
+	transport, ok := http1Client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, transport.ForceAttemptHTTP2)
+	require.Nil(t, transport.Proxy)
+}
+
+func TestPublicNetworkRedirectRejectsPrivateTarget(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1/resource", nil)
+	require.NoError(t, err)
+	require.ErrorContains(t, checkPublicNetworkRedirect(req, nil), "private IP address not allowed")
 }

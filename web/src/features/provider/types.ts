@@ -21,6 +21,20 @@ import z from 'zod'
 import type { Channel } from '@/features/channels/types'
 import { isProviderSlug } from '@/lib/provider-domain'
 
+export type HubProviderStatus = 'pending' | 'active' | 'rejected' | 'disabled'
+export type HubProviderContactType =
+  | 'wechat'
+  | 'telegram'
+  | 'email'
+  | 'phone'
+  | 'other'
+export type HubProviderSupportType =
+  | 'community'
+  | 'customer_service'
+  | 'announcement'
+  | 'email'
+  | 'other'
+
 export type HubProvider = {
   id: number
   name: string
@@ -28,7 +42,14 @@ export type HubProvider = {
   website: string
   description: string
   logo_url: string
-  status: string
+  contact_type: HubProviderContactType
+  contact_value: string
+  support_type: HubProviderSupportType | ''
+  support_value: string
+  status: HubProviderStatus
+  review_remark: string
+  reviewed_by_user_id: number
+  reviewed_at: number
   created_at: number
   updated_at: number
 }
@@ -37,6 +58,36 @@ export type HubProviderResponse = {
   success: boolean
   message?: string
   data?: HubProvider | null
+}
+
+export type HubProviderOriginClaimStatus = 'pending' | 'verified' | 'conflict'
+export type HubProviderOriginClaimMethod = 'dns' | 'http' | 'legacy'
+
+export type HubProviderOriginClaim = {
+  id: number
+  origin: string
+  hostname: string
+  verification_method: HubProviderOriginClaimMethod
+  status: HubProviderOriginClaimStatus
+  verified_at: number
+  created_at: number
+  updated_at: number
+  dns_record: string
+  dns_value: string
+  http_url: string
+  http_body: string
+}
+
+export type HubProviderOriginClaimsResponse = {
+  success: boolean
+  message?: string
+  data?: HubProviderOriginClaim[]
+}
+
+export type HubProviderOriginClaimResponse = {
+  success: boolean
+  message?: string
+  data?: HubProviderOriginClaim
 }
 
 export type HubSupplyProfile = {
@@ -214,6 +265,35 @@ export const providerFormSchema = z.object({
       (value) => value === '' || /^https?:\/\/[^\s]+$/i.test(value),
       'Logo URL must be a valid HTTP or HTTPS URL'
     ),
+  contact_type: z
+    .string()
+    .refine(
+      (value) =>
+        ['wechat', 'telegram', 'email', 'phone', 'other'].includes(value),
+      'Select a review contact method'
+    ),
+  contact_value: z
+    .string()
+    .trim()
+    .min(1, 'Review contact is required')
+    .max(256, 'Review contact must be at most 256 characters'),
+  support_type: z
+    .string()
+    .refine(
+      (value) =>
+        [
+          'community',
+          'customer_service',
+          'announcement',
+          'email',
+          'other',
+        ].includes(value),
+      'Select a public support type'
+    ),
+  support_value: z
+    .string()
+    .trim()
+    .max(512, 'Public support entry must be at most 512 characters'),
 })
 
 export type ProviderFormValues = z.infer<typeof providerFormSchema>

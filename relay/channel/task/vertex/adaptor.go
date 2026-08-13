@@ -277,7 +277,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("x-goog-user-project", adc.ProjectID)
-	client, err := service.GetHttpClientWithProxy(proxy)
+	client, err := service.GetTaskPollingHTTPClient(proxy)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}

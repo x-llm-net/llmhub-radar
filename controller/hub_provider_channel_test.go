@@ -25,6 +25,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/helper"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -90,6 +91,7 @@ func TestHubSupplyChannelPricingFeedsBillingMultiplier(t *testing.T) {
 func TestCreateHubProviderChannelUsesNativeChannelConfiguration(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, "https://upstream.example/v1")
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
 		"mode":           "multi_to_single",
@@ -146,11 +148,147 @@ func TestCreateHubProviderChannelUsesNativeChannelConfiguration(t *testing.T) {
 	assert.Zero(t, abilityCount, "a new supply channel must not route before publication and a successful probe")
 }
 
+func TestPendingHubProviderCannotCreateChannel(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update(
+		"status", model.HubProviderStatusPending,
+	).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	var count int64
+	require.NoError(t, model.DB.Model(&model.HubSupplyGroup{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestCreateHubProviderChannelRequiresVerifiedOriginClaim(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	seedHubProvider(t, 42)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
+		"mode": "single",
+		"channel": map[string]any{
+			"name": "Unverified upstream", "type": constant.ChannelTypeOpenAI,
+			"base_url": "https://unverified.example/v1", "key": "secret",
+			"models": "gpt-5", "setting": `{}`, "settings": `{}`,
+		},
+		"supply": map[string]any{
+			"price_multiplier": 1, "text_probe_minutes": 10, "image_probe_minutes": 30,
+		},
+	}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, hubProviderOriginRequiredCode, response.Code)
+	assert.Equal(t, "Verify ownership of this custom upstream site before using it in a supply channel", response.Message)
+	var count int64
+	require.NoError(t, model.DB.Model(&model.HubSupplyGroup{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestCreateHubProviderChannelRejectsProxy(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, "https://upstream.example")
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
+		"mode": "single",
+		"channel": map[string]any{
+			"name": "Proxy supply", "type": constant.ChannelTypeOpenAI,
+			"base_url": "https://upstream.example", "key": "secret", "models": "gpt-5",
+			"setting": `{"proxy":"http://127.0.0.1:8080"}`, "settings": `{}`,
+		},
+		"supply": map[string]any{
+			"price_multiplier": 1, "text_probe_minutes": 10, "image_probe_minutes": 30,
+		},
+	}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, "Provider supply channels cannot use a proxy", response.Message)
+}
+
+func TestCreateHubProviderChannelRejectsHostOverride(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, "https://upstream.example")
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
+		"mode": "single",
+		"channel": map[string]any{
+			"name": "Host override supply", "type": constant.ChannelTypeOpenAI,
+			"base_url": "https://upstream.example", "key": "secret", "models": "gpt-5",
+			"header_override": `{"Host":"internal.example"}`, "setting": `{}`, "settings": `{}`,
+		},
+		"supply": map[string]any{
+			"price_multiplier": 1, "text_probe_minutes": 10, "image_probe_minutes": 30,
+		},
+	}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, "Provider supply channels cannot override the Host header", response.Message)
+}
+
+func TestCreateHubProviderChannelRejectsUnsupportedType(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	seedHubProvider(t, 42)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
+		"mode": "single",
+		"channel": map[string]any{
+			"name": "Midjourney supply", "type": constant.ChannelTypeMidjourney,
+			"key": "secret", "models": "midjourney", "setting": `{}`, "settings": `{}`,
+		},
+		"supply": map[string]any{
+			"price_multiplier": 1, "text_probe_minutes": 10, "image_probe_minutes": 30,
+		},
+	}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, "Provider supply channels do not support Midjourney yet", response.Message)
+}
+
 func TestUpdateHubProviderChannelPreservesOwnershipAndLockedRoutingFields(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
 	seedHubProvider(t, 43)
 	baseURL := "https://upstream.example"
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, baseURL)
 	priority := int64(7)
 	weight := uint(8)
 	channel := &model.Channel{
@@ -217,6 +355,7 @@ func TestUpdateHubProviderChannelAppendsMultiKeys(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
 	baseURL := "https://upstream.example"
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, baseURL)
 	channel := &model.Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "key-a\nkey-b", Name: "Multi key",
 		BaseURL: &baseURL, Models: "gpt-5", Group: "default",

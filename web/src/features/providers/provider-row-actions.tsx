@@ -17,12 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CircleDollarSign, Power, PowerOff } from 'lucide-react'
+import { Check, CircleDollarSign, Power, PowerOff, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -31,82 +30,149 @@ import {
 } from '@/components/ui/tooltip'
 
 import { adminProvidersQueryKey, updateAdminProviderStatus } from './api'
+import { ProviderReviewDialog } from './provider-review-dialog'
 import { ProviderSettlementSheet } from './provider-settlement-sheet'
 import type { HubProviderAdminItem } from './types'
 
 export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [targetStatus, setTargetStatus] = useState<
+    HubProviderAdminItem['status'] | null
+  >(null)
   const [settlementOpen, setSettlementOpen] = useState(false)
-  const isActive = props.provider.status === 'active'
-  const nextStatus = isActive ? 'disabled' : 'active'
+  const showSettlement =
+    props.provider.status === 'active' || props.provider.status === 'disabled'
   const mutation = useMutation({
-    mutationFn: () => updateAdminProviderStatus(props.provider.id, nextStatus),
+    mutationFn: (reviewRemark: string) => {
+      if (!targetStatus) throw new Error('Missing provider status')
+      return updateAdminProviderStatus(
+        props.provider.id,
+        targetStatus,
+        reviewRemark
+      )
+    },
     onSuccess: async (response) => {
       if (!response.success) {
         toast.error(response.message || t('Failed to update provider status'))
         return
       }
       await queryClient.invalidateQueries({ queryKey: adminProvidersQueryKey })
-      setConfirmOpen(false)
-      toast.success(t(isActive ? 'Provider disabled' : 'Provider enabled'))
+      const completedStatus = targetStatus
+      setTargetStatus(null)
+      if (completedStatus === 'rejected') {
+        toast.success(t('Provider application rejected'))
+      } else if (completedStatus === 'disabled') {
+        toast.success(t('Provider disabled'))
+      } else {
+        toast.success(t('Provider approved'))
+      }
     },
     onError: () => toast.error(t('Failed to update provider status')),
   })
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type='button'
-              variant='ghost'
-              size='icon-sm'
-              onClick={() => setSettlementOpen(true)}
-              aria-label={t('Provider earnings')}
-            />
-          }
-        >
-          <CircleDollarSign />
-        </TooltipTrigger>
-        <TooltipContent>{t('Provider earnings')}</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type='button'
-              variant='ghost'
-              size='icon-sm'
-              onClick={() => setConfirmOpen(true)}
-              aria-label={t(isActive ? 'Disable provider' : 'Enable provider')}
-            />
-          }
-        >
-          {isActive ? <PowerOff /> : <Power />}
-        </TooltipTrigger>
-        <TooltipContent>
-          {t(isActive ? 'Disable provider' : 'Enable provider')}
-        </TooltipContent>
-      </Tooltip>
-      <ConfirmDialog
-        open={confirmOpen}
+      {showSettlement && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setSettlementOpen(true)}
+                aria-label={t('Provider earnings')}
+              />
+            }
+          >
+            <CircleDollarSign />
+          </TooltipTrigger>
+          <TooltipContent>{t('Provider earnings')}</TooltipContent>
+        </Tooltip>
+      )}
+      {(props.provider.status === 'pending' ||
+        props.provider.status === 'rejected') && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setTargetStatus('active')}
+                aria-label={t('Approve provider')}
+              />
+            }
+          >
+            <Check />
+          </TooltipTrigger>
+          <TooltipContent>{t('Approve provider')}</TooltipContent>
+        </Tooltip>
+      )}
+      {props.provider.status === 'pending' && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setTargetStatus('rejected')}
+                aria-label={t('Reject provider')}
+              />
+            }
+          >
+            <X />
+          </TooltipTrigger>
+          <TooltipContent>{t('Reject provider')}</TooltipContent>
+        </Tooltip>
+      )}
+      {props.provider.status === 'active' && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setTargetStatus('disabled')}
+                aria-label={t('Disable provider')}
+              />
+            }
+          >
+            <PowerOff />
+          </TooltipTrigger>
+          <TooltipContent>{t('Disable provider')}</TooltipContent>
+        </Tooltip>
+      )}
+      {props.provider.status === 'disabled' && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setTargetStatus('active')}
+                aria-label={t('Enable provider')}
+              />
+            }
+          >
+            <Power />
+          </TooltipTrigger>
+          <TooltipContent>{t('Enable provider')}</TooltipContent>
+        </Tooltip>
+      )}
+      <ProviderReviewDialog
+        provider={props.provider}
+        targetStatus={targetStatus}
+        open={targetStatus !== null}
+        pending={mutation.isPending}
         onOpenChange={(open) => {
-          if (!mutation.isPending) setConfirmOpen(open)
+          if (!open && !mutation.isPending) setTargetStatus(null)
         }}
-        title={t(isActive ? 'Disable provider?' : 'Enable provider?')}
-        desc={t(
-          isActive
-            ? 'All supply channels owned by {{name}} will leave the routing pool. Channel configuration and probe history will be preserved.'
-            : 'Eligible listed models owned by {{name}} will return to the routing pool.',
-          { name: props.provider.name }
-        )}
-        confirmText={t(isActive ? 'Disable' : 'Enable')}
-        destructive={isActive}
-        isLoading={mutation.isPending}
-        handleConfirm={() => mutation.mutate()}
+        onConfirm={(reviewRemark) => mutation.mutate(reviewRemark)}
       />
       <ProviderSettlementSheet
         provider={props.provider}

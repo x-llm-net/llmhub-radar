@@ -365,8 +365,20 @@ const (
 	MsgHubProviderWebsiteInvalid           = "hub_provider.website_invalid"
 	MsgHubProviderLogoURLInvalid           = "hub_provider.logo_url_invalid"
 	MsgHubProviderDescriptionLong          = "hub_provider.description_too_long"
+	MsgHubProviderContactInvalid           = "hub_provider.contact_invalid"
+	MsgHubProviderSupportInvalid           = "hub_provider.support_invalid"
+	MsgHubProviderOriginInvalid            = "hub_provider.origin_invalid"
+	MsgHubProviderOriginMethodInvalid      = "hub_provider.origin_method_invalid"
+	MsgHubProviderOriginNotRequired        = "hub_provider.origin_not_required"
+	MsgHubProviderOriginClaimed            = "hub_provider.origin_claimed"
+	MsgHubProviderOriginNotFound           = "hub_provider.origin_not_found"
+	MsgHubProviderOriginVerificationFailed = "hub_provider.origin_verification_failed"
+	MsgHubProviderOriginVerifiedDelete     = "hub_provider.origin_verified_delete"
+	MsgHubProviderOriginRequired           = "hub_provider.origin_required"
 	MsgHubProviderAlreadyExists            = "hub_provider.already_exists"
 	MsgHubProviderRequired                 = "hub_provider.required"
+	MsgHubProviderNotActive                = "hub_provider.not_active"
+	MsgHubProviderReviewRemarkRequired     = "hub_provider.review_remark_required"
 	MsgHubProviderWithdrawalInvalid        = "hub_provider.withdrawal_invalid"
 	MsgHubProviderWithdrawalPending        = "hub_provider.withdrawal_pending"
 	MsgHubProviderWithdrawalInsufficient   = "hub_provider.withdrawal_insufficient"
@@ -377,5 +389,8 @@ const (
 
 // LLM-Hub provider channel messages
 const (
-	MsgHubProviderChannelNotFound = "hub_provider_channel.not_found"
+	MsgHubProviderChannelNotFound             = "hub_provider_channel.not_found"
+	MsgHubProviderChannelProxyForbidden       = "hub_provider_channel.proxy_forbidden"
+	MsgHubProviderChannelHostOverrideForbidden = "hub_provider_channel.host_override_forbidden"
+	MsgHubProviderChannelTypeUnsupported      = "hub_provider_channel.type_unsupported"
 )

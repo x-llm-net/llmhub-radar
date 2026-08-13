@@ -52,6 +52,7 @@ func setupHubSupplyGroupControllerTestDB(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
 		&model.HubProvider{},
+		&model.HubProviderOriginClaim{},
 		&model.Channel{},
 		&model.Ability{},
 		&model.HubSupplyGroup{},
@@ -70,7 +71,23 @@ func seedHubProvider(t *testing.T, ownerUserID int) *model.HubProvider {
 	return provider
 }
 
+func seedVerifiedHubProviderOriginClaim(t *testing.T, providerID int, rawURL string) {
+	t.Helper()
+	origin, hostname, err := model.NormalizeHubProviderOrigin(rawURL)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.HubProviderOriginClaim{
+		ProviderId:         providerID,
+		Origin:             origin,
+		Hostname:           hostname,
+		VerificationMethod: model.HubProviderOriginClaimMethodDNS,
+		VerificationToken:  "verified-test-token",
+		Status:             model.HubProviderOriginClaimStatusVerified,
+		VerifiedAt:         common.GetTimestamp(),
+	}).Error)
+}
+
 func TestHubSupplyPricingPreflightRejectsBeforeUpstreamRequest(t *testing.T) {
+	initModelListColumnNames(t)
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}))
 
@@ -132,28 +149,26 @@ func TestRunImmediateHubSupplyModelProbesInParallel(t *testing.T) {
 	}
 	require.NoError(t, model.DB.Create(user).Error)
 
-	var activeRequests atomic.Int32
-	var maxActiveRequests atomic.Int32
-	var totalRequests atomic.Int32
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		totalRequests.Add(1)
-		active := activeRequests.Add(1)
-		defer activeRequests.Add(-1)
+	var activeProbes atomic.Int32
+	var maxActiveProbes atomic.Int32
+	var totalProbes atomic.Int32
+	originalExecutor := immediateHubSupplyProbeExecutor
+	t.Cleanup(func() { immediateHubSupplyProbeExecutor = originalExecutor })
+	immediateHubSupplyProbeExecutor = func(_ context.Context, job model.HubSupplyProbeJob, _ int, _ time.Duration) hubSupplyProbeResult {
+		totalProbes.Add(1)
+		active := activeProbes.Add(1)
+		defer activeProbes.Add(-1)
 		for {
-			maximum := maxActiveRequests.Load()
-			if active <= maximum || maxActiveRequests.CompareAndSwap(maximum, active) {
+			maximum := maxActiveProbes.Load()
+			if active <= maximum || maxActiveProbes.CompareAndSwap(maximum, active) {
 				break
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"model\":\"hub-direct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n"))
-		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"model\":\"hub-direct\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n"))
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
-	}))
-	t.Cleanup(upstream.Close)
+		return hubSupplyProbeResult{job: job, success: true, latencyMs: 100}
+	}
 
-	baseURL := upstream.URL
+	baseURL := "https://upstream.example"
 	provider := seedHubProvider(t, 9002)
 	group := &model.HubSupplyGroup{
 		ProviderId: provider.Id, PriceMultiplier: 1,
@@ -185,8 +200,8 @@ func TestRunImmediateHubSupplyModelProbesInParallel(t *testing.T) {
 	for err := range errors {
 		require.NoError(t, err)
 	}
-	assert.Equal(t, int32(2), totalRequests.Load())
-	assert.GreaterOrEqual(t, maxActiveRequests.Load(), int32(2))
+	assert.Equal(t, int32(2), totalProbes.Load())
+	assert.GreaterOrEqual(t, maxActiveProbes.Load(), int32(2))
 }
 
 func TestAlternateHubSupplyOpenAIEndpointOnlyRetriesProtocolErrors(t *testing.T) {

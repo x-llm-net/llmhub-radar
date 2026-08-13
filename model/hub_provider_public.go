@@ -71,12 +71,14 @@ type HubProviderPublicStats struct {
 // public directory API. Keep this separate from HubProvider so adding an
 // internal provider field cannot accidentally make it public.
 type HubProviderPublicIdentity struct {
-	Id          int    `json:"id"`
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	Website     string `json:"website"`
-	Description string `json:"description"`
-	LogoURL     string `json:"logo_url"`
+	Id           int    `json:"id"`
+	Name         string `json:"name"`
+	Slug         string `json:"slug"`
+	Website      string `json:"website"`
+	Description  string `json:"description"`
+	LogoURL      string `json:"logo_url"`
+	SupportType  string `json:"support_type"`
+	SupportValue string `json:"support_value"`
 }
 
 type HubProviderPublicProfile struct {
@@ -124,12 +126,14 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 	}
 	profile := &HubProviderPublicProfile{
 		Provider: HubProviderPublicIdentity{
-			Id:          provider.Id,
-			Name:        provider.Name,
-			Slug:        provider.Slug,
-			Website:     provider.Website,
-			Description: provider.Description,
-			LogoURL:     provider.LogoURL,
+			Id:           provider.Id,
+			Name:         provider.Name,
+			Slug:         provider.Slug,
+			Website:      provider.Website,
+			Description:  provider.Description,
+			LogoURL:      provider.LogoURL,
+			SupportType:  provider.SupportType,
+			SupportValue: provider.SupportValue,
 		},
 		Models: make([]HubProviderPublicModel, 0),
 	}

@@ -31,6 +31,13 @@ import { formatTimestamp } from '@/lib/format'
 import { ProviderRowActions } from './provider-row-actions'
 import type { HubProviderAdminItem } from './types'
 
+const providerStatusDisplay = {
+  pending: { label: 'Pending review', variant: 'warning' },
+  active: { label: 'Active', variant: 'success' },
+  rejected: { label: 'Rejected', variant: 'danger' },
+  disabled: { label: 'Disabled', variant: 'neutral' },
+} as const
+
 export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
   const { t } = useTranslation()
   return [
@@ -121,13 +128,16 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
     {
       accessorKey: 'status',
       header: t('Status'),
-      cell: ({ row }) => (
-        <StatusBadge
-          label={t(row.original.status === 'active' ? 'Active' : 'Disabled')}
-          variant={row.original.status === 'active' ? 'success' : 'danger'}
-          copyable={false}
-        />
-      ),
+      cell: ({ row }) => {
+        const display = providerStatusDisplay[row.original.status]
+        return (
+          <StatusBadge
+            label={t(display.label)}
+            variant={display.variant}
+            copyable={false}
+          />
+        )
+      },
       enableSorting: false,
       size: 120,
       meta: { mobileBadge: true },

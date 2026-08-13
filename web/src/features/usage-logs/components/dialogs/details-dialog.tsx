@@ -297,6 +297,34 @@ function HubAttemptChain({ attempts }: { attempts: HubRelayAttemptInfo[] }) {
                     mono
                   />
                 )}
+                {attempt.request_ready_ms != null && (
+                  <DetailRow
+                    label={t('Request ready')}
+                    value={formatLatency(attempt.request_ready_ms)}
+                    mono
+                  />
+                )}
+                {attempt.connection_ready_ms != null && (
+                  <DetailRow
+                    label={t('Connection ready')}
+                    value={`${formatLatency(attempt.connection_ready_ms)} · ${attempt.connection_reused ? t('Reused') : t('New connection')}`}
+                    mono
+                  />
+                )}
+                {attempt.request_written_ms != null && (
+                  <DetailRow
+                    label={t('Request written')}
+                    value={formatLatency(attempt.request_written_ms)}
+                    mono
+                  />
+                )}
+                {(attempt.upstream_request_bytes ?? 0) > 0 && (
+                  <DetailRow
+                    label={t('Upstream request size')}
+                    value={`${attempt.upstream_request_bytes} B`}
+                    mono
+                  />
+                )}
                 {attempt.response_headers_ms != null && (
                   <DetailRow
                     label={t('Response headers')}

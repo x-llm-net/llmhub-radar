@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -149,6 +151,44 @@ func TestUpdateChannelRejectsStatusField(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.False(t, response.Success)
+}
+
+func TestAdminUpdateProviderChannelRequiresClaimedOrigin(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	baseURL := "https://claimed.example"
+	seedVerifiedHubProviderOriginClaim(t, provider.Id, baseURL)
+	channel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "Provider supply",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusManuallyDisabled,
+	}
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, PriceMultiplier: 1,
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	require.NoError(t, model.CreateHubSupplyGroup(group, channel))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/channel/", map[string]any{
+		"id": channel.Id, "name": channel.Name, "type": channel.Type,
+		"base_url": "https://unclaimed.example", "models": channel.Models,
+		"group": channel.Group, "setting": `{}`, "settings": `{}`,
+	}, 1)
+	ctx.Set("role", common.RoleRootUser)
+	UpdateChannel(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, hubProviderOriginRequiredCode, response.Code)
+
+	reloaded, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, baseURL, reloaded.GetBaseURL())
 }
 
 func TestChannelStatusValidation(t *testing.T) {

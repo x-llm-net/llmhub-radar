@@ -499,6 +499,13 @@ func FetchGeminiModels(baseURL, apiKey, proxyURL string) ([]string, error) {
 		return nil, fmt.Errorf("创建HTTP客户端失败: %v", err)
 	}
 
+	return FetchGeminiModelsWithClient(baseURL, apiKey, client)
+}
+
+func FetchGeminiModelsWithClient(baseURL, apiKey string, client *http.Client) ([]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("HTTP client is required")
+	}
 	allModels := make([]string, 0)
 	nextPageToken := ""
 	maxPages := 100 // Safety limit to prevent infinite loops

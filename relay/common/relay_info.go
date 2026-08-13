@@ -72,6 +72,7 @@ type ChannelMeta struct {
 	ChannelOtherSettings dto.ChannelOtherSettings
 	UpstreamModelName    string
 	IsModelMapped        bool
+	IsHubSupplyChannel   bool
 	SupportStreamOptions bool // 是否支持流式选项
 }
 
@@ -81,17 +82,20 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
-	TokenId             int
-	TokenKey            string
-	TokenGroup          string
-	UserId              int
-	UsingGroup          string // 使用的分组，当auto跨分组重试时，会变动
-	UserGroup           string // 用户所在分组
-	TokenUnlimited      bool
-	StartTime           time.Time
-	FirstResponseTime   time.Time
-	ResponseHeadersTime time.Time
-	FirstBodyByteTime   time.Time
+	TokenId                     int
+	TokenKey                    string
+	TokenGroup                  string
+	UserId                      int
+	UsingGroup                  string // 使用的分组，当auto跨分组重试时，会变动
+	UserGroup                   string // 用户所在分组
+	TokenUnlimited              bool
+	StartTime                   time.Time
+	FirstResponseTime           time.Time
+	OutboundRequestReadyTime    time.Time
+	UpstreamConnectionReadyTime time.Time
+	UpstreamRequestWrittenTime  time.Time
+	ResponseHeadersTime         time.Time
+	FirstBodyByteTime           time.Time
 	// FirstTokenTime is the first meaningful text or reasoning increment.
 	// FirstResponseTime intentionally remains the first upstream event for
 	// transport diagnostics and backwards-compatible request logs.
@@ -101,6 +105,7 @@ type RelayInfo struct {
 	UpstreamContentEncoding  string
 	UpstreamTransferEncoding string
 	UpstreamUncompressed     bool
+	UpstreamConnectionReused bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -222,6 +227,7 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		HeadersOverride:      headerOverride,
 		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 		IsModelMapped:        false,
+		IsHubSupplyChannel:   common.GetContextKeyBool(c, constant.ContextKeyHubSupplyChannel),
 		SupportStreamOptions: false,
 	}
 
@@ -843,6 +849,28 @@ func (info *RelayInfo) SetFirstBodyByteTime() {
 	info.FirstBodyByteTime = time.Now()
 }
 
+func (info *RelayInfo) SetOutboundRequestReadyTime() {
+	if info == nil || !info.OutboundRequestReadyTime.IsZero() {
+		return
+	}
+	info.OutboundRequestReadyTime = time.Now()
+}
+
+func (info *RelayInfo) SetUpstreamRequestWrittenTime() {
+	if info == nil || !info.UpstreamRequestWrittenTime.IsZero() {
+		return
+	}
+	info.UpstreamRequestWrittenTime = time.Now()
+}
+
+func (info *RelayInfo) SetUpstreamConnectionReadyTime(reused bool) {
+	if info == nil || !info.UpstreamConnectionReadyTime.IsZero() {
+		return
+	}
+	info.UpstreamConnectionReadyTime = time.Now()
+	info.UpstreamConnectionReused = reused
+}
+
 // ResetResponseTiming starts a fresh timing window for a retry attempt.
 // Retry attempts must not inherit first-event or first-token timestamps from
 // the channel that failed before them.
@@ -852,12 +880,16 @@ func (info *RelayInfo) ResetResponseTiming() {
 	}
 	info.FirstResponseTime = time.Time{}
 	info.FirstTokenTime = time.Time{}
+	info.OutboundRequestReadyTime = time.Time{}
+	info.UpstreamConnectionReadyTime = time.Time{}
+	info.UpstreamRequestWrittenTime = time.Time{}
 	info.ResponseHeadersTime = time.Time{}
 	info.FirstBodyByteTime = time.Time{}
 	info.UpstreamProtocol = ""
 	info.UpstreamContentEncoding = ""
 	info.UpstreamTransferEncoding = ""
 	info.UpstreamUncompressed = false
+	info.UpstreamConnectionReused = false
 	info.isFirstResponse = true
 }
 

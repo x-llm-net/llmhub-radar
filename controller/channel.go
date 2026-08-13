@@ -1164,6 +1164,23 @@ func UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
 	}
+	if supplyGroup, lookupErr := model.GetHubSupplyGroupByChannelID(originChannel.Id); lookupErr != nil {
+		common.ApiError(c, lookupErr)
+		return
+	} else if supplyGroup != nil {
+		if messageKey := validateHubProviderChannelNetworkSettings(&channel.Channel); messageKey != "" {
+			common.ApiErrorI18n(c, messageKey)
+			return
+		}
+		if claimErr := requireHubProviderChannelOriginClaim(supplyGroup.ProviderId, &channel.Channel); claimErr != nil {
+			if claimErr == model.ErrHubProviderOriginClaimNotFound {
+				hubProviderOriginRequiredError(c)
+				return
+			}
+			common.ApiError(c, claimErr)
+			return
+		}
+	}
 	err = channel.Update()
 	if err != nil {
 		common.ApiError(c, err)
@@ -1377,6 +1394,10 @@ func FetchModels(c *gin.Context) {
 }
 
 func fetchModelsForRequest(req fetchModelsRequest) ([]string, error) {
+	return fetchModelsForRequestWithTrust(req, false)
+}
+
+func fetchModelsForRequestWithTrust(req fetchModelsRequest, publicOnly bool) ([]string, error) {
 	var channel *model.Channel
 	if req.Type == constant.ChannelTypeAdvancedCustom || req.ChannelID > 0 {
 		var err error
@@ -1404,7 +1425,7 @@ func fetchModelsForRequest(req fetchModelsRequest) ([]string, error) {
 		}
 	}
 
-	return fetchChannelUpstreamModelIDs(channel)
+	return fetchChannelUpstreamModelIDsWithTrust(channel, publicOnly)
 }
 
 func BatchSetChannelTag(c *gin.Context) {

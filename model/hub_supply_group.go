@@ -48,8 +48,8 @@ type HubSupplyGroup struct {
 	ProviderId             int     `json:"-" gorm:"not null;index"`
 	NewAPIChannelId        int     `json:"-" gorm:"column:new_api_channel_id;not null;uniqueIndex"`
 	PriceMultiplier        float64 `json:"price_multiplier" gorm:"type:real;not null"`
-	PublishedModels        string  `json:"-" gorm:"type:text;not null;default:''"`
-	ProbeEndpointOverrides string  `json:"-" gorm:"type:text;not null;default:'{}'"`
+	PublishedModels        string  `json:"-" gorm:"type:text"`
+	ProbeEndpointOverrides string  `json:"-" gorm:"type:text"`
 	ConfigVersion          int     `json:"config_version" gorm:"not null;default:1"`
 	TextProbeMinutes       int     `json:"text_probe_minutes" gorm:"not null;default:10"`
 	ImageProbeMinutes      int     `json:"image_probe_minutes" gorm:"not null;default:30"`

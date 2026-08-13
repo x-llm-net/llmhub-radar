@@ -263,6 +263,7 @@ func migrateDB() error {
 		&Token{},
 		&User{},
 		&HubProvider{},
+		&HubProviderOriginClaim{},
 		&HubSupplyGroup{},
 		&HubProviderEarning{},
 		&BillingRefund{},
@@ -315,6 +316,9 @@ func migrateDB() error {
 	if err := migrateHubProviderSlugs(); err != nil {
 		return err
 	}
+	if err := migrateHubProviderOriginClaims(); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -345,6 +349,7 @@ func migrateDBFast() error {
 		{&Token{}, "Token"},
 		{&User{}, "User"},
 		{&HubProvider{}, "HubProvider"},
+		{&HubProviderOriginClaim{}, "HubProviderOriginClaim"},
 		{&HubSupplyGroup{}, "HubSupplyGroup"},
 		{&HubProviderEarning{}, "HubProviderEarning"},
 		{&BillingRefund{}, "BillingRefund"},
@@ -413,6 +418,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateHubProviderSlugs(); err != nil {
+		return err
+	}
+	if err := migrateHubProviderOriginClaims(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

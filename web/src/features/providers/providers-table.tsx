@@ -36,7 +36,9 @@ import { useProvidersColumns } from './providers-columns'
 const route = getRouteApi('/_authenticated/providers/')
 const PROVIDER_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
+  { value: 'pending', label: 'Pending review' },
   { value: 'active', label: 'Active' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'disabled', label: 'Disabled' },
 ] as const
 

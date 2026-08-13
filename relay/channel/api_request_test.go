@@ -1,15 +1,47 @@
 package channel
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoRequestRecordsOutboundWriteBeforeResponseHeaders(t *testing.T) {
+	service.InitHttpClient()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.Copy(io.Discard, r.Body)
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req, err := http.NewRequest(http.MethodPost, server.URL, bytes.NewReader(bytes.Repeat([]byte("x"), 64*1024)))
+	require.NoError(t, err)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	resp, err := doRequest(ctx, req, info)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.False(t, info.OutboundRequestReadyTime.IsZero())
+	require.False(t, info.UpstreamConnectionReadyTime.IsZero())
+	require.False(t, info.UpstreamRequestWrittenTime.IsZero())
+	require.False(t, info.ResponseHeadersTime.IsZero())
+	require.False(t, info.UpstreamConnectionReadyTime.Before(info.OutboundRequestReadyTime))
+	require.False(t, info.UpstreamRequestWrittenTime.Before(info.UpstreamConnectionReadyTime))
+	require.False(t, info.UpstreamRequestWrittenTime.Before(info.OutboundRequestReadyTime))
+	require.False(t, info.ResponseHeadersTime.Before(info.UpstreamRequestWrittenTime))
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()

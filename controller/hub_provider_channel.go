@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
@@ -142,6 +143,24 @@ func applyHubProviderChannelPolicy(channel *model.Channel, origin *model.Channel
 	channel.BalanceUpdatedTime = origin.BalanceUpdatedTime
 	channel.UsedQuota = origin.UsedQuota
 	channel.OtherInfo = origin.OtherInfo
+}
+
+func validateHubProviderChannelNetworkSettings(channel *model.Channel) string {
+	if channel == nil {
+		return ""
+	}
+	if channel.Type == constant.ChannelTypeMidjourney || channel.Type == constant.ChannelTypeMidjourneyPlus {
+		return i18n.MsgHubProviderChannelTypeUnsupported
+	}
+	if strings.TrimSpace(channel.GetSetting().Proxy) != "" {
+		return i18n.MsgHubProviderChannelProxyForbidden
+	}
+	for name := range channel.GetHeaderOverride() {
+		if strings.EqualFold(strings.TrimSpace(name), "Host") {
+			return i18n.MsgHubProviderChannelHostOverrideForbidden
+		}
+	}
+	return ""
 }
 
 func newHubProviderChannelResponse(group *model.HubSupplyGroup, channel *model.Channel) (hubProviderChannelResponse, error) {
@@ -275,13 +294,8 @@ func GetHubProviderChannel(c *gin.Context) {
 }
 
 func CreateHubProviderChannel(c *gin.Context) {
-	provider, err := getCurrentHubProvider(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if provider == nil {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
 		return
 	}
 	var req hubProviderChannelCreateRequest
@@ -294,6 +308,10 @@ func CreateHubProviderChannel(c *gin.Context) {
 		return
 	}
 	applyHubProviderChannelPolicy(req.Channel, nil)
+	if messageKey := validateHubProviderChannelNetworkSettings(req.Channel); messageKey != "" {
+		common.ApiErrorI18n(c, messageKey)
+		return
+	}
 	channels, err := prepareChannelsForCreate(&req.AddChannelRequest)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
@@ -301,6 +319,14 @@ func CreateHubProviderChannel(c *gin.Context) {
 	}
 	for i := range channels {
 		applyHubProviderChannelPolicy(&channels[i], nil)
+		if err := requireHubProviderChannelOriginClaim(provider.Id, &channels[i]); err != nil {
+			if err == model.ErrHubProviderOriginClaimNotFound {
+				hubProviderOriginRequiredError(c)
+				return
+			}
+			common.ApiError(c, err)
+			return
+		}
 	}
 	groups, err := model.CreateHubSupplyChannels(provider.Id, channels, model.HubSupplyGroup{
 		PriceMultiplier:   req.Supply.PriceMultiplier,
@@ -332,13 +358,12 @@ func stringValue(value *string) string {
 }
 
 func UpdateHubProviderChannel(c *gin.Context) {
-	provider, err := getCurrentHubProvider(c)
-	if err != nil {
-		common.ApiError(c, err)
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
 		return
 	}
 	channelID, parseErr := strconv.Atoi(c.Param("id"))
-	if provider == nil || parseErr != nil {
+	if parseErr != nil {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
 		return
 	}
@@ -381,6 +406,18 @@ func UpdateHubProviderChannel(c *gin.Context) {
 		return
 	}
 	updated := req.PatchChannel.Channel
+	if messageKey := validateHubProviderChannelNetworkSettings(&updated); messageKey != "" {
+		common.ApiErrorI18n(c, messageKey)
+		return
+	}
+	if err := requireHubProviderChannelOriginClaim(provider.Id, &updated); err != nil {
+		if err == model.ErrHubProviderOriginClaimNotFound {
+			hubProviderOriginRequiredError(c)
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
 	group.PriceMultiplier = req.Supply.PriceMultiplier
 	group.TextProbeMinutes = req.Supply.TextProbeMinutes
 	group.ImageProbeMinutes = req.Supply.ImageProbeMinutes
@@ -408,13 +445,12 @@ func UpdateHubProviderChannel(c *gin.Context) {
 }
 
 func DeleteHubProviderChannel(c *gin.Context) {
-	provider, err := getCurrentHubProvider(c)
-	if err != nil {
-		common.ApiError(c, err)
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
 		return
 	}
 	channelID, parseErr := strconv.Atoi(c.Param("id"))
-	if provider == nil || parseErr != nil {
+	if parseErr != nil {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
 		return
 	}
@@ -436,13 +472,12 @@ func DeleteHubProviderChannel(c *gin.Context) {
 }
 
 func FetchHubProviderChannelModels(c *gin.Context) {
-	provider, err := getCurrentHubProvider(c)
-	if err != nil {
-		common.ApiError(c, err)
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
 		return
 	}
 	channelID, parseErr := strconv.Atoi(c.Param("id"))
-	if provider == nil || parseErr != nil {
+	if parseErr != nil {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
 		return
 	}
@@ -455,7 +490,7 @@ func FetchHubProviderChannelModels(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderChannelNotFound)
 		return
 	}
-	models, err := fetchChannelUpstreamModelIDs(channel)
+	models, err := fetchChannelUpstreamModelIDsWithTrust(channel, true)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("获取模型列表失败: %s", err.Error())})
 		return
@@ -464,13 +499,8 @@ func FetchHubProviderChannelModels(c *gin.Context) {
 }
 
 func PreviewHubProviderChannelModels(c *gin.Context) {
-	provider, err := getCurrentHubProvider(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if provider == nil {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
+	provider, ok := requireActiveHubProvider(c)
+	if !ok {
 		return
 	}
 	var req fetchModelsRequest
@@ -489,7 +519,28 @@ func PreviewHubProviderChannelModels(c *gin.Context) {
 			return
 		}
 	}
-	models, err := fetchModelsForRequest(req)
+	previewBaseURL := ""
+	if req.BaseURL != nil {
+		previewBaseURL = strings.TrimSpace(*req.BaseURL)
+	}
+	previewChannel := &model.Channel{Type: req.Type, BaseURL: &previewBaseURL}
+	if req.ChannelID > 0 && req.BaseURL == nil {
+		_, savedChannel, err := getOwnedHubSupplyChannel(provider.Id, req.ChannelID)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		previewChannel = savedChannel
+	}
+	if err := requireHubProviderChannelOriginClaim(provider.Id, previewChannel); err != nil {
+		if err == model.ErrHubProviderOriginClaimNotFound {
+			hubProviderOriginRequiredError(c)
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	models, err := fetchModelsForRequestWithTrust(req, true)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": fmt.Sprintf("获取模型列表失败: %s", err.Error())})
 		return

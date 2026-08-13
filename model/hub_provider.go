@@ -28,7 +28,9 @@ import (
 )
 
 const (
+	HubProviderStatusPending  = "pending"
 	HubProviderStatusActive   = "active"
+	HubProviderStatusRejected = "rejected"
 	HubProviderStatusDisabled = "disabled"
 	hubProviderSlugMinLength  = 3
 	hubProviderSlugMaxLength  = 63
@@ -49,17 +51,24 @@ var hubProviderReservedSlugs = map[string]struct{}{
 // HubProvider is the provider profile owned by a New API user. Supply groups
 // and their New API channels will reference this profile in later steps.
 type HubProvider struct {
-	Id          int    `json:"id" gorm:"primaryKey"`
-	OwnerUserId int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
-	Slot        int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
-	Name        string `json:"name" gorm:"type:varchar(80);not null"`
-	Slug        string `json:"slug" gorm:"type:varchar(63)"`
-	Website     string `json:"website" gorm:"type:varchar(512);not null"`
-	Description string `json:"description" gorm:"type:varchar(1000);not null"`
-	LogoURL     string `json:"logo_url" gorm:"type:varchar(1024);not null"`
-	Status      string `json:"status" gorm:"type:varchar(24);not null;index"`
-	CreatedAt   int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt   int64  `json:"updated_at" gorm:"bigint"`
+	Id               int    `json:"id" gorm:"primaryKey"`
+	OwnerUserId      int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
+	Slot             int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
+	Name             string `json:"name" gorm:"type:varchar(80);not null"`
+	Slug             string `json:"slug" gorm:"type:varchar(63)"`
+	Website          string `json:"website" gorm:"type:varchar(512);not null"`
+	Description      string `json:"description" gorm:"type:varchar(1000);not null"`
+	LogoURL          string `json:"logo_url" gorm:"type:varchar(1024);not null"`
+	ContactType      string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
+	ContactValue     string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
+	SupportType      string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`
+	SupportValue     string `json:"support_value" gorm:"type:varchar(512);not null;default:''"`
+	Status           string `json:"status" gorm:"type:varchar(24);not null;index"`
+	ReviewRemark     string `json:"review_remark" gorm:"type:varchar(1000);not null;default:''"`
+	ReviewedByUserId int    `json:"reviewed_by_user_id" gorm:"not null;default:0"`
+	ReviewedAt       int64  `json:"reviewed_at" gorm:"bigint;not null;default:0"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
 }
 
 type HubProviderAdminListItem struct {
@@ -249,9 +258,13 @@ func CreateHubProvider(provider *HubProvider) error {
 	return nil
 }
 
-// UpdateHubProviderProfile changes only the public profile owned by the user.
-// Status and ownership remain administrator-controlled fields.
-func UpdateHubProviderProfile(ownerUserID int, slug, name, website, description, logoURL string) (*HubProvider, error) {
+// UpdateHubProviderProfile changes the provider profile owned by the user. A
+// rejected application returns to pending review when the user resubmits it.
+func UpdateHubProviderProfile(
+	ownerUserID int,
+	slug, name, website, description, logoURL string,
+	contactType, contactValue, supportType, supportValue string,
+) (*HubProvider, error) {
 	if ownerUserID <= 0 {
 		return nil, errors.New("invalid hub provider owner")
 	}
@@ -268,16 +281,28 @@ func UpdateHubProviderProfile(ownerUserID int, slug, name, website, description,
 		return nil, err
 	}
 
+	updates := map[string]any{
+		"name":          name,
+		"slug":          normalizedSlug,
+		"website":       website,
+		"description":   description,
+		"logo_url":      logoURL,
+		"contact_type":  contactType,
+		"contact_value": contactValue,
+		"support_type":  supportType,
+		"support_value": supportValue,
+		"updated_at":    common.GetTimestamp(),
+	}
+	if provider.Status == HubProviderStatusRejected {
+		updates["status"] = HubProviderStatusPending
+		updates["review_remark"] = ""
+		updates["reviewed_by_user_id"] = 0
+		updates["reviewed_at"] = 0
+	}
+
 	result := DB.Model(&HubProvider{}).
 		Where("id = ? AND owner_user_id = ?", provider.Id, ownerUserID).
-		Updates(map[string]any{
-			"name":        name,
-			"slug":        normalizedSlug,
-			"website":     website,
-			"description": description,
-			"logo_url":    logoURL,
-			"updated_at":  common.GetTimestamp(),
-		})
+		Updates(updates)
 	if result.Error != nil {
 		slugTaken, lookupErr := hubProviderSlugTaken(normalizedSlug, provider.Id)
 		if lookupErr == nil && slugTaken {
@@ -298,7 +323,10 @@ func UpdateHubProviderProfile(ownerUserID int, slug, name, website, description,
 }
 
 func IsValidHubProviderStatus(status string) bool {
-	return status == HubProviderStatusActive || status == HubProviderStatusDisabled
+	return status == HubProviderStatusPending ||
+		status == HubProviderStatusActive ||
+		status == HubProviderStatusRejected ||
+		status == HubProviderStatusDisabled
 }
 
 func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
@@ -380,6 +408,14 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 }
 
 func UpdateHubProviderStatus(providerID int, status string) ([]int, error) {
+	return updateHubProviderStatus(providerID, status, 0, "")
+}
+
+func UpdateHubProviderStatusWithReview(providerID int, status string, reviewerUserID int, reviewRemark string) ([]int, error) {
+	return updateHubProviderStatus(providerID, status, reviewerUserID, strings.TrimSpace(reviewRemark))
+}
+
+func updateHubProviderStatus(providerID int, status string, reviewerUserID int, reviewRemark string) ([]int, error) {
 	if providerID <= 0 || !IsValidHubProviderStatus(status) {
 		return nil, errors.New("invalid hub provider status update")
 	}
@@ -388,8 +424,11 @@ func UpdateHubProviderStatus(providerID int, status string) ([]int, error) {
 		result := tx.Model(&HubProvider{}).
 			Where("id = ?", providerID).
 			Updates(map[string]any{
-				"status":     status,
-				"updated_at": common.GetTimestamp(),
+				"status":              status,
+				"review_remark":       reviewRemark,
+				"reviewed_by_user_id": reviewerUserID,
+				"reviewed_at":         common.GetTimestamp(),
+				"updated_at":          common.GetTimestamp(),
 			})
 		if result.Error != nil {
 			return result.Error

@@ -6,6 +6,7 @@
 - [服务档位路由 MVP 实施状态](service-tier-routing-mvp.md)：第一版已实现范围、验收流程、已知边界和后续阶段。
 - [服务档位路由人工验收计划](service-tier-routing-test-plan.md)：三家渠道商、六条渠道的可重复验收数据、操作顺序和最终账务核验口径。
 - [服务档位路由加固清单](service-tier-routing-hardening.md)：核心代码审查发现、已确认修复决策、分批实施顺序和验收条件。
+- [渠道商入驻与审核](provider-onboarding-and-verification.md)：申请审核状态、供给操作权限边界、验收流程和后续认证模块。
 
 ## 基座
 

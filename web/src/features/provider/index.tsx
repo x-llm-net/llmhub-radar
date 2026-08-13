@@ -35,6 +35,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState } from '@/components/error-state'
 import { Main } from '@/components/layout'
+import { RichContent } from '@/components/rich-content'
 import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -78,8 +79,11 @@ import {
   useProvider,
 } from './hooks/use-provider'
 import { ProviderChannelModelsDialog } from './probe-dialog'
+import { ProviderApplicationState } from './provider-application-state'
 import { ProviderChannelsTable } from './provider-channels-table'
+import { ProviderContactFields } from './provider-contact-fields'
 import { ProviderEarningsSummary } from './provider-earnings-summary'
+import { ProviderOriginClaims } from './provider-origin-claims'
 import { ProviderProfileDialog } from './provider-profile-dialog'
 import {
   DEFAULT_HUB_SUPPLY_SETTINGS,
@@ -156,6 +160,10 @@ export function ProviderOnboarding() {
       website: '',
       description: '',
       logo_url: '',
+      contact_type: 'wechat',
+      contact_value: '',
+      support_type: 'community',
+      support_value: '',
     },
   })
   const mutation = useMutation({
@@ -166,7 +174,7 @@ export function ProviderOnboarding() {
         return
       }
       queryClient.setQueryData(providerQueryKey, response)
-      toast.success(t('Provider profile created'))
+      toast.success(t('Provider application submitted'))
       navigate({ to: '/provider' })
     },
     onError: () => toast.error(t('Failed to create provider')),
@@ -307,6 +315,17 @@ export function ProviderOnboarding() {
                       placeholder={t('Describe the services you provide')}
                       {...form.register('description')}
                     />
+                    {form.watch('description').trim() && (
+                      <div className='bg-muted/30 rounded-md border p-3'>
+                        <p className='text-muted-foreground mb-2 text-xs font-medium'>
+                          {t('Markdown preview')}
+                        </p>
+                        <RichContent
+                          content={form.watch('description')}
+                          breaks
+                        />
+                      </div>
+                    )}
                     {form.formState.errors.description && (
                       <p className='text-destructive text-sm'>
                         {t(
@@ -334,12 +353,14 @@ export function ProviderOnboarding() {
                     )}
                   </div>
 
+                  <ProviderContactFields form={form} idPrefix='provider' />
+
                   <div className='flex justify-end border-t pt-5'>
                     <Button type='submit' disabled={mutation.isPending}>
                       <Plus className='size-4' aria-hidden='true' />
                       {mutation.isPending
-                        ? t('Creating...')
-                        : t('Create provider')}
+                        ? t('Submitting...')
+                        : t('Submit application')}
                     </Button>
                   </div>
                 </form>
@@ -417,8 +438,17 @@ export function ProviderWorkspace() {
   }
 
   const provider = providerQuery.provider
+  if (provider.status !== 'active') {
+    return (
+      <ProviderApplicationState
+        provider={provider}
+        onSaved={(response) => {
+          queryClient.setQueryData(providerQueryKey, response)
+        }}
+      />
+    )
+  }
   const initials = provider.name.slice(0, 1).toUpperCase()
-  const providerActive = provider.status === 'active'
 
   const openCreateChannel = () => {
     setEditorChannel(null)
@@ -453,8 +483,8 @@ export function ProviderWorkspace() {
                       {provider.name}
                     </h2>
                     <StatusBadge
-                      label={t(providerActive ? 'Active' : 'Disabled')}
-                      variant={providerActive ? 'success' : 'danger'}
+                      label={t('Active')}
+                      variant='success'
                       copyable={false}
                     />
                   </div>
@@ -477,15 +507,13 @@ export function ProviderWorkspace() {
                   variant='outline'
                   size='sm'
                   onClick={() => setProfileEditorOpen(true)}
-                  disabled={!providerActive}
                 >
                   <Pencil className='size-3.5' aria-hidden='true' />
                   {t('Edit public profile')}
                 </Button>
                 <div className='text-muted-foreground flex items-center gap-2 text-sm'>
                   <Building2 className='size-4' aria-hidden='true' />
-                  {t('Provider status')}:{' '}
-                  {t(providerActive ? 'Active' : 'Disabled')}
+                  {t('Provider status')}: {t('Active')}
                 </div>
               </div>
             </CardContent>
@@ -510,6 +538,8 @@ export function ProviderWorkspace() {
           </div>
 
           <ProviderEarningsSummary />
+
+          <ProviderOriginClaims />
 
           <ProviderProfileDialog
             open={profileEditorOpen}

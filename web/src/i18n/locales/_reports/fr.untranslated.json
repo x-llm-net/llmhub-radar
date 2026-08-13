@@ -1,4 +1,10 @@
 {
+  "Add one TXT record to your domain.": "Add one TXT record to your domain.",
+  "Failed to add upstream site": "Failed to add upstream site",
+  "Failed to load upstream sites": "Failed to load upstream sites",
+  "Failed to remove upstream site": "Failed to remove upstream site",
+  "Ownership is based on the domain and port. API paths and keys do not create separate sites.": "Ownership is based on the domain and port. API paths and keys do not create separate sites.",
+  "Publish one text file on the upstream site.": "Publish one text file on the upstream site.",
   "Failed to load providers": "Failed to load providers",
   "Filter by provider, owner, email or website...": "Filter by provider, owner, email or website...",
   "Failed to update provider status": "Failed to update provider status",
@@ -9,6 +15,9 @@
   "Logo URL must be a valid HTTP or HTTPS URL": "Logo URL must be a valid HTTP or HTTPS URL",
   "Manage the services you provide.": "Manage the services you provide.",
   "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens": "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens",
+  "Review the provider application for {{name}}.": "Review the provider application for {{name}}.",
+  "Saving changes will submit the application for review again.": "Saving changes will submit the application for review again.",
+  "Update the application details and submit them again for review.": "Update the application details and submit them again for review.",
   "Create a channel to configure upstream access, select models, and manage listing.": "Create a channel to configure upstream access, select models, and manage listing.",
   "Each channel keeps its complete upstream configuration, supply multiplier, and listing state.": "Each channel keeps its complete upstream configuration, supply multiplier, and listing state.",
   "Configure the upstream channel, supply pricing, and probe schedule.": "Configure the upstream channel, supply pricing, and probe schedule.",
@@ -88,5 +97,8 @@
   "Build supply eligibility from model family and multiplier": "Build supply eligibility from model family and multiplier",
   "Only approved providers can enter the high-quality tier": "Only approved providers can enter the high-quality tier",
   "Search provider, channel, or model": "Search provider, channel, or model",
-  "Failed to load channel health data": "Failed to load channel health data"
+  "Failed to load channel health data": "Failed to load channel health data",
+  "Group link, support account, channel, or email": "Group link, support account, channel, or email",
+  "Review contact is private. The public support entry is shown to users on your provider homepage.": "Review contact is private. The public support entry is shown to users on your provider homepage.",
+  "Used only for application review and operations": "Used only for application review and operations"
 }

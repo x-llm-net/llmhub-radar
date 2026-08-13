@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { getProviderRootDomain } from '@/lib/provider-domain'
 
 import { updateProvider } from './api'
+import { ProviderContactFields } from './provider-contact-fields'
 import {
   providerFormSchema,
   type HubProvider,
@@ -44,6 +46,10 @@ function valuesFromProvider(provider: HubProvider): ProviderFormValues {
     website: provider.website,
     description: provider.description,
     logo_url: provider.logo_url,
+    contact_type: provider.contact_type || 'wechat',
+    contact_value: provider.contact_value,
+    support_type: provider.support_type || 'community',
+    support_value: provider.support_value,
   }
 }
 
@@ -62,7 +68,13 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       }
       props.onSaved(response)
       props.onOpenChange(false)
-      toast.success(t('Provider profile updated'))
+      toast.success(
+        t(
+          props.provider.status === 'rejected'
+            ? 'Provider application resubmitted'
+            : 'Provider profile updated'
+        )
+      )
     },
     onError: () => toast.error(t('Failed to update provider profile')),
   })
@@ -77,11 +89,17 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       onOpenChange={(open) => {
         if (!mutation.isPending) props.onOpenChange(open)
       }}
-      title={t('Edit public profile')}
-      description={t(
-        'These details are shown on your public channel provider homepage.'
+      title={t(
+        props.provider.status === 'rejected'
+          ? 'Edit application'
+          : 'Edit public profile'
       )}
-      contentClassName='sm:max-w-xl'
+      description={t(
+        props.provider.status === 'rejected'
+          ? 'Saving changes will submit the application for review again.'
+          : 'These details are shown on your public channel provider homepage.'
+      )}
+      contentClassName='max-h-[90vh] overflow-y-auto sm:max-w-2xl'
       footer={
         <>
           <Button
@@ -178,6 +196,14 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               placeholder={t('Describe the services you provide')}
               {...form.register('description')}
             />
+            {form.watch('description').trim() && (
+              <div className='bg-muted/30 rounded-md border p-3'>
+                <p className='text-muted-foreground mb-2 text-xs font-medium'>
+                  {t('Markdown preview')}
+                </p>
+                <RichContent content={form.watch('description')} breaks />
+              </div>
+            )}
             {form.formState.errors.description && (
               <p className='text-destructive text-sm'>
                 {t(
@@ -204,6 +230,8 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               </p>
             )}
           </div>
+
+          <ProviderContactFields form={form} idPrefix='provider-profile' />
         </form>
       </Form>
     </Dialog>

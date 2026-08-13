@@ -22,6 +22,7 @@ import (
 
 type taskPollingFetchAdaptor struct {
 	mu           sync.Mutex
+	isHubSupply  bool
 	taskIDs      []string
 	fetched      chan string
 	blockTaskID  string
@@ -101,7 +102,11 @@ func (a *sunoSuccessPollingAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *re
 	return 0
 }
 
-func (a *taskPollingFetchAdaptor) Init(_ *relaycommon.RelayInfo) {}
+func (a *taskPollingFetchAdaptor) Init(info *relaycommon.RelayInfo) {
+	if info != nil {
+		a.isHubSupply = info.IsHubSupplyChannel
+	}
+}
 
 func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
 	taskID, _ := body["task_id"].(string)
@@ -255,6 +260,29 @@ func TestUpdateVideoTasksCanSkipPollingSleepPerChannel(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, adaptor.fetchCount())
+}
+
+func TestUpdateVideoTasksMarksProviderSupplyAdaptor(t *testing.T) {
+	truncate(t)
+
+	const channelID = 103
+	seedTaskPollingChannel(t, channelID, true)
+	require.NoError(t, model.DB.Create(&model.HubSupplyGroup{
+		ProviderId: 1, NewAPIChannelId: channelID, PriceMultiplier: 1,
+	}).Error)
+	task := seedPollingTask(t, channelID, "task_public_supply", "upstream_supply")
+
+	adaptor := &taskPollingFetchAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	require.NoError(t, UpdateVideoTasks(context.Background(), constant.TaskPlatform("kling"), map[int][]string{
+		channelID: {task.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		task.GetUpstreamTaskID(): task,
+	}))
+	assert.True(t, adaptor.isHubSupply)
 }
 
 func TestUpdateVideoTasksDefaultSleepDoesNotBlockOtherChannels(t *testing.T) {

@@ -127,6 +127,9 @@ export interface HubRelayAttemptInfo {
   status_code?: number
   started_at?: number
   latency_ms?: number
+  request_ready_ms?: number
+  connection_ready_ms?: number
+  request_written_ms?: number
   response_headers_ms?: number
   first_body_byte_ms?: number
   first_event_ms?: number
@@ -135,6 +138,8 @@ export interface HubRelayAttemptInfo {
   content_encoding?: string
   transfer_encoding?: string
   upstream_uncompressed?: boolean
+  connection_reused?: boolean
+  upstream_request_bytes?: number
   supply_multiplier?: number
   billing_ratio?: number
   upstream_charge_status?: string

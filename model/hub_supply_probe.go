@@ -76,7 +76,7 @@ type HubSupplyGroupProbeTarget struct {
 	NextProbeAt          int64  `json:"next_probe_at" gorm:"bigint;not null;index"`
 	LastLatencyMs        int64  `json:"last_latency_ms" gorm:"bigint;not null;default:0"`
 	LastFirstTokenMs     *int64 `json:"last_first_token_ms" gorm:"bigint"`
-	LastError            string `json:"last_error" gorm:"type:text;not null;default:''"`
+	LastError            string `json:"last_error" gorm:"type:text;not null"`
 	LastErrorCode        string `json:"last_error_code" gorm:"type:varchar(64);not null;default:''"`
 	CreatedAt            int64  `json:"created_at" gorm:"bigint;not null"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"bigint;not null"`
@@ -92,7 +92,7 @@ type HubSupplyGroupProbeSample struct {
 	Success       bool   `json:"success" gorm:"not null;index"`
 	LatencyMs     int64  `json:"latency_ms" gorm:"bigint;not null"`
 	FirstTokenMs  *int64 `json:"first_token_ms" gorm:"bigint"`
-	ErrorMessage  string `json:"error_message" gorm:"type:text;not null;default:''"`
+	ErrorMessage  string `json:"error_message" gorm:"type:text;not null"`
 	ErrorCode     string `json:"error_code" gorm:"type:varchar(64);not null;default:''"`
 	ProbedAt      int64  `json:"probed_at" gorm:"bigint;not null;index"`
 }

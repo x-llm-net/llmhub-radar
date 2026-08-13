@@ -27,6 +27,7 @@ import {
   Layers3,
   LayoutGrid,
   List,
+  MessageCircle,
   Network,
   ShieldCheck,
   Sparkles,
@@ -37,6 +38,7 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { PublicLayout } from '@/components/layout'
+import { RichContent } from '@/components/rich-content'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getProviderPublicURL } from '@/lib/provider-domain'
@@ -82,9 +84,33 @@ function formatProbeTime(
   pendingLabel: string
 ) {
   if (timestamp <= 0) return pendingLabel
-  const locale =
-    language === 'zhCN' ? 'zh-CN' : language === 'zhTW' ? 'zh-TW' : language
+  let locale = language
+  if (language === 'zhCN') locale = 'zh-CN'
+  if (language === 'zhTW') locale = 'zh-TW'
   return new Date(timestamp * 1000).toLocaleString(locale)
+}
+
+function publicSupportLabel(type: string): string {
+  switch (type) {
+    case 'community':
+      return 'Join community'
+    case 'customer_service':
+      return 'Contact support'
+    case 'announcement':
+      return 'View announcements'
+    case 'email':
+      return 'Contact by email'
+    default:
+      return 'User support'
+  }
+}
+
+function publicSupportHref(type: string, value: string): string | null {
+  if (/^https?:\/\//i.test(value)) return value
+  if (type === 'email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    return `mailto:${value}`
+  }
+  return null
 }
 
 function ProviderStats(props: { profile: ProviderPublicProfile }) {
@@ -210,14 +236,23 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
 
   const profile = query.data.data
   const provider = profile.provider
+  const supportHref = publicSupportHref(
+    provider.support_type,
+    provider.support_value
+  )
   const initials = provider.name.slice(0, 2).toUpperCase()
   const hasOnlineModels = profile.stats.online_model_count > 0
   const hasProbeData = profile.stats.sample_count > 0
-  const providerState = hasOnlineModels
-    ? { label: t('Online'), className: '' }
-    : hasProbeData
-      ? { label: t('Currently failing'), className: 'is-degraded' }
-      : { label: t('Awaiting data'), className: 'is-pending' }
+  let providerState = { label: t('Awaiting data'), className: 'is-pending' }
+  if (hasProbeData) {
+    providerState = {
+      label: t('Currently failing'),
+      className: 'is-degraded',
+    }
+  }
+  if (hasOnlineModels) {
+    providerState = { label: t('Online'), className: '' }
+  }
 
   return (
     <PublicLayout showMainContainer={false}>
@@ -239,9 +274,11 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
                 </p>
                 <h1>{provider.name}</h1>
                 {provider.description && (
-                  <p className='hub-provider-description'>
-                    {provider.description}
-                  </p>
+                  <RichContent
+                    content={provider.description}
+                    breaks
+                    className='hub-provider-description'
+                  />
                 )}
                 <div className='hub-provider-links'>
                   {provider.website && (
@@ -250,6 +287,20 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
                       {t('Visit website')}
                       <ArrowUpRight aria-hidden='true' />
                     </a>
+                  )}
+                  {provider.support_value && supportHref && (
+                    <a href={supportHref} target='_blank' rel='noreferrer'>
+                      <MessageCircle aria-hidden='true' />
+                      {t(publicSupportLabel(provider.support_type))}
+                      <ArrowUpRight aria-hidden='true' />
+                    </a>
+                  )}
+                  {provider.support_value && !supportHref && (
+                    <span title={provider.support_value}>
+                      <MessageCircle aria-hidden='true' />
+                      {t(publicSupportLabel(provider.support_type))}: {' '}
+                      {provider.support_value}
+                    </span>
                   )}
                   <a href='/#model-rankings'>
                     <Network aria-hidden='true' />

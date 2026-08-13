@@ -200,18 +200,31 @@ func TestTTFTIsOmittedForNonStreamLogs(t *testing.T) {
 	common.SetContextKey(ctx, constant.ContextKeyHubRelayAttemptStartedAt, startedAt)
 
 	info := &relaycommon.RelayInfo{
-		StartTime:               startedAt,
-		ResponseHeadersTime:     startedAt.Add(40 * time.Millisecond),
-		FirstBodyByteTime:       startedAt.Add(60 * time.Millisecond),
-		FirstResponseTime:       startedAt.Add(100 * time.Millisecond),
-		FirstTokenTime:          startedAt.Add(200 * time.Millisecond),
-		UpstreamProtocol:        "HTTP/2.0",
-		UpstreamContentEncoding: "identity",
-		ChannelMeta:             &relaycommon.ChannelMeta{},
+		StartTime:                   startedAt,
+		OutboundRequestReadyTime:    startedAt.Add(20 * time.Millisecond),
+		UpstreamConnectionReadyTime: startedAt.Add(25 * time.Millisecond),
+		UpstreamRequestWrittenTime:  startedAt.Add(30 * time.Millisecond),
+		UpstreamConnectionReused:    true,
+		UpstreamRequestBodySize:     65536,
+		ResponseHeadersTime:         startedAt.Add(40 * time.Millisecond),
+		FirstBodyByteTime:           startedAt.Add(60 * time.Millisecond),
+		FirstResponseTime:           startedAt.Add(100 * time.Millisecond),
+		FirstTokenTime:              startedAt.Add(200 * time.Millisecond),
+		UpstreamProtocol:            "HTTP/2.0",
+		UpstreamContentEncoding:     "identity",
+		ChannelMeta:                 &relaycommon.ChannelMeta{},
 	}
 	attempt := buildHubRelayAttempt(ctx, info)
+	require.NotNil(t, attempt.RequestReadyMS)
+	require.NotNil(t, attempt.ConnectionReadyMS)
+	require.NotNil(t, attempt.RequestWrittenMS)
 	require.NotNil(t, attempt.ResponseHeadersMS)
 	require.NotNil(t, attempt.FirstBodyByteMS)
+	assert.Equal(t, int64(20), *attempt.RequestReadyMS)
+	assert.Equal(t, int64(25), *attempt.ConnectionReadyMS)
+	assert.Equal(t, int64(30), *attempt.RequestWrittenMS)
+	assert.True(t, attempt.ConnectionReused)
+	assert.Equal(t, int64(65536), attempt.UpstreamRequestBytes)
 	assert.Equal(t, int64(40), *attempt.ResponseHeadersMS)
 	assert.Equal(t, int64(60), *attempt.FirstBodyByteMS)
 	assert.Equal(t, "HTTP/2.0", attempt.UpstreamProtocol)

@@ -24,6 +24,19 @@ func FetchCodexChannelModels(channel *model.Channel) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return FetchCodexChannelModelsWithClient(channel, client)
+}
+
+func FetchCodexChannelModelsWithClient(channel *model.Channel, client *http.Client) ([]string, error) {
+	if channel == nil || channel.Type != constant.ChannelTypeCodex {
+		return nil, fmt.Errorf("channel type is not Codex")
+	}
+	if channel.ChannelInfo.IsMultiKey {
+		return nil, fmt.Errorf("codex channel does not support multi-key model discovery")
+	}
+	if client == nil {
+		return nil, fmt.Errorf("HTTP client is required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 

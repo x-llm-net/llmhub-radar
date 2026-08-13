@@ -32,22 +32,30 @@ import (
 )
 
 const (
-	hubProviderNameMaxLength        = 80
-	hubProviderDescriptionMaxLength = 1000
+	hubProviderNameMaxLength         = 80
+	hubProviderDescriptionMaxLength  = 1000
+	hubProviderReviewRemarkMaxLength = 1000
+	hubProviderContactMaxLength      = 256
+	hubProviderSupportMaxLength      = 512
 )
 
 type hubProviderProfileRequest struct {
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	Website     string `json:"website"`
-	Description string `json:"description"`
-	LogoURL     string `json:"logo_url"`
+	Name         string `json:"name"`
+	Slug         string `json:"slug"`
+	Website      string `json:"website"`
+	Description  string `json:"description"`
+	LogoURL      string `json:"logo_url"`
+	ContactType  string `json:"contact_type"`
+	ContactValue string `json:"contact_value"`
+	SupportType  string `json:"support_type"`
+	SupportValue string `json:"support_value"`
 }
 
 type hubProviderCreateRequest = hubProviderProfileRequest
 
 type hubProviderStatusUpdateRequest struct {
-	Status string `json:"status"`
+	Status       string `json:"status"`
+	ReviewRemark string `json:"review_remark"`
 }
 
 func GetHubProviderSelf(c *gin.Context) {
@@ -99,12 +107,17 @@ func CreateHubProvider(c *gin.Context) {
 	}
 
 	provider := &model.HubProvider{
-		OwnerUserId: c.GetInt("id"),
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Website:     req.Website,
-		Description: req.Description,
-		LogoURL:     req.LogoURL,
+		OwnerUserId:  c.GetInt("id"),
+		Name:         req.Name,
+		Slug:         req.Slug,
+		Website:      req.Website,
+		Description:  req.Description,
+		LogoURL:      req.LogoURL,
+		ContactType:  req.ContactType,
+		ContactValue: req.ContactValue,
+		SupportType:  req.SupportType,
+		SupportValue: req.SupportValue,
+		Status:       model.HubProviderStatusPending,
 	}
 	if err := model.CreateHubProvider(provider); err != nil {
 		if err == model.ErrHubProviderAlreadyExists {
@@ -135,6 +148,7 @@ func UpdateHubProviderProfile(c *gin.Context) {
 
 	provider, err := model.UpdateHubProviderProfile(
 		c.GetInt("id"), req.Slug, req.Name, req.Website, req.Description, req.LogoURL,
+		req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
 	)
 	if err != nil {
 		if err == model.ErrHubProviderNotFound {
@@ -157,6 +171,13 @@ func validateHubProviderProfileRequest(req *hubProviderProfileRequest) string {
 	req.Website = strings.TrimSpace(req.Website)
 	req.Description = strings.TrimSpace(req.Description)
 	req.LogoURL = strings.TrimSpace(req.LogoURL)
+	req.ContactType = strings.ToLower(strings.TrimSpace(req.ContactType))
+	req.ContactValue = strings.TrimSpace(req.ContactValue)
+	req.SupportType = strings.ToLower(strings.TrimSpace(req.SupportType))
+	req.SupportValue = strings.TrimSpace(req.SupportValue)
+	if req.SupportValue == "" {
+		req.SupportType = ""
+	}
 	normalizedSlug, slugErr := model.NormalizeHubProviderSlug(req.Slug)
 	if slugErr == nil {
 		req.Slug = normalizedSlug
@@ -175,8 +196,30 @@ func validateHubProviderProfileRequest(req *hubProviderProfileRequest) string {
 		return i18n.MsgHubProviderLogoURLInvalid
 	case utf8.RuneCountInString(req.Description) > hubProviderDescriptionMaxLength:
 		return i18n.MsgHubProviderDescriptionLong
+	case !isHubProviderContactType(req.ContactType) || req.ContactValue == "" || utf8.RuneCountInString(req.ContactValue) > hubProviderContactMaxLength:
+		return i18n.MsgHubProviderContactInvalid
+	case req.SupportValue != "" && (!isHubProviderSupportType(req.SupportType) || utf8.RuneCountInString(req.SupportValue) > hubProviderSupportMaxLength):
+		return i18n.MsgHubProviderSupportInvalid
 	default:
 		return ""
+	}
+}
+
+func isHubProviderContactType(value string) bool {
+	switch value {
+	case "wechat", "telegram", "email", "phone", "other":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHubProviderSupportType(value string) bool {
+	switch value {
+	case "community", "customer_service", "announcement", "email", "other":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -209,11 +252,25 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 		return
 	}
 	req.Status = strings.TrimSpace(req.Status)
+	req.ReviewRemark = strings.TrimSpace(req.ReviewRemark)
 	if !model.IsValidHubProviderStatus(req.Status) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	groupIDs, err := model.UpdateHubProviderStatus(providerID, req.Status)
+	if req.Status == model.HubProviderStatusRejected && req.ReviewRemark == "" {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderReviewRemarkRequired)
+		return
+	}
+	if utf8.RuneCountInString(req.ReviewRemark) > hubProviderReviewRemarkMaxLength {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	groupIDs, err := model.UpdateHubProviderStatusWithReview(
+		providerID,
+		req.Status,
+		c.GetInt("id"),
+		req.ReviewRemark,
+	)
 	if err != nil {
 		common.ApiError(c, err)
 		return

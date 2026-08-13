@@ -23,10 +23,15 @@ import {
   getProviderChannels,
   getProviderSelf,
   getProviderChannelProbes,
+  getProviderOriginClaims,
 } from '../api'
 
 export const providerQueryKey = ['hub-provider', 'self'] as const
 export const providerChannelsQueryKey = ['hub-provider', 'channels'] as const
+export const providerOriginClaimsQueryKey = [
+  'hub-provider',
+  'origin-claims',
+] as const
 export const providerChannelQueryKey = (channelId: number) =>
   ['hub-provider', 'channels', channelId] as const
 export const providerChannelProbesQueryKey = (channelId: number) =>
@@ -60,6 +65,21 @@ export function useProviderChannels(options?: { enabled?: boolean }) {
   return {
     ...query,
     channels: query.data?.data?.items ?? [],
+  }
+}
+
+export function useProviderOriginClaims(options?: { enabled?: boolean }) {
+  const query = useQuery({
+    queryKey: providerOriginClaimsQueryKey,
+    queryFn: getProviderOriginClaims,
+    enabled: options?.enabled ?? true,
+    staleTime: 30 * 1000,
+    retry: false,
+  })
+
+  return {
+    ...query,
+    claims: query.data?.data ?? [],
   }
 }
 

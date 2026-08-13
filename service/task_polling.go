@@ -239,6 +239,11 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		return errors.New("adaptor not found")
 	}
 	proxy := ch.GetSetting().Proxy
+	if isSupply, lookupErr := model.IsHubSupplyChannelConfigured(ch.Id); lookupErr != nil {
+		return lookupErr
+	} else if isSupply {
+		proxy = HubSupplyTaskProxyMarker
+	}
 	resp, err := adaptor.FetchTask(*ch.BaseURL, ch.Key, map[string]any{
 		"ids": taskIds,
 	}, proxy)
@@ -431,6 +436,11 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
 	}
 	info.ApiKey = cacheGetChannel.Key
+	isHubSupply, err := model.IsHubSupplyChannelConfigured(cacheGetChannel.Id)
+	if err != nil {
+		return err
+	}
+	info.IsHubSupplyChannel = isHubSupply
 	adaptor.Init(info)
 	disablePollingSleep := cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
 	for i, taskId := range taskIds {
@@ -463,6 +473,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		baseURL = ch.GetBaseURL()
 	}
 	proxy := ch.GetSetting().Proxy
+	if isSupply, lookupErr := model.IsHubSupplyChannelConfigured(ch.Id); lookupErr != nil {
+		return lookupErr
+	} else if isSupply {
+		proxy = HubSupplyTaskProxyMarker
+	}
 
 	task := taskM[taskId]
 	if task == nil {

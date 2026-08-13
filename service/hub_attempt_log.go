@@ -61,6 +61,9 @@ type HubRelayAttempt struct {
 	StatusCode           int     `json:"status_code,omitempty"`
 	StartedAt            int64   `json:"started_at"`
 	LatencyMS            int64   `json:"latency_ms"`
+	RequestReadyMS       *int64  `json:"request_ready_ms,omitempty"`
+	ConnectionReadyMS    *int64  `json:"connection_ready_ms,omitempty"`
+	RequestWrittenMS     *int64  `json:"request_written_ms,omitempty"`
 	ResponseHeadersMS    *int64  `json:"response_headers_ms,omitempty"`
 	FirstBodyByteMS      *int64  `json:"first_body_byte_ms,omitempty"`
 	FirstEventMS         *int64  `json:"first_event_ms,omitempty"`
@@ -69,6 +72,8 @@ type HubRelayAttempt struct {
 	ContentEncoding      string  `json:"content_encoding,omitempty"`
 	TransferEncoding     string  `json:"transfer_encoding,omitempty"`
 	UpstreamUncompressed bool    `json:"upstream_uncompressed,omitempty"`
+	ConnectionReused     bool    `json:"connection_reused,omitempty"`
+	UpstreamRequestBytes int64   `json:"upstream_request_bytes,omitempty"`
 	UpstreamRequestID    string  `json:"upstream_request_id,omitempty"`
 	SupplyMultiplier     float64 `json:"supply_multiplier,omitempty"`
 	BillingRatio         float64 `json:"billing_ratio,omitempty"`
@@ -393,6 +398,9 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		BillingRatio:      ctx.GetFloat64(string(constant.ContextKeyHubRelayAttemptBillingRatio)),
 	}
 	if relayInfo != nil {
+		attempt.RequestReadyMS = elapsedMilliseconds(startedAt, relayInfo.OutboundRequestReadyTime)
+		attempt.ConnectionReadyMS = elapsedMilliseconds(startedAt, relayInfo.UpstreamConnectionReadyTime)
+		attempt.RequestWrittenMS = elapsedMilliseconds(startedAt, relayInfo.UpstreamRequestWrittenTime)
 		attempt.ResponseHeadersMS = elapsedMilliseconds(startedAt, relayInfo.ResponseHeadersTime)
 		attempt.FirstBodyByteMS = elapsedMilliseconds(startedAt, relayInfo.FirstBodyByteTime)
 		attempt.FirstEventMS = elapsedMilliseconds(startedAt, relayInfo.FirstResponseTime)
@@ -403,6 +411,8 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		attempt.ContentEncoding = relayInfo.UpstreamContentEncoding
 		attempt.TransferEncoding = relayInfo.UpstreamTransferEncoding
 		attempt.UpstreamUncompressed = relayInfo.UpstreamUncompressed
+		attempt.ConnectionReused = relayInfo.UpstreamConnectionReused
+		attempt.UpstreamRequestBytes = relayInfo.UpstreamRequestBodySize
 	}
 	return attempt
 }

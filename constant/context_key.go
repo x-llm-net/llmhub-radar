@@ -49,6 +49,7 @@ const (
 	ContextKeyHubRoutingFallback          ContextKey = "hub_provider_fallback"
 	ContextKeyHubFallbackStartRetry       ContextKey = "hub_fallback_start_retry"
 	ContextKeyHubSupplyPricingSnapshot    ContextKey = "hub_supply_pricing_snapshot"
+	ContextKeyHubSupplyChannel            ContextKey = "hub_supply_channel"
 	ContextKeyHubRelayAttempts            ContextKey = "hub_relay_attempts"
 	ContextKeyHubRelayAttemptStartedAt    ContextKey = "hub_relay_attempt_started_at"
 	ContextKeyHubRelayAttemptRetry        ContextKey = "hub_relay_attempt_retry_index"

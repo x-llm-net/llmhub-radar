@@ -25,6 +25,16 @@ func migrateHubSupplyGroupLegacyColumns() error {
 		}
 	}
 
+	if DB.Migrator().HasColumn(&HubSupplyGroup{}, "probe_endpoint_overrides") {
+		if err := DB.Exec(`
+			UPDATE hub_supply_groups
+			SET probe_endpoint_overrides = '{}'
+			WHERE probe_endpoint_overrides IS NULL OR probe_endpoint_overrides = ''
+		`).Error; err != nil {
+			return fmt.Errorf("initialize hub supply probe endpoint overrides: %w", err)
+		}
+	}
+
 	if DB.Migrator().HasColumn(&HubSupplyGroup{}, "name") {
 		if err := DB.Migrator().DropColumn(&HubSupplyGroup{}, "name"); err != nil {
 			return fmt.Errorf("drop legacy hub supply name column: %w", err)

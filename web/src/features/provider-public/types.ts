@@ -23,6 +23,8 @@ export type ProviderPublicIdentity = {
   website: string
   description: string
   logo_url: string
+  support_type: string
+  support_value: string
 }
 
 export type ProviderPublicBucket = {

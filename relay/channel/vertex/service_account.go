@@ -111,7 +111,7 @@ func exchangeJwtForAccessToken(signedJWT string, info *relaycommon.RelayInfo) (s
 	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
 	data.Set("assertion", signedJWT)
 
-	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
+	client, err := service.GetHubSupplyHTTPClient(info.IsHubSupplyChannel, info.ChannelSetting)
 	if err != nil {
 		return "", fmt.Errorf("new proxy http client failed: %w", err)
 	}

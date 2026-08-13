@@ -13,19 +13,25 @@ import (
 func TestRelayInfoResetResponseTiming(t *testing.T) {
 	start := time.Now().Add(-time.Second)
 	info := &RelayInfo{
-		StartTime:               start,
-		ResponseHeadersTime:     start.Add(50 * time.Millisecond),
-		FirstBodyByteTime:       start.Add(75 * time.Millisecond),
-		FirstResponseTime:       start.Add(100 * time.Millisecond),
-		FirstTokenTime:          start.Add(200 * time.Millisecond),
-		UpstreamProtocol:        "HTTP/2.0",
-		UpstreamContentEncoding: "gzip",
+		StartTime:                   start,
+		OutboundRequestReadyTime:    start.Add(25 * time.Millisecond),
+		UpstreamConnectionReadyTime: start.Add(30 * time.Millisecond),
+		UpstreamRequestWrittenTime:  start.Add(40 * time.Millisecond),
+		ResponseHeadersTime:         start.Add(50 * time.Millisecond),
+		FirstBodyByteTime:           start.Add(75 * time.Millisecond),
+		FirstResponseTime:           start.Add(100 * time.Millisecond),
+		FirstTokenTime:              start.Add(200 * time.Millisecond),
+		UpstreamProtocol:            "HTTP/2.0",
+		UpstreamContentEncoding:     "gzip",
 	}
 
 	info.ResetResponseTiming()
 
 	assert.True(t, info.FirstResponseTime.IsZero())
 	assert.True(t, info.FirstTokenTime.IsZero())
+	assert.True(t, info.OutboundRequestReadyTime.IsZero())
+	assert.True(t, info.UpstreamConnectionReadyTime.IsZero())
+	assert.True(t, info.UpstreamRequestWrittenTime.IsZero())
 	assert.True(t, info.ResponseHeadersTime.IsZero())
 	assert.True(t, info.FirstBodyByteTime.IsZero())
 	assert.Empty(t, info.UpstreamProtocol)

@@ -116,7 +116,7 @@ type HubProviderWithdrawal struct {
 	Status                string                            `json:"status" gorm:"type:varchar(24);not null;index"`
 	PayoutAccountId       int                               `json:"payout_account_id" gorm:"not null;default:0;index"`
 	PayoutMethod          string                            `json:"payout_method" gorm:"type:varchar(32);not null;default:''"`
-	PayoutAccountSnapshot string                            `json:"-" gorm:"type:text;not null;default:''"`
+	PayoutAccountSnapshot string                            `json:"-" gorm:"type:text;not null"`
 	PayoutAccount         *HubProviderPayoutAccountSnapshot `json:"payout_account,omitempty" gorm:"-"`
 	ApplicantNote         string                            `json:"applicant_note" gorm:"type:varchar(1000);not null;default:''"`
 	PayoutCurrency        string                            `json:"payout_currency" gorm:"type:varchar(8);not null;default:''"`

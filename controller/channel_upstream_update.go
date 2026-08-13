@@ -304,12 +304,15 @@ func sanitizeFetchModelsError(err error, key string) error {
 	return errors.New(message)
 }
 
-func getFetchModelsResponseBody(method string, requestURL string, channel *model.Channel, headers http.Header) ([]byte, error) {
+func getFetchModelsResponseBody(method string, requestURL string, channel *model.Channel, headers http.Header, publicOnly bool) ([]byte, error) {
 	request, err := http.NewRequest(method, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	for name, values := range headers {
+		if publicOnly && strings.EqualFold(name, "Host") {
+			return nil, fmt.Errorf("provider supply channels cannot override Host")
+		}
 		for _, value := range values {
 			request.Header.Add(name, value)
 		}
@@ -317,7 +320,7 @@ func getFetchModelsResponseBody(method string, requestURL string, channel *model
 			request.Host = headers.Get(name)
 		}
 	}
-	client, err := service.NewProxyHttpClient(channel.GetSetting().Proxy)
+	client, err := service.GetHubSupplyHTTPClient(publicOnly, channel.GetSetting())
 	if err != nil {
 		return nil, err
 	}
@@ -333,6 +336,18 @@ func getFetchModelsResponseBody(method string, requestURL string, channel *model
 }
 
 func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
+	publicOnly := false
+	if channel != nil && channel.Id > 0 {
+		var err error
+		publicOnly, err = model.IsHubSupplyChannelConfigured(channel.Id)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return fetchChannelUpstreamModelIDsWithTrust(channel, publicOnly)
+}
+
+func fetchChannelUpstreamModelIDsWithTrust(channel *model.Channel, publicOnly bool) ([]string, error) {
 	baseURL := constant.ChannelBaseURLs[channel.Type]
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
@@ -340,7 +355,11 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 
 	if channel.Type == constant.ChannelTypeOllama {
 		key := strings.TrimSpace(strings.Split(channel.Key, "\n")[0])
-		models, err := ollama.FetchOllamaModels(baseURL, key)
+		client, clientErr := service.GetHubSupplyHTTPClient(publicOnly, channel.GetSetting())
+		if clientErr != nil {
+			return nil, clientErr
+		}
+		models, err := ollama.FetchOllamaModelsWithClient(baseURL, key, client)
 		if err != nil {
 			return nil, err
 		}
@@ -355,7 +374,11 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 			return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
 		}
 		key = strings.TrimSpace(key)
-		models, err := gemini.FetchGeminiModels(baseURL, key, channel.GetSetting().Proxy)
+		client, clientErr := service.GetHubSupplyHTTPClient(publicOnly, channel.GetSetting())
+		if clientErr != nil {
+			return nil, clientErr
+		}
+		models, err := gemini.FetchGeminiModelsWithClient(baseURL, key, client)
 		if err != nil {
 			return nil, err
 		}
@@ -363,10 +386,17 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	}
 
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
-		return fetchAdvancedCustomUpstreamModelIDs(channel, baseURL)
+		return fetchAdvancedCustomUpstreamModelIDs(channel, baseURL, publicOnly)
 	}
 
 	if channel.Type == constant.ChannelTypeCodex {
+		if publicOnly {
+			client, clientErr := service.GetHubSupplyHTTPClient(true, channel.GetSetting())
+			if clientErr != nil {
+				return nil, clientErr
+			}
+			return service.FetchCodexChannelModelsWithClient(channel, client)
+		}
 		return service.FetchCodexChannelModels(channel)
 	}
 
@@ -407,7 +437,7 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return nil, sanitizeFetchModelsError(err, key)
 	}
 
-	body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers)
+	body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers, publicOnly)
 	if err != nil {
 		return nil, sanitizeFetchModelsError(err, key)
 	}
@@ -425,7 +455,7 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	return normalizeModelNames(ids), nil
 }
 
-func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string) ([]string, error) {
+func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string, publicOnly bool) ([]string, error) {
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {
 		return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
@@ -453,7 +483,7 @@ func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string)
 		return nil, sanitizeFetchModelsError(err, key)
 	}
 
-	body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers)
+	body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers, publicOnly)
 	if err != nil {
 		return nil, sanitizeFetchModelsError(err, key)
 	}

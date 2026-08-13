@@ -38,7 +38,7 @@ type BillingRefund struct {
 	AttemptCount           int    `json:"attempt_count" gorm:"not null;default:0"`
 	LastAttemptAt          int64  `json:"last_attempt_at" gorm:"bigint;not null;default:0"`
 	CompletedAt            int64  `json:"completed_at" gorm:"bigint;not null;default:0"`
-	LastError              string `json:"last_error" gorm:"type:text;not null;default:''"`
+	LastError              string `json:"last_error" gorm:"type:text;not null"`
 	CreatedAt              int64  `json:"created_at" gorm:"bigint;index"`
 	UpdatedAt              int64  `json:"updated_at" gorm:"bigint;index"`
 }

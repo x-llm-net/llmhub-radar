@@ -446,6 +446,11 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		baseURL = channelModel.GetBaseURL()
 	}
 	proxy := channelModel.GetSetting().Proxy
+	if isSupply, lookupErr := model.IsHubSupplyChannelConfigured(channelModel.Id); lookupErr != nil {
+		return nil
+	} else if isSupply {
+		proxy = service.HubSupplyTaskProxyMarker
+	}
 	adaptor := GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channelModel.Type)))
 	if adaptor == nil {
 		return nil

@@ -25,6 +25,9 @@ import { api } from '@/lib/api'
 
 import type {
   HubProviderResponse,
+  HubProviderOriginClaimMethod,
+  HubProviderOriginClaimResponse,
+  HubProviderOriginClaimsResponse,
   HubProviderChannelCreateResponse,
   HubProviderChannelListParams,
   HubProviderChannelListResponse,
@@ -37,6 +40,40 @@ import type {
   HubSupplySettings,
   ProviderFormValues,
 } from './types'
+
+export async function getProviderOriginClaims(): Promise<HubProviderOriginClaimsResponse> {
+  const response = await api.get('/api/hub/provider/origins')
+  const result = response.data as HubProviderOriginClaimsResponse
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to load upstream sites')
+  }
+  return result
+}
+
+export async function createProviderOriginClaim(
+  baseURL: string,
+  verificationMethod: HubProviderOriginClaimMethod
+): Promise<HubProviderOriginClaimResponse> {
+  const response = await api.post('/api/hub/provider/origins', {
+    base_url: baseURL,
+    verification_method: verificationMethod,
+  })
+  return response.data
+}
+
+export async function verifyProviderOriginClaim(
+  claimID: number
+): Promise<HubProviderOriginClaimResponse> {
+  const response = await api.post(`/api/hub/provider/origins/${claimID}/verify`)
+  return response.data
+}
+
+export async function deleteProviderOriginClaim(
+  claimID: number
+): Promise<{ success: boolean; message?: string }> {
+  const response = await api.delete(`/api/hub/provider/origins/${claimID}`)
+  return response.data
+}
 
 export async function getProviderSelf(): Promise<HubProviderResponse> {
   const response = await api.get('/api/hub/provider/self')

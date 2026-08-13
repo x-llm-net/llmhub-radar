@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
@@ -34,6 +36,10 @@ type ssrfProtectedRoundTripper struct {
 	transports map[string]*http.Transport
 }
 
+var hubSupplyHTTPClients sync.Map
+
+const HubSupplyTaskProxyMarker = "hub-supply-public-network"
+
 func currentFetchProtection() (*common.SSRFProtection, bool, error) {
 	fetchSetting := system_setting.GetFetchSetting()
 	if !fetchSetting.EnableSSRFProtection {
@@ -55,8 +61,78 @@ func currentFetchProtection() (*common.SSRFProtection, bool, error) {
 	return protection, true, nil
 }
 
+func publicNetworkFetchProtection() (*common.SSRFProtection, bool, error) {
+	return &common.SSRFProtection{
+		AllowPrivateIp:         false,
+		DomainFilterMode:       false,
+		IpFilterMode:           false,
+		ApplyIPFilterForDomain: true,
+	}, true, nil
+}
+
 func newProtectedFetchHTTPClient() *http.Client {
 	return newProtectedFetchHTTPClientWithDialer(nil, nil, nil)
+}
+
+func newPublicNetworkHTTPClient() *http.Client {
+	client := newProtectedFetchHTTPClientWithProxy(
+		nil,
+		nil,
+		publicNetworkFetchProtection,
+		func(*http.Request) (*url.URL, error) { return nil, nil },
+	)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
+}
+
+// GetHubSupplyHTTPClient keeps platform-managed channels on their configured
+// transport while forcing provider-owned supply channels onto public networks.
+func GetHubSupplyHTTPClient(isSupplyChannel bool, settings dto.ChannelSettings) (*http.Client, error) {
+	if !isSupplyChannel {
+		return GetHttpClientWithProxySettings(settings.Proxy, settings)
+	}
+	if strings.TrimSpace(settings.Proxy) != "" {
+		return nil, fmt.Errorf("provider supply channels cannot use a proxy")
+	}
+	policy := NormalizeHTTPTransportPolicy(settings)
+	cacheKey := policy.cacheKeyPart()
+	if cached, ok := hubSupplyHTTPClients.Load(cacheKey); ok {
+		return cached.(*http.Client), nil
+	}
+	client := newHTTPClientFromTransportFactory(policy, func() *http.Transport {
+		transport := newRelayHTTPTransport()
+		transport.Proxy = nil
+		transport.DialContext = GetPublicNetworkDialContext()
+		return transport
+	})
+	client.CheckRedirect = checkPublicNetworkRedirect
+	actual, _ := hubSupplyHTTPClients.LoadOrStore(cacheKey, client)
+	if actual != client {
+		client.CloseIdleConnections()
+	}
+	return actual.(*http.Client), nil
+}
+
+// GetPublicNetworkDialContext exposes only the protected direct dial step for
+// protocols such as WebSocket that do not use net/http's RoundTripper.
+func GetPublicNetworkDialContext() func(context.Context, string, string) (net.Conn, error) {
+	netDialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	return (&protectedFetchDialer{
+		resolver:      net.DefaultResolver,
+		dialContext:   netDialer.DialContext,
+		getProtection: publicNetworkFetchProtection,
+	}).DialContext
+}
+
+// GetTaskPollingHTTPClient preserves the existing task adaptor interface while
+// applying the same public-network policy to provider-owned task polling.
+func GetTaskPollingHTTPClient(proxyURL string) (*http.Client, error) {
+	if proxyURL == HubSupplyTaskProxyMarker {
+		return GetHubSupplyHTTPClient(true, dto.ChannelSettings{})
+	}
+	return GetHttpClientWithProxy(proxyURL)
 }
 
 func newProtectedFetchHTTPClientWithDialer(resolver ssrfResolver, dialContext func(ctx context.Context, network, address string) (net.Conn, error), getProtection func() (*common.SSRFProtection, bool, error)) *http.Client {
@@ -101,8 +177,14 @@ func (t *ssrfProtectedRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	if req == nil || req.URL == nil {
 		return nil, fmt.Errorf("invalid request")
 	}
-	if err := ValidateSSRFProtectedFetchURL(req.URL.String()); err != nil {
+	protection, enabled, err := t.getProtection()
+	if err != nil {
 		return nil, err
+	}
+	if enabled {
+		if err := protection.ValidateURL(req.URL.String()); err != nil {
+			return nil, err
+		}
 	}
 
 	proxyURL, err := t.proxy(req)

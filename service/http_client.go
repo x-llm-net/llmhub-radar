@@ -22,6 +22,7 @@ import (
 var (
 	httpClient              *http.Client
 	ssrfProtectedHTTPClient *http.Client
+	publicNetworkHTTPClient *http.Client
 	proxyClients            = proxyHTTPClientCache{
 		clients: make(map[string]*http.Client),
 		aliases: make(map[string]string),
@@ -62,6 +63,17 @@ func checkProtectedFetchRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+func checkPublicNetworkRedirect(req *http.Request, via []*http.Request) error {
+	urlStr := req.URL.String()
+	if err := ValidatePublicNetworkURL(urlStr); err != nil {
+		return fmt.Errorf("redirect to %s blocked: %v", urlStr, err)
+	}
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	return nil
+}
+
 func validateURLWithCurrentFetchSetting(urlStr string, applyDomainIPFilter bool) error {
 	fetchSetting := system_setting.GetFetchSetting()
 	return common.ValidateURLWithFetchSetting(urlStr, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, applyDomainIPFilter && fetchSetting.ApplyIPFilterForDomain)
@@ -69,6 +81,16 @@ func validateURLWithCurrentFetchSetting(urlStr string, applyDomainIPFilter bool)
 
 func ValidateSSRFProtectedFetchURL(urlStr string) error {
 	return validateURLWithCurrentFetchSetting(urlStr, true)
+}
+
+// ValidatePublicNetworkURL rejects private and reserved network targets even
+// when the configurable SSRF protection for other fetch features is disabled.
+func ValidatePublicNetworkURL(urlStr string) error {
+	protection, _, err := publicNetworkFetchProtection()
+	if err != nil {
+		return err
+	}
+	return protection.ValidateURL(urlStr)
 }
 
 func newRelayHTTPTransport() *http.Transport {
@@ -118,6 +140,7 @@ func InitHttpClient() {
 	httpClient = newDirectHTTPClient(policy, nil)
 	proxyClients.store(clientCacheKey("", policy), httpClient)
 	ssrfProtectedHTTPClient = newProtectedFetchHTTPClient()
+	publicNetworkHTTPClient = newPublicNetworkHTTPClient()
 }
 
 // GetHttpClient returns the general outbound client used by relay/provider
@@ -138,6 +161,15 @@ func GetSSRFProtectedHTTPClient() *http.Client {
 		return GetHttpClient()
 	}
 	return ssrfProtectedHTTPClient
+}
+
+// GetPublicNetworkHTTPClient returns an always-protected direct client for
+// user-controlled URLs that must never reach private network resources.
+func GetPublicNetworkHTTPClient() *http.Client {
+	if publicNetworkHTTPClient == nil {
+		return newPublicNetworkHTTPClient()
+	}
+	return publicNetworkHTTPClient
 }
 
 func newProxyURLConfig(parsedURL *url.URL) *proxyURLConfig {
