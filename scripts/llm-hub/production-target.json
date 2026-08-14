@@ -1,0 +1,16 @@
+{
+  "deploymentId": "llm-hub-store-production-v1",
+  "gitRemotes": [
+    "git@github.com:x-llm-net/llmhub-radar.git",
+    "https://github.com/x-llm-net/llmhub-radar.git"
+  ],
+  "sshTarget": "llm-hub",
+  "remoteHostname": "ser8272651662",
+  "composeDir": "/opt/llm-hub",
+  "composeFile": "/opt/llm-hub/compose.yml",
+  "composeProject": "llm-hub",
+  "service": "new-api",
+  "container": "llm-hub-new-api",
+  "imageRepository": "llm-hub/new-api",
+  "publicBaseUrl": "https://llm-hub.store"
+}

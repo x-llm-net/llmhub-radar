@@ -12,6 +12,8 @@ on:
     tags:
       - '*'
       - '!*-alpha*'
+      - '!xllm-*'
+      - '!llmhub-*'
 
 jobs:
   linux:

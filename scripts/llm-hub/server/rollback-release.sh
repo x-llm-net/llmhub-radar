@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+release_tag="${1:?release tag is required}"
+script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+compose_dir="/opt/llm-hub"
+backup_dir="$compose_dir/backups/pre-$release_tag"
+
+"$script_dir/assert-target.sh"
+test -f "$backup_dir/release.txt"
+test -f "$backup_dir/compose.yml"
+sha256sum -c "$backup_dir/mysql.sql.sha256"
+
+old_image="$(sed -n 's/^current_ref=//p' "$backup_dir/release.txt")"
+test -n "$old_image"
+docker image inspect "$old_image" >/dev/null
+
+current_image="$(docker inspect llm-hub-new-api --format '{{.Config.Image}}')"
+if [ "$current_image" = "$old_image" ]; then
+  test "$(docker inspect llm-hub-new-api --format '{{.State.Health.Status}}')" = "healthy"
+  printf 'ROLLBACK_ALREADY_COMPLETE image=%s\n' "$old_image"
+  exit 0
+fi
+
+cd "$compose_dir"
+cp -p "$backup_dir/compose.yml" compose.yml
+docker compose config --quiet
+docker compose up -d --no-deps --no-build new-api
+
+healthy="false"
+attempt=0
+while [ "$attempt" -lt 45 ]; do
+  status="$(docker inspect llm-hub-new-api --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)"
+  if [ "$status" = "healthy" ]; then
+    healthy="true"
+    break
+  fi
+  if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 2
+done
+test "$healthy" = "true"
+test "$(docker inspect llm-hub-new-api --format '{{.Config.Image}}')" = "$old_image"
+docker inspect llm-hub-new-api --format 'ROLLBACK_OK image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}} status={{.State.Status}}'

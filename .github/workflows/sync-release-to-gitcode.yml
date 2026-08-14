@@ -9,6 +9,8 @@ on:
     tags:
       - '*'
       - '!*-alpha*'
+      - '!xllm-*'
+      - '!llmhub-*'
   workflow_dispatch:
     inputs:
       tag_name:

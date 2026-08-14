@@ -5,6 +5,8 @@ on:
     tags:
       - '*'
       - '!nightly*'
+      - '!xllm-*'
+      - '!llmhub-*'
   workflow_dispatch:
     inputs:
       tag:
