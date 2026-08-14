@@ -48,6 +48,11 @@ import {
 } from '@/components/ui/card'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
@@ -302,23 +307,19 @@ export function ProviderOnboarding() {
                     <Label htmlFor='provider-slug'>
                       {t('Provider subdomain')}
                     </Label>
-                    <Input
-                      id='provider-slug'
-                      autoCapitalize='none'
-                      autoCorrect='off'
-                      spellCheck={false}
-                      placeholder='your-name'
-                      {...form.register('slug')}
-                    />
-                    <p className='text-muted-foreground text-xs'>
-                      {t(
-                        'Enter only the subdomain name; the platform appends the domain automatically.'
-                      )}
-                    </p>
-                    <code className='text-muted-foreground overflow-hidden text-xs text-ellipsis'>
-                      https://{form.watch('slug') || 'your-name'}.
-                      {getProviderRootDomain()}
-                    </code>
+                    <InputGroup>
+                      <InputGroupInput
+                        id='provider-slug'
+                        autoCapitalize='none'
+                        autoCorrect='off'
+                        spellCheck={false}
+                        placeholder='your-name'
+                        {...form.register('slug')}
+                      />
+                      <InputGroupAddon align='inline-end'>
+                        .{getProviderRootDomain()}
+                      </InputGroupAddon>
+                    </InputGroup>
                     {form.formState.errors.slug && (
                       <p className='text-destructive text-sm'>
                         {t(
