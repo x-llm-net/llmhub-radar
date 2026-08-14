@@ -74,7 +74,7 @@ func migrateHubProviderOriginClaims() error {
 	verificationEnabled := hub_provider_setting.IsOriginVerificationEnabled()
 	if DB.Migrator().HasTable(&Option{}) {
 		var option Option
-		result := DB.Where("key = ?", "hub_provider_setting.origin_verification_enabled").Limit(1).Find(&option)
+		result := DB.Where(commonKeyCol+" = ?", "hub_provider_setting.origin_verification_enabled").Limit(1).Find(&option)
 		if result.Error != nil {
 			return result.Error
 		}
