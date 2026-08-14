@@ -47,6 +47,11 @@ export type HubProviderAdminItem = {
   available_model_count: number
   error_model_count: number
   last_probe_at: number
+  upstream_usages: Array<{
+    origin: string
+    provider_count: number
+    channel_count: number
+  }>
   created_at: number
   updated_at: number
 }

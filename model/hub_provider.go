@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -74,16 +75,23 @@ type HubProvider struct {
 
 type HubProviderAdminListItem struct {
 	HubProvider
-	OwnerID             int    `json:"owner_user_id" gorm:"column:owner_id"`
-	OwnerUsername       string `json:"owner_username" gorm:"column:owner_username"`
-	OwnerDisplayName    string `json:"owner_display_name" gorm:"column:owner_display_name"`
-	OwnerEmail          string `json:"owner_email" gorm:"column:owner_email"`
-	OwnerStatus         int    `json:"owner_status" gorm:"column:owner_status"`
-	ChannelCount        int64  `json:"channel_count" gorm:"-"`
-	OnlineChannelCount  int64  `json:"online_channel_count" gorm:"-"`
-	AvailableModelCount int64  `json:"available_model_count" gorm:"-"`
-	ErrorModelCount     int64  `json:"error_model_count" gorm:"-"`
-	LastProbeAt         int64  `json:"last_probe_at" gorm:"-"`
+	OwnerID             int                        `json:"owner_user_id" gorm:"column:owner_id"`
+	OwnerUsername       string                     `json:"owner_username" gorm:"column:owner_username"`
+	OwnerDisplayName    string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
+	OwnerEmail          string                     `json:"owner_email" gorm:"column:owner_email"`
+	OwnerStatus         int                        `json:"owner_status" gorm:"column:owner_status"`
+	ChannelCount        int64                      `json:"channel_count" gorm:"-"`
+	OnlineChannelCount  int64                      `json:"online_channel_count" gorm:"-"`
+	AvailableModelCount int64                      `json:"available_model_count" gorm:"-"`
+	ErrorModelCount     int64                      `json:"error_model_count" gorm:"-"`
+	LastProbeAt         int64                      `json:"last_probe_at" gorm:"-"`
+	UpstreamUsages      []HubProviderUpstreamUsage `json:"upstream_usages" gorm:"-"`
+}
+
+type HubProviderUpstreamUsage struct {
+	Origin        string `json:"origin"`
+	ProviderCount int64  `json:"provider_count"`
+	ChannelCount  int64  `json:"channel_count"`
 }
 
 func (HubProvider) TableName() string {
@@ -431,8 +439,81 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 		providers[i].ErrorModelCount = item.ErrorModelCount
 		providers[i].LastProbeAt = item.LastProbeAt
 	}
+	if err := populateHubProviderUpstreamUsages(providers); err != nil {
+		return nil, 0, err
+	}
 
 	return providers, total, nil
+}
+
+func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem) error {
+	if len(providers) == 0 {
+		return nil
+	}
+	type supplyOriginRow struct {
+		ProviderID  int     `gorm:"column:provider_id"`
+		ChannelType int     `gorm:"column:channel_type"`
+		BaseURL     *string `gorm:"column:base_url"`
+	}
+	type originUsage struct {
+		providerIDs  map[int]struct{}
+		channelCount int64
+	}
+	rows := make([]supplyOriginRow, 0)
+	if err := DB.Table("hub_supply_groups AS supply_groups").
+		Select("supply_groups.provider_id, channels.type AS channel_type, channels.base_url").
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+
+	usageByOrigin := make(map[string]*originUsage)
+	originsByProvider := make(map[int]map[string]struct{})
+	for _, row := range rows {
+		baseURL := ""
+		if row.BaseURL != nil {
+			baseURL = *row.BaseURL
+		}
+		required, origin, _, err := HubProviderChannelOriginRequiresClaim(row.ChannelType, baseURL)
+		if err != nil || !required {
+			continue
+		}
+		usage := usageByOrigin[origin]
+		if usage == nil {
+			usage = &originUsage{providerIDs: make(map[int]struct{})}
+			usageByOrigin[origin] = usage
+		}
+		usage.providerIDs[row.ProviderID] = struct{}{}
+		usage.channelCount++
+		if originsByProvider[row.ProviderID] == nil {
+			originsByProvider[row.ProviderID] = make(map[string]struct{})
+		}
+		originsByProvider[row.ProviderID][origin] = struct{}{}
+	}
+
+	for i := range providers {
+		origins := originsByProvider[providers[i].Id]
+		if len(origins) == 0 {
+			providers[i].UpstreamUsages = []HubProviderUpstreamUsage{}
+			continue
+		}
+		originNames := make([]string, 0, len(origins))
+		for origin := range origins {
+			originNames = append(originNames, origin)
+		}
+		sort.Strings(originNames)
+		usages := make([]HubProviderUpstreamUsage, 0, len(originNames))
+		for _, origin := range originNames {
+			usage := usageByOrigin[origin]
+			usages = append(usages, HubProviderUpstreamUsage{
+				Origin:        origin,
+				ProviderCount: int64(len(usage.providerIDs)),
+				ChannelCount:  usage.channelCount,
+			})
+		}
+		providers[i].UpstreamUsages = usages
+	}
+	return nil
 }
 
 func UpdateHubProviderStatus(providerID int, status string) ([]int, error) {

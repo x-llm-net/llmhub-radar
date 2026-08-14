@@ -300,6 +300,17 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 		"error_model_count":     1,
 		"last_probe_at":         int64(12345),
 	}).Error)
+	sharedBaseURL := "https://upstream.example/v1"
+	sharedGroup := &model.HubSupplyGroup{
+		ProviderId: disabledProvider.Id, PriceMultiplier: 1,
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	sharedChannel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "shared-secret", Name: "Paused shared upstream",
+		BaseURL: &sharedBaseURL, Models: "gpt-5", Group: "default",
+		Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, model.CreateHubSupplyGroup(sharedGroup, sharedChannel))
 
 	ctx, recorder := newAuthenticatedContext(
 		t,
@@ -329,6 +340,10 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 	assert.Equal(t, int64(1), item.AvailableModelCount)
 	assert.Equal(t, int64(1), item.ErrorModelCount)
 	assert.Equal(t, int64(12345), item.LastProbeAt)
+	require.Len(t, item.UpstreamUsages, 1)
+	assert.Equal(t, "https://upstream.example", item.UpstreamUsages[0].Origin)
+	assert.Equal(t, int64(2), item.UpstreamUsages[0].ProviderCount)
+	assert.Equal(t, int64(2), item.UpstreamUsages[0].ChannelCount)
 
 	disabledCtx, disabledRecorder := newAuthenticatedContext(
 		t,

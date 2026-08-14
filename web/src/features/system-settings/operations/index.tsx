@@ -30,6 +30,7 @@ const defaultOperationsSettings: OperationsSettings = {
   DefaultCollapseSidebar: false,
   DemoSiteEnabled: false,
   SelfUseModeEnabled: false,
+  'hub_provider_setting.origin_verification_enabled': false,
   QuotaRemindThreshold: '',
   SMTPServer: '',
   SMTPPort: '',

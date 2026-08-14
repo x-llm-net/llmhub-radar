@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/hub_provider_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,6 +157,12 @@ func TestHubProviderOriginClaimIsUniqueAcrossProviders(t *testing.T) {
 func TestMigrateHubProviderOriginClaimsRejectsMultiProviderConflict(t *testing.T) {
 	db := useHubSupplyGroupMigrationDB(t)
 	require.NoError(t, db.AutoMigrate(&HubProviderOriginClaim{}, &HubSupplyGroup{}, &Channel{}))
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = true
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
 	baseURL := "https://relay.example/v1"
 	for providerID := 1; providerID <= 2; providerID++ {
 		channel := &Channel{Type: constant.ChannelTypeOpenAI, BaseURL: &baseURL, Name: "relay", Key: "key", Models: "gpt-5"}
@@ -177,6 +184,12 @@ func TestMigrateHubProviderOriginClaimsRejectsMultiProviderConflict(t *testing.T
 func TestMigrateHubProviderOriginClaimsRejectsMismatchedExistingClaim(t *testing.T) {
 	db := useHubSupplyGroupMigrationDB(t)
 	require.NoError(t, db.AutoMigrate(&HubProviderOriginClaim{}, &HubSupplyGroup{}, &Channel{}))
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = true
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
 	baseURL := "https://relay.example/v1"
 	channel := &Channel{Type: constant.ChannelTypeOpenAI, BaseURL: &baseURL, Name: "relay", Key: "key", Models: "gpt-5"}
 	require.NoError(t, db.Create(channel).Error)
@@ -196,4 +209,34 @@ func TestMigrateHubProviderOriginClaimsRejectsMismatchedExistingClaim(t *testing
 	require.NoError(t, db.Where("origin = ?", "https://relay.example").First(&claim).Error)
 	assert.Equal(t, HubProviderOriginClaimStatusConflict, claim.Status)
 	assert.Zero(t, claim.ProviderId)
+}
+
+func TestMigrateHubProviderOriginClaimsAllowsSharedOriginWhenVerificationDisabled(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&Option{}, &HubProviderOriginClaim{}, &HubSupplyGroup{}, &Channel{}))
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = true
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
+	require.NoError(t, db.Create(&Option{
+		Key:   "hub_provider_setting.origin_verification_enabled",
+		Value: "false",
+	}).Error)
+
+	baseURL := "https://relay.example/v1"
+	for providerID := 1; providerID <= 2; providerID++ {
+		channel := &Channel{Type: constant.ChannelTypeOpenAI, BaseURL: &baseURL, Name: "relay", Key: "key", Models: "gpt-5"}
+		require.NoError(t, db.Create(channel).Error)
+		require.NoError(t, db.Create(&HubSupplyGroup{
+			PublicId: "supply-shared-" + string(rune('0'+providerID)), ProviderId: providerID,
+			NewAPIChannelId: channel.Id, PriceMultiplier: 1, Status: HubSupplyGroupStatusPending,
+		}).Error)
+	}
+
+	require.NoError(t, migrateHubProviderOriginClaims())
+	var claimCount int64
+	require.NoError(t, db.Model(&HubProviderOriginClaim{}).Count(&claimCount).Error)
+	assert.Zero(t, claimCount)
 }

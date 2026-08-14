@@ -36,6 +36,8 @@ const OPERATIONS_SECTIONS = [
           DefaultCollapseSidebar: settings.DefaultCollapseSidebar,
           DemoSiteEnabled: settings.DemoSiteEnabled,
           SelfUseModeEnabled: settings.SelfUseModeEnabled,
+          'hub_provider_setting.origin_verification_enabled':
+            settings['hub_provider_setting.origin_verification_enabled'],
         }}
       />
     ),

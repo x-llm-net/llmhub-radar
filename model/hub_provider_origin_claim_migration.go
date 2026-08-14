@@ -20,10 +20,12 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/hub_provider_setting"
 )
 
 func isAzureManagedHostname(hostname string) bool {
@@ -69,6 +71,22 @@ func HubProviderChannelOriginRequiresClaim(_ int, rawURL string) (bool, string, 
 }
 
 func migrateHubProviderOriginClaims() error {
+	verificationEnabled := hub_provider_setting.IsOriginVerificationEnabled()
+	if DB.Migrator().HasTable(&Option{}) {
+		var option Option
+		result := DB.Where("key = ?", "hub_provider_setting.origin_verification_enabled").Limit(1).Find(&option)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			if parsed, parseErr := strconv.ParseBool(strings.TrimSpace(option.Value)); parseErr == nil {
+				verificationEnabled = parsed
+			}
+		}
+	}
+	if !verificationEnabled {
+		return nil
+	}
 	if !DB.Migrator().HasTable(&HubProviderOriginClaim{}) || !DB.Migrator().HasTable(&HubSupplyGroup{}) || !DB.Migrator().HasTable(&Channel{}) {
 		return nil
 	}

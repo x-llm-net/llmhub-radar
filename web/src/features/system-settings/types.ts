@@ -354,6 +354,7 @@ export type OperationsSettings = {
   DefaultCollapseSidebar: boolean
   DemoSiteEnabled: boolean
   SelfUseModeEnabled: boolean
+  'hub_provider_setting.origin_verification_enabled': boolean
   QuotaRemindThreshold: string
   SMTPServer: string
   SMTPPort: string

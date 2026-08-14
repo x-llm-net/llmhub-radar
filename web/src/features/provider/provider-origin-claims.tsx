@@ -271,7 +271,7 @@ export function ProviderOriginClaims() {
           <h2 className='text-lg font-semibold'>{t('Upstream Sites')}</h2>
           <p className='text-muted-foreground mt-1 text-sm'>
             {t(
-              'Verify custom upstream ownership before creating supply channels. Official upstreams do not need verification.'
+              'Upstream ownership verification can be required by the administrator. Official upstreams do not need verification.'
             )}
           </p>
         </div>

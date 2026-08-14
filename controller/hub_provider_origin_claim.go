@@ -32,6 +32,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/hub_provider_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -303,6 +304,9 @@ func DeleteHubProviderOriginClaim(c *gin.Context) {
 func requireHubProviderChannelOriginClaim(providerID int, channel *model.Channel) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
+	}
+	if !hub_provider_setting.IsOriginVerificationEnabled() {
+		return nil
 	}
 	required, _, _, err := model.HubProviderChannelOriginRequiresClaim(channel.Type, channel.GetBaseURL())
 	if err != nil {

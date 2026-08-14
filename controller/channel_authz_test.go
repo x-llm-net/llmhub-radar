@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/hub_provider_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -156,6 +157,12 @@ func TestUpdateChannelRejectsStatusField(t *testing.T) {
 func TestAdminUpdateProviderChannelRequiresClaimedOrigin(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	setupHubSupplyGroupControllerTestDB(t)
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = true
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
 	provider := seedHubProvider(t, 42)
 	baseURL := "https://claimed.example"
 	seedVerifiedHubProviderOriginClaim(t, provider.Id, baseURL)

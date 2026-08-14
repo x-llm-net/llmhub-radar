@@ -28,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/setting/hub_provider_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -173,6 +174,12 @@ func TestCreateHubProviderChannelRequiresVerifiedOriginClaim(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	setupHubSupplyGroupControllerTestDB(t)
 	seedHubProvider(t, 42)
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = true
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
 		"mode": "single",
@@ -199,6 +206,39 @@ func TestCreateHubProviderChannelRequiresVerifiedOriginClaim(t *testing.T) {
 	var count int64
 	require.NoError(t, model.DB.Model(&model.HubSupplyGroup{}).Count(&count).Error)
 	assert.Zero(t, count)
+}
+
+func TestCreateHubProviderChannelAllowsUnverifiedOriginWhenVerificationDisabled(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	seedHubProvider(t, 42)
+	settings := hub_provider_setting.Get()
+	originalEnabled := settings.OriginVerificationEnabled
+	settings.OriginVerificationEnabled = false
+	t.Cleanup(func() {
+		settings.OriginVerificationEnabled = originalEnabled
+	})
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/channels", map[string]any{
+		"mode": "single",
+		"channel": map[string]any{
+			"name": "Shared upstream", "type": constant.ChannelTypeOpenAI,
+			"base_url": "https://shared.example/v1", "key": "secret",
+			"models": "gpt-5", "setting": `{}`, "settings": `{}`,
+		},
+		"supply": map[string]any{
+			"price_multiplier": 1, "text_probe_minutes": 10, "image_probe_minutes": 30,
+		},
+	}, 42)
+	CreateHubProviderChannel(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success, recorder.Body.String())
+	var count int64
+	require.NoError(t, model.DB.Model(&model.HubSupplyGroup{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
 }
 
 func TestCreateHubProviderChannelRejectsProxy(t *testing.T) {

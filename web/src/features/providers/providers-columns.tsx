@@ -201,6 +201,41 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
       meta: { mobileOrder: 40 },
     },
     {
+      id: 'upstream_usage',
+      header: t('Upstream reuse'),
+      cell: ({ row }) => {
+        const usages = row.original.upstream_usages || []
+        if (usages.length === 0) {
+          return <span className='text-muted-foreground'>-</span>
+        }
+        return (
+          <div className='min-w-[240px] space-y-1.5'>
+            {usages.slice(0, 2).map((usage) => (
+              <div key={usage.origin}>
+                <LongText className='max-w-[260px] text-xs font-medium'>
+                  {usage.origin}
+                </LongText>
+                <p className='text-muted-foreground text-xs'>
+                  {t('{{providerCount}} providers, {{channelCount}} channels', {
+                    providerCount: usage.provider_count,
+                    channelCount: usage.channel_count,
+                  })}
+                </p>
+              </div>
+            ))}
+            {usages.length > 2 && (
+              <p className='text-muted-foreground text-xs'>
+                {t('{{count}} more upstreams', { count: usages.length - 2 })}
+              </p>
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      size: 300,
+      meta: { mobileOrder: 45 },
+    },
+    {
       accessorKey: 'last_probe_at',
       header: t('Last probe'),
       cell: ({ row }) => (
