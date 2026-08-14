@@ -222,6 +222,7 @@ switch ($Action) {
     Write-Host (Invoke-Ssh -Command "$releaseDir/tools/build-release.sh $ReleaseTag")
     Assert-VersionedServerScripts -ReleaseDir $releaseDir
     Write-Host (Invoke-Ssh -Command "$releaseDir/tools/preflight-image.sh $ReleaseTag")
+    Write-Host (Invoke-Ssh -Command "$releaseDir/tools/preflight-mysql.sh $ReleaseTag")
     Write-Host "PREPARE_OK release=$ReleaseTag commit=$commitSha sha256=$localHash"
   }
 

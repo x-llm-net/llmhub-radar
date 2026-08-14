@@ -56,7 +56,7 @@
 3. 版本中的提交短哈希必须与实际构建提交一致。
 4. SSH 别名、远端主机名、compose 文件、compose 项目、服务、容器和镜像前缀必须全部匹配目标清单。
 5. 生产 compose 中不得出现旧 X-LLM 或 GHCR 镜像。
-6. 新镜像先在无生产数据库、无生产 Redis、无公网端口的临时容器中启动，并通过 `/api/status`。
+6. 新镜像先使用临时 SQLite 启动，再对生产 MySQL 执行一致性只读备份，把快照导入隔离的临时 MySQL 8.4 容器，完整执行迁移并通过 `/api/status`；预检不在生产数据库执行迁移或写入，也不开放公网端口。
 7. 切换前必须确认没有运行中的渠道测试任务，备份 MySQL、`.env` 和 compose，并给旧镜像添加回滚标签。
 8. `Deploy` 和 `Rollback` 没有 `-ConfirmProductionSwitch` 时直接拒绝执行。
 
