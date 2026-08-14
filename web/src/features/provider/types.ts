@@ -23,6 +23,7 @@ import { isProviderSlug } from '@/lib/provider-domain'
 
 export type HubProviderStatus = 'pending' | 'active' | 'rejected' | 'disabled'
 export type HubProviderContactType =
+  | 'qq'
   | 'wechat'
   | 'telegram'
   | 'email'
@@ -30,6 +31,8 @@ export type HubProviderContactType =
   | 'other'
 export type HubProviderSupportType =
   | 'community'
+  | 'qq_group'
+  | 'telegram_group'
   | 'customer_service'
   | 'announcement'
   | 'email'
@@ -269,7 +272,7 @@ export const providerFormSchema = z.object({
     .string()
     .refine(
       (value) =>
-        ['wechat', 'telegram', 'email', 'phone', 'other'].includes(value),
+        ['qq', 'wechat', 'telegram', 'email', 'phone', 'other'].includes(value),
       'Select a review contact method'
     ),
   contact_value: z
@@ -283,6 +286,8 @@ export const providerFormSchema = z.object({
       (value) =>
         [
           'community',
+          'qq_group',
+          'telegram_group',
           'customer_service',
           'announcement',
           'email',

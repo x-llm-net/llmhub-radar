@@ -5803,6 +5803,7 @@
     "Contact information": "联系信息",
     "Contact support": "联系客服",
     "Customer service": "客户服务",
+    "Enter only the subdomain name; the platform appends the domain automatically.": "只需填写子域名名称，平台会自动拼接域名。",
     "Group link, support account, channel, or email": "群链接、客服账号、频道或邮箱",
     "Join community": "加入社群",
     "Markdown preview": "Markdown 预览",
@@ -5817,6 +5818,10 @@
     "Review contact method": "审核联系类型",
     "Select a public support type": "请选择公开服务类型",
     "Select a review contact method": "请选择审核联系类型",
+    "QQ": "QQ",
+    "QQ group": "QQ群",
+    "Supports Markdown formatting.": "支持 Markdown 格式。",
+    "Telegram group": "TG 群",
     "Used only for application review and operations": "仅用于申请审核和平台运营联系",
     "User support": "用户服务",
     "View announcements": "查看公告"

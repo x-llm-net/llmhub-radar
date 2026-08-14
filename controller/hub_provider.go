@@ -207,7 +207,7 @@ func validateHubProviderProfileRequest(req *hubProviderProfileRequest) string {
 
 func isHubProviderContactType(value string) bool {
 	switch value {
-	case "wechat", "telegram", "email", "phone", "other":
+	case "qq", "wechat", "telegram", "email", "phone", "other":
 		return true
 	default:
 		return false
@@ -216,7 +216,7 @@ func isHubProviderContactType(value string) bool {
 
 func isHubProviderSupportType(value string) bool {
 	switch value {
-	case "community", "customer_service", "announcement", "email", "other":
+	case "community", "qq_group", "telegram_group", "customer_service", "announcement", "email", "other":
 		return true
 	default:
 		return false

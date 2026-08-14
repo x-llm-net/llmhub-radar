@@ -21,6 +21,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -168,6 +169,30 @@ func hubProviderSlugFromName(name string) string {
 	return "provider-" + strings.ToLower(common.GetRandomString(8))
 }
 
+func hubProviderSlugFromWebsite(website string) string {
+	parsed, err := url.Parse(strings.TrimSpace(website))
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	labels := strings.Split(strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www."), ".")
+	if len(labels) < 2 {
+		return ""
+	}
+	twoLevelSuffixes := map[string]struct{}{
+		"com.au": {}, "com.cn": {}, "com.hk": {}, "com.sg": {},
+		"co.jp": {}, "co.uk": {}, "net.cn": {}, "org.cn": {},
+	}
+	suffix := strings.Join(labels[len(labels)-2:], ".")
+	index := len(labels) - 2
+	if _, ok := twoLevelSuffixes[suffix]; ok {
+		index = len(labels) - 3
+	}
+	if index < 0 {
+		return ""
+	}
+	return hubProviderSlugFromName(labels[index])
+}
+
 func hubProviderSlugWithSuffix(base, suffix string) string {
 	maxBaseLength := hubProviderSlugMaxLength - len(suffix) - 1
 	if maxBaseLength < hubProviderSlugMinLength {
@@ -189,11 +214,14 @@ func hubProviderSlugTaken(slug string, excludeProviderID int) (bool, error) {
 	return count > 0, nil
 }
 
-func prepareHubProviderSlug(requestedSlug, providerName string, excludeProviderID int) (string, error) {
+func prepareHubProviderSlug(requestedSlug, providerName, website string, excludeProviderID int) (string, error) {
 	requestedSlug = strings.TrimSpace(requestedSlug)
 	candidate := requestedSlug
 	if candidate == "" {
-		candidate = hubProviderSlugFromName(providerName)
+		candidate = hubProviderSlugFromWebsite(website)
+		if candidate == "" {
+			candidate = hubProviderSlugFromName(providerName)
+		}
 	}
 	normalized, err := NormalizeHubProviderSlug(candidate)
 	if err != nil {
@@ -234,7 +262,7 @@ func CreateHubProvider(provider *HubProvider) error {
 	if existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
-	slug, err := prepareHubProviderSlug(provider.Slug, provider.Name, 0)
+	slug, err := prepareHubProviderSlug(provider.Slug, provider.Name, provider.Website, 0)
 	if err != nil {
 		return err
 	}
@@ -276,7 +304,7 @@ func UpdateHubProviderProfile(
 		}
 		return nil, err
 	}
-	normalizedSlug, err := prepareHubProviderSlug(slug, name, provider.Id)
+	normalizedSlug, err := prepareHubProviderSlug(slug, name, website, provider.Id)
 	if err != nil {
 		return nil, err
 	}

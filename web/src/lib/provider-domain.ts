@@ -66,6 +66,36 @@ export function providerSlugFromName(value: string): string {
     .replace(/-+$/g, '')
 }
 
+export function providerSlugFromWebsite(value: string): string {
+  try {
+    const parsed = new URL(value.trim())
+    const labels = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .split('.')
+      .filter(Boolean)
+    if (labels.length < 2) return ''
+
+    const twoLevelSuffixes = new Set([
+      'com.au',
+      'com.cn',
+      'com.hk',
+      'com.sg',
+      'co.jp',
+      'co.uk',
+      'net.cn',
+      'org.cn',
+    ])
+    const suffix = labels.slice(-2).join('.')
+    const candidate = twoLevelSuffixes.has(suffix)
+      ? (labels.at(-3) ?? '')
+      : (labels.at(-2) ?? '')
+    return providerSlugFromName(candidate)
+  } catch {
+    return ''
+  }
+}
+
 export function getProviderSlugFromHostname(hostname?: string): string | null {
   const currentHostname = (hostname ?? window.location.hostname)
     .trim()

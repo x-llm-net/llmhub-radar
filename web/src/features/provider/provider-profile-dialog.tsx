@@ -21,7 +21,10 @@ import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { getProviderRootDomain } from '@/lib/provider-domain'
+import {
+  getProviderRootDomain,
+  providerSlugFromWebsite,
+} from '@/lib/provider-domain'
 
 import { updateProvider } from './api'
 import { ProviderContactFields } from './provider-contact-fields'
@@ -46,7 +49,7 @@ function valuesFromProvider(provider: HubProvider): ProviderFormValues {
     website: provider.website,
     description: provider.description,
     logo_url: provider.logo_url,
-    contact_type: provider.contact_type || 'wechat',
+    contact_type: provider.contact_type || 'qq',
     contact_value: provider.contact_value,
     support_type: provider.support_type || 'community',
     support_value: provider.support_value,
@@ -78,6 +81,14 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
     },
     onError: () => toast.error(t('Failed to update provider profile')),
   })
+
+  const syncSlugFromWebsite = (website: string) => {
+    if (form.getFieldState('slug').isDirty) return
+    const derivedSlug = providerSlugFromWebsite(website)
+    if (derivedSlug) {
+      form.setValue('slug', derivedSlug, { shouldValidate: true })
+    }
+  }
 
   useEffect(() => {
     if (props.open) form.reset(valuesFromProvider(props.provider))
@@ -145,6 +156,27 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
           </div>
 
           <div className='grid gap-2'>
+            <Label htmlFor='provider-profile-website'>{t('Website')}</Label>
+            <Input
+              id='provider-profile-website'
+              placeholder='https://example.com'
+              {...form.register('website', {
+                onChange: (event) => {
+                  syncSlugFromWebsite(event.target.value)
+                },
+              })}
+            />
+            {form.formState.errors.website && (
+              <p className='text-destructive text-sm'>
+                {t(
+                  form.formState.errors.website.message ??
+                    'Website must be a valid HTTP or HTTPS URL'
+                )}
+              </p>
+            )}
+          </div>
+
+          <div className='grid gap-2'>
             <Label htmlFor='provider-profile-slug'>
               {t('Provider subdomain')}
             </Label>
@@ -153,8 +185,14 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               autoCapitalize='none'
               autoCorrect='off'
               spellCheck={false}
+              placeholder='your-name'
               {...form.register('slug')}
             />
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Enter only the subdomain name; the platform appends the domain automatically.'
+              )}
+            </p>
             <code className='text-muted-foreground overflow-hidden text-xs text-ellipsis'>
               https://{form.watch('slug') || 'your-name'}.
               {getProviderRootDomain()}
@@ -170,26 +208,12 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
           </div>
 
           <div className='grid gap-2'>
-            <Label htmlFor='provider-profile-website'>{t('Website')}</Label>
-            <Input
-              id='provider-profile-website'
-              placeholder='https://example.com'
-              {...form.register('website')}
-            />
-            {form.formState.errors.website && (
-              <p className='text-destructive text-sm'>
-                {t(
-                  form.formState.errors.website.message ??
-                    'Website must be a valid HTTP or HTTPS URL'
-                )}
-              </p>
-            )}
-          </div>
-
-          <div className='grid gap-2'>
             <Label htmlFor='provider-profile-description'>
               {t('Description')}
             </Label>
+            <p className='text-muted-foreground text-xs'>
+              {t('Supports Markdown formatting.')}
+            </p>
             <Textarea
               id='provider-profile-description'
               className='min-h-28 resize-y'

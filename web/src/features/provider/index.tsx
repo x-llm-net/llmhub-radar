@@ -59,6 +59,7 @@ import {
   getProviderPublicURL,
   getProviderRootDomain,
   providerSlugFromName,
+  providerSlugFromWebsite,
 } from '@/lib/provider-domain'
 
 import {
@@ -160,7 +161,7 @@ export function ProviderOnboarding() {
       website: '',
       description: '',
       logo_url: '',
-      contact_type: 'wechat',
+      contact_type: 'qq',
       contact_value: '',
       support_type: 'community',
       support_value: '',
@@ -205,6 +206,15 @@ export function ProviderOnboarding() {
 
   const onSubmit = (values: ProviderFormValues) => mutation.mutate(values)
   const nameField = form.register('name')
+  const websiteField = form.register('website')
+
+  const syncSlugFromWebsite = (website: string) => {
+    if (form.getFieldState('slug').isDirty) return
+    const derivedSlug = providerSlugFromWebsite(website)
+    if (derivedSlug) {
+      form.setValue('slug', derivedSlug, { shouldValidate: true })
+    }
+  }
 
   return (
     <Main>
@@ -244,7 +254,11 @@ export function ProviderOnboarding() {
                       {...nameField}
                       onChange={(event) => {
                         void nameField.onChange(event)
-                        if (!form.getFieldState('slug').isDirty) {
+                        if (
+                          !form.getFieldState('slug').isDirty &&
+                          !form.getValues('slug').trim() &&
+                          !form.getValues('website').trim()
+                        ) {
                           form.setValue(
                             'slug',
                             providerSlugFromName(event.target.value)
@@ -264,6 +278,27 @@ export function ProviderOnboarding() {
                   </div>
 
                   <div className='grid gap-2'>
+                    <Label htmlFor='provider-website'>{t('Website')}</Label>
+                    <Input
+                      id='provider-website'
+                      placeholder='https://example.com'
+                      {...websiteField}
+                      onChange={(event) => {
+                        void websiteField.onChange(event)
+                        syncSlugFromWebsite(event.target.value)
+                      }}
+                    />
+                    {form.formState.errors.website && (
+                      <p className='text-destructive text-sm'>
+                        {t(
+                          form.formState.errors.website.message ??
+                            'Website must be a valid HTTP or HTTPS URL'
+                        )}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className='grid gap-2'>
                     <Label htmlFor='provider-slug'>
                       {t('Provider subdomain')}
                     </Label>
@@ -272,8 +307,14 @@ export function ProviderOnboarding() {
                       autoCapitalize='none'
                       autoCorrect='off'
                       spellCheck={false}
+                      placeholder='your-name'
                       {...form.register('slug')}
                     />
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Enter only the subdomain name; the platform appends the domain automatically.'
+                      )}
+                    </p>
                     <code className='text-muted-foreground overflow-hidden text-xs text-ellipsis'>
                       https://{form.watch('slug') || 'your-name'}.
                       {getProviderRootDomain()}
@@ -289,26 +330,12 @@ export function ProviderOnboarding() {
                   </div>
 
                   <div className='grid gap-2'>
-                    <Label htmlFor='provider-website'>{t('Website')}</Label>
-                    <Input
-                      id='provider-website'
-                      placeholder='https://example.com'
-                      {...form.register('website')}
-                    />
-                    {form.formState.errors.website && (
-                      <p className='text-destructive text-sm'>
-                        {t(
-                          form.formState.errors.website.message ??
-                            'Website must be a valid HTTP or HTTPS URL'
-                        )}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className='grid gap-2'>
                     <Label htmlFor='provider-description'>
                       {t('Description')}
                     </Label>
+                    <p className='text-muted-foreground text-xs'>
+                      {t('Supports Markdown formatting.')}
+                    </p>
                     <Textarea
                       id='provider-description'
                       className='min-h-28 resize-y'

@@ -27,17 +27,28 @@ type ProviderContactFieldsProps = {
   idPrefix: string
 }
 
-const contactTypes = ['wechat', 'telegram', 'email', 'phone', 'other'] as const
+const contactTypes = [
+  'qq',
+  'wechat',
+  'telegram',
+  'email',
+  'phone',
+  'other',
+] as const
 const supportTypes = [
   'community',
+  'qq_group',
+  'telegram_group',
   'customer_service',
   'announcement',
   'email',
   'other',
 ] as const
 
-function contactTypeLabel(value: (typeof contactTypes)[number]): string {
+function contactTypeLabel(value: string): string {
   switch (value) {
+    case 'qq':
+      return 'QQ'
     case 'wechat':
       return 'WeChat'
     case 'telegram':
@@ -48,13 +59,19 @@ function contactTypeLabel(value: (typeof contactTypes)[number]): string {
       return 'Phone'
     case 'other':
       return 'Other'
+    default:
+      return value
   }
 }
 
-function supportTypeLabel(value: (typeof supportTypes)[number]): string {
+function supportTypeLabel(value: string): string {
   switch (value) {
     case 'community':
       return 'Community'
+    case 'qq_group':
+      return 'QQ group'
+    case 'telegram_group':
+      return 'Telegram group'
     case 'customer_service':
       return 'Customer service'
     case 'announcement':
@@ -63,6 +80,8 @@ function supportTypeLabel(value: (typeof supportTypes)[number]): string {
       return 'Email'
     case 'other':
       return 'Other'
+    default:
+      return value
   }
 }
 
@@ -101,7 +120,7 @@ export function ProviderContactFields(props: ProviderContactFieldsProps) {
               id={`${props.idPrefix}-contact-type`}
               className='w-full'
             >
-              <SelectValue />
+              <SelectValue>{t(contactTypeLabel(contactType))}</SelectValue>
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
               <SelectGroup>
@@ -153,7 +172,7 @@ export function ProviderContactFields(props: ProviderContactFieldsProps) {
               id={`${props.idPrefix}-support-type`}
               className='w-full'
             >
-              <SelectValue />
+              <SelectValue>{t(supportTypeLabel(supportType))}</SelectValue>
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
               <SelectGroup>

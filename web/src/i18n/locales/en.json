@@ -5803,6 +5803,7 @@
     "Contact information": "Contact information",
     "Contact support": "Contact support",
     "Customer service": "Customer service",
+    "Enter only the subdomain name; the platform appends the domain automatically.": "Enter only the subdomain name; the platform appends the domain automatically.",
     "Group link, support account, channel, or email": "Group link, support account, channel, or email",
     "Join community": "Join community",
     "Markdown preview": "Markdown preview",
@@ -5817,6 +5818,10 @@
     "Review contact method": "Review contact method",
     "Select a public support type": "Select a public support type",
     "Select a review contact method": "Select a review contact method",
+    "QQ": "QQ",
+    "QQ group": "QQ group",
+    "Supports Markdown formatting.": "Supports Markdown formatting.",
+    "Telegram group": "Telegram group",
     "Used only for application review and operations": "Used only for application review and operations",
     "User support": "User support",
     "View announcements": "View announcements"
