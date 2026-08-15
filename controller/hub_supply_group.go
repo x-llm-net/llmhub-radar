@@ -49,13 +49,14 @@ type hubProviderChannelProbeEndpointResponse struct {
 }
 
 type hubProviderChannelModelProbeResponse struct {
-	ModelName    string                                    `json:"model_name"`
-	EndpointMode string                                    `json:"endpoint_mode"`
-	Status       string                                    `json:"status"`
-	Published    bool                                      `json:"published"`
-	Online       bool                                      `json:"online"`
-	LastProbeAt  int64                                     `json:"last_probe_at"`
-	Endpoints    []hubProviderChannelProbeEndpointResponse `json:"endpoints"`
+	ModelName        string                                    `json:"model_name"`
+	EndpointMode     string                                    `json:"endpoint_mode"`
+	Status           string                                    `json:"status"`
+	AutoProbeEnabled bool                                      `json:"auto_probe_enabled"`
+	Published        bool                                      `json:"published"`
+	Online           bool                                      `json:"online"`
+	LastProbeAt      int64                                     `json:"last_probe_at"`
+	Endpoints        []hubProviderChannelProbeEndpointResponse `json:"endpoints"`
 }
 
 type hubProviderChannelProbeResponse struct {
@@ -73,6 +74,11 @@ type hubProviderChannelModelProbeRequest struct {
 type hubProviderChannelModelProbeEndpointRequest struct {
 	ModelName    string `json:"model_name"`
 	EndpointType string `json:"endpoint_type"`
+}
+
+type hubProviderChannelModelAutoProbeRequest struct {
+	ModelName string `json:"model_name"`
+	Enabled   bool   `json:"enabled"`
 }
 
 type hubProviderChannelModelPublicationRequest struct {
@@ -184,11 +190,13 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 	running := false
 	for _, modelName := range channel.GetModels() {
 		modelTargets := targetsByModel[modelName]
+		autoProbeEnabled := !group.IsAutoProbeDisabled(modelName, channel.Models)
 		item := hubProviderChannelModelProbeResponse{
-			ModelName:    modelName,
-			EndpointMode: group.GetProbeEndpointMode(modelName, channel.Models),
-			Status:       model.HubSupplyProbeStatusPending,
-			Endpoints:    make([]hubProviderChannelProbeEndpointResponse, 0, len(modelTargets)),
+			ModelName:        modelName,
+			EndpointMode:     group.GetProbeEndpointMode(modelName, channel.Models),
+			Status:           model.HubSupplyProbeStatusPending,
+			AutoProbeEnabled: autoProbeEnabled,
+			Endpoints:        make([]hubProviderChannelProbeEndpointResponse, 0, len(modelTargets)),
 		}
 		_, item.Online = onlineModels[modelName]
 		_, item.Published = publishedModels[modelName]
@@ -221,6 +229,8 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 			}
 		}
 		switch {
+		case !autoProbeEnabled:
+			item.Status = model.HubSupplyProbeStatusSkipped
 		case hasTesting:
 			item.Status = model.HubSupplyProbeStatusTesting
 			running = true
@@ -317,6 +327,52 @@ func UpdateHubProviderChannelModelProbeEndpoint(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"next_manual_probe_at": int64(0),
 		"model_status":         model.HubSupplyProbeStatusWaiting,
+	})
+}
+
+func UpdateHubProviderChannelModelAutoProbe(c *gin.Context) {
+	group, channel, ok := getCurrentActiveHubProviderChannel(c)
+	if !ok {
+		return
+	}
+	var req hubProviderChannelModelAutoProbeRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	req.ModelName = strings.TrimSpace(req.ModelName)
+	if req.ModelName == "" || len(req.ModelName) > 255 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if err := model.UpdateHubSupplyGroupModelAutoProbe(group.Id, req.ModelName, req.Enabled); err != nil {
+		switch err {
+		case model.ErrHubSupplyProbeModelNotFound:
+			common.ApiError(c, fmt.Errorf("model is not configured for this channel"))
+		case model.ErrHubSupplyProbeTargetTesting:
+			common.ApiError(c, fmt.Errorf("model is currently being tested"))
+		default:
+			common.ApiError(c, err)
+		}
+		return
+	}
+	if req.Enabled {
+		enqueueHubSupplyProbe()
+	}
+	routableModels, err := model.GetHubSupplyChannelRoutableModels(channel.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	online := false
+	for _, modelName := range routableModels {
+		if modelName == req.ModelName {
+			online = true
+			break
+		}
+	}
+	common.ApiSuccess(c, gin.H{
+		"model_name": req.ModelName, "auto_probe_enabled": req.Enabled, "online": online,
 	})
 }
 

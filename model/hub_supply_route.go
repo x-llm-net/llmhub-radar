@@ -87,7 +87,7 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 	}
 
 	groups := make([]HubSupplyGroup, 0)
-	groupQuery := query.Select("id", "new_api_channel_id", "config_version")
+	groupQuery := query.Select("id", "new_api_channel_id", "config_version", "auto_probe_disabled_models")
 	if len(channelIDs) > 0 {
 		groupQuery = groupQuery.Where("new_api_channel_id IN ?", channelIDs)
 	}
@@ -120,6 +120,15 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 	}
 	for channelID, channelTargets := range targetsByChannel {
 		result[channelID] = buildHubSupplyModelProbeKinds(channelTargets)
+	}
+	for _, group := range groups {
+		modelKinds := result[group.NewAPIChannelId]
+		for _, modelName := range normalizeHubSupplyModelNames(group.AutoProbeDisabledModels) {
+			modelKinds[modelName] = map[string]bool{
+				HubSupplyProbeKindText:  true,
+				HubSupplyProbeKindImage: true,
+			}
+		}
 	}
 	return result, nil
 }

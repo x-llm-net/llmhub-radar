@@ -41,6 +41,7 @@ const (
 	HubSupplyProbeStatusWaiting   = "waiting"
 	HubSupplyProbeStatusAvailable = "available"
 	HubSupplyProbeStatusError     = "error"
+	HubSupplyProbeStatusSkipped   = "skipped"
 
 	HubSupplyProbeManualCooldownSeconds = int64(5 * 60)
 	HubSupplyProbeTestingLeaseSeconds   = int64(5 * 60)
@@ -207,7 +208,12 @@ func hubSupplyProbeDefinitionsWithOverrides(channelType int, models []string, ov
 }
 
 func syncHubSupplyGroupProbeTargetsTx(tx *gorm.DB, group *HubSupplyGroup, channel *Channel) error {
-	models := channel.GetModels()
+	models := make([]string, 0)
+	for _, modelName := range channel.GetModels() {
+		if !group.IsAutoProbeDisabled(modelName, channel.Models) {
+			models = append(models, modelName)
+		}
+	}
 	definitions := hubSupplyProbeDefinitionsWithOverrides(channel.Type, models, group.GetProbeEndpointOverrides(channel.Models))
 	now := common.GetTimestamp()
 
@@ -335,15 +341,19 @@ func GetAllHubSupplyGroupsWithChannels() ([]HubSupplyGroupWithChannel, error) {
 	return groups, err
 }
 
+func hubSupplyProbeJobsQuery(db *gorm.DB) *gorm.DB {
+	return db.Table("hub_supply_group_probe_targets AS targets").
+		Select("targets.id AS target_id, targets.group_id, targets.config_version, targets.model_name, targets.endpoint_type, targets.endpoint_mode, targets.resolved_endpoint_type, targets.probe_kind, supply_groups.new_api_channel_id, channels.models AS configured_models").
+		Joins("JOIN hub_supply_groups AS supply_groups ON supply_groups.id = targets.group_id AND supply_groups.config_version = targets.config_version").
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id")
+}
+
 func GetDueHubSupplyProbeJobs(now int64, limit int) ([]HubSupplyProbeJob, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
 	jobs := make([]HubSupplyProbeJob, 0)
-	err := DB.Table("hub_supply_group_probe_targets AS targets").
-		Select("targets.id AS target_id, targets.group_id, targets.config_version, targets.model_name, targets.endpoint_type, targets.endpoint_mode, targets.resolved_endpoint_type, targets.probe_kind, groups.new_api_channel_id, channels.models AS configured_models").
-		Joins("JOIN hub_supply_groups AS groups ON groups.id = targets.group_id AND groups.config_version = targets.config_version").
-		Joins("JOIN channels ON channels.id = groups.new_api_channel_id").
+	err := hubSupplyProbeJobsQuery(DB).
 		Where("targets.next_probe_at <= ?", now).
 		Order("targets.next_probe_at ASC, targets.id ASC").Limit(limit).Scan(&jobs).Error
 	return jobs, err
@@ -351,10 +361,7 @@ func GetDueHubSupplyProbeJobs(now int64, limit int) ([]HubSupplyProbeJob, error)
 
 func GetHubSupplyGroupModelProbeJobs(groupID int, modelName string) ([]HubSupplyProbeJob, error) {
 	jobs := make([]HubSupplyProbeJob, 0)
-	err := DB.Table("hub_supply_group_probe_targets AS targets").
-		Select("targets.id AS target_id, targets.group_id, targets.config_version, targets.model_name, targets.endpoint_type, targets.endpoint_mode, targets.resolved_endpoint_type, targets.probe_kind, groups.new_api_channel_id, channels.models AS configured_models").
-		Joins("JOIN hub_supply_groups AS groups ON groups.id = targets.group_id AND groups.config_version = targets.config_version").
-		Joins("JOIN channels ON channels.id = groups.new_api_channel_id").
+	err := hubSupplyProbeJobsQuery(DB).
 		Where("targets.group_id = ? AND targets.model_name = ?", groupID, strings.TrimSpace(modelName)).
 		Order("targets.id ASC").
 		Scan(&jobs).Error
@@ -462,6 +469,26 @@ func HasDueHubSupplyProbeTargets(now int64) (bool, error) {
 		Limit(1).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func RequeueExpiredHubSupplyProbeTargets(now int64) error {
+	return DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("status = ? AND next_probe_at <= ?", HubSupplyProbeStatusTesting, now).
+		Updates(map[string]any{
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now, "updated_at": now,
+		}).Error
+}
+
+func RequeueHubSupplyProbeTargets(targetIDs []int) error {
+	if len(targetIDs) == 0 {
+		return nil
+	}
+	now := common.GetTimestamp()
+	return DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("id IN ? AND status = ?", targetIDs, HubSupplyProbeStatusTesting).
+		Updates(map[string]any{
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now, "updated_at": now,
+		}).Error
 }
 
 func MarkHubSupplyProbeTargetsTesting(targetIDs []int) error {
@@ -615,8 +642,17 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 		}
 	}
 	configuredModels := channel.GetModels()
+	autoProbeDisabled := make(map[string]struct{})
+	for _, modelName := range group.GetAutoProbeDisabledModels(channel.Models) {
+		autoProbeDisabled[modelName] = struct{}{}
+	}
 	fullyAvailableCount, availableCount, errorCount, pendingCount, waitingCount := 0, 0, 0, 0, 0
 	for _, modelName := range configuredModels {
+		if _, disabled := autoProbeDisabled[modelName]; disabled {
+			fullyAvailableCount++
+			availableCount++
+			continue
+		}
 		modelTargets := targetsByModel[modelName]
 		allAvailable := len(modelTargets) > 0
 		hasAvailable := false
@@ -669,7 +705,8 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 	}
 	routableModelCount := 0
 	for modelName := range publishedModels {
-		if hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
+		_, probeDisabled := autoProbeDisabled[modelName]
+		if probeDisabled || hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
 			routableModelCount++
 		}
 	}
@@ -766,4 +803,72 @@ func RequestImmediateHubSupplyGroupProbe(groupID int) (int64, error) {
 
 func RequestImmediateHubSupplyGroupModelProbe(groupID int, modelName string) (int64, error) {
 	return requestImmediateHubSupplyGroupProbe(groupID, strings.TrimSpace(modelName))
+}
+
+func UpdateHubSupplyGroupModelAutoProbe(groupID int, modelName string, enabled bool) error {
+	modelName = strings.TrimSpace(modelName)
+	if groupID <= 0 || modelName == "" {
+		return ErrHubSupplyProbeModelNotFound
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var group HubSupplyGroup
+		if err := lockForUpdate(tx).First(&group, groupID).Error; err != nil {
+			return err
+		}
+		var channel Channel
+		if err := lockForUpdate(tx).First(&channel, group.NewAPIChannelId).Error; err != nil {
+			return err
+		}
+		configured := false
+		for _, configuredModel := range channel.GetModels() {
+			if configuredModel == modelName {
+				configured = true
+				break
+			}
+		}
+		if !configured {
+			return ErrHubSupplyProbeModelNotFound
+		}
+		var testingCount int64
+		if err := tx.Model(&HubSupplyGroupProbeTarget{}).
+			Where("group_id = ? AND config_version = ? AND model_name = ? AND status = ?", group.Id, group.ConfigVersion, modelName, HubSupplyProbeStatusTesting).
+			Count(&testingCount).Error; err != nil {
+			return err
+		}
+		if testingCount > 0 {
+			return ErrHubSupplyProbeTargetTesting
+		}
+
+		disabled := make(map[string]struct{})
+		for _, disabledModel := range group.GetAutoProbeDisabledModels(channel.Models) {
+			disabled[disabledModel] = struct{}{}
+		}
+		if enabled {
+			delete(disabled, modelName)
+		} else {
+			disabled[modelName] = struct{}{}
+		}
+		ordered := make([]string, 0, len(disabled))
+		for _, configuredModel := range channel.GetModels() {
+			if _, ok := disabled[configuredModel]; ok {
+				ordered = append(ordered, configuredModel)
+			}
+		}
+		group.AutoProbeDisabledModels = strings.Join(ordered, ",")
+		if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
+			"auto_probe_disabled_models": group.AutoProbeDisabledModels,
+			"updated_at":                 common.GetTimestamp(),
+		}).Error; err != nil {
+			return err
+		}
+		if err := syncHubSupplyGroupProbeTargetsTx(tx, &group, &channel); err != nil {
+			return err
+		}
+		return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
+	})
+	if err != nil {
+		return err
+	}
+	InitChannelCache()
+	return nil
 }

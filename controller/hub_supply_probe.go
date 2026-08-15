@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -88,6 +89,9 @@ func reconcileHubSupplyGroupRouteState(groupID int) error {
 }
 
 func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int)) (hubSupplyProbeSummary, error) {
+	if err := model.RequeueExpiredHubSupplyProbeTargets(common.GetTimestamp()); err != nil {
+		return hubSupplyProbeSummary{}, err
+	}
 	if err := model.EnsureHubSupplyGroupProbeTargets(); err != nil {
 		return hubSupplyProbeSummary{}, err
 	}
@@ -117,6 +121,11 @@ func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int
 	if err := model.MarkHubSupplyProbeTargetsTesting(targetIDs); err != nil {
 		return summary, err
 	}
+	defer func() {
+		if err := model.RequeueHubSupplyProbeTargets(targetIDs); err != nil {
+			common.SysLog(fmt.Sprintf("failed to requeue unfinished hub supply probes: %v", err))
+		}
+	}()
 	groupIDsToMark := make([]int, 0, len(groupIDSet))
 	for groupID := range groupIDSet {
 		groupIDsToMark = append(groupIDsToMark, groupID)
@@ -229,6 +238,11 @@ func runImmediateHubSupplyModelProbe(ctx context.Context, groupID int, modelName
 	if err := model.MarkHubSupplyProbeTargetsTesting(targetIDs); err != nil {
 		return false, err
 	}
+	defer func() {
+		if err := model.RequeueHubSupplyProbeTargets(targetIDs); err != nil {
+			common.SysLog(fmt.Sprintf("failed to requeue unfinished immediate hub supply probes: %v", err))
+		}
+	}()
 	if err := model.MarkHubSupplyGroupsTesting([]int{groupID}); err != nil {
 		return false, err
 	}

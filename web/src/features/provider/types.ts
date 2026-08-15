@@ -183,7 +183,8 @@ export type HubSupplyProbeEndpointMode =
 export type HubSupplyModelProbe = {
   model_name: string
   endpoint_mode: HubSupplyProbeEndpointMode
-  status: 'pending' | 'testing' | 'waiting' | 'available' | 'error'
+  status: 'pending' | 'testing' | 'waiting' | 'available' | 'error' | 'skipped'
+  auto_probe_enabled: boolean
   published: boolean
   online: boolean
   last_probe_at: number
@@ -233,6 +234,16 @@ export type HubSupplyModelsPublicationResponse = {
     published: boolean
     published_model_count: number
     online_model_count: number
+  }
+}
+
+export type HubSupplyModelAutoProbeResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    model_name: string
+    auto_probe_enabled: boolean
+    online: boolean
   }
 }
 

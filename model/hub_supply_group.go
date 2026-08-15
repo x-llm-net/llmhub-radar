@@ -43,24 +43,25 @@ const (
 // Channel owns all upstream configuration; this record only owns LLM-Hub
 // commercial, publication, and probe state.
 type HubSupplyGroup struct {
-	Id                     int     `json:"id" gorm:"primaryKey"`
-	PublicId               string  `json:"public_id" gorm:"type:varchar(32);not null;uniqueIndex"`
-	ProviderId             int     `json:"-" gorm:"not null;index"`
-	NewAPIChannelId        int     `json:"-" gorm:"column:new_api_channel_id;not null;uniqueIndex"`
-	PriceMultiplier        float64 `json:"price_multiplier" gorm:"type:real;not null"`
-	PublishedModels        string  `json:"-" gorm:"type:text"`
-	ProbeEndpointOverrides string  `json:"-" gorm:"type:text"`
-	ConfigVersion          int     `json:"config_version" gorm:"not null;default:1"`
-	TextProbeMinutes       int     `json:"text_probe_minutes" gorm:"not null;default:10"`
-	ImageProbeMinutes      int     `json:"image_probe_minutes" gorm:"not null;default:30"`
-	Status                 string  `json:"status" gorm:"type:varchar(24);not null;index"`
-	AvailableModelCount    int     `json:"available_model_count" gorm:"not null;default:0"`
-	ErrorModelCount        int     `json:"error_model_count" gorm:"not null;default:0"`
-	PendingModelCount      int     `json:"pending_model_count" gorm:"not null;default:0"`
-	LastProbeAt            int64   `json:"last_probe_at" gorm:"bigint;not null;default:0"`
-	LastManualProbeAt      int64   `json:"-" gorm:"bigint;not null;default:0"`
-	CreatedAt              int64   `json:"created_at" gorm:"bigint"`
-	UpdatedAt              int64   `json:"updated_at" gorm:"bigint"`
+	Id                      int     `json:"id" gorm:"primaryKey"`
+	PublicId                string  `json:"public_id" gorm:"type:varchar(32);not null;uniqueIndex"`
+	ProviderId              int     `json:"-" gorm:"not null;index"`
+	NewAPIChannelId         int     `json:"-" gorm:"column:new_api_channel_id;not null;uniqueIndex"`
+	PriceMultiplier         float64 `json:"price_multiplier" gorm:"type:real;not null"`
+	PublishedModels         string  `json:"-" gorm:"type:text"`
+	ProbeEndpointOverrides  string  `json:"-" gorm:"type:text"`
+	AutoProbeDisabledModels string  `json:"-" gorm:"type:text"`
+	ConfigVersion           int     `json:"config_version" gorm:"not null;default:1"`
+	TextProbeMinutes        int     `json:"text_probe_minutes" gorm:"not null;default:10"`
+	ImageProbeMinutes       int     `json:"image_probe_minutes" gorm:"not null;default:30"`
+	Status                  string  `json:"status" gorm:"type:varchar(24);not null;index"`
+	AvailableModelCount     int     `json:"available_model_count" gorm:"not null;default:0"`
+	ErrorModelCount         int     `json:"error_model_count" gorm:"not null;default:0"`
+	PendingModelCount       int     `json:"pending_model_count" gorm:"not null;default:0"`
+	LastProbeAt             int64   `json:"last_probe_at" gorm:"bigint;not null;default:0"`
+	LastManualProbeAt       int64   `json:"-" gorm:"bigint;not null;default:0"`
+	CreatedAt               int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt               int64   `json:"updated_at" gorm:"bigint"`
 }
 
 type HubSupplyGroupWithChannel struct {
@@ -226,6 +227,7 @@ func (group *HubSupplyGroup) BeforeCreate(tx *gorm.DB) error {
 		group.ProbeEndpointOverrides = "{}"
 	}
 	group.PublishedModels = strings.Join(normalizeHubSupplyModelNames(group.PublishedModels), ",")
+	group.AutoProbeDisabledModels = strings.Join(normalizeHubSupplyModelNames(group.AutoProbeDisabledModels), ",")
 	if group.TextProbeMinutes <= 0 {
 		group.TextProbeMinutes = HubSupplyGroupDefaultTextProbeMinutes
 	}
@@ -274,6 +276,33 @@ func (group *HubSupplyGroup) GetPublishedModels(configuredModelsCSV string) []st
 	return models
 }
 
+func (group *HubSupplyGroup) GetAutoProbeDisabledModels(configuredModelsCSV string) []string {
+	if group == nil || strings.TrimSpace(group.AutoProbeDisabledModels) == "" {
+		return []string{}
+	}
+	disabled := make(map[string]struct{})
+	for _, modelName := range normalizeHubSupplyModelNames(group.AutoProbeDisabledModels) {
+		disabled[modelName] = struct{}{}
+	}
+	models := make([]string, 0, len(disabled))
+	for _, modelName := range normalizeHubSupplyModelNames(configuredModelsCSV) {
+		if _, ok := disabled[modelName]; ok {
+			models = append(models, modelName)
+		}
+	}
+	return models
+}
+
+func (group *HubSupplyGroup) IsAutoProbeDisabled(modelName string, configuredModelsCSV string) bool {
+	modelName = strings.TrimSpace(modelName)
+	for _, disabledModel := range group.GetAutoProbeDisabledModels(configuredModelsCSV) {
+		if disabledModel == modelName {
+			return true
+		}
+	}
+	return false
+}
+
 func getHubSupplyChannelAbilityModels(tx *gorm.DB, channel *Channel) ([]string, error) {
 	if channel == nil {
 		return []string{}, nil
@@ -303,10 +332,15 @@ func getHubSupplyChannelAbilityModels(tx *gorm.DB, channel *Channel) ([]string, 
 		return nil, err
 	}
 	probeKinds := buildHubSupplyModelProbeKinds(targets)
+	autoProbeDisabled := make(map[string]struct{})
+	for _, modelName := range group.GetAutoProbeDisabledModels(channel.Models) {
+		autoProbeDisabled[modelName] = struct{}{}
+	}
 
 	routableModels := make([]string, 0)
 	for _, modelName := range group.GetPublishedModels(channel.Models) {
-		if hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
+		_, probeDisabled := autoProbeDisabled[modelName]
+		if probeDisabled || hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
 			routableModels = append(routableModels, modelName)
 		}
 	}
@@ -350,6 +384,10 @@ func HubSupplyChannelConnectionChanged(before, after *Channel) bool {
 
 func (group *HubSupplyGroup) normalizePublishedModels(configuredModelsCSV string) {
 	group.PublishedModels = strings.Join(group.GetPublishedModels(configuredModelsCSV), ",")
+}
+
+func (group *HubSupplyGroup) normalizeAutoProbeDisabledModels(configuredModelsCSV string) {
+	group.AutoProbeDisabledModels = strings.Join(group.GetAutoProbeDisabledModels(configuredModelsCSV), ",")
 }
 
 func (group *HubSupplyGroup) GetProbeEndpointOverrides(configuredModelsCSV string) map[string]string {
@@ -469,6 +507,7 @@ func CreateHubSupplyChannels(providerID int, channels []Channel, settings HubSup
 			group.PublicId = common.GetUUID()
 			group.ProviderId = providerID
 			group.NewAPIChannelId = 0
+			group.PublishedModels = channels[i].Models
 			group.CreatedAt = 0
 			group.UpdatedAt = 0
 			if err := createHubSupplyGroupExtensionTx(tx, &group, &channels[i]); err != nil {
@@ -644,14 +683,16 @@ func syncHubSupplyGroupFromChannelTx(tx *gorm.DB, before, channel *Channel) erro
 		return err
 	}
 	group.normalizePublishedModels(channel.Models)
+	group.normalizeAutoProbeDisabledModels(channel.Models)
 	if err := group.normalizeProbeEndpointOverrides(channel.Models); err != nil {
 		return err
 	}
 	connectionChanged := HubSupplyChannelConnectionChanged(before, channel)
 	updates := map[string]any{
-		"published_models":         group.PublishedModels,
-		"probe_endpoint_overrides": group.ProbeEndpointOverrides,
-		"updated_at":               common.GetTimestamp(),
+		"published_models":           group.PublishedModels,
+		"probe_endpoint_overrides":   group.ProbeEndpointOverrides,
+		"auto_probe_disabled_models": group.AutoProbeDisabledModels,
+		"updated_at":                 common.GetTimestamp(),
 	}
 	if connectionChanged {
 		group.ConfigVersion++

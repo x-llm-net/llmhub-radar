@@ -339,6 +339,53 @@ func TestGetHubProviderChannelProbesReturnsModelLevelRouteState(t *testing.T) {
 	assert.Equal(t, &firstTokenMs, storedSample.FirstTokenMs)
 }
 
+func TestHubProviderModelAutoProbeSwitchReturnsSkippedState(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	baseURL := "https://upstream.example"
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, PriceMultiplier: 1, PublishedModels: "compact",
+		AutoProbeDisabledModels: "compact", TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "compact supply",
+		BaseURL: &baseURL, Models: "compact", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, model.CreateHubSupplyGroup(group, channel))
+	require.NoError(t, model.ReconcileHubSupplyGroupRouteState(group.Id))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/provider/channels/1/probes", nil, 42)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+	GetHubProviderChannelProbes(ctx)
+	var response struct {
+		Success bool                            `json:"success"`
+		Data    hubProviderChannelProbeResponse `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	require.Len(t, response.Data.Models, 1)
+	assert.False(t, response.Data.Models[0].AutoProbeEnabled)
+	assert.Equal(t, model.HubSupplyProbeStatusSkipped, response.Data.Models[0].Status)
+	assert.True(t, response.Data.Models[0].Online)
+
+	updateCtx, updateRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider/channels/1/model-auto-probe", map[string]any{
+		"model_name": "compact", "enabled": true,
+	}, 42)
+	updateCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+	UpdateHubProviderChannelModelAutoProbe(updateCtx)
+	var updateResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AutoProbeEnabled bool `json:"auto_probe_enabled"`
+			Online           bool `json:"online"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(updateRecorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, updateRecorder.Body.String())
+	assert.True(t, updateResponse.Data.AutoProbeEnabled)
+	assert.False(t, updateResponse.Data.Online)
+}
+
 func TestUpdateHubProviderChannelModelPublicationChecksOwnershipAndRouteState(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)

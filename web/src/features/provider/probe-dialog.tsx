@@ -68,6 +68,7 @@ import { formatTimestampToDate } from '@/lib/format'
 import {
   requestProviderChannelModelProbe,
   requestProviderChannelProbe,
+  updateProviderChannelModelAutoProbe,
   updateProviderChannelModelPublication,
   updateProviderChannelModelsPublication,
   updateProviderChannelModelProbeEndpoint,
@@ -162,6 +163,13 @@ function ProbeStatus(props: { model: HubSupplyModelProbe; running?: boolean }) {
           {t('Waiting for test')}
         </span>
       )
+    case 'skipped':
+      return (
+        <span className='text-muted-foreground inline-flex items-center gap-1.5 font-medium'>
+          <CircleCheck className='size-4' aria-hidden='true' />
+          {t('Automatic testing skipped')}
+        </span>
+      )
     case 'pending':
     case 'testing':
       return (
@@ -208,6 +216,29 @@ function PublicationStatus(props: {
       />
       <span className={`text-xs font-medium ${className}`}>
         {props.changing ? t('Updating...') : t(label)}
+      </span>
+    </div>
+  )
+}
+
+function AutoProbeStatus(props: {
+  enabled: boolean
+  changing?: boolean
+  onChange: (enabled: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='flex items-center gap-2.5'>
+      <Switch
+        checked={props.enabled}
+        disabled={props.changing}
+        onCheckedChange={props.onChange}
+        aria-label={t('Automatic testing')}
+      />
+      <span className='text-muted-foreground text-xs font-medium'>
+        {props.changing
+          ? t('Updating...')
+          : t(props.enabled ? 'Enabled' : 'Skipped')}
       </span>
     </div>
   )
@@ -345,6 +376,9 @@ export function ProviderChannelModelsDialog(
   const [endpointChangingModels, setEndpointChangingModels] = useState<
     Set<string>
   >(() => new Set())
+  const [autoProbeChangingModels, setAutoProbeChangingModels] = useState<
+    Set<string>
+  >(() => new Set())
   const [publicationChangingModels, setPublicationChangingModels] = useState<
     Set<string>
   >(() => new Set())
@@ -430,6 +464,44 @@ export function ProviderChannelModelsDialog(
     onError: () => toast.error(t('Failed to update endpoint type')),
     onSettled: (_data, _error, { modelName }) => {
       setEndpointChangingModels((current) => {
+        const next = new Set(current)
+        next.delete(modelName)
+        return next
+      })
+    },
+  })
+  const autoProbeMutation = useMutation({
+    mutationFn: (variables: { modelName: string; enabled: boolean }) =>
+      updateProviderChannelModelAutoProbe(
+        channelId,
+        variables.modelName,
+        variables.enabled
+      ),
+    onMutate: ({ modelName }) => {
+      setAutoProbeChangingModels((current) => {
+        const next = new Set(current)
+        next.add(modelName)
+        return next
+      })
+    },
+    onSuccess: async (response, variables) => {
+      if (!response.success) {
+        toast.error(response.message || t('Failed to update automatic testing'))
+        return
+      }
+      await refreshProbeData()
+      toast.success(
+        t(
+          variables.enabled
+            ? 'Automatic testing enabled'
+            : 'Automatic testing skipped'
+        ),
+        { description: variables.modelName }
+      )
+    },
+    onError: () => toast.error(t('Failed to update automatic testing')),
+    onSettled: (_data, _error, { modelName }) => {
+      setAutoProbeChangingModels((current) => {
         const next = new Set(current)
         next.delete(modelName)
         return next
@@ -541,6 +613,7 @@ export function ProviderChannelModelsDialog(
       setSearch('')
       setManualTestingModels(new Set())
       setEndpointChangingModels(new Set())
+      setAutoProbeChangingModels(new Set())
       setPublicationChangingModels(new Set())
       setSelectedModels(new Set())
     }
@@ -620,12 +693,13 @@ export function ProviderChannelModelsDialog(
   const mutationPending =
     probeAllMutation.isPending ||
     manualTestingModels.size > 0 ||
-    endpointChangingModels.size > 0
+    endpointChangingModels.size > 0 ||
+    autoProbeChangingModels.size > 0
   const allDetectionDisabled = running || cooldownSeconds > 0 || mutationPending
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='flex max-h-[min(88vh,820px)] w-full max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl'>
+      <DialogContent className='flex max-h-[min(88vh,820px)] w-full max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl'>
         <DialogHeader className='border-b px-5 py-4 pr-14'>
           <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
             <div className='min-w-0'>
@@ -639,7 +713,7 @@ export function ProviderChannelModelsDialog(
               </DialogTitle>
               <DialogDescription className='mt-2'>
                 {t(
-                  'Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.'
+                  'Models are listed automatically after their first successful test. Disable automatic testing only for models that do not support standard detection.'
                 )}
               </DialogDescription>
             </div>
@@ -799,7 +873,7 @@ export function ProviderChannelModelsDialog(
             {!probesQuery.isLoading &&
               !probesQuery.isError &&
               visibleModels.length > 0 && (
-                <Table className='min-w-[1000px]'>
+                <Table className='min-w-[1120px]'>
                   <TableHeader className='bg-muted/40 sticky top-0 z-10'>
                     <TableRow>
                       <TableHead className='w-10 pl-4'>
@@ -820,6 +894,9 @@ export function ProviderChannelModelsDialog(
                         {t('Listing status')}
                       </TableHead>
                       <TableHead className='w-40'>{t('Status')}</TableHead>
+                      <TableHead className='w-40'>
+                        {t('Automatic testing')}
+                      </TableHead>
                       <TableHead>{t('Endpoint results')}</TableHead>
                       <TableHead className='w-44'>
                         {t('Last detected')}
@@ -831,6 +908,9 @@ export function ProviderChannelModelsDialog(
                     {visibleModels.map((model) => {
                       const retrying = manualTestingModels.has(model.model_name)
                       const endpointChanging = endpointChangingModels.has(
+                        model.model_name
+                      )
+                      const autoProbeChanging = autoProbeChangingModels.has(
                         model.model_name
                       )
                       const publicationChanging = publicationChangingModels.has(
@@ -882,6 +962,18 @@ export function ProviderChannelModelsDialog(
                           <TableCell>
                             <ProbeStatus model={model} running={modelRunning} />
                           </TableCell>
+                          <TableCell>
+                            <AutoProbeStatus
+                              enabled={model.auto_probe_enabled}
+                              changing={autoProbeChanging || modelRunning}
+                              onChange={(enabled) =>
+                                autoProbeMutation.mutate({
+                                  modelName: model.model_name,
+                                  enabled,
+                                })
+                              }
+                            />
+                          </TableCell>
                           <TableCell className='space-y-2 whitespace-normal'>
                             {model.endpoints.length ? (
                               model.endpoints.map((endpoint) => (
@@ -903,7 +995,11 @@ export function ProviderChannelModelsDialog(
                                 />
                               ))
                             ) : (
-                              <span className='text-muted-foreground'>-</span>
+                              <span className='text-muted-foreground'>
+                                {model.auto_probe_enabled
+                                  ? '-'
+                                  : t('Detection disabled')}
+                              </span>
                             )}
                           </TableCell>
                           <TableCell className='text-muted-foreground'>
@@ -917,7 +1013,12 @@ export function ProviderChannelModelsDialog(
                               variant='ghost'
                               size='icon-sm'
                               title={t('Test model again')}
-                              disabled={modelRunning || endpointChanging}
+                              disabled={
+                                !model.auto_probe_enabled ||
+                                modelRunning ||
+                                endpointChanging ||
+                                autoProbeChanging
+                              }
                               onClick={() =>
                                 probeModelMutation.mutate(model.model_name)
                               }

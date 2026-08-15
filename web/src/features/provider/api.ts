@@ -34,6 +34,7 @@ import type {
   HubProviderChannelResponse,
   HubProviderChannelProbeResponse,
   HubSupplyProbeRequestResponse,
+  HubSupplyModelAutoProbeResponse,
   HubSupplyModelPublicationResponse,
   HubSupplyModelsPublicationResponse,
   HubSupplyProbeEndpointMode,
@@ -245,6 +246,19 @@ export async function updateProviderChannelModelProbeEndpoint(
   const response = await api.put(
     `/api/hub/provider/channels/${channelId}/probe-model-endpoint`,
     { model_name: modelName, endpoint_type: endpointType }
+  )
+  return response.data
+}
+
+export async function updateProviderChannelModelAutoProbe(
+  channelId: number,
+  modelName: string,
+  enabled: boolean
+): Promise<HubSupplyModelAutoProbeResponse> {
+  const response = await api.put(
+    `/api/hub/provider/channels/${channelId}/model-auto-probe`,
+    { model_name: modelName, enabled },
+    { skipBusinessError: true, skipErrorHandler: true }
   )
   return response.data
 }

@@ -143,10 +143,14 @@ func TestCreateHubProviderChannelUsesNativeChannelConfiguration(t *testing.T) {
 	assert.Equal(t, `{"gpt-5":"gpt-5-upstream"}`, channel.GetModelMapping())
 	assert.Equal(t, `{"X-Supply":"yes"}`, stringValue(channel.HeaderOverride))
 	assert.Equal(t, `{"temperature":0}`, stringValue(channel.ParamOverride))
+	assert.Equal(t, []string{"claude-sonnet-4", "gpt-5"}, response.Data[0].Supply.PublishedModels)
 
 	var abilityCount int64
 	require.NoError(t, model.DB.Model(&model.Ability{}).Where("channel_id = ?", channel.Id).Count(&abilityCount).Error)
-	assert.Zero(t, abilityCount, "a new supply channel must not route before publication and a successful probe")
+	assert.Zero(t, abilityCount, "a new supply channel must not route before a successful probe")
+	activeTask, err := model.GetActiveSystemTask(model.SystemTaskTypeHubSupplyProbe)
+	require.NoError(t, err)
+	require.NotNil(t, activeTask, "channel creation must enqueue the first probe run")
 }
 
 func TestPendingHubProviderCannotCreateChannel(t *testing.T) {

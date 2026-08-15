@@ -48,6 +48,8 @@ New API Channel 是唯一的上游配置实体。渠道商中心直接创建和�
 - 渠道商前端只能扩展同一个 `ChannelMutateDrawer`，不得复制一份简化渠道表单。
 - 供给探测只新增按模型调度、探测结果和上架状态聚合；实际请求必须复用原生 `testChannel`、Adaptor 和定价预检，不能复制协议测试实现。
 - 供给探测必须遵守原生 Channel 状态语义：只有 `auto_disabled` 可以在恢复后自动启用，`manually_disabled` 必须保持关闭，直到用户明确启用。
+- 渠道商首次创建供给 Channel 时，所选模型默认具有上架意图，并立即进入现有 `hub_supply_probe` 任务；每个模型首次检测成功后独立进入供给池，单个模型失败不阻塞其他模型。任务异常退出时，仍处于 `testing` 的目标立即退回 `pending`，进程崩溃留下的过期检测租约也会在下一轮任务中回收。
+- 模型管理允许逐模型关闭自动检测，仅用于 `compact`、`code-review` 等无法使用标准探测请求的特殊模型。关闭后不创建定时或手工探测目标，已上架模型直接参与路由；这等于由渠道商承担跳过健康校验的风险，普通聊天、Responses、图片等可标准检测模型应保持开启。
 
 New API 的 `Channel.Group` 是消费者请求的路由分组，不是渠道商中心的“供给分组”。渠道商不能直接修改该字段，由平台统一管理。
 
@@ -139,7 +141,7 @@ llm-hub.store/v1
 - `RetryTimes=2` 时最多发起 3 次上游尝试：前两次优先选择该渠道商且严格排除本请求中已失败的 Channel，最后一次保留给公共池。渠道商没有候选时不空等，立即切入公共池；进入公共池后仍严格排除入口渠道商及本请求已经失败的 Channel。该策略不额外增加 New API 的总重试次数。
 - 未知渠道商子域名的推理请求返回 `404`，已停用渠道商返回 `503`。根域名、IP、`localhost` 和保留的系统子域继续作为平台入口。
 - 成功与失败日志都快照 `hub_requested_provider_id`、`hub_requested_provider_slug`、`hub_routing_phase`、`hub_provider_fallback`、实际命中的 `hub_provider_id`、`hub_supply_group_id`、`supply_multiplier`、`billing_ratio` 和尝试链 `use_channel`，用于完整追踪优先路由、重试、兜底和计费。
-- 内存与数据库 Channel 选择都只使用 `abilities.enabled=true` 的模型能力。仅写在 `Channel.Models`、但尚未上架或当前检测不可用的模型不能进入消费者路由。
+- 内存与数据库 Channel 选择都只使用 `abilities.enabled=true` 的模型能力。仅写在 `Channel.Models`、但尚未上架或当前检测不可用的模型不能进入消费者路由；明确关闭自动检测的特殊模型按上架状态生成 Ability，并在内存缓存与数据库直查路径中使用相同的免检测资格。
 
 根域名公开榜单现已接入真实 V2 数据：`GET /api/hub/public/home` 一次批量读取启用渠道商、供给扩展、当前探测目标和最近 7 日样本，再按模型聚合渠道商公开行，避免按渠道商逐个请求产生 N+1 查询。首页只展示已上架模型；已经上架但当前检测失败的模型继续展示并明确标记，未上架模型不进入榜单。公开响应只包含渠道商公开资料、在线状态、供给数量、最低供给倍率、稳定性、样本量、成功请求平均延迟、首字 P50/P95 和 28 段时间线，不返回 Channel 名称、Base URL、密钥或内部错误。模型系列暂按模型名称规则归入 Anthropic、OpenAI、Google、xAI、DeepSeek、阿里、字节、智谱或其他，未知模型的长期元数据来源仍待设计。
 

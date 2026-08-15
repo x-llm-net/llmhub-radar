@@ -178,6 +178,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderRoute.POST("/channels/:id/probe", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.RequestHubProviderChannelProbe)
 			hubProviderRoute.POST("/channels/:id/probe-model", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.RequestHubProviderChannelModelProbe)
 			hubProviderRoute.PUT("/channels/:id/probe-model-endpoint", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelProbeEndpoint)
+			hubProviderRoute.PUT("/channels/:id/model-auto-probe", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelAutoProbe)
 			hubProviderRoute.PUT("/channels/:id/model-publication", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelPublication)
 			hubProviderRoute.PUT("/channels/:id/model-publication/batch", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelsPublication)
 			hubProviderRoute.GET("/earnings/summary", controller.GetHubProviderEarningSummary)
