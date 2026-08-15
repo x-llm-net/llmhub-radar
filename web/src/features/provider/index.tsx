@@ -91,6 +91,7 @@ import { ProviderContactFields } from './provider-contact-fields'
 import { ProviderEarningsSummary } from './provider-earnings-summary'
 import { ProviderOriginClaims } from './provider-origin-claims'
 import { ProviderProfileDialog } from './provider-profile-dialog'
+import { ProviderWebsiteVerification } from './provider-website-verification'
 import {
   DEFAULT_HUB_SUPPLY_SETTINGS,
   providerFormSchema,
@@ -293,6 +294,11 @@ export function ProviderOnboarding() {
                         syncSlugFromWebsite(event.target.value)
                       }}
                     />
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Optional. An unverified website is visible only to you and administrators.'
+                      )}
+                    </p>
                     {form.formState.errors.website && (
                       <p className='text-destructive text-sm'>
                         {t(
@@ -317,9 +323,14 @@ export function ProviderOnboarding() {
                         {...form.register('slug')}
                       />
                       <InputGroupAddon align='inline-end'>
-                        .{getProviderRootDomain()}
+                        -xxxx.{getProviderRootDomain()}
                       </InputGroupAddon>
                     </InputGroup>
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'A stable short code is assigned first. Verified websites can use the clean subdomain after approval.'
+                      )}
+                    </p>
                     {form.formState.errors.slug && (
                       <p className='text-destructive text-sm'>
                         {t(
@@ -388,7 +399,7 @@ export function ProviderOnboarding() {
                       <Plus className='size-4' aria-hidden='true' />
                       {mutation.isPending
                         ? t('Submitting...')
-                        : t('Submit application')}
+                        : t('Save and continue')}
                     </Button>
                   </div>
                 </form>
@@ -567,7 +578,17 @@ export function ProviderWorkspace() {
 
           <ProviderEarningsSummary />
 
-          <ProviderOriginClaims />
+          {provider.website &&
+            provider.website_verification_status !== 'verified' && (
+              <ProviderWebsiteVerification
+                provider={provider}
+                onSaved={(response) => {
+                  queryClient.setQueryData(providerQueryKey, response)
+                }}
+              />
+            )}
+
+          {provider.origin_verification_enabled && <ProviderOriginClaims />}
 
           <ProviderProfileDialog
             open={profileEditorOpen}

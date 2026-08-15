@@ -107,7 +107,7 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 			Id:           provider.Id,
 			Name:         provider.Name,
 			Slug:         provider.Slug,
-			Website:      provider.Website,
+			Website:      PublicHubProviderWebsite(provider),
 			Description:  provider.Description,
 			LogoURL:      provider.LogoURL,
 			SupportType:  provider.SupportType,

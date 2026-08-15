@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/dialog'
 import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -24,7 +25,7 @@ type ProviderReviewDialogProps = {
   open: boolean
   pending: boolean
   onOpenChange: (open: boolean) => void
-  onConfirm: (reviewRemark: string) => void
+  onConfirm: (reviewRemark: string, approveWebsite: boolean) => void
 }
 
 function getActionLabel(
@@ -33,6 +34,7 @@ function getActionLabel(
   t: (key: string) => string
 ) {
   if (status === 'active') {
+    if (currentStatus === 'active') return t('Review website')
     return t(
       currentStatus === 'disabled' ? 'Enable provider' : 'Approve provider'
     )
@@ -46,6 +48,8 @@ function getContactTypeLabel(type: string): string {
   switch (type) {
     case 'wechat':
       return 'WeChat'
+    case 'qq':
+      return 'QQ'
     case 'telegram':
       return 'Telegram'
     case 'email':
@@ -57,10 +61,51 @@ function getContactTypeLabel(type: string): string {
   }
 }
 
+function getWebsiteVerificationLabel(
+  status: HubProviderAdminItem['website_verification_status']
+): string {
+  switch (status) {
+    case 'verified':
+      return 'Verified'
+    case 'pending':
+      return 'Under review'
+    case 'rejected':
+      return 'Verification rejected'
+    default:
+      return 'Not verified'
+  }
+}
+
+function getWebsiteApprovalDescription(
+  provider: HubProviderAdminItem,
+  websiteReady: boolean,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (!websiteReady) {
+    return t(
+      'No valid verification is available. The provider can still be approved with the suffixed subdomain.'
+    )
+  }
+  if (provider.status === 'active') {
+    return t(
+      'The website will become public. The active subdomain will not change.'
+    )
+  }
+  return t('The provider subdomain will become {{slug}}.', {
+    slug: provider.slug_base,
+  })
+}
+
 export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
   const { t } = useTranslation()
   const [reviewRemark, setReviewRemark] = useState('')
+  const [approveWebsite, setApproveWebsite] = useState(false)
   const requiresRemark = props.targetStatus === 'rejected'
+  const websiteReady =
+    props.provider.website_verification_status === 'verified' ||
+    (props.provider.website_verification_status === 'pending' &&
+      props.provider.website_verification_method === 'manual' &&
+      props.provider.website_evidence_asset_id > 0)
   const actionLabel = getActionLabel(
     props.provider.status,
     props.targetStatus,
@@ -68,8 +113,11 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
   )
 
   useEffect(() => {
-    if (props.open) setReviewRemark('')
-  }, [props.open, props.targetStatus])
+    if (props.open) {
+      setReviewRemark('')
+      setApproveWebsite(props.targetStatus === 'active' && websiteReady)
+    }
+  }, [props.open, props.targetStatus, websiteReady])
 
   return (
     <Dialog
@@ -99,7 +147,7 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
                 : 'default'
             }
             disabled={props.pending || (requiresRemark && !reviewRemark.trim())}
-            onClick={() => props.onConfirm(reviewRemark.trim())}
+            onClick={() => props.onConfirm(reviewRemark.trim(), approveWebsite)}
           >
             {props.pending && <Loader2 className='animate-spin' />}
             {actionLabel}
@@ -128,8 +176,38 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
             <div className='min-w-0 sm:col-span-2'>
               <dt className='text-muted-foreground'>{t('Website')}</dt>
               <dd className='mt-1 break-all'>{props.provider.website}</dd>
+              <dd className='text-muted-foreground mt-1 text-xs'>
+                {t('Website verification')}:{' '}
+                {t(
+                  getWebsiteVerificationLabel(
+                    props.provider.website_verification_status
+                  )
+                )}
+              </dd>
             </div>
           )}
+          {props.provider.website_evidence_asset_id > 0 &&
+            props.provider.website_verification_method === 'manual' && (
+              <div className='min-w-0 sm:col-span-2'>
+                <dt className='text-muted-foreground'>
+                  {t('Verification screenshot')}
+                </dt>
+                <dd className='mt-2'>
+                  <a
+                    href={`/api/hub/provider/website-verification/assets/${props.provider.website_evidence_asset_id}`}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='block w-fit'
+                  >
+                    <img
+                      src={`/api/hub/provider/website-verification/assets/${props.provider.website_evidence_asset_id}`}
+                      alt={t('Submitted verification screenshot')}
+                      className='max-h-56 max-w-full rounded-md border object-contain'
+                    />
+                  </a>
+                </dd>
+              </div>
+            )}
           {props.provider.description && (
             <div className='min-w-0 sm:col-span-2'>
               <dt className='text-muted-foreground'>{t('Description')}</dt>
@@ -140,7 +218,7 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
           )}
           <div className='min-w-0 sm:col-span-2'>
             <dt className='text-muted-foreground'>{t('Review contact')}</dt>
-            <dd className='mt-1 break-all font-medium'>
+            <dd className='mt-1 font-medium break-all'>
               {t(getContactTypeLabel(props.provider.contact_type))}
               {' · '}
               {props.provider.contact_value || t('Not provided')}
@@ -151,12 +229,28 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
               <dt className='text-muted-foreground'>
                 {t('Public support entry')}
               </dt>
-              <dd className='mt-1 break-all'>
-                {props.provider.support_value}
-              </dd>
+              <dd className='mt-1 break-all'>{props.provider.support_value}</dd>
             </div>
           )}
         </dl>
+        {props.targetStatus === 'active' && props.provider.website && (
+          <div className='flex items-start gap-3 rounded-md border px-4 py-3'>
+            <Checkbox
+              id={`provider-approve-website-${props.provider.id}`}
+              checked={approveWebsite}
+              disabled={!websiteReady || props.pending}
+              onCheckedChange={(checked) => setApproveWebsite(checked === true)}
+            />
+            <div className='grid gap-1'>
+              <Label htmlFor={`provider-approve-website-${props.provider.id}`}>
+                {t('Confirm website ownership and use the clean subdomain')}
+              </Label>
+              <p className='text-muted-foreground text-xs'>
+                {getWebsiteApprovalDescription(props.provider, websiteReady, t)}
+              </p>
+            </div>
+          </div>
+        )}
         <div className='space-y-2'>
           <Label htmlFor={`provider-review-${props.provider.id}`}>
             {requiresRemark ? t('Rejection reason') : t('Administrator note')}

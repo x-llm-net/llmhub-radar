@@ -54,25 +54,41 @@ var hubProviderReservedSlugs = map[string]struct{}{
 // HubProvider is the provider profile owned by a New API user. Supply groups
 // and their New API channels will reference this profile in later steps.
 type HubProvider struct {
-	Id                     int    `json:"id" gorm:"primaryKey"`
-	OwnerUserId            int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
-	Slot                   int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
-	Name                   string `json:"name" gorm:"type:varchar(80);not null"`
-	Slug                   string `json:"slug" gorm:"type:varchar(63)"`
-	Website                string `json:"website" gorm:"type:varchar(512);not null"`
-	Description            string `json:"description" gorm:"type:varchar(1000);not null"`
-	LogoURL                string `json:"logo_url" gorm:"type:varchar(1024);not null"`
-	ContactType            string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
-	ContactValue           string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
-	SupportType            string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`
-	SupportValue           string `json:"support_value" gorm:"type:varchar(512);not null;default:''"`
-	PlatformFeeBasisPoints *int   `json:"-" gorm:"column:platform_fee_basis_points"`
-	Status                 string `json:"status" gorm:"type:varchar(24);not null;index"`
-	ReviewRemark           string `json:"review_remark" gorm:"type:varchar(1000);not null;default:''"`
-	ReviewedByUserId       int    `json:"reviewed_by_user_id" gorm:"not null;default:0"`
-	ReviewedAt             int64  `json:"reviewed_at" gorm:"bigint;not null;default:0"`
-	CreatedAt              int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt              int64  `json:"updated_at" gorm:"bigint"`
+	Id                           int    `json:"id" gorm:"primaryKey"`
+	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
+	Slot                         int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
+	Name                         string `json:"name" gorm:"type:varchar(80);not null"`
+	Slug                         string `json:"slug" gorm:"type:varchar(63)"`
+	SlugBase                     string `json:"slug_base" gorm:"type:varchar(63);not null;default:''"`
+	SlugCode                     string `json:"-" gorm:"type:varchar(8);not null;default:''"`
+	Website                      string `json:"website" gorm:"type:varchar(512);not null"`
+	WebsiteVerifiedOrigin        string `json:"website_verified_origin" gorm:"type:varchar(191);not null;default:''"`
+	WebsiteVerificationStatus    string `json:"website_verification_status" gorm:"type:varchar(24);not null;default:'unverified';index"`
+	WebsiteVerificationMethod    string `json:"website_verification_method" gorm:"type:varchar(16);not null;default:''"`
+	WebsiteVerificationToken     string `json:"-" gorm:"type:varchar(128);not null;default:''"`
+	WebsiteEvidenceAssetId       int    `json:"website_evidence_asset_id" gorm:"not null;default:0;index"`
+	WebsiteVerificationRemark    string `json:"website_verification_remark" gorm:"type:varchar(1000);not null;default:''"`
+	WebsiteVerificationLastError string `json:"website_verification_last_error" gorm:"type:varchar(1000);not null;default:''"`
+	WebsiteVerifiedAt            int64  `json:"website_verified_at" gorm:"bigint;not null;default:0"`
+	Description                  string `json:"description" gorm:"type:varchar(1000);not null"`
+	LogoURL                      string `json:"logo_url" gorm:"type:varchar(1024);not null"`
+	ContactType                  string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
+	ContactValue                 string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
+	SupportType                  string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`
+	SupportValue                 string `json:"support_value" gorm:"type:varchar(512);not null;default:''"`
+	PlatformFeeBasisPoints       *int   `json:"-" gorm:"column:platform_fee_basis_points"`
+	Status                       string `json:"status" gorm:"type:varchar(24);not null;index"`
+	ReviewRemark                 string `json:"review_remark" gorm:"type:varchar(1000);not null;default:''"`
+	ReviewedByUserId             int    `json:"reviewed_by_user_id" gorm:"not null;default:0"`
+	ReviewedAt                   int64  `json:"reviewed_at" gorm:"bigint;not null;default:0"`
+	CreatedAt                    int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt                    int64  `json:"updated_at" gorm:"bigint"`
+	OriginVerificationEnabled    bool   `json:"origin_verification_enabled" gorm:"-"`
+	WebsiteVerificationDNSRecord string `json:"website_verification_dns_record" gorm:"-"`
+	WebsiteVerificationDNSValue  string `json:"website_verification_dns_value" gorm:"-"`
+	WebsiteVerificationHTTPURL   string `json:"website_verification_http_url" gorm:"-"`
+	WebsiteVerificationHTTPBody  string `json:"website_verification_http_body" gorm:"-"`
+	UseProvisionalSlug           bool   `json:"-" gorm:"-"`
 }
 
 type HubProviderAdminListItem struct {
@@ -115,6 +131,12 @@ func (p *HubProvider) BeforeCreate(tx *gorm.DB) error {
 	}
 	if p.Status == "" {
 		p.Status = HubProviderStatusActive
+	}
+	if p.SlugBase == "" {
+		p.SlugBase = p.Slug
+	}
+	if p.WebsiteVerificationStatus == "" {
+		p.WebsiteVerificationStatus = HubProviderWebsiteVerificationStatusUnverified
 	}
 	p.CreatedAt = now
 	p.UpdatedAt = now
@@ -263,6 +285,32 @@ func prepareHubProviderSlug(requestedSlug, providerName, website string, exclude
 	return "", ErrHubProviderSlugAlreadyExists
 }
 
+func prepareProvisionalHubProviderSlug(requestedSlug, providerName, website string) (string, string, string, error) {
+	candidate := strings.TrimSpace(requestedSlug)
+	if candidate == "" {
+		candidate = hubProviderSlugFromWebsite(website)
+		if candidate == "" {
+			candidate = hubProviderSlugFromName(providerName)
+		}
+	}
+	base, err := NormalizeHubProviderSlug(candidate)
+	if err != nil {
+		return "", "", "", err
+	}
+	for range 10 {
+		code := strings.ToLower(common.GetRandomString(4))
+		slug := hubProviderSlugWithSuffix(base, code)
+		taken, lookupErr := hubProviderSlugTaken(slug, 0)
+		if lookupErr != nil {
+			return "", "", "", lookupErr
+		}
+		if !taken {
+			return slug, base, code, nil
+		}
+	}
+	return "", "", "", ErrHubProviderSlugAlreadyExists
+}
+
 func CreateHubProvider(provider *HubProvider) error {
 	if provider == nil || provider.OwnerUserId <= 0 {
 		return errors.New("invalid hub provider")
@@ -275,7 +323,16 @@ func CreateHubProvider(provider *HubProvider) error {
 	if existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
-	slug, err := prepareHubProviderSlug(provider.Slug, provider.Name, provider.Website, 0)
+	var slug string
+	if provider.UseProvisionalSlug {
+		var base, code string
+		slug, base, code, err = prepareProvisionalHubProviderSlug(provider.Slug, provider.Name, provider.Website)
+		provider.SlugBase = base
+		provider.SlugCode = code
+	} else {
+		slug, err = prepareHubProviderSlug(provider.Slug, provider.Name, provider.Website, 0)
+		provider.SlugBase = slug
+	}
 	if err != nil {
 		return err
 	}
@@ -303,7 +360,7 @@ func CreateHubProvider(provider *HubProvider) error {
 // rejected application returns to pending review when the user resubmits it.
 func UpdateHubProviderProfile(
 	ownerUserID int,
-	slug, name, website, description, logoURL string,
+	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
 ) (*HubProvider, error) {
 	if ownerUserID <= 0 {
@@ -317,14 +374,8 @@ func UpdateHubProviderProfile(
 		}
 		return nil, err
 	}
-	normalizedSlug, err := prepareHubProviderSlug(slug, name, website, provider.Id)
-	if err != nil {
-		return nil, err
-	}
-
 	updates := map[string]any{
 		"name":          name,
-		"slug":          normalizedSlug,
 		"website":       website,
 		"description":   description,
 		"logo_url":      logoURL,
@@ -333,6 +384,18 @@ func UpdateHubProviderProfile(
 		"support_type":  supportType,
 		"support_value": supportValue,
 		"updated_at":    common.GetTimestamp(),
+	}
+	oldOrigin, _, oldOriginErr := NormalizeHubProviderOrigin(provider.Website)
+	newOrigin, _, newOriginErr := NormalizeHubProviderOrigin(website)
+	if website == "" || oldOriginErr != nil || newOriginErr != nil || oldOrigin != newOrigin {
+		updates["website_verified_origin"] = ""
+		updates["website_verification_status"] = HubProviderWebsiteVerificationStatusUnverified
+		updates["website_verification_method"] = ""
+		updates["website_verification_token"] = ""
+		updates["website_evidence_asset_id"] = 0
+		updates["website_verification_remark"] = ""
+		updates["website_verification_last_error"] = ""
+		updates["website_verified_at"] = 0
 	}
 	if provider.Status == HubProviderStatusRejected {
 		updates["status"] = HubProviderStatusPending
@@ -345,10 +408,6 @@ func UpdateHubProviderProfile(
 		Where("id = ? AND owner_user_id = ?", provider.Id, ownerUserID).
 		Updates(updates)
 	if result.Error != nil {
-		slugTaken, lookupErr := hubProviderSlugTaken(normalizedSlug, provider.Id)
-		if lookupErr == nil && slugTaken {
-			return nil, ErrHubProviderSlugAlreadyExists
-		}
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
@@ -448,6 +507,7 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 		if override := providers[i].PlatformFeeOverrideBasisPoints; override != nil && *override >= 0 && *override <= 10000 {
 			providers[i].EffectivePlatformFeeBasisPoints = *override
 		}
+		HydrateHubProviderVerificationFields(&providers[i].HubProvider)
 	}
 	if err := populateHubProviderUpstreamUsages(providers); err != nil {
 		return nil, 0, err
@@ -549,28 +609,80 @@ func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem) err
 }
 
 func UpdateHubProviderStatus(providerID int, status string) ([]int, error) {
-	return updateHubProviderStatus(providerID, status, 0, "")
+	return updateHubProviderStatus(providerID, status, 0, "", false)
 }
 
 func UpdateHubProviderStatusWithReview(providerID int, status string, reviewerUserID int, reviewRemark string) ([]int, error) {
-	return updateHubProviderStatus(providerID, status, reviewerUserID, strings.TrimSpace(reviewRemark))
+	return updateHubProviderStatus(providerID, status, reviewerUserID, strings.TrimSpace(reviewRemark), false)
 }
 
-func updateHubProviderStatus(providerID int, status string, reviewerUserID int, reviewRemark string) ([]int, error) {
+func UpdateHubProviderStatusWithReviewAndWebsite(providerID int, status string, reviewerUserID int, reviewRemark string, approveWebsite bool) ([]int, error) {
+	return updateHubProviderStatus(providerID, status, reviewerUserID, strings.TrimSpace(reviewRemark), approveWebsite)
+}
+
+func updateHubProviderStatus(providerID int, status string, reviewerUserID int, reviewRemark string, approveWebsite bool) ([]int, error) {
 	if providerID <= 0 || !IsValidHubProviderStatus(status) {
 		return nil, errors.New("invalid hub provider status update")
 	}
 	var groupIDs []int
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var provider HubProvider
+		if err := tx.First(&provider, providerID).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{
+			"status":              status,
+			"review_remark":       reviewRemark,
+			"reviewed_by_user_id": reviewerUserID,
+			"reviewed_at":         common.GetTimestamp(),
+			"updated_at":          common.GetTimestamp(),
+		}
+		if status == HubProviderStatusActive && approveWebsite {
+			verificationReady := provider.WebsiteVerificationStatus == HubProviderWebsiteVerificationStatusVerified ||
+				(provider.WebsiteVerificationStatus == HubProviderWebsiteVerificationStatusPending &&
+					provider.WebsiteVerificationMethod == HubProviderWebsiteVerificationMethodManual &&
+					provider.WebsiteEvidenceAssetId > 0)
+			if !verificationReady {
+				return ErrHubProviderWebsiteVerificationInvalid
+			}
+			origin, _, err := NormalizeHubProviderOrigin(provider.Website)
+			if err != nil || origin != provider.WebsiteVerifiedOrigin {
+				return ErrHubProviderWebsiteVerificationInvalid
+			}
+			if provider.Status != HubProviderStatusActive {
+				cleanSlug := provider.SlugBase
+				if cleanSlug == "" {
+					cleanSlug = provider.Slug
+				}
+				cleanSlug, err = NormalizeHubProviderSlug(cleanSlug)
+				if err != nil {
+					return err
+				}
+				var count int64
+				if err := tx.Model(&HubProvider{}).
+					Where("slug = ? AND id <> ?", cleanSlug, providerID).
+					Count(&count).Error; err != nil {
+					return err
+				}
+				if count > 0 {
+					return ErrHubProviderSlugAlreadyExists
+				}
+				updates["slug"] = cleanSlug
+			}
+			updates["website_verification_status"] = HubProviderWebsiteVerificationStatusVerified
+			updates["website_verification_remark"] = reviewRemark
+			updates["website_verification_last_error"] = ""
+			updates["website_verified_at"] = common.GetTimestamp()
+		}
+		if status == HubProviderStatusRejected &&
+			provider.WebsiteVerificationStatus == HubProviderWebsiteVerificationStatusPending &&
+			provider.WebsiteVerificationMethod == HubProviderWebsiteVerificationMethodManual {
+			updates["website_verification_status"] = HubProviderWebsiteVerificationStatusRejected
+			updates["website_verification_remark"] = reviewRemark
+		}
 		result := tx.Model(&HubProvider{}).
 			Where("id = ?", providerID).
-			Updates(map[string]any{
-				"status":              status,
-				"review_remark":       reviewRemark,
-				"reviewed_by_user_id": reviewerUserID,
-				"reviewed_at":         common.GetTimestamp(),
-				"updated_at":          common.GetTimestamp(),
-			})
+			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}

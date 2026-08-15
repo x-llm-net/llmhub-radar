@@ -31,7 +31,19 @@ export type HubProviderAdminItem = {
   owner_status: number
   name: string
   slug: string
+  slug_base: string
   website: string
+  website_verified_origin: string
+  website_verification_status:
+    | 'unverified'
+    | 'pending'
+    | 'verified'
+    | 'rejected'
+  website_verification_method: 'manual' | 'dns' | 'http' | ''
+  website_evidence_asset_id: number
+  website_verification_remark: string
+  website_verification_last_error: string
+  website_verified_at: number
   description: string
   logo_url: string
   contact_type: string

@@ -55,8 +55,9 @@ type hubProviderProfileRequest struct {
 type hubProviderCreateRequest = hubProviderProfileRequest
 
 type hubProviderStatusUpdateRequest struct {
-	Status       string `json:"status"`
-	ReviewRemark string `json:"review_remark"`
+	Status         string `json:"status"`
+	ReviewRemark   string `json:"review_remark"`
+	ApproveWebsite bool   `json:"approve_website"`
 }
 
 type hubProviderSettlementSettingsUpdateRequest struct {
@@ -69,6 +70,7 @@ func GetHubProviderSelf(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.HydrateHubProviderVerificationFields(provider)
 	common.ApiSuccess(c, provider)
 }
 
@@ -112,17 +114,18 @@ func CreateHubProvider(c *gin.Context) {
 	}
 
 	provider := &model.HubProvider{
-		OwnerUserId:  c.GetInt("id"),
-		Name:         req.Name,
-		Slug:         req.Slug,
-		Website:      req.Website,
-		Description:  req.Description,
-		LogoURL:      req.LogoURL,
-		ContactType:  req.ContactType,
-		ContactValue: req.ContactValue,
-		SupportType:  req.SupportType,
-		SupportValue: req.SupportValue,
-		Status:       model.HubProviderStatusPending,
+		OwnerUserId:        c.GetInt("id"),
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Website:            req.Website,
+		Description:        req.Description,
+		LogoURL:            req.LogoURL,
+		ContactType:        req.ContactType,
+		ContactValue:       req.ContactValue,
+		SupportType:        req.SupportType,
+		SupportValue:       req.SupportValue,
+		Status:             model.HubProviderStatusPending,
+		UseProvisionalSlug: true,
 	}
 	if err := model.CreateHubProvider(provider); err != nil {
 		if err == model.ErrHubProviderAlreadyExists {
@@ -137,6 +140,7 @@ func CreateHubProvider(c *gin.Context) {
 		return
 	}
 
+	model.HydrateHubProviderVerificationFields(provider)
 	common.ApiSuccess(c, provider)
 }
 
@@ -152,7 +156,7 @@ func UpdateHubProviderProfile(c *gin.Context) {
 	}
 
 	provider, err := model.UpdateHubProviderProfile(
-		c.GetInt("id"), req.Slug, req.Name, req.Website, req.Description, req.LogoURL,
+		c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
 		req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
 	)
 	if err != nil {
@@ -167,6 +171,7 @@ func UpdateHubProviderProfile(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.HydrateHubProviderVerificationFields(provider)
 	common.ApiSuccess(c, provider)
 }
 
@@ -270,13 +275,22 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	groupIDs, err := model.UpdateHubProviderStatusWithReview(
+	groupIDs, err := model.UpdateHubProviderStatusWithReviewAndWebsite(
 		providerID,
 		req.Status,
 		c.GetInt("id"),
 		req.ReviewRemark,
+		req.ApproveWebsite,
 	)
 	if err != nil {
+		if errors.Is(err, model.ErrHubProviderSlugAlreadyExists) {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderSlugAlreadyExists)
+			return
+		}
+		if errors.Is(err, model.ErrHubProviderWebsiteVerificationInvalid) {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteVerificationInvalid)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

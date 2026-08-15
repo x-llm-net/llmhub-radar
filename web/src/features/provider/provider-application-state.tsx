@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getProviderApplicationState } from './application-state'
 import { ProviderEarningsSummary } from './provider-earnings-summary'
 import { ProviderProfileDialog } from './provider-profile-dialog'
+import { ProviderWebsiteVerification } from './provider-website-verification'
 import type {
   HubProvider,
   HubProviderResponse,
@@ -135,6 +136,14 @@ export function ProviderApplicationState(props: ProviderApplicationStateProps) {
               </div>
             </CardContent>
           </Card>
+
+          {(props.provider.status === 'pending' ||
+            props.provider.status === 'rejected') && (
+            <ProviderWebsiteVerification
+              provider={props.provider}
+              onSaved={props.onSaved}
+            />
+          )}
 
           {config.showEarnings && <ProviderEarningsSummary />}
         </div>

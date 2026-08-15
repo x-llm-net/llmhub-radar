@@ -23,6 +23,7 @@ import {
   CircleDollarSign,
   Power,
   PowerOff,
+  ShieldCheck,
   X,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -56,13 +57,19 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
   const [feeOpen, setFeeOpen] = useState(false)
   const showSettlement =
     props.provider.status === 'active' || props.provider.status === 'disabled'
+  const showWebsiteReview =
+    props.provider.status === 'active' &&
+    props.provider.website_verification_status === 'pending' &&
+    props.provider.website_verification_method === 'manual' &&
+    props.provider.website_evidence_asset_id > 0
   const mutation = useMutation({
-    mutationFn: (reviewRemark: string) => {
+    mutationFn: (input: { reviewRemark: string; approveWebsite: boolean }) => {
       if (!targetStatus) throw new Error('Missing provider status')
       return updateAdminProviderStatus(
         props.provider.id,
         targetStatus,
-        reviewRemark
+        input.reviewRemark,
+        input.approveWebsite
       )
     },
     onSuccess: async (response) => {
@@ -77,6 +84,11 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
         toast.success(t('Provider application rejected'))
       } else if (completedStatus === 'disabled') {
         toast.success(t('Provider disabled'))
+      } else if (
+        completedStatus === 'active' &&
+        props.provider.status === 'active'
+      ) {
+        toast.success(t('Website verification approved'))
       } else {
         toast.success(t('Provider approved'))
       }
@@ -156,6 +168,24 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
           <TooltipContent>{t('Approve provider')}</TooltipContent>
         </Tooltip>
       )}
+      {showWebsiteReview && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                onClick={() => setTargetStatus('active')}
+                aria-label={t('Review website')}
+              />
+            }
+          >
+            <ShieldCheck />
+          </TooltipTrigger>
+          <TooltipContent>{t('Review website')}</TooltipContent>
+        </Tooltip>
+      )}
       {props.provider.status === 'pending' && (
         <Tooltip>
           <TooltipTrigger
@@ -218,7 +248,9 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
         onOpenChange={(open) => {
           if (!open && !mutation.isPending) setTargetStatus(null)
         }}
-        onConfirm={(reviewRemark) => mutation.mutate(reviewRemark)}
+        onConfirm={(reviewRemark, approveWebsite) =>
+          mutation.mutate({ reviewRemark, approveWebsite })
+        }
       />
       <ProviderSettlementSheet
         provider={props.provider}

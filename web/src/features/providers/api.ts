@@ -41,11 +41,17 @@ export async function getAdminProviders(
 export async function updateAdminProviderStatus(
   providerId: number,
   status: HubProviderAdminItem['status'],
-  reviewRemark = ''
+  reviewRemark = '',
+  approveWebsite = false
 ): Promise<{ success: boolean; message?: string }> {
   const response = await api.put(
     `/api/hub/admin/providers/${providerId}/status`,
-    { status, review_remark: reviewRemark }
+    {
+      status,
+      review_remark: reviewRemark,
+      approve_website: approveWebsite,
+    },
+    { skipBusinessError: true }
   )
   return response.data
 }

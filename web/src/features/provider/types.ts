@@ -22,6 +22,12 @@ import type { Channel } from '@/features/channels/types'
 import { isProviderSlug } from '@/lib/provider-domain'
 
 export type HubProviderStatus = 'pending' | 'active' | 'rejected' | 'disabled'
+export type HubProviderWebsiteVerificationStatus =
+  | 'unverified'
+  | 'pending'
+  | 'verified'
+  | 'rejected'
+export type HubProviderWebsiteVerificationMethod = 'manual' | 'dns' | 'http'
 export type HubProviderContactType =
   | 'qq'
   | 'wechat'
@@ -42,7 +48,20 @@ export type HubProvider = {
   id: number
   name: string
   slug: string
+  slug_base: string
   website: string
+  website_verified_origin: string
+  website_verification_status: HubProviderWebsiteVerificationStatus
+  website_verification_method: HubProviderWebsiteVerificationMethod | ''
+  website_evidence_asset_id: number
+  website_verification_remark: string
+  website_verification_last_error: string
+  website_verified_at: number
+  origin_verification_enabled: boolean
+  website_verification_dns_record: string
+  website_verification_dns_value: string
+  website_verification_http_url: string
+  website_verification_http_body: string
   description: string
   logo_url: string
   contact_type: HubProviderContactType

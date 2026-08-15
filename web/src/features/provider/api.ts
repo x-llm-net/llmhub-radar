@@ -25,6 +25,7 @@ import { api } from '@/lib/api'
 
 import type {
   HubProviderResponse,
+  HubProviderWebsiteVerificationMethod,
   HubProviderOriginClaimMethod,
   HubProviderOriginClaimResponse,
   HubProviderOriginClaimsResponse,
@@ -96,6 +97,42 @@ export async function updateProvider(
   values: ProviderFormValues
 ): Promise<HubProviderResponse> {
   const response = await api.put('/api/hub/provider', values)
+  return response.data
+}
+
+export async function uploadProviderWebsiteEvidence(file: File): Promise<{
+  success: boolean
+  message?: string
+  data?: { id: number; content_type: string }
+}> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post(
+    '/api/hub/provider/website-verification/assets',
+    formData
+  )
+  return response.data
+}
+
+export function getProviderWebsiteEvidenceURL(assetId: number): string {
+  return `/api/hub/provider/website-verification/assets/${assetId}`
+}
+
+export async function submitProviderWebsiteVerification(
+  method: HubProviderWebsiteVerificationMethod,
+  evidenceAssetId = 0
+): Promise<HubProviderResponse> {
+  const response = await api.post('/api/hub/provider/website-verification', {
+    method,
+    evidence_asset_id: evidenceAssetId,
+  })
+  return response.data
+}
+
+export async function verifyProviderWebsite(): Promise<HubProviderResponse> {
+  const response = await api.post(
+    '/api/hub/provider/website-verification/verify'
+  )
   return response.data
 }
 

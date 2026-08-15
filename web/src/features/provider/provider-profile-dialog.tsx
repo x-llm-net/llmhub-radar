@@ -26,10 +26,7 @@ import {
 } from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  getProviderRootDomain,
-  providerSlugFromWebsite,
-} from '@/lib/provider-domain'
+import { getProviderRootDomain } from '@/lib/provider-domain'
 
 import { updateProvider } from './api'
 import { ProviderContactFields } from './provider-contact-fields'
@@ -86,14 +83,6 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
     },
     onError: () => toast.error(t('Failed to update provider profile')),
   })
-
-  const syncSlugFromWebsite = (website: string) => {
-    if (form.getFieldState('slug').isDirty) return
-    const derivedSlug = providerSlugFromWebsite(website)
-    if (derivedSlug) {
-      form.setValue('slug', derivedSlug, { shouldValidate: true })
-    }
-  }
 
   useEffect(() => {
     if (props.open) form.reset(valuesFromProvider(props.provider))
@@ -165,11 +154,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
             <Input
               id='provider-profile-website'
               placeholder='https://example.com'
-              {...form.register('website', {
-                onChange: (event) => {
-                  syncSlugFromWebsite(event.target.value)
-                },
-              })}
+              {...form.register('website')}
             />
             {form.formState.errors.website && (
               <p className='text-destructive text-sm'>
@@ -192,12 +177,18 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
                 autoCorrect='off'
                 spellCheck={false}
                 placeholder='your-name'
+                readOnly
                 {...form.register('slug')}
               />
               <InputGroupAddon align='inline-end'>
                 .{getProviderRootDomain()}
               </InputGroupAddon>
             </InputGroup>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'The active subdomain is fixed so existing API Base URLs keep working.'
+              )}
+            </p>
             {form.formState.errors.slug && (
               <p className='text-destructive text-sm'>
                 {t(

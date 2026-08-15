@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 		&BillingTokenAdjustment{},
 		&BillingTaskSettlement{},
 		&HubProviderPayoutAsset{},
+		&HubProviderWebsiteEvidenceAsset{},
 		&HubProviderPayoutAccount{},
 		&HubProviderWithdrawal{},
 		&HubSupplyGroupRevision{},
@@ -95,6 +96,7 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM hub_provider_withdrawals")
 		DB.Exec("DELETE FROM hub_provider_payout_accounts")
 		DB.Exec("DELETE FROM hub_provider_payout_assets")
+		DB.Exec("DELETE FROM hub_provider_website_evidence_assets")
 		DB.Exec("DELETE FROM hub_supply_group_revisions")
 		DB.Exec("DELETE FROM hub_supply_group_probe_targets")
 		DB.Exec("DELETE FROM hub_supply_group_probe_samples")

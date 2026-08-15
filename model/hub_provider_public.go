@@ -129,7 +129,7 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 			Id:           provider.Id,
 			Name:         provider.Name,
 			Slug:         provider.Slug,
-			Website:      provider.Website,
+			Website:      PublicHubProviderWebsite(provider),
 			Description:  provider.Description,
 			LogoURL:      provider.LogoURL,
 			SupportType:  provider.SupportType,
