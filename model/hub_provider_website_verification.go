@@ -101,6 +101,47 @@ func CreateHubProviderWebsiteEvidenceAsset(ownerUserID int, contentType string, 
 	return asset, nil
 }
 
+func CreateHubProviderWithManualWebsiteVerification(provider *HubProvider, contentType string, data []byte) error {
+	contentType = strings.TrimSpace(contentType)
+	if provider == nil || contentType == "" || len(data) == 0 {
+		return ErrHubProviderWebsiteEvidenceInvalid
+	}
+	origin, _, err := NormalizeHubProviderOrigin(provider.Website)
+	if err != nil {
+		return ErrHubProviderWebsiteRequired
+	}
+	if err := prepareHubProviderForCreate(provider); err != nil {
+		return err
+	}
+
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		provider.WebsiteVerifiedOrigin = origin
+		provider.WebsiteVerificationStatus = HubProviderWebsiteVerificationStatusPending
+		provider.WebsiteVerificationMethod = HubProviderWebsiteVerificationMethodManual
+		if err := tx.Create(provider).Error; err != nil {
+			return err
+		}
+		asset := &HubProviderWebsiteEvidenceAsset{
+			ProviderId:  provider.Id,
+			ContentType: contentType,
+			Data:        data,
+		}
+		if err := tx.Create(asset).Error; err != nil {
+			return err
+		}
+		provider.WebsiteEvidenceAssetId = asset.Id
+		return tx.Model(&HubProvider{}).
+			Where("id = ?", provider.Id).
+			Update("website_evidence_asset_id", asset.Id).Error
+	})
+	if err != nil {
+		return mapHubProviderCreateError(provider, err)
+	}
+	refreshHubProviderRoutingCache()
+	HydrateHubProviderVerificationFields(provider)
+	return nil
+}
+
 func GetHubProviderWebsiteEvidenceAsset(assetID int) (*HubProviderWebsiteEvidenceAsset, error) {
 	if assetID <= 0 {
 		return nil, ErrHubProviderWebsiteEvidenceInvalid

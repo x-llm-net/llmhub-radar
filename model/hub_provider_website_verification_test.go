@@ -15,6 +15,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCreateHubProviderWithManualWebsiteVerification(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{
+		OwnerUserId:        7000,
+		Name:               "Onboarding Verification",
+		Slug:               "onboarding-verification",
+		Website:            "https://onboarding.example/admin",
+		Status:             HubProviderStatusPending,
+		UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProviderWithManualWebsiteVerification(
+		provider,
+		"image/png",
+		[]byte("screenshot"),
+	))
+	assert.Equal(t, HubProviderWebsiteVerificationStatusPending, provider.WebsiteVerificationStatus)
+	assert.Equal(t, HubProviderWebsiteVerificationMethodManual, provider.WebsiteVerificationMethod)
+	require.Positive(t, provider.WebsiteEvidenceAssetId)
+	assert.Equal(t, "https://onboarding.example", provider.WebsiteVerifiedOrigin)
+
+	asset, err := GetHubProviderWebsiteEvidenceAsset(provider.WebsiteEvidenceAssetId)
+	require.NoError(t, err)
+	assert.Equal(t, provider.Id, asset.ProviderId)
+	assert.Equal(t, []byte("screenshot"), asset.Data)
+}
+
 func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *testing.T) {
 	truncateTables(t)
 	provider := &HubProvider{

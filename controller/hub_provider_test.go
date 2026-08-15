@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 package controller
 
 import (
+	"bytes"
+	"encoding/base64"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,6 +48,37 @@ func decodeHubProviderAPIResponse(t *testing.T, body []byte) hubProviderAPIRespo
 	var response hubProviderAPIResponse
 	require.NoError(t, common.Unmarshal(body, &response))
 	return response
+}
+
+func newHubProviderMultipartCreateContext(
+	t *testing.T,
+	profile map[string]string,
+	verifyWebsite bool,
+	filename string,
+	fileData []byte,
+	userID int,
+) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	profileJSON, err := common.Marshal(profile)
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteField("profile", string(profileJSON)))
+	require.NoError(t, writer.WriteField("verify_website", strconv.FormatBool(verifyWebsite)))
+	if filename != "" {
+		part, createErr := writer.CreateFormFile("file", filename)
+		require.NoError(t, createErr)
+		_, writeErr := part.Write(fileData)
+		require.NoError(t, writeErr)
+	}
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/hub/provider", &body)
+	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Set("id", userID)
+	return ctx, recorder
 }
 
 func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
@@ -78,6 +113,67 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, response.Data.Id, stored.Id)
+}
+
+func TestCreateHubProviderCanSubmitManualWebsiteVerificationAtomically(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	png, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	)
+	require.NoError(t, err)
+	ctx, recorder := newHubProviderMultipartCreateContext(t, map[string]string{
+		"name":          "Verified Acme",
+		"slug":          "verified-acme",
+		"website":       "https://verified.example/admin",
+		"description":   "Verified during onboarding",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+	}, true, "admin.png", png, 42)
+
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	assert.Equal(t, model.HubProviderWebsiteVerificationStatusPending, response.Data.WebsiteVerificationStatus)
+	assert.Equal(t, model.HubProviderWebsiteVerificationMethodManual, response.Data.WebsiteVerificationMethod)
+	require.Positive(t, response.Data.WebsiteEvidenceAssetId)
+	assert.Equal(t, "https://verified.example", response.Data.WebsiteVerifiedOrigin)
+
+	asset, err := model.GetHubProviderWebsiteEvidenceAsset(response.Data.WebsiteEvidenceAssetId)
+	require.NoError(t, err)
+	assert.Equal(t, response.Data.Id, asset.ProviderId)
+	assert.Equal(t, png, asset.Data)
+}
+
+func TestCreateHubProviderRejectsInvalidOnboardingEvidenceWithoutCreatingProvider(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	ctx, recorder := newHubProviderMultipartCreateContext(t, map[string]string{
+		"name":          "Invalid Evidence",
+		"slug":          "invalid-evidence",
+		"website":       "https://invalid.example",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+	}, true, "evidence.txt", []byte("not an image"), 42)
+
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	assert.False(t, response.Success)
+	var providerCount int64
+	var assetCount int64
+	require.NoError(t, db.Model(&model.HubProvider{}).Count(&providerCount).Error)
+	require.NoError(t, db.Model(&model.HubProviderWebsiteEvidenceAsset{}).Count(&assetCount).Error)
+	assert.Zero(t, providerCount)
+	assert.Zero(t, assetCount)
 }
 
 func TestCreateHubProviderRejectsSecondProviderForCurrentUser(t *testing.T) {

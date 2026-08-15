@@ -46,6 +46,8 @@
 2. DNS TXT：在 `_llm-hub-verification.<hostname>` 发布系统生成的验证值。
 3. HTTP 文件：在 `/.well-known/llm-hub-provider-verification.txt` 发布系统生成的完整文本。
 
+入驻表单直接提供“暂不验证”和“后台截图验证”两种选择。选择截图时，渠道商资料、私有截图和官网待审核状态通过同一个事务提交，管理员不会看到未完成的半条申请；DNS TXT 与 HTTP 文件保留在后续官网验证页面。
+
 截图使用独立的私有凭证表和接口，限制 PNG、JPEG、WebP，最大 5 MB；只有申请人和管理员可以读取。现有提现二维码接口与渠道商、收款账户和提现资产生命周期绑定，不能复用。当前徽标仍使用外部 `logo_url`，官网验证截图也不作为公开徽标资源。
 
 官网验证状态为 `unverified / pending / verified / rejected`。管理员通过渠道商申请时可选择是否同时确认官网：

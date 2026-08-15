@@ -87,8 +87,17 @@ export async function getProviderSelf(): Promise<HubProviderResponse> {
 }
 
 export async function createProvider(
-  values: ProviderFormValues
+  values: ProviderFormValues,
+  websiteEvidence?: File
 ): Promise<HubProviderResponse> {
+  if (websiteEvidence) {
+    const formData = new FormData()
+    formData.append('profile', JSON.stringify(values))
+    formData.append('verify_website', 'true')
+    formData.append('file', websiteEvidence)
+    const response = await api.post('/api/hub/provider', formData)
+    return response.data
+  }
   const response = await api.post('/api/hub/provider', values)
   return response.data
 }

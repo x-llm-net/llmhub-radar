@@ -64,6 +64,25 @@ type hubProviderSettlementSettingsUpdateRequest struct {
 	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
 }
 
+func decodeHubProviderCreateRequest(c *gin.Context) (hubProviderCreateRequest, bool, string, []byte, error) {
+	var req hubProviderCreateRequest
+	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+		return req, false, "", nil, common.DecodeJson(c.Request.Body, &req)
+	}
+	if c.Request.ContentLength > hubProviderWebsiteEvidenceMaxBytes+256*1024 {
+		return req, false, "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	if err := common.Unmarshal([]byte(c.PostForm("profile")), &req); err != nil {
+		return req, false, "", nil, err
+	}
+	verifyWebsite := strings.EqualFold(strings.TrimSpace(c.PostForm("verify_website")), "true")
+	if !verifyWebsite {
+		return req, false, "", nil, nil
+	}
+	contentType, evidence, err := readHubProviderWebsiteEvidence(c)
+	return req, true, contentType, evidence, err
+}
+
 func GetHubProviderSelf(c *gin.Context) {
 	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
 	if err != nil {
@@ -102,8 +121,12 @@ func GetPublicHubHome(c *gin.Context) {
 }
 
 func CreateHubProvider(c *gin.Context) {
-	var req hubProviderProfileRequest
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderCreateRequest(c)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
+			return
+		}
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -127,13 +150,23 @@ func CreateHubProvider(c *gin.Context) {
 		Status:             model.HubProviderStatusPending,
 		UseProvisionalSlug: true,
 	}
-	if err := model.CreateHubProvider(provider); err != nil {
+	if verifyWebsite {
+		err = model.CreateHubProviderWithManualWebsiteVerification(provider, evidenceContentType, evidence)
+	} else {
+		err = model.CreateHubProvider(provider)
+	}
+	if err != nil {
 		if err == model.ErrHubProviderAlreadyExists {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderAlreadyExists)
 			return
 		}
 		if err == model.ErrHubProviderSlugAlreadyExists {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderSlugAlreadyExists)
+			return
+		}
+		if errors.Is(err, model.ErrHubProviderWebsiteRequired) ||
+			errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
+			hubProviderWebsiteVerificationError(c, err)
 			return
 		}
 		common.ApiError(c, err)

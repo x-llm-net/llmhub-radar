@@ -311,7 +311,7 @@ func prepareProvisionalHubProviderSlug(requestedSlug, providerName, website stri
 	return "", "", "", ErrHubProviderSlugAlreadyExists
 }
 
-func CreateHubProvider(provider *HubProvider) error {
+func prepareHubProviderForCreate(provider *HubProvider) error {
 	if provider == nil || provider.OwnerUserId <= 0 {
 		return errors.New("invalid hub provider")
 	}
@@ -337,22 +337,39 @@ func CreateHubProvider(provider *HubProvider) error {
 		return err
 	}
 	provider.Slug = slug
-
 	provider.Slot = 1
-	if err := DB.Create(provider).Error; err != nil {
-		existing, lookupErr := GetHubProviderByOwnerUserID(provider.OwnerUserId)
-		if lookupErr == nil && existing != nil {
-			return ErrHubProviderAlreadyExists
-		}
-		slugTaken, lookupErr := hubProviderSlugTaken(provider.Slug, 0)
-		if lookupErr == nil && slugTaken {
-			return ErrHubProviderSlugAlreadyExists
-		}
-		return err
+	return nil
+}
+
+func mapHubProviderCreateError(provider *HubProvider, createErr error) error {
+	if provider == nil {
+		return createErr
 	}
+	existing, lookupErr := GetHubProviderByOwnerUserID(provider.OwnerUserId)
+	if lookupErr == nil && existing != nil {
+		return ErrHubProviderAlreadyExists
+	}
+	slugTaken, lookupErr := hubProviderSlugTaken(provider.Slug, 0)
+	if lookupErr == nil && slugTaken {
+		return ErrHubProviderSlugAlreadyExists
+	}
+	return createErr
+}
+
+func refreshHubProviderRoutingCache() {
 	if err := RefreshHubSupplyPricingCache(); err != nil {
 		common.SysError("failed to refresh hub provider routing cache: " + err.Error())
 	}
+}
+
+func CreateHubProvider(provider *HubProvider) error {
+	if err := prepareHubProviderForCreate(provider); err != nil {
+		return err
+	}
+	if err := DB.Create(provider).Error; err != nil {
+		return mapHubProviderCreateError(provider, err)
+	}
+	refreshHubProviderRoutingCache()
 	return nil
 }
 

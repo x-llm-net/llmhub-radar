@@ -25,6 +25,7 @@ import {
   Globe2,
   Pencil,
   Plus,
+  ShieldCheck,
   Store,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -46,6 +47,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
@@ -157,6 +159,8 @@ export function ProviderOnboarding() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [verifyWebsite, setVerifyWebsite] = useState(false)
+  const [websiteEvidence, setWebsiteEvidence] = useState<File | null>(null)
   const providerQuery = useProvider()
   const form = useForm<ProviderFormValues>({
     resolver: zodResolver(providerFormSchema),
@@ -172,8 +176,12 @@ export function ProviderOnboarding() {
       support_value: '',
     },
   })
+  const website = form.watch('website').trim()
   const mutation = useMutation({
-    mutationFn: createProvider,
+    mutationFn: (input: {
+      values: ProviderFormValues
+      websiteEvidence?: File
+    }) => createProvider(input.values, input.websiteEvidence),
     onSuccess: (response) => {
       if (!response.success || !response.data) {
         toast.error(response.message || t('Failed to create provider'))
@@ -201,6 +209,12 @@ export function ProviderOnboarding() {
     providerQuery.provider,
   ])
 
+  useEffect(() => {
+    if (website) return
+    setVerifyWebsite(false)
+    setWebsiteEvidence(null)
+  }, [website])
+
   if (providerQuery.isError) {
     return <ProviderPageError onRetry={() => void providerQuery.refetch()} />
   }
@@ -209,7 +223,18 @@ export function ProviderOnboarding() {
     return <ProviderPageSkeleton />
   }
 
-  const onSubmit = (values: ProviderFormValues) => mutation.mutate(values)
+  const onSubmit = (values: ProviderFormValues) => {
+    if (verifyWebsite && !websiteEvidence) {
+      toast.error(t('Select a verification screenshot'))
+      return
+    }
+    mutation.mutate({
+      values,
+      websiteEvidence: verifyWebsite
+        ? (websiteEvidence ?? undefined)
+        : undefined,
+    })
+  }
   const nameField = form.register('name')
 
   return (
@@ -291,6 +316,67 @@ export function ProviderOnboarding() {
                       </p>
                     )}
                   </div>
+
+                  {website && (
+                    <div className='grid gap-4 rounded-md border p-4'>
+                      <div className='flex items-start gap-3'>
+                        <Checkbox
+                          id='provider-verify-website'
+                          checked={verifyWebsite}
+                          onCheckedChange={(checked) => {
+                            const enabled = checked === true
+                            setVerifyWebsite(enabled)
+                            if (!enabled) setWebsiteEvidence(null)
+                          }}
+                        />
+                        <div className='grid gap-1'>
+                          <Label htmlFor='provider-verify-website'>
+                            {t('Verify website ownership (recommended)')}
+                          </Label>
+                          <p className='text-muted-foreground text-xs'>
+                            {t(
+                              'Verification publishes your official website with verified ownership and lets the administrator enable the clean subdomain.'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {verifyWebsite ? (
+                        <div className='grid gap-2 border-t pt-4'>
+                          <Label htmlFor='provider-onboarding-evidence'>
+                            {t('Verification screenshot')}
+                          </Label>
+                          <Input
+                            id='provider-onboarding-evidence'
+                            type='file'
+                            accept='image/png,image/jpeg,image/webp'
+                            onChange={(event) =>
+                              setWebsiteEvidence(
+                                event.target.files?.item(0) ?? null
+                              )
+                            }
+                          />
+                          <p className='text-muted-foreground text-xs'>
+                            {t(
+                              'Upload a screenshot showing the browser address bar and the logged-in management page. Mask API keys, balances, and order details.'
+                            )}
+                          </p>
+                          <p className='text-muted-foreground text-xs'>
+                            {t('PNG, JPEG, or WebP, up to 5 MB.')}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className='bg-muted/30 flex items-start gap-2 rounded-md px-3 py-2 text-xs'>
+                          <ShieldCheck className='text-muted-foreground mt-0.5 size-4 shrink-0' />
+                          <p className='text-muted-foreground'>
+                            {t(
+                              'Without verification, the website stays private and the suffixed subdomain becomes fixed after onboarding approval.'
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className='grid gap-2'>
                     <Label htmlFor='provider-slug'>
@@ -382,7 +468,7 @@ export function ProviderOnboarding() {
                       <Plus className='size-4' aria-hidden='true' />
                       {mutation.isPending
                         ? t('Submitting...')
-                        : t('Save and continue')}
+                        : t('Submit application')}
                     </Button>
                   </div>
                 </form>

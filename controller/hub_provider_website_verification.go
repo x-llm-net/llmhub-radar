@@ -34,6 +34,30 @@ type hubProviderWebsiteVerificationRequest struct {
 	EvidenceAssetID int    `json:"evidence_asset_id"`
 }
 
+func readHubProviderWebsiteEvidence(c *gin.Context) (string, []byte, error) {
+	if c.Request.ContentLength > hubProviderWebsiteEvidenceMaxBytes+256*1024 {
+		return "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, hubProviderWebsiteEvidenceMaxBytes+1))
+	if err != nil || len(data) == 0 || len(data) > hubProviderWebsiteEvidenceMaxBytes {
+		return "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	contentType := strings.ToLower(http.DetectContentType(data))
+	if _, ok := hubProviderWebsiteEvidenceContentTypes[contentType]; !ok {
+		return "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	}
+	return contentType, data, nil
+}
+
 func hubProviderWebsiteVerificationError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, model.ErrHubProviderNotFound):
@@ -50,28 +74,8 @@ func hubProviderWebsiteVerificationError(c *gin.Context, err error) {
 }
 
 func UploadHubProviderWebsiteEvidence(c *gin.Context) {
-	if c.Request.ContentLength > hubProviderWebsiteEvidenceMaxBytes+256*1024 {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
-		return
-	}
-	fileHeader, err := c.FormFile("file")
+	contentType, data, err := readHubProviderWebsiteEvidence(c)
 	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
-		return
-	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
-		return
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, hubProviderWebsiteEvidenceMaxBytes+1))
-	if err != nil || len(data) == 0 || len(data) > hubProviderWebsiteEvidenceMaxBytes {
-		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
-		return
-	}
-	contentType := strings.ToLower(http.DetectContentType(data))
-	if _, ok := hubProviderWebsiteEvidenceContentTypes[contentType]; !ok {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
 		return
 	}
