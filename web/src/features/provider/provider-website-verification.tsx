@@ -28,11 +28,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getProviderPublicURL } from '@/lib/provider-domain'
 
 import {
-  getProviderWebsiteEvidenceURL,
   submitProviderWebsiteVerification,
   uploadProviderWebsiteEvidence,
   verifyProviderWebsite,
 } from './api'
+import { ProviderWebsiteEvidenceImage } from './provider-website-evidence-image'
 import type {
   HubProvider,
   HubProviderResponse,
@@ -129,7 +129,9 @@ export function ProviderWebsiteVerification(
           <CardTitle>{t('Website ownership')}</CardTitle>
           <p className='text-muted-foreground mt-1 text-sm'>
             {t(
-              'Website verification is optional. Without it, your platform subdomain remains your public homepage.'
+              props.provider.status === 'active'
+                ? 'After verification, your official website is shown publicly with verified ownership. The active subdomain stays unchanged so existing links and API Base URLs keep working.'
+                : 'After verification, your official website is shown publicly with verified ownership. If approved together with onboarding, the administrator can also promote your suffixed subdomain to the clean subdomain.'
             )}
           </p>
         </div>
@@ -240,22 +242,11 @@ export function ProviderWebsiteVerification(
                 </div>
                 {props.provider.website_evidence_asset_id > 0 &&
                   props.provider.website_verification_method === 'manual' && (
-                    <a
-                      href={getProviderWebsiteEvidenceURL(
-                        props.provider.website_evidence_asset_id
-                      )}
-                      target='_blank'
-                      rel='noreferrer'
-                      className='block w-fit'
-                    >
-                      <img
-                        src={getProviderWebsiteEvidenceURL(
-                          props.provider.website_evidence_asset_id
-                        )}
-                        alt={t('Submitted verification screenshot')}
-                        className='max-h-48 max-w-full rounded-md border object-contain'
-                      />
-                    </a>
+                    <ProviderWebsiteEvidenceImage
+                      assetId={props.provider.website_evidence_asset_id}
+                      alt={t('Submitted verification screenshot')}
+                      className='max-h-48 max-w-full rounded-md border object-contain'
+                    />
                   )}
                 <Button
                   type='button'

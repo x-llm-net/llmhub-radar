@@ -118,6 +118,15 @@ export function getProviderWebsiteEvidenceURL(assetId: number): string {
   return `/api/hub/provider/website-verification/assets/${assetId}`
 }
 
+export async function getProviderWebsiteEvidence(
+  assetId: number
+): Promise<Blob> {
+  const response = await api.get(getProviderWebsiteEvidenceURL(assetId), {
+    responseType: 'blob',
+  })
+  return response.data
+}
+
 export async function submitProviderWebsiteVerification(
   method: HubProviderWebsiteVerificationMethod,
   evidenceAssetId = 0

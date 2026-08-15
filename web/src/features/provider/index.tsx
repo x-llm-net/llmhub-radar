@@ -64,7 +64,6 @@ import {
   getProviderPublicURL,
   getProviderRootDomain,
   providerSlugFromName,
-  providerSlugFromWebsite,
 } from '@/lib/provider-domain'
 
 import {
@@ -212,15 +211,6 @@ export function ProviderOnboarding() {
 
   const onSubmit = (values: ProviderFormValues) => mutation.mutate(values)
   const nameField = form.register('name')
-  const websiteField = form.register('website')
-
-  const syncSlugFromWebsite = (website: string) => {
-    if (form.getFieldState('slug').isDirty) return
-    const derivedSlug = providerSlugFromWebsite(website)
-    if (derivedSlug) {
-      form.setValue('slug', derivedSlug, { shouldValidate: true })
-    }
-  }
 
   return (
     <Main>
@@ -260,14 +250,11 @@ export function ProviderOnboarding() {
                       {...nameField}
                       onChange={(event) => {
                         void nameField.onChange(event)
-                        if (
-                          !form.getFieldState('slug').isDirty &&
-                          !form.getValues('slug').trim() &&
-                          !form.getValues('website').trim()
-                        ) {
+                        if (!form.getFieldState('slug').isDirty) {
                           form.setValue(
                             'slug',
-                            providerSlugFromName(event.target.value)
+                            providerSlugFromName(event.target.value),
+                            { shouldValidate: true }
                           )
                         }
                       }}
@@ -288,15 +275,11 @@ export function ProviderOnboarding() {
                     <Input
                       id='provider-website'
                       placeholder='https://example.com'
-                      {...websiteField}
-                      onChange={(event) => {
-                        void websiteField.onChange(event)
-                        syncSlugFromWebsite(event.target.value)
-                      }}
+                      {...form.register('website')}
                     />
                     <p className='text-muted-foreground text-xs'>
                       {t(
-                        'Optional. An unverified website is visible only to you and administrators.'
+                        'Optional. Before verification, the website is visible only to you and administrators. After verification, it can be shown publicly as your official website.'
                       )}
                     </p>
                     {form.formState.errors.website && (
@@ -328,7 +311,7 @@ export function ProviderOnboarding() {
                     </InputGroup>
                     <p className='text-muted-foreground text-xs'>
                       {t(
-                        'A stable short code is assigned first. Verified websites can use the clean subdomain after approval.'
+                        'The platform first assigns a suffixed subdomain. If website ownership is verified before onboarding approval, the administrator can promote it to the clean subdomain; after approval, the active subdomain is fixed.'
                       )}
                     </p>
                     {form.formState.errors.slug && (

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { ProviderWebsiteEvidenceImage } from '@/features/provider/provider-website-evidence-image'
 
 import type { HubProviderAdminItem } from './types'
 
@@ -193,18 +194,11 @@ export function ProviderReviewDialog(props: ProviderReviewDialogProps) {
                   {t('Verification screenshot')}
                 </dt>
                 <dd className='mt-2'>
-                  <a
-                    href={`/api/hub/provider/website-verification/assets/${props.provider.website_evidence_asset_id}`}
-                    target='_blank'
-                    rel='noreferrer'
-                    className='block w-fit'
-                  >
-                    <img
-                      src={`/api/hub/provider/website-verification/assets/${props.provider.website_evidence_asset_id}`}
-                      alt={t('Submitted verification screenshot')}
-                      className='max-h-56 max-w-full rounded-md border object-contain'
-                    />
-                  </a>
+                  <ProviderWebsiteEvidenceImage
+                    assetId={props.provider.website_evidence_asset_id}
+                    alt={t('Submitted verification screenshot')}
+                    className='max-h-56 max-w-full rounded-md border object-contain'
+                  />
                 </dd>
               </div>
             )}
