@@ -126,6 +126,8 @@ func CreateHubProviderWithdrawal(c *gin.Context) {
 		switch {
 		case errors.Is(err, model.ErrHubProviderWithdrawalPending):
 			common.ApiErrorI18n(c, i18n.MsgHubProviderWithdrawalPending)
+		case errors.Is(err, model.ErrHubProviderWithdrawalBelowMinimum):
+			common.ApiErrorI18n(c, i18n.MsgHubProviderWithdrawalBelowMinimum)
 		case errors.Is(err, model.ErrHubProviderWithdrawalInsufficient):
 			common.ApiErrorI18n(c, i18n.MsgHubProviderWithdrawalInsufficient)
 		case errors.Is(err, model.ErrHubProviderPayoutAccountNotFound),

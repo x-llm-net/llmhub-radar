@@ -267,7 +267,7 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
       cell: ({ row }) => <ProviderRowActions provider={row.original} />,
       enableSorting: false,
       enableHiding: false,
-      size: 90,
+      size: 120,
       meta: { pinned: 'right' as const },
     },
   ]

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -102,6 +103,65 @@ func TestHubProviderEarningSettlementIsIdempotentByRequest(t *testing.T) {
 	conflict.ChannelId = 99
 	_, err = PrepareHubProviderEarning(conflict)
 	assert.ErrorIs(t, err, ErrHubProviderEarningReferenceConflict)
+}
+
+func TestHubProviderEarningSnapshotsGlobalAndProviderFeeOverride(t *testing.T) {
+	truncateTables(t)
+	settings := hub_provider_settlement_setting.Get()
+	original := *settings
+	t.Cleanup(func() { *settings = original })
+	settings.PlatformFeeBasisPoints = 1200
+
+	provider := HubProvider{OwnerUserId: 70, Slot: 1, Name: "Provider", Slug: "fee-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&provider).Error)
+	params := HubProviderEarningParams{
+		RequestId: "req-global-fee", ProviderId: provider.Id, OwnerUserId: provider.OwnerUserId,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "gpt-5", BillingSource: "wallet", GrossQuota: 1000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+	}
+	globalEarning, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, 1200, globalEarning.PlatformFeeBasisPoints)
+	assert.Equal(t, 120, globalEarning.PlatformFeeQuota)
+
+	zeroFee := 0
+	_, err = UpdateHubProviderPlatformFeeBasisPoints(provider.Id, &zeroFee)
+	require.NoError(t, err)
+	params.RequestId = "req-zero-fee"
+	zeroFeeEarning, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, 0, zeroFeeEarning.PlatformFeeBasisPoints)
+	assert.Equal(t, 0, zeroFeeEarning.PlatformFeeQuota)
+	assert.Equal(t, 1000, zeroFeeEarning.ProviderIncomeQuota)
+
+	settings.PlatformFeeBasisPoints = 2500
+	require.NoError(t, SettleHubProviderEarning(globalEarning.RequestId, 2000))
+	var settled HubProviderEarning
+	require.NoError(t, DB.First(&settled, globalEarning.Id).Error)
+	assert.Equal(t, 1200, settled.PlatformFeeBasisPoints)
+	assert.Equal(t, 240, settled.PlatformFeeQuota)
+	assert.Equal(t, 1760, settled.ProviderIncomeQuota)
+}
+
+func TestHubProviderWithdrawalEnforcesConfiguredMinimum(t *testing.T) {
+	truncateTables(t)
+	settings := hub_provider_settlement_setting.Get()
+	original := *settings
+	t.Cleanup(func() { *settings = original })
+	settings.MinimumWithdrawalQuota = 100
+
+	provider := HubProvider{OwnerUserId: 105, Slot: 1, Name: "Provider", Slug: "minimum-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&provider).Error)
+	account := seedSettlementPayoutAccount(t, provider)
+	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
+	require.NoError(t, err)
+
+	_, err = CreateHubProviderWithdrawal(provider.OwnerUserId, 99, account.Id)
+	assert.ErrorIs(t, err, ErrHubProviderWithdrawalBelowMinimum)
+	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 100, account.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 100, withdrawal.AmountQuota)
 }
 
 func TestCancelledHubProviderEarningCanBePreparedAgainForSameRequest(t *testing.T) {

@@ -25,6 +25,7 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ProviderSettlementSettingsSection } from './provider-settlement-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -184,6 +185,24 @@ const BILLING_SECTIONS = [
             settings['payment_setting.compliance_terms_version'] ?? '',
           confirmedAt: settings['payment_setting.compliance_confirmed_at'] ?? 0,
           confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'provider-settlement',
+    titleKey: 'Provider settlement',
+    build: (settings: BillingSettings) => (
+      <ProviderSettlementSettingsSection
+        defaultValues={{
+          platformFeeBasisPoints:
+            settings[
+              'hub_provider_settlement_setting.platform_fee_basis_points'
+            ],
+          minimumWithdrawalQuota:
+            settings[
+              'hub_provider_settlement_setting.minimum_withdrawal_quota'
+            ],
         }}
       />
     ),

@@ -794,18 +794,20 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.RequestId = relayInfo.RequestId
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:        relayInfo.PriceData.ModelPrice,
-			GroupRatio:        relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			BaseGroupRatio:    relayInfo.PriceData.GroupRatioInfo.BaseGroupRatio,
-			SupplyMultiplier:  relayInfo.PriceData.GroupRatioInfo.SupplyMultiplier,
-			HasSupplyPricing:  relayInfo.PriceData.GroupRatioInfo.HasSupplyPricing,
-			SupplyGroupId:     relayInfo.PriceData.GroupRatioInfo.SupplyGroupId,
-			SupplyProviderId:  relayInfo.PriceData.GroupRatioInfo.SupplyProviderId,
-			SupplyOwnerUserId: relayInfo.PriceData.GroupRatioInfo.SupplyOwnerUserId,
-			ModelRatio:        relayInfo.PriceData.ModelRatio,
-			OtherRatios:       relayInfo.PriceData.OtherRatios(),
-			OriginModelName:   relayInfo.OriginModelName,
-			PerCallBilling:    common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ModelPrice:                relayInfo.PriceData.ModelPrice,
+			GroupRatio:                relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			BaseGroupRatio:            relayInfo.PriceData.GroupRatioInfo.BaseGroupRatio,
+			SupplyMultiplier:          relayInfo.PriceData.GroupRatioInfo.SupplyMultiplier,
+			HasSupplyPricing:          relayInfo.PriceData.GroupRatioInfo.HasSupplyPricing,
+			SupplyGroupId:             relayInfo.PriceData.GroupRatioInfo.SupplyGroupId,
+			SupplyProviderId:          relayInfo.PriceData.GroupRatioInfo.SupplyProviderId,
+			SupplyOwnerUserId:         relayInfo.PriceData.GroupRatioInfo.SupplyOwnerUserId,
+			PlatformFeeBasisPoints:    relayInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints,
+			HasPlatformFeeBasisPoints: relayInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints,
+			ModelRatio:                relayInfo.PriceData.ModelRatio,
+			OtherRatios:               relayInfo.PriceData.OtherRatios(),
+			OriginModelName:           relayInfo.OriginModelName,
+			PerCallBilling:            common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

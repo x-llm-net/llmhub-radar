@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, CircleDollarSign, Power, PowerOff, X } from 'lucide-react'
+import {
+  BadgePercent,
+  Check,
+  CircleDollarSign,
+  Power,
+  PowerOff,
+  X,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -29,7 +36,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import { adminProvidersQueryKey, updateAdminProviderStatus } from './api'
+import {
+  adminProvidersQueryKey,
+  updateAdminProviderSettlementSettings,
+  updateAdminProviderStatus,
+} from './api'
+import { ProviderFeeDialog } from './provider-fee-dialog'
 import { ProviderReviewDialog } from './provider-review-dialog'
 import { ProviderSettlementSheet } from './provider-settlement-sheet'
 import type { HubProviderAdminItem } from './types'
@@ -41,6 +53,7 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
     HubProviderAdminItem['status'] | null
   >(null)
   const [settlementOpen, setSettlementOpen] = useState(false)
+  const [feeOpen, setFeeOpen] = useState(false)
   const showSettlement =
     props.provider.status === 'active' || props.provider.status === 'disabled'
   const mutation = useMutation({
@@ -70,6 +83,23 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
     },
     onError: () => toast.error(t('Failed to update provider status')),
   })
+  const feeMutation = useMutation({
+    mutationFn: (platformFeeBasisPoints: number | null) =>
+      updateAdminProviderSettlementSettings(
+        props.provider.id,
+        platformFeeBasisPoints
+      ),
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(response.message || t('Failed to update provider fee'))
+        return
+      }
+      await queryClient.invalidateQueries({ queryKey: adminProvidersQueryKey })
+      setFeeOpen(false)
+      toast.success(t('Provider service fee updated'))
+    },
+    onError: () => toast.error(t('Failed to update provider fee')),
+  })
 
   return (
     <>
@@ -91,6 +121,22 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
           <TooltipContent>{t('Provider earnings')}</TooltipContent>
         </Tooltip>
       )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon-sm'
+              onClick={() => setFeeOpen(true)}
+              aria-label={t('Provider service fee')}
+            />
+          }
+        >
+          <BadgePercent />
+        </TooltipTrigger>
+        <TooltipContent>{t('Provider service fee')}</TooltipContent>
+      </Tooltip>
       {(props.provider.status === 'pending' ||
         props.provider.status === 'rejected') && (
         <Tooltip>
@@ -178,6 +224,18 @@ export function ProviderRowActions(props: { provider: HubProviderAdminItem }) {
         provider={props.provider}
         open={settlementOpen}
         onOpenChange={setSettlementOpen}
+      />
+      <ProviderFeeDialog
+        provider={props.provider}
+        open={feeOpen}
+        pending={feeMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open && feeMutation.isPending) return
+          setFeeOpen(open)
+        }}
+        onConfirm={(platformFeeBasisPoints) =>
+          feeMutation.mutate(platformFeeBasisPoints)
+        }
       />
     </>
   )

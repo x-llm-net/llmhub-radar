@@ -202,6 +202,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.GET("/:id/earnings/summary", controller.AdminGetHubProviderEarningSummary)
 			hubProviderAdminRoute.GET("/:id/earnings", controller.AdminGetHubProviderEarnings)
 			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)
+			hubProviderAdminRoute.PUT("/:id/settlement-settings", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderSettlementSettings)
 			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
 		}
 		hubAdminRoute := apiRouter.Group("/hub/admin")

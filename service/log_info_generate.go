@@ -183,8 +183,12 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		other["billing_ratio"] = groupRatioInfo.GroupRatio
 		other["hub_supply_group_id"] = groupRatioInfo.SupplyGroupId
 		other["hub_provider_id"] = groupRatioInfo.SupplyProviderId
-		other["platform_fee_basis_points"] = model.HubProviderPlatformFeeBasisPoints
-		other["provider_share_basis_points"] = 10000 - model.HubProviderPlatformFeeBasisPoints
+		feeBasisPoints := model.HubProviderPlatformFeeBasisPoints
+		if groupRatioInfo.HasPlatformFeeBasisPoints {
+			feeBasisPoints = groupRatioInfo.PlatformFeeBasisPoints
+		}
+		other["platform_fee_basis_points"] = feeBasisPoints
+		other["provider_share_basis_points"] = 10000 - feeBasisPoints
 	}
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {

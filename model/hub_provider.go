@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"gorm.io/gorm"
 )
 
@@ -53,39 +54,43 @@ var hubProviderReservedSlugs = map[string]struct{}{
 // HubProvider is the provider profile owned by a New API user. Supply groups
 // and their New API channels will reference this profile in later steps.
 type HubProvider struct {
-	Id               int    `json:"id" gorm:"primaryKey"`
-	OwnerUserId      int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
-	Slot             int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
-	Name             string `json:"name" gorm:"type:varchar(80);not null"`
-	Slug             string `json:"slug" gorm:"type:varchar(63)"`
-	Website          string `json:"website" gorm:"type:varchar(512);not null"`
-	Description      string `json:"description" gorm:"type:varchar(1000);not null"`
-	LogoURL          string `json:"logo_url" gorm:"type:varchar(1024);not null"`
-	ContactType      string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
-	ContactValue     string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
-	SupportType      string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`
-	SupportValue     string `json:"support_value" gorm:"type:varchar(512);not null;default:''"`
-	Status           string `json:"status" gorm:"type:varchar(24);not null;index"`
-	ReviewRemark     string `json:"review_remark" gorm:"type:varchar(1000);not null;default:''"`
-	ReviewedByUserId int    `json:"reviewed_by_user_id" gorm:"not null;default:0"`
-	ReviewedAt       int64  `json:"reviewed_at" gorm:"bigint;not null;default:0"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt        int64  `json:"updated_at" gorm:"bigint"`
+	Id                     int    `json:"id" gorm:"primaryKey"`
+	OwnerUserId            int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
+	Slot                   int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
+	Name                   string `json:"name" gorm:"type:varchar(80);not null"`
+	Slug                   string `json:"slug" gorm:"type:varchar(63)"`
+	Website                string `json:"website" gorm:"type:varchar(512);not null"`
+	Description            string `json:"description" gorm:"type:varchar(1000);not null"`
+	LogoURL                string `json:"logo_url" gorm:"type:varchar(1024);not null"`
+	ContactType            string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
+	ContactValue           string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
+	SupportType            string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`
+	SupportValue           string `json:"support_value" gorm:"type:varchar(512);not null;default:''"`
+	PlatformFeeBasisPoints *int   `json:"-" gorm:"column:platform_fee_basis_points"`
+	Status                 string `json:"status" gorm:"type:varchar(24);not null;index"`
+	ReviewRemark           string `json:"review_remark" gorm:"type:varchar(1000);not null;default:''"`
+	ReviewedByUserId       int    `json:"reviewed_by_user_id" gorm:"not null;default:0"`
+	ReviewedAt             int64  `json:"reviewed_at" gorm:"bigint;not null;default:0"`
+	CreatedAt              int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt              int64  `json:"updated_at" gorm:"bigint"`
 }
 
 type HubProviderAdminListItem struct {
 	HubProvider
-	OwnerID             int                        `json:"owner_user_id" gorm:"column:owner_id"`
-	OwnerUsername       string                     `json:"owner_username" gorm:"column:owner_username"`
-	OwnerDisplayName    string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
-	OwnerEmail          string                     `json:"owner_email" gorm:"column:owner_email"`
-	OwnerStatus         int                        `json:"owner_status" gorm:"column:owner_status"`
-	ChannelCount        int64                      `json:"channel_count" gorm:"-"`
-	OnlineChannelCount  int64                      `json:"online_channel_count" gorm:"-"`
-	AvailableModelCount int64                      `json:"available_model_count" gorm:"-"`
-	ErrorModelCount     int64                      `json:"error_model_count" gorm:"-"`
-	LastProbeAt         int64                      `json:"last_probe_at" gorm:"-"`
-	UpstreamUsages      []HubProviderUpstreamUsage `json:"upstream_usages" gorm:"-"`
+	OwnerID                         int                        `json:"owner_user_id" gorm:"column:owner_id"`
+	OwnerUsername                   string                     `json:"owner_username" gorm:"column:owner_username"`
+	OwnerDisplayName                string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
+	OwnerEmail                      string                     `json:"owner_email" gorm:"column:owner_email"`
+	OwnerStatus                     int                        `json:"owner_status" gorm:"column:owner_status"`
+	ChannelCount                    int64                      `json:"channel_count" gorm:"-"`
+	OnlineChannelCount              int64                      `json:"online_channel_count" gorm:"-"`
+	AvailableModelCount             int64                      `json:"available_model_count" gorm:"-"`
+	ErrorModelCount                 int64                      `json:"error_model_count" gorm:"-"`
+	LastProbeAt                     int64                      `json:"last_probe_at" gorm:"-"`
+	UpstreamUsages                  []HubProviderUpstreamUsage `json:"upstream_usages" gorm:"-"`
+	PlatformFeeOverrideBasisPoints  *int                       `json:"platform_fee_basis_points" gorm:"column:platform_fee_override_basis_points"`
+	GlobalPlatformFeeBasisPoints    int                        `json:"global_platform_fee_basis_points" gorm:"-"`
+	EffectivePlatformFeeBasisPoints int                        `json:"effective_platform_fee_basis_points" gorm:"-"`
 }
 
 type HubProviderUpstreamUsage struct {
@@ -387,7 +392,7 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 
 	providers := make([]HubProviderAdminListItem, 0)
 	listQuery := query.Select(
-		"providers.*, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status",
+		"providers.*, providers.platform_fee_basis_points AS platform_fee_override_basis_points, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status",
 	).Order("providers.id DESC")
 	if limit > 0 {
 		listQuery = listQuery.Limit(limit).Offset(offset)
@@ -438,12 +443,39 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 		providers[i].AvailableModelCount = item.AvailableModelCount
 		providers[i].ErrorModelCount = item.ErrorModelCount
 		providers[i].LastProbeAt = item.LastProbeAt
+		providers[i].GlobalPlatformFeeBasisPoints = hub_provider_settlement_setting.PlatformFeeBasisPoints()
+		providers[i].EffectivePlatformFeeBasisPoints = providers[i].GlobalPlatformFeeBasisPoints
+		if override := providers[i].PlatformFeeOverrideBasisPoints; override != nil && *override >= 0 && *override <= 10000 {
+			providers[i].EffectivePlatformFeeBasisPoints = *override
+		}
 	}
 	if err := populateHubProviderUpstreamUsages(providers); err != nil {
 		return nil, 0, err
 	}
 
 	return providers, total, nil
+}
+
+func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
+	if providerID <= 0 || (override != nil && (*override < 0 || *override > 10000)) {
+		return nil, errors.New("invalid hub provider platform fee")
+	}
+	updates := map[string]any{
+		"platform_fee_basis_points": override,
+		"updated_at":                common.GetTimestamp(),
+	}
+	result := DB.Model(&HubProvider{}).Where("id = ?", providerID).Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	var provider HubProvider
+	if err := DB.First(&provider, providerID).Error; err != nil {
+		return nil, err
+	}
+	return &provider, nil
 }
 
 func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem) error {

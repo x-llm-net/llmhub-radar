@@ -50,6 +50,18 @@ export async function updateAdminProviderStatus(
   return response.data
 }
 
+export async function updateAdminProviderSettlementSettings(
+  providerId: number,
+  platformFeeBasisPoints: number | null
+): Promise<{ success: boolean; message?: string }> {
+  const response = await api.put(
+    `/api/hub/admin/providers/${providerId}/settlement-settings`,
+    { platform_fee_basis_points: platformFeeBasisPoints },
+    { skipBusinessError: true }
+  )
+  return response.data
+}
+
 export const adminWithdrawalsQueryKey = [
   'hub-admin',
   'provider-withdrawals',

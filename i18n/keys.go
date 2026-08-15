@@ -381,6 +381,7 @@ const (
 	MsgHubProviderReviewRemarkRequired     = "hub_provider.review_remark_required"
 	MsgHubProviderWithdrawalInvalid        = "hub_provider.withdrawal_invalid"
 	MsgHubProviderWithdrawalPending        = "hub_provider.withdrawal_pending"
+	MsgHubProviderWithdrawalBelowMinimum   = "hub_provider.withdrawal_below_minimum"
 	MsgHubProviderWithdrawalInsufficient   = "hub_provider.withdrawal_insufficient"
 	MsgHubProviderWithdrawalTransition     = "hub_provider.withdrawal_transition"
 	MsgHubProviderWithdrawalRemarkRequired = "hub_provider.withdrawal_remark_required"
@@ -394,8 +395,8 @@ const (
 
 // LLM-Hub provider channel messages
 const (
-	MsgHubProviderChannelNotFound             = "hub_provider_channel.not_found"
-	MsgHubProviderChannelProxyForbidden       = "hub_provider_channel.proxy_forbidden"
+	MsgHubProviderChannelNotFound              = "hub_provider_channel.not_found"
+	MsgHubProviderChannelProxyForbidden        = "hub_provider_channel.proxy_forbidden"
 	MsgHubProviderChannelHostOverrideForbidden = "hub_provider_channel.host_override_forbidden"
-	MsgHubProviderChannelTypeUnsupported      = "hub_provider_channel.type_unsupported"
+	MsgHubProviderChannelTypeUnsupported       = "hub_provider_channel.type_unsupported"
 )

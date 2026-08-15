@@ -53,6 +53,8 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	}
 	require.NoError(t, SettleBillingAndProviderEarning(ctx, info, 1000))
 	require.NoError(t, SettleBillingAndProviderEarning(ctx, info, 1000))
+	assert.True(t, info.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, info.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
 
 	var entries []model.HubProviderEarning
 	require.NoError(t, model.DB.Find(&entries).Error)
@@ -84,6 +86,8 @@ func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 		}},
 	}
 	require.NoError(t, SettleTaskBillingAndPrepareProviderEarning(ctx, info, 2000))
+	assert.True(t, info.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, info.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
 
 	var earning model.HubProviderEarning
 	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)

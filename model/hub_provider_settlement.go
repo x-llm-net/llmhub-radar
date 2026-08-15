@@ -26,11 +26,12 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"gorm.io/gorm"
 )
 
 const (
-	HubProviderPlatformFeeBasisPoints = 1000
+	HubProviderPlatformFeeBasisPoints = hub_provider_settlement_setting.DefaultPlatformFeeBasisPoints
 
 	HubProviderEarningTypeUsage           = "usage"
 	HubProviderEarningTypeAdjustment      = "adjustment"
@@ -51,6 +52,7 @@ var (
 	ErrHubProviderEarningCancelled            = errors.New("hub provider earning is cancelled")
 	ErrHubProviderEarningSettlementDeferred   = errors.New("hub provider earning settlement is deferred")
 	ErrHubProviderWithdrawalPending           = errors.New("hub provider already has a pending withdrawal")
+	ErrHubProviderWithdrawalBelowMinimum      = errors.New("hub provider withdrawal amount is below the minimum")
 	ErrHubProviderWithdrawalInsufficient      = errors.New("hub provider withdrawable balance is insufficient")
 	ErrHubProviderWithdrawalTransition        = errors.New("invalid hub provider withdrawal status transition")
 	ErrHubProviderWithdrawalPayoutRequired    = errors.New("hub provider withdrawal payout information is required")
@@ -206,6 +208,7 @@ type HubProviderSettlementSummary struct {
 	TransferredBalanceQuota int `json:"transferred_balance_quota"`
 	WithdrawableQuota       int `json:"withdrawable_quota"`
 	PlatformFeeBasisPoints  int `json:"platform_fee_basis_points"`
+	MinimumWithdrawalQuota  int `json:"minimum_withdrawal_quota"`
 }
 
 type HubProviderWithdrawalAdminItem struct {
@@ -229,16 +232,40 @@ func CalculateHubProviderRevenueSplit(grossQuota int, feeBasisPoints int) (int, 
 	return platformFee, grossQuota - platformFee
 }
 
+func ResolveHubProviderPlatformFeeBasisPoints(providerId int) (int, error) {
+	globalFee := hub_provider_settlement_setting.PlatformFeeBasisPoints()
+	if providerId <= 0 {
+		return globalFee, nil
+	}
+	var provider HubProvider
+	err := DB.Select("id", "platform_fee_basis_points").First(&provider, providerId).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return globalFee, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if provider.PlatformFeeBasisPoints == nil {
+		return globalFee, nil
+	}
+	override := *provider.PlatformFeeBasisPoints
+	if override < 0 || override > 10000 {
+		return globalFee, nil
+	}
+	return override, nil
+}
+
 func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEarning, error) {
 	params.RequestId = strings.TrimSpace(params.RequestId)
 	if params.RequestId == "" || params.ProviderId <= 0 || params.OwnerUserId <= 0 ||
 		params.SupplyGroupId <= 0 || params.ChannelId <= 0 || params.GrossQuota <= 0 {
 		return nil, errors.New("invalid hub provider earning")
 	}
-	platformFee, providerIncome := CalculateHubProviderRevenueSplit(
-		params.GrossQuota,
-		HubProviderPlatformFeeBasisPoints,
-	)
+	feeBasisPoints, err := ResolveHubProviderPlatformFeeBasisPoints(params.ProviderId)
+	if err != nil {
+		return nil, err
+	}
+	platformFee, providerIncome := CalculateHubProviderRevenueSplit(params.GrossQuota, feeBasisPoints)
 	earning := &HubProviderEarning{
 		RequestId:              params.RequestId,
 		EntryType:              HubProviderEarningTypeUsage,
@@ -253,7 +280,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		ModelName:              strings.TrimSpace(params.ModelName),
 		BillingSource:          strings.TrimSpace(params.BillingSource),
 		GrossQuota:             params.GrossQuota,
-		PlatformFeeBasisPoints: HubProviderPlatformFeeBasisPoints,
+		PlatformFeeBasisPoints: feeBasisPoints,
 		PlatformFeeQuota:       platformFee,
 		ProviderIncomeQuota:    providerIncome,
 		BaseGroupRatio:         params.BaseGroupRatio,
@@ -284,7 +311,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 				"settlement_deferred":       params.SettlementDeferred,
 				"billing_source":            strings.TrimSpace(params.BillingSource),
 				"gross_quota":               params.GrossQuota,
-				"platform_fee_basis_points": HubProviderPlatformFeeBasisPoints,
+				"platform_fee_basis_points": feeBasisPoints,
 				"platform_fee_quota":        platformFee,
 				"provider_income_quota":     providerIncome,
 				"base_group_ratio":          params.BaseGroupRatio,
@@ -540,11 +567,16 @@ func ListHubProviderEarnings(providerId, offset, limit int) ([]HubProviderEarnin
 func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSummary, error) {
 	summary := HubProviderSettlementSummary{
 		ProviderId:             providerId,
-		PlatformFeeBasisPoints: HubProviderPlatformFeeBasisPoints,
+		MinimumWithdrawalQuota: hub_provider_settlement_setting.MinimumWithdrawalQuota(),
 	}
 	if providerId <= 0 {
 		return summary, errors.New("invalid hub provider")
 	}
+	feeBasisPoints, err := ResolveHubProviderPlatformFeeBasisPoints(providerId)
+	if err != nil {
+		return summary, err
+	}
+	summary.PlatformFeeBasisPoints = feeBasisPoints
 	type earningSums struct {
 		GrossQuota              int `gorm:"column:gross_quota"`
 		PlatformFeeQuota        int `gorm:"column:platform_fee_quota"`
@@ -614,6 +646,9 @@ func CreateHubProviderWithdrawal(ownerUserId, amountQuota, payoutAccountId int) 
 		var provider HubProvider
 		if err := lockForUpdate(tx).Where("owner_user_id = ?", ownerUserId).Order("slot ASC").First(&provider).Error; err != nil {
 			return err
+		}
+		if amountQuota < hub_provider_settlement_setting.MinimumWithdrawalQuota() {
+			return ErrHubProviderWithdrawalBelowMinimum
 		}
 		var openCount int64
 		if err := tx.Model(&HubProviderWithdrawal{}).

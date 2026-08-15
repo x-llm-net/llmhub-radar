@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
@@ -224,6 +225,9 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if hub_provider_settlement_setting.IsOptionKey(key) {
+		return hub_provider_settlement_setting.ValidateOption(key, value)
+	}
 	if strings.HasPrefix(key, "hub_routing_setting.") {
 		return hub_routing_setting.ValidateOption(key, value)
 	}

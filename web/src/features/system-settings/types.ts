@@ -348,6 +348,8 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'hub_provider_settlement_setting.platform_fee_basis_points': number
+  'hub_provider_settlement_setting.minimum_withdrawal_quota': number
 }
 
 export type OperationsSettings = {

@@ -105,7 +105,11 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
           <SheetHeader className='border-b pr-12'>
             <SheetTitle>{t('Provider earnings')}</SheetTitle>
             <SheetDescription>
-              {props.provider?.name || '-'} / {t('Platform fee')} 10%
+              {props.provider?.name || '-'} / {t('Platform fee')}{' '}
+              {(data?.platform_fee_basis_points ??
+                props.provider?.effective_platform_fee_basis_points ??
+                1000) / 100}
+              %
             </SheetDescription>
           </SheetHeader>
           <div className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4'>

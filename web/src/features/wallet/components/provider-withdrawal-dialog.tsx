@@ -36,6 +36,7 @@ interface ProviderWithdrawalDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   availableQuota: number
+  minimumWithdrawalQuota: number
   accounts: HubProviderPayoutAccount[]
   accountsLoading: boolean
   pending: boolean
@@ -52,6 +53,7 @@ export function ProviderWithdrawalDialog(props: ProviderWithdrawalDialogProps) {
   const canSubmit =
     Number(amount) > 0 &&
     amountQuota > 0 &&
+    amountQuota >= props.minimumWithdrawalQuota &&
     amountQuota <= props.availableQuota &&
     payoutAccountId > 0 &&
     !props.pending
@@ -111,7 +113,7 @@ export function ProviderWithdrawalDialog(props: ProviderWithdrawalDialogProps) {
           <Input
             id='provider-withdrawal-amount'
             type='number'
-            min={0}
+            min={quotaUnitsToDollars(props.minimumWithdrawalQuota)}
             max={quotaUnitsToDollars(props.availableQuota)}
             step={meta.kind === 'tokens' ? 1 : 0.01}
             value={amount}
@@ -121,6 +123,22 @@ export function ProviderWithdrawalDialog(props: ProviderWithdrawalDialogProps) {
           {amount && amountQuota > props.availableQuota && (
             <p className='text-destructive text-xs'>
               {t('Amount exceeds available earnings')}
+            </p>
+          )}
+          {amount &&
+            amountQuota > 0 &&
+            amountQuota < props.minimumWithdrawalQuota && (
+              <p className='text-destructive text-xs'>
+                {t('Minimum withdrawal amount is {{amount}}', {
+                  amount: formatQuota(props.minimumWithdrawalQuota),
+                })}
+              </p>
+            )}
+          {props.minimumWithdrawalQuota > 0 && !amount && (
+            <p className='text-muted-foreground text-xs'>
+              {t('Minimum withdrawal amount is {{amount}}', {
+                amount: formatQuota(props.minimumWithdrawalQuota),
+              })}
             </p>
           )}
         </div>

@@ -308,6 +308,7 @@ hub_provider.not_active: "只有审核通过的渠道商可以管理供给渠道
 hub_provider.review_remark_required: "驳回申请时必须填写原因"
 hub_provider.withdrawal_invalid: "请输入有效的提现金额和收款信息"
 hub_provider.withdrawal_pending: "已有一笔提现正在处理中"
+hub_provider.withdrawal_below_minimum: "提现金额未达到平台设置的最低提现额"
 hub_provider.withdrawal_insufficient: "提现金额超过当前可提现收益"
 hub_provider.withdrawal_transition: "当前提现状态不能这样变更"
 hub_provider.withdrawal_remark_required: "确认打款必须填写转账凭证，拒绝必须填写原因"

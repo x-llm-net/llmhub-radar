@@ -248,6 +248,8 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
     onError: () => toast.error(t('Failed to delete payout account')),
   })
   const summaryData = summary.data?.data
+  const feePercent = (summaryData?.platform_fee_basis_points ?? 1000) / 100
+  const minimumWithdrawalQuota = summaryData?.minimum_withdrawal_quota ?? 0
   const earningItems = earnings.data?.data?.items ?? []
   const withdrawalItems = withdrawals.data?.data?.items ?? []
   const payoutAccountItems = payoutAccounts.data?.data ?? []
@@ -403,7 +405,8 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
           <h2 className='text-base font-semibold'>{t('Provider earnings')}</h2>
           <p className='text-muted-foreground mt-1 text-sm'>
             {t(
-              'Successful user charges are split automatically: 90% to the provider and 10% as the platform fee.'
+              'Successful user charges are settled automatically. The current platform fee is {{percent}}%.',
+              { percent: feePercent }
             )}
           </p>
         </div>
@@ -532,6 +535,7 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
         open={withdrawalOpen}
         onOpenChange={setWithdrawalOpen}
         availableQuota={summaryData?.withdrawable_quota ?? 0}
+        minimumWithdrawalQuota={minimumWithdrawalQuota}
         accounts={payoutAccountItems}
         accountsLoading={payoutAccounts.isLoading}
         pending={createWithdrawal.isPending}

@@ -1,4 +1,3 @@
-import type { HubProviderStatus } from '@/features/provider/types'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { HubProviderStatus } from '@/features/provider/types'
 import type {
   HubProviderPayoutAccountSnapshot,
   HubProviderPayoutMethod,
@@ -38,6 +38,9 @@ export type HubProviderAdminItem = {
   contact_value: string
   support_type: string
   support_value: string
+  platform_fee_basis_points: number | null
+  global_platform_fee_basis_points: number
+  effective_platform_fee_basis_points: number
   status: HubProviderStatus
   review_remark: string
   reviewed_by_user_id: number
@@ -85,6 +88,7 @@ export type HubProviderSettlementSummary = {
   transferred_balance_quota: number
   withdrawable_quota: number
   platform_fee_basis_points: number
+  minimum_withdrawal_quota: number
 }
 
 export type HubProviderEarning = {

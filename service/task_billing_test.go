@@ -232,6 +232,18 @@ func TestTaskBillingOtherFiltersHistoricalOtherRatios(t *testing.T) {
 	assert.NotContains(t, other, "inf")
 }
 
+func TestTaskBillingOtherUsesPlatformFeeSnapshot(t *testing.T) {
+	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.HasSupplyPricing = true
+	task.PrivateData.BillingContext.HasPlatformFeeBasisPoints = true
+	task.PrivateData.BillingContext.PlatformFeeBasisPoints = 250
+
+	other := taskBillingOther(task)
+
+	assert.Equal(t, 250, other["platform_fee_basis_points"])
+	assert.Equal(t, 9750, other["provider_share_basis_points"])
+}
+
 func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {
 	priceData := taskBillingContextPriceData(&model.TaskBillingContext{
 		OtherRatios: map[string]float64{

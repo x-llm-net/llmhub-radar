@@ -279,6 +279,9 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 		OwnerUserId: 42, Name: "Acme AI", Website: "https://acme.example",
 	}
 	require.NoError(t, model.CreateHubProvider(provider))
+	zeroFee := 0
+	_, err := model.UpdateHubProviderPlatformFeeBasisPoints(provider.Id, &zeroFee)
+	require.NoError(t, err)
 	disabledProvider := &model.HubProvider{OwnerUserId: 43, Name: "Paused AI"}
 	require.NoError(t, model.CreateHubProvider(disabledProvider))
 	require.NoError(t, model.DB.Model(&model.HubProvider{Id: disabledProvider.Id}).Update("status", model.HubProviderStatusDisabled).Error)
@@ -340,6 +343,10 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 	assert.Equal(t, int64(1), item.AvailableModelCount)
 	assert.Equal(t, int64(1), item.ErrorModelCount)
 	assert.Equal(t, int64(12345), item.LastProbeAt)
+	require.NotNil(t, item.PlatformFeeOverrideBasisPoints)
+	assert.Zero(t, *item.PlatformFeeOverrideBasisPoints)
+	assert.Zero(t, item.EffectivePlatformFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, item.GlobalPlatformFeeBasisPoints)
 	require.Len(t, item.UpstreamUsages, 1)
 	assert.Equal(t, "https://upstream.example", item.UpstreamUsages[0].Origin)
 	assert.Equal(t, int64(2), item.UpstreamUsages[0].ProviderCount)
@@ -502,4 +509,39 @@ func TestAdminApproveHubProviderRecordsReview(t *testing.T) {
 	assert.Equal(t, "Upstream information verified", stored.ReviewRemark)
 	assert.Equal(t, 7, stored.ReviewedByUserId)
 	assert.Positive(t, stored.ReviewedAt)
+}
+
+func TestAdminUpdateHubProviderSettlementSettingsSupportsZeroAndGlobalFee(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.Log{}))
+	provider := &model.HubProvider{OwnerUserId: 42, Name: "Fee Provider", Slug: "fee-provider"}
+	require.NoError(t, model.CreateHubProvider(provider))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/settlement-settings", map[string]any{
+		"platform_fee_basis_points": 0,
+	}, 7)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
+	AdminUpdateHubProviderSettlementSettings(ctx)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			PlatformFeeBasisPoints          *int `json:"platform_fee_basis_points"`
+			EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data.PlatformFeeBasisPoints)
+	assert.Zero(t, *response.Data.PlatformFeeBasisPoints)
+	assert.Zero(t, response.Data.EffectivePlatformFeeBasisPoints)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/settlement-settings", map[string]any{
+		"platform_fee_basis_points": nil,
+	}, 7)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
+	AdminUpdateHubProviderSettlementSettings(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Nil(t, response.Data.PlatformFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, response.Data.EffectivePlatformFeeBasisPoints)
 }

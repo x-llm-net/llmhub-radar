@@ -45,7 +45,7 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 		requestId = common.NewRequestId()
 		relayInfo.RequestId = requestId
 	}
-	_, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
+	earning, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
 		RequestId:          requestId,
 		ProviderId:         pricing.SupplyProviderId,
 		OwnerUserId:        pricing.SupplyOwnerUserId,
@@ -71,6 +71,8 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 		))
 		return ""
 	}
+	relayInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints = earning.PlatformFeeBasisPoints
+	relayInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints = true
 	return requestId
 }
 

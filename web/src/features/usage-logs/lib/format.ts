@@ -478,6 +478,8 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Confirmed payout for provider withdrawal {{withdrawal_id}}',
   'hub_provider.withdrawal_reject':
     'Rejected provider withdrawal {{withdrawal_id}}',
+  'hub_provider.settlement_settings_update':
+    'Updated settlement settings for provider {{provider_id}}',
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -56,6 +57,10 @@ type hubProviderCreateRequest = hubProviderProfileRequest
 type hubProviderStatusUpdateRequest struct {
 	Status       string `json:"status"`
 	ReviewRemark string `json:"review_remark"`
+}
+
+type hubProviderSettlementSettingsUpdateRequest struct {
+	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
 }
 
 func GetHubProviderSelf(c *gin.Context) {
@@ -282,6 +287,42 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 		}
 	}
 	common.ApiSuccess(c, gin.H{"id": providerID, "status": req.Status})
+}
+
+func AdminUpdateHubProviderSettlementSettings(c *gin.Context) {
+	providerID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || providerID <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	var req hubProviderSettlementSettingsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil ||
+		(req.PlatformFeeBasisPoints != nil && (*req.PlatformFeeBasisPoints < 0 || *req.PlatformFeeBasisPoints > 10000)) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	provider, err := model.UpdateHubProviderPlatformFeeBasisPoints(providerID, req.PlatformFeeBasisPoints)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderNotFound) {
+			common.ApiErrorI18n(c, i18n.MsgNotFound)
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	effectiveFee, err := model.ResolveHubProviderPlatformFeeBasisPoints(providerID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "hub_provider.settlement_settings_update", map[string]interface{}{
+		"provider_id": providerID,
+	})
+	common.ApiSuccess(c, gin.H{
+		"id":                                  provider.Id,
+		"platform_fee_basis_points":           provider.PlatformFeeBasisPoints,
+		"effective_platform_fee_basis_points": effectiveFee,
+	})
 }
 
 func isHubProviderHTTPURL(value string) bool {

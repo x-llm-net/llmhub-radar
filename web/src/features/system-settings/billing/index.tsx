@@ -106,6 +106,8 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  'hub_provider_settlement_setting.platform_fee_basis_points': 1000,
+  'hub_provider_settlement_setting.minimum_withdrawal_quota': 0,
 }
 
 export function BillingSettings() {

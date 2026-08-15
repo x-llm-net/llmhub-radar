@@ -339,6 +339,7 @@ export interface HubProviderSettlementSummary {
   transferred_balance_quota: number
   withdrawable_quota: number
   platform_fee_basis_points: number
+  minimum_withdrawal_quota: number
 }
 
 export interface HubProviderEarning {
