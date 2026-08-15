@@ -5440,6 +5440,7 @@
     "Failed to update automatic testing": "更新自动检测设置失败",
     "Detection disabled": "检测已关闭",
     "Skipped": "已跳过",
+    "Error details": "错误详情",
     "Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.": "只有手工上架且检测可用的模型会进入供给池。下架后仍会持续检测，临时故障的已上架模型恢复后会自动上线。",
     "Listed models": "已上架",
     "Listing status": "上架状态",

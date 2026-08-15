@@ -53,6 +53,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -107,6 +112,18 @@ function formatCooldown(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainder = seconds % 60
   return `${minutes}:${remainder.toString().padStart(2, '0')}`
+}
+
+function summarizeProbeError(error: string) {
+  const normalized = error.replaceAll(/\s+/g, ' ').trim()
+  const statusCode = normalized.match(/status code\s+(\d{3})/i)?.[1]
+  const message = normalized
+    .match(/message:\s*(.*?)(?:\s*\(request id:|,\s*body:|$)/i)?.[1]
+    ?.trim()
+  if (statusCode && message) return `HTTP ${statusCode} · ${message}`
+  if (statusCode) return `HTTP ${statusCode}`
+  if (normalized.length <= 96) return normalized
+  return `${normalized.slice(0, 96)}...`
 }
 
 function endpointLabel(endpoint: HubSupplyProbeEndpoint) {
@@ -264,6 +281,11 @@ function EndpointResult(props: {
     normalizedError.includes('has not been priced') ||
     (endpoint.last_error.includes('价格') &&
       endpoint.last_error.includes('配置'))
+  const displayError = isModelPriceError
+    ? t(
+        'Model price is not configured. Please complete model pricing in settings.'
+      )
+    : endpoint.last_error
   let statusContent
   if (isRunning) {
     statusContent = (
@@ -293,7 +315,7 @@ function EndpointResult(props: {
     statusContent = <span className='text-destructive'>{t('Failed')}</span>
   }
   return (
-    <div className='min-w-0 space-y-1'>
+    <div className='min-w-0 space-y-2'>
       <div className='flex flex-wrap items-center gap-2'>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
@@ -330,20 +352,38 @@ function EndpointResult(props: {
         {statusContent}
       </div>
       {endpoint.status === 'error' && endpoint.last_error && (
-        <div className='flex max-w-xl flex-wrap items-center gap-2'>
-          <p
-            className={
-              isModelPriceError
-                ? 'text-muted-foreground text-xs leading-5'
-                : 'text-destructive text-xs leading-5 break-words whitespace-normal'
-            }
-          >
-            {isModelPriceError
-              ? t(
-                  'Model price is not configured. Please complete model pricing in settings.'
-                )
-              : endpoint.last_error}
-          </p>
+        <div className='flex max-w-full min-w-0 items-center gap-2'>
+          <Popover>
+            <PopoverTrigger
+              render={
+                <button
+                  type='button'
+                  className='border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10 flex h-8 max-w-full min-w-0 items-center gap-2 rounded-md border px-2.5 text-left text-xs transition-colors'
+                />
+              }
+            >
+              <CircleX className='size-3.5 shrink-0' aria-hidden='true' />
+              <span className='truncate'>
+                {summarizeProbeError(displayError)}
+              </span>
+              <ChevronDown
+                className='size-3.5 shrink-0 opacity-60'
+                aria-hidden='true'
+              />
+            </PopoverTrigger>
+            <PopoverContent
+              align='start'
+              className='w-[28rem] max-w-[calc(100vw-2rem)] gap-3 p-3'
+            >
+              <div className='text-destructive flex items-center gap-2 font-medium'>
+                <CircleX className='size-4' aria-hidden='true' />
+                {t('Error details')}
+              </div>
+              <div className='bg-muted max-h-64 overflow-auto rounded-md p-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap'>
+                {displayError}
+              </div>
+            </PopoverContent>
+          </Popover>
           {isModelPriceError && (
             <Button
               type='button'
@@ -873,7 +913,7 @@ export function ProviderChannelModelsDialog(
             {!probesQuery.isLoading &&
               !probesQuery.isError &&
               visibleModels.length > 0 && (
-                <Table className='min-w-[1120px]'>
+                <Table className='min-w-[1264px] table-fixed'>
                   <TableHeader className='bg-muted/40 sticky top-0 z-10'>
                     <TableRow>
                       <TableHead className='w-10 pl-4'>
@@ -887,21 +927,21 @@ export function ProviderChannelModelsDialog(
                           aria-label={t('Select all')}
                         />
                       </TableHead>
-                      <TableHead className='w-[22%] pl-0'>
-                        {t('Model')}
-                      </TableHead>
-                      <TableHead className='w-40'>
+                      <TableHead className='w-44 pl-0'>{t('Model')}</TableHead>
+                      <TableHead className='w-36'>
                         {t('Listing status')}
                       </TableHead>
-                      <TableHead className='w-40'>{t('Status')}</TableHead>
-                      <TableHead className='w-40'>
+                      <TableHead className='w-36'>
                         {t('Automatic testing')}
                       </TableHead>
-                      <TableHead>{t('Endpoint results')}</TableHead>
+                      <TableHead className='w-36'>{t('Status')}</TableHead>
+                      <TableHead className='w-96'>
+                        {t('Endpoint results')}
+                      </TableHead>
                       <TableHead className='w-44'>
                         {t('Last detected')}
                       </TableHead>
-                      <TableHead className='w-14 text-right' />
+                      <TableHead className='bg-muted/95 sticky right-0 z-20 w-14 border-l text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)] backdrop-blur' />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -960,9 +1000,6 @@ export function ProviderChannelModelsDialog(
                             />
                           </TableCell>
                           <TableCell>
-                            <ProbeStatus model={model} running={modelRunning} />
-                          </TableCell>
-                          <TableCell>
                             <AutoProbeStatus
                               enabled={model.auto_probe_enabled}
                               changing={autoProbeChanging || modelRunning}
@@ -973,6 +1010,9 @@ export function ProviderChannelModelsDialog(
                                 })
                               }
                             />
+                          </TableCell>
+                          <TableCell>
+                            <ProbeStatus model={model} running={modelRunning} />
                           </TableCell>
                           <TableCell className='space-y-2 whitespace-normal'>
                             {model.endpoints.length ? (
@@ -1007,7 +1047,7 @@ export function ProviderChannelModelsDialog(
                               ? formatTimestampToDate(model.last_probe_at)
                               : t('Never')}
                           </TableCell>
-                          <TableCell className='text-right'>
+                          <TableCell className='bg-background group-hover:bg-muted/50 sticky right-0 z-[5] border-l text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.35)] transition-colors'>
                             <Button
                               type='button'
                               variant='ghost'

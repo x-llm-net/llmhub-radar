@@ -5440,6 +5440,7 @@
     "Failed to update automatic testing": "更新自動檢測設定失敗",
     "Detection disabled": "檢測已關閉",
     "Skipped": "已跳過",
+    "Error details": "錯誤詳情",
     "Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.": "Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.",
     "Listed models": "Listed models",
     "Listing status": "Listing status",

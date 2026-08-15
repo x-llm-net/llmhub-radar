@@ -5440,6 +5440,7 @@
     "Failed to update automatic testing": "Failed to update automatic testing",
     "Detection disabled": "Detection disabled",
     "Skipped": "Skipped",
+    "Error details": "Error details",
     "Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.": "Only listed models join the supply pool. Unlisted models are still tested, and listed models return automatically after recovery.",
     "Listed models": "Listed models",
     "Listing status": "Listing status",
