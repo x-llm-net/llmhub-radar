@@ -60,10 +60,10 @@ export function providerSlugFromName(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '')
     .slice(0, 63)
-    .replace(/-+$/g, '')
+    .replaceAll(/-+$/g, '')
 }
 
 export function providerSlugFromWebsite(value: string): string {
@@ -157,4 +157,18 @@ export function getProviderPublicURL(slug: string): string {
     return `/providers/${encodeURIComponent(normalizedSlug)}`
   }
   return `https://${normalizedSlug}.${getProviderRootDomain()}/`
+}
+
+export function getProviderRootURL(pathname = '/'): string {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`
+  if (typeof window === 'undefined') {
+    return `https://${getProviderRootDomain()}${normalizedPath}`
+  }
+
+  const hostname = window.location.hostname.toLowerCase()
+  if (hostname.endsWith('.localhost')) {
+    const port = window.location.port ? `:${window.location.port}` : ''
+    return `${window.location.protocol}//localhost${port}${normalizedPath}`
+  }
+  return `https://${getProviderRootDomain()}${normalizedPath}`
 }

@@ -42,6 +42,10 @@ import {
 } from '@/lib/auth-session'
 import { subscribeAuthSessionEvents } from '@/lib/auth-session-sync'
 import { resolveLegacyRoute } from '@/lib/legacy-route'
+import {
+  getProviderRootURL,
+  getProviderSlugFromHostname,
+} from '@/lib/provider-domain'
 import { useAuthStore } from '@/stores/auth-store'
 
 function RootComponent() {
@@ -150,6 +154,15 @@ export const Route = createRootRouteWithContext<{
     }
 
     const pathname = location?.pathname || ''
+    if (
+      pathname === '/provider/onboarding' &&
+      getProviderSlugFromHostname() !== null
+    ) {
+      throw redirect({
+        href: getProviderRootURL('/provider/onboarding'),
+        replace: true,
+      })
+    }
     const needsSetupCheck =
       !setupStatusChecked && !pathname.startsWith('/setup')
     const authBootstrap = bootstrapAuthentication()

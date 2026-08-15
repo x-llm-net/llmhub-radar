@@ -40,6 +40,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
 import { useProvider } from '@/features/provider/hooks/use-provider'
+import { getProviderSlugFromHostname } from '@/lib/provider-domain'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -59,6 +60,8 @@ export function useSidebarData(): SidebarData {
   const providerTitle = providerQuery.provider
     ? t('Channel Supply')
     : t('Become a Provider')
+  const showProviderNavigation =
+    providerQuery.provider || getProviderSlugFromHostname() === null
 
   return {
     navGroups: [
@@ -115,11 +118,15 @@ export function useSidebarData(): SidebarData {
         id: 'personal',
         title: t('Personal'),
         items: [
-          {
-            title: providerTitle,
-            url: providerUrl,
-            icon: Store,
-          },
+          ...(showProviderNavigation
+            ? [
+                {
+                  title: providerTitle,
+                  url: providerUrl,
+                  icon: Store,
+                },
+              ]
+            : []),
           {
             title: t('Wallet'),
             url: '/wallet',
