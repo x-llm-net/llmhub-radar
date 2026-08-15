@@ -32,8 +32,9 @@ import (
 const (
 	HubProviderPlatformFeeBasisPoints = 1000
 
-	HubProviderEarningTypeUsage      = "usage"
-	HubProviderEarningTypeAdjustment = "adjustment"
+	HubProviderEarningTypeUsage           = "usage"
+	HubProviderEarningTypeAdjustment      = "adjustment"
+	HubProviderEarningTypeBalanceTransfer = "balance_transfer"
 
 	HubProviderEarningStatusPending   = "pending"
 	HubProviderEarningStatusSettled   = "settled"
@@ -46,15 +47,16 @@ const (
 )
 
 var (
-	ErrHubProviderEarningReferenceConflict  = errors.New("hub provider earning reference conflict")
-	ErrHubProviderEarningCancelled          = errors.New("hub provider earning is cancelled")
-	ErrHubProviderEarningSettlementDeferred = errors.New("hub provider earning settlement is deferred")
-	ErrHubProviderWithdrawalPending         = errors.New("hub provider already has a pending withdrawal")
-	ErrHubProviderWithdrawalInsufficient    = errors.New("hub provider withdrawable balance is insufficient")
-	ErrHubProviderWithdrawalTransition      = errors.New("invalid hub provider withdrawal status transition")
-	ErrHubProviderWithdrawalPayoutRequired  = errors.New("hub provider withdrawal payout information is required")
-	ErrHubProviderWithdrawalRemarkRequired  = errors.New("hub provider withdrawal review remark is required")
-	ErrHubProviderWithdrawalPaymentInvalid  = errors.New("hub provider withdrawal payment details are invalid")
+	ErrHubProviderEarningReferenceConflict    = errors.New("hub provider earning reference conflict")
+	ErrHubProviderEarningCancelled            = errors.New("hub provider earning is cancelled")
+	ErrHubProviderEarningSettlementDeferred   = errors.New("hub provider earning settlement is deferred")
+	ErrHubProviderWithdrawalPending           = errors.New("hub provider already has a pending withdrawal")
+	ErrHubProviderWithdrawalInsufficient      = errors.New("hub provider withdrawable balance is insufficient")
+	ErrHubProviderWithdrawalTransition        = errors.New("invalid hub provider withdrawal status transition")
+	ErrHubProviderWithdrawalPayoutRequired    = errors.New("hub provider withdrawal payout information is required")
+	ErrHubProviderWithdrawalRemarkRequired    = errors.New("hub provider withdrawal review remark is required")
+	ErrHubProviderWithdrawalPaymentInvalid    = errors.New("hub provider withdrawal payment details are invalid")
+	ErrHubProviderBalanceTransferInsufficient = errors.New("hub provider balance transfer amount exceeds withdrawable earnings")
 )
 
 var hubProviderPayoutCurrencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
@@ -201,6 +203,7 @@ type HubProviderSettlementSummary struct {
 	PendingIncomeQuota      int `json:"pending_income_quota"`
 	ReservedWithdrawalQuota int `json:"reserved_withdrawal_quota"`
 	PaidWithdrawalQuota     int `json:"paid_withdrawal_quota"`
+	TransferredBalanceQuota int `json:"transferred_balance_quota"`
 	WithdrawableQuota       int `json:"withdrawable_quota"`
 	PlatformFeeBasisPoints  int `json:"platform_fee_basis_points"`
 }
@@ -430,6 +433,93 @@ func CreateHubProviderManualAdjustment(providerId, amountQuota, operatorUserId i
 	return earning, nil
 }
 
+func CreateHubProviderBalanceTransfer(ownerUserId, amountQuota int, idempotencyKey string) (*HubProviderEarning, error) {
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if ownerUserId <= 0 || amountQuota <= 0 || idempotencyKey == "" || len(idempotencyKey) > 48 {
+		return nil, errors.New("invalid hub provider balance transfer")
+	}
+	requestId := fmt.Sprintf("balance-transfer:%d:%s", ownerUserId, idempotencyKey)
+	var transfer HubProviderEarning
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var provider HubProvider
+		if err := lockForUpdate(tx).Where("owner_user_id = ?", ownerUserId).Order("slot ASC").First(&provider).Error; err != nil {
+			return err
+		}
+
+		var existing HubProviderEarning
+		if err := tx.Where("request_id = ?", requestId).First(&existing).Error; err == nil {
+			if existing.ProviderId != provider.Id || existing.OwnerUserId != ownerUserId ||
+				existing.EntryType != HubProviderEarningTypeBalanceTransfer ||
+				existing.Status != HubProviderEarningStatusSettled ||
+				existing.ProviderIncomeQuota != -amountQuota {
+				return ErrHubProviderEarningReferenceConflict
+			}
+			transfer = existing
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		type quotaSum struct {
+			Value int `gorm:"column:value"`
+		}
+		var earned quotaSum
+		if err := tx.Model(&HubProviderEarning{}).
+			Select("COALESCE(SUM(provider_income_quota), 0) AS value").
+			Where("provider_id = ? AND status = ?", provider.Id, HubProviderEarningStatusSettled).
+			Scan(&earned).Error; err != nil {
+			return err
+		}
+		var unavailable quotaSum
+		if err := tx.Model(&HubProviderWithdrawal{}).
+			Select("COALESCE(SUM(amount_quota), 0) AS value").
+			Where("provider_id = ? AND status <> ?", provider.Id, HubProviderWithdrawalStatusRejected).
+			Scan(&unavailable).Error; err != nil {
+			return err
+		}
+		if amountQuota > earned.Value-unavailable.Value {
+			return ErrHubProviderBalanceTransferInsufficient
+		}
+
+		now := common.GetTimestamp()
+		transfer = HubProviderEarning{
+			RequestId:           requestId,
+			EntryType:           HubProviderEarningTypeBalanceTransfer,
+			Status:              HubProviderEarningStatusSettled,
+			ProviderId:          provider.Id,
+			OwnerUserId:         ownerUserId,
+			BillingSource:       "provider_earnings",
+			ProviderIncomeQuota: -amountQuota,
+			OperatorUserId:      ownerUserId,
+			Remark:              "Transferred provider earnings to account balance",
+			SettledAt:           now,
+		}
+		if err := tx.Create(&transfer).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&User{}).
+			Where("id = ?", ownerUserId).
+			Update("quota", gorm.Expr("quota + ?", amountQuota))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("hub provider owner user not found")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	var userQuota int
+	if err := DB.Model(&User{}).Where("id = ?", ownerUserId).Select("quota").Scan(&userQuota).Error; err != nil {
+		common.SysLog("failed to load user quota after provider balance transfer: " + err.Error())
+	} else if err := updateUserQuotaCache(ownerUserId, userQuota); err != nil {
+		common.SysLog("failed to update user quota cache after provider balance transfer: " + err.Error())
+	}
+	return &transfer, nil
+}
+
 func ListHubProviderEarnings(providerId, offset, limit int) ([]HubProviderEarning, int64, error) {
 	query := DB.Model(&HubProviderEarning{}).Where("provider_id = ?", providerId)
 	var total int64
@@ -456,22 +546,28 @@ func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSumma
 		return summary, errors.New("invalid hub provider")
 	}
 	type earningSums struct {
-		GrossQuota         int `gorm:"column:gross_quota"`
-		PlatformFeeQuota   int `gorm:"column:platform_fee_quota"`
-		SettledIncomeQuota int `gorm:"column:settled_income_quota"`
-		PendingIncomeQuota int `gorm:"column:pending_income_quota"`
+		GrossQuota              int `gorm:"column:gross_quota"`
+		PlatformFeeQuota        int `gorm:"column:platform_fee_quota"`
+		SettledIncomeQuota      int `gorm:"column:settled_income_quota"`
+		PendingIncomeQuota      int `gorm:"column:pending_income_quota"`
+		TransferredBalanceQuota int `gorm:"column:transferred_balance_quota"`
 	}
 	var earnings earningSums
 	if err := DB.Model(&HubProviderEarning{}).
 		Select(
 			"COALESCE(SUM(CASE WHEN status = ? THEN gross_quota ELSE 0 END), 0) AS gross_quota, "+
 				"COALESCE(SUM(CASE WHEN status = ? THEN platform_fee_quota ELSE 0 END), 0) AS platform_fee_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? THEN provider_income_quota ELSE 0 END), 0) AS settled_income_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? THEN provider_income_quota ELSE 0 END), 0) AS pending_income_quota",
+				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN provider_income_quota ELSE 0 END), 0) AS settled_income_quota, "+
+				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN provider_income_quota ELSE 0 END), 0) AS pending_income_quota, "+
+				"COALESCE(SUM(CASE WHEN status = ? AND entry_type = ? THEN -provider_income_quota ELSE 0 END), 0) AS transferred_balance_quota",
 			HubProviderEarningStatusSettled,
 			HubProviderEarningStatusSettled,
 			HubProviderEarningStatusSettled,
+			HubProviderEarningTypeBalanceTransfer,
 			HubProviderEarningStatusPending,
+			HubProviderEarningTypeBalanceTransfer,
+			HubProviderEarningStatusSettled,
+			HubProviderEarningTypeBalanceTransfer,
 		).
 		Where("provider_id = ?", providerId).
 		Scan(&earnings).Error; err != nil {
@@ -501,7 +597,8 @@ func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSumma
 	summary.PendingIncomeQuota = earnings.PendingIncomeQuota
 	summary.ReservedWithdrawalQuota = withdrawals.ReservedQuota
 	summary.PaidWithdrawalQuota = withdrawals.PaidQuota
-	summary.WithdrawableQuota = earnings.SettledIncomeQuota - withdrawals.ReservedQuota - withdrawals.PaidQuota
+	summary.TransferredBalanceQuota = earnings.TransferredBalanceQuota
+	summary.WithdrawableQuota = earnings.SettledIncomeQuota - withdrawals.ReservedQuota - withdrawals.PaidQuota - earnings.TransferredBalanceQuota
 	if summary.WithdrawableQuota < 0 {
 		summary.WithdrawableQuota = 0
 	}

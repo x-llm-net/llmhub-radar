@@ -277,6 +277,18 @@ export async function getProviderEarnings(
   return res.data
 }
 
+export async function transferProviderEarningsToBalance(payload: {
+  amount_quota: number
+  idempotency_key: string
+}): Promise<ApiResponse<HubProviderEarning>> {
+  const res = await api.post(
+    '/api/hub/provider/earnings/balance-transfer',
+    payload,
+    { skipBusinessError: true }
+  )
+  return res.data
+}
+
 export async function getProviderWithdrawals(
   page: number,
   pageSize: number

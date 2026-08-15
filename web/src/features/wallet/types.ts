@@ -289,7 +289,7 @@ export interface CompleteOrderRequest {
 }
 
 export type HubProviderEarningStatus = 'pending' | 'settled' | 'cancelled'
-export type HubProviderEarningType = 'usage' | 'adjustment'
+export type HubProviderEarningType = 'usage' | 'adjustment' | 'balance_transfer'
 export type HubProviderWithdrawalStatus =
   | 'pending'
   | 'approved'
@@ -336,6 +336,7 @@ export interface HubProviderSettlementSummary {
   pending_income_quota: number
   reserved_withdrawal_quota: number
   paid_withdrawal_quota: number
+  transferred_balance_quota: number
   withdrawable_quota: number
   platform_fee_basis_points: number
 }

@@ -273,6 +273,47 @@ func TestHubProviderWithdrawalRejectsInsufficientBalanceAndInvalidTransition(t *
 	assert.True(t, errors.Is(err, ErrHubProviderWithdrawalTransition))
 }
 
+func TestHubProviderBalanceTransferCreditsWalletAndReservesEarnings(t *testing.T) {
+	truncateTables(t)
+	owner := User{Id: 104, Username: "provider-owner", Quota: 50, Status: 1}
+	require.NoError(t, DB.Create(&owner).Error)
+	provider := HubProvider{Id: 4, OwnerUserId: owner.Id, Slot: 1, Name: "Provider 4", Slug: "provider-four", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&provider).Error)
+	payoutAccount := seedSettlementPayoutAccount(t, provider)
+	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
+	require.NoError(t, err)
+	_, err = CreateHubProviderWithdrawal(owner.Id, 70, payoutAccount.Id)
+	require.NoError(t, err)
+
+	transfer, err := CreateHubProviderBalanceTransfer(owner.Id, 120, "transfer-1")
+	require.NoError(t, err)
+	assert.Equal(t, HubProviderEarningTypeBalanceTransfer, transfer.EntryType)
+	assert.Equal(t, HubProviderEarningStatusSettled, transfer.Status)
+	assert.Equal(t, -120, transfer.ProviderIncomeQuota)
+
+	var updated User
+	require.NoError(t, DB.First(&updated, owner.Id).Error)
+	assert.Equal(t, 170, updated.Quota)
+
+	summary, err := GetHubProviderSettlementSummary(provider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 200, summary.SettledIncomeQuota)
+	assert.Equal(t, 70, summary.ReservedWithdrawalQuota)
+	assert.Equal(t, 120, summary.TransferredBalanceQuota)
+	assert.Equal(t, 10, summary.WithdrawableQuota)
+
+	repeated, err := CreateHubProviderBalanceTransfer(owner.Id, 120, "transfer-1")
+	require.NoError(t, err)
+	assert.Equal(t, transfer.Id, repeated.Id)
+	require.NoError(t, DB.First(&updated, owner.Id).Error)
+	assert.Equal(t, 170, updated.Quota)
+
+	_, err = CreateHubProviderBalanceTransfer(owner.Id, 121, "transfer-1")
+	assert.ErrorIs(t, err, ErrHubProviderEarningReferenceConflict)
+	_, err = CreateHubProviderBalanceTransfer(owner.Id, 11, "transfer-2")
+	assert.ErrorIs(t, err, ErrHubProviderBalanceTransferInsufficient)
+}
+
 func TestHubProviderWithdrawalRequiresExistingPayoutAccount(t *testing.T) {
 	truncateTables(t)
 	provider := HubProvider{Id: 4, OwnerUserId: 104, Slot: 1, Name: "Provider 4", Slug: "provider-four", Status: HubProviderStatusActive}

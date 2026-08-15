@@ -50,6 +50,11 @@ type hubProviderEarningAdjustmentRequest struct {
 	Remark      string `json:"remark"`
 }
 
+type hubProviderBalanceTransferRequest struct {
+	AmountQuota    int    `json:"amount_quota"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
 func GetHubProviderEarningSummary(c *gin.Context) {
 	provider, ok := currentHubProviderOrError(c)
 	if !ok {
@@ -132,6 +137,32 @@ func CreateHubProviderWithdrawal(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, withdrawal)
+}
+
+func CreateHubProviderBalanceTransfer(c *gin.Context) {
+	if _, ok := currentHubProviderOrError(c); !ok {
+		return
+	}
+	var req hubProviderBalanceTransferRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if req.AmountQuota <= 0 || req.IdempotencyKey == "" || len(req.IdempotencyKey) > 48 {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderBalanceTransferInvalid)
+		return
+	}
+	transfer, err := model.CreateHubProviderBalanceTransfer(c.GetInt("id"), req.AmountQuota, req.IdempotencyKey)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderBalanceTransferInsufficient) {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderBalanceTransferInsufficient)
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, transfer)
 }
 
 func AdminGetHubProviderEarnings(c *gin.Context) {

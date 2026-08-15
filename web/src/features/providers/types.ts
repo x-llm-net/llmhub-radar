@@ -82,6 +82,7 @@ export type HubProviderSettlementSummary = {
   pending_income_quota: number
   reserved_withdrawal_quota: number
   paid_withdrawal_quota: number
+  transferred_balance_quota: number
   withdrawable_quota: number
   platform_fee_basis_points: number
 }
@@ -89,7 +90,7 @@ export type HubProviderSettlementSummary = {
 export type HubProviderEarning = {
   id: number
   request_id: string
-  entry_type: 'usage' | 'adjustment'
+  entry_type: 'usage' | 'adjustment' | 'balance_transfer'
   status: 'pending' | 'settled' | 'cancelled'
   provider_id: number
   consumer_user_id: number

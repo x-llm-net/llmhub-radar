@@ -8,6 +8,7 @@ License, or (at your option) any later version.
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowRightLeft,
   BanknoteArrowDown,
   ChevronLeft,
   ChevronRight,
@@ -44,6 +45,7 @@ import {
   getProviderPayoutAccounts,
   getProviderWithdrawals,
   providerEarningSummaryQueryKey,
+  transferProviderEarningsToBalance,
   updateProviderPayoutAccount,
   uploadProviderPayoutQRCode,
 } from '../api'
@@ -54,6 +56,7 @@ import type {
 } from '../types'
 import { PayoutAccountDetails } from './payout-account'
 import { formatPaidAmount } from './payout-account-utils'
+import { ProviderBalanceTransferDialog } from './provider-balance-transfer-dialog'
 import type { ProviderPayoutAccountFormValue } from './provider-payout-account-dialog'
 import { ProviderPayoutAccounts } from './provider-payout-accounts'
 import { ProviderWithdrawalDialog } from './provider-withdrawal-dialog'
@@ -122,12 +125,17 @@ function Pager(props: {
   )
 }
 
-export function ProviderEarnings() {
+interface ProviderEarningsProps {
+  onBalanceChanged?: () => Promise<void> | void
+}
+
+export function ProviderEarnings(props: ProviderEarningsProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [earningsPage, setEarningsPage] = useState(1)
   const [withdrawalsPage, setWithdrawalsPage] = useState(1)
   const [withdrawalOpen, setWithdrawalOpen] = useState(false)
+  const [balanceTransferOpen, setBalanceTransferOpen] = useState(false)
   const summary = useQuery({
     queryKey: providerEarningSummaryQueryKey,
     queryFn: getProviderEarningSummary,
@@ -166,6 +174,30 @@ export function ProviderEarnings() {
       toast.success(t('Withdrawal request submitted'))
     },
     onError: () => toast.error(t('Failed to submit withdrawal')),
+  })
+  const transferToBalance = useMutation({
+    mutationFn: (payload: { amountQuota: number; idempotencyKey: string }) =>
+      transferProviderEarningsToBalance({
+        amount_quota: payload.amountQuota,
+        idempotency_key: payload.idempotencyKey,
+      }),
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(
+          response.message || t('Failed to transfer provider earnings')
+        )
+        return
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: providerEarningSummaryQueryKey,
+        }),
+        queryClient.invalidateQueries({ queryKey: earningsQueryKey }),
+        props.onBalanceChanged?.(),
+      ])
+      toast.success(t('Provider earnings transferred to balance'))
+    },
+    onError: () => toast.error(t('Failed to transfer provider earnings')),
   })
   const savePayoutAccount = useMutation({
     mutationFn: async (payload: {
@@ -243,18 +275,25 @@ export function ProviderEarnings() {
     }
     return earningItems.map((item) => {
       const status = earningStatus(item.status)
+      const isBalanceTransfer = item.entry_type === 'balance_transfer'
+      let sourceLabel = item.model_name || '-'
+      if (item.entry_type === 'adjustment') {
+        sourceLabel = t('Manual adjustment')
+      } else if (isBalanceTransfer) {
+        sourceLabel = t('Transfer to balance')
+      }
       return (
         <TableRow key={item.id}>
           <TableCell>{formatTimestamp(item.created_at)}</TableCell>
           <TableCell className='max-w-56 truncate font-medium'>
-            {item.entry_type === 'adjustment'
-              ? t('Manual adjustment')
-              : item.model_name || '-'}
+            {sourceLabel}
           </TableCell>
           <TableCell>
             {item.consumer_user_id > 0 ? `#${item.consumer_user_id}` : '-'}
           </TableCell>
-          <TableCell>{formatQuota(item.gross_quota)}</TableCell>
+          <TableCell>
+            {isBalanceTransfer ? '-' : formatQuota(item.gross_quota)}
+          </TableCell>
           <TableCell
             className={
               item.provider_income_quota < 0
@@ -368,18 +407,33 @@ export function ProviderEarnings() {
             )}
           </p>
         </div>
-        <Button
-          type='button'
-          onClick={() => setWithdrawalOpen(true)}
-          disabled={
-            summary.isLoading ||
-            (summaryData?.withdrawable_quota ?? 0) <= 0 ||
-            createWithdrawal.isPending
-          }
-        >
-          <BanknoteArrowDown />
-          {t('Request withdrawal')}
-        </Button>
+        <div className='flex flex-wrap items-center gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            onClick={() => setBalanceTransferOpen(true)}
+            disabled={
+              summary.isLoading ||
+              (summaryData?.withdrawable_quota ?? 0) <= 0 ||
+              transferToBalance.isPending
+            }
+          >
+            <ArrowRightLeft />
+            {t('Transfer to balance')}
+          </Button>
+          <Button
+            type='button'
+            onClick={() => setWithdrawalOpen(true)}
+            disabled={
+              summary.isLoading ||
+              (summaryData?.withdrawable_quota ?? 0) <= 0 ||
+              createWithdrawal.isPending
+            }
+          >
+            <BanknoteArrowDown />
+            {t('Request withdrawal')}
+          </Button>
+        </div>
       </div>
 
       <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
@@ -493,6 +547,19 @@ export function ProviderEarnings() {
           const response = await createWithdrawal.mutateAsync({
             amountQuota,
             payoutAccountId,
+          })
+          return response.success === true
+        }}
+      />
+      <ProviderBalanceTransferDialog
+        open={balanceTransferOpen}
+        onOpenChange={setBalanceTransferOpen}
+        availableQuota={summaryData?.withdrawable_quota ?? 0}
+        pending={transferToBalance.isPending}
+        onConfirm={async (amountQuota, idempotencyKey) => {
+          const response = await transferToBalance.mutateAsync({
+            amountQuota,
+            idempotencyKey,
           })
           return response.success === true
         }}

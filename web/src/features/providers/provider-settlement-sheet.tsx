@@ -92,8 +92,8 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
   const data = summary.data?.data
   const earningItems = earnings.data?.data?.items ?? []
   const statItems = [
-    [t('Settled earnings'), data?.settled_income_quota ?? 0],
-    [t('Pending settlement'), data?.pending_income_quota ?? 0],
+    [t('Total provider earnings'), data?.settled_income_quota ?? 0],
+    [t('Pending settlement'), data?.reserved_withdrawal_quota ?? 0],
     [t('Available to withdraw'), data?.withdrawable_quota ?? 0],
     [t('Total withdrawn'), data?.paid_withdrawal_quota ?? 0],
   ] as const
@@ -160,22 +160,30 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
                     earningItems.length > 0 &&
                     earningItems.map((item) => {
                       const status = earningStatusMeta(item.status)
+                      let sourceLabel = item.model_name || '-'
+                      if (item.entry_type === 'adjustment') {
+                        sourceLabel = t('Manual adjustment')
+                      } else if (item.entry_type === 'balance_transfer') {
+                        sourceLabel = t('Transfer to balance')
+                      }
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
                             {formatTimestamp(item.created_at)}
                           </TableCell>
                           <TableCell className='max-w-48 truncate'>
-                            {item.entry_type === 'adjustment'
-                              ? t('Manual adjustment')
-                              : item.model_name || '-'}
+                            {sourceLabel}
                           </TableCell>
                           <TableCell>
                             {item.consumer_user_id
                               ? `#${item.consumer_user_id}`
                               : '-'}
                           </TableCell>
-                          <TableCell>{formatQuota(item.gross_quota)}</TableCell>
+                          <TableCell>
+                            {item.entry_type === 'balance_transfer'
+                              ? '-'
+                              : formatQuota(item.gross_quota)}
+                          </TableCell>
                           <TableCell>
                             {formatQuota(item.provider_income_quota)}
                           </TableCell>

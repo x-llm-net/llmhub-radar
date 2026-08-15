@@ -323,6 +323,8 @@ hub_provider.payout_account_not_found: "The payout account does not exist or has
 hub_provider.payout_qr_code_invalid: "Upload a PNG, JPEG, or WebP payout QR code no larger than 2 MB"
 hub_provider.withdrawal_payment_invalid: "Enter a valid payout currency, actual amount, and exchange rate"
 hub_provider.adjustment_invalid: "Enter a non-zero adjustment amount and a reason"
+hub_provider.balance_transfer_invalid: "Enter a valid provider earnings transfer amount"
+hub_provider.balance_transfer_insufficient: "The transfer amount exceeds the currently withdrawable earnings"
 
 # LLM-Hub provider channel messages
 hub_provider_channel.not_found: "Channel not found"

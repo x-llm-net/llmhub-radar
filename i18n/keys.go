@@ -387,6 +387,11 @@ const (
 	MsgHubProviderAdjustmentInvalid        = "hub_provider.adjustment_invalid"
 )
 
+const (
+	MsgHubProviderBalanceTransferInvalid      = "hub_provider.balance_transfer_invalid"
+	MsgHubProviderBalanceTransferInsufficient = "hub_provider.balance_transfer_insufficient"
+)
+
 // LLM-Hub provider channel messages
 const (
 	MsgHubProviderChannelNotFound             = "hub_provider_channel.not_found"

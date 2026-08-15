@@ -37,6 +37,7 @@ func setupHubProviderPayoutControllerTestDB(t *testing.T) {
 	t.Helper()
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
+		&model.User{},
 		&model.HubProvider{},
 		&model.HubProviderPayoutAsset{},
 		&model.HubProviderPayoutAccount{},
@@ -152,6 +153,34 @@ func TestCreateHubProviderWithdrawalRejectsForeignPayoutAccount(t *testing.T) {
 	var count int64
 	require.NoError(t, model.DB.Model(&model.HubProviderWithdrawal{}).Count(&count).Error)
 	assert.Zero(t, count)
+}
+
+func TestCreateHubProviderBalanceTransferCreditsCurrentUser(t *testing.T) {
+	setupHubProviderPayoutControllerTestDB(t)
+	user := model.User{Id: 42, Username: "provider-owner", Quota: 10, Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(&user).Error)
+	provider := seedHubProvider(t, user.Id)
+	_, err := model.CreateHubProviderManualAdjustment(provider.Id, 100, 1, "initial credit")
+	require.NoError(t, err)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/earnings/balance-transfer", map[string]any{
+		"amount_quota":    40,
+		"idempotency_key": "controller-transfer-1",
+	}, user.Id)
+	CreateHubProviderBalanceTransfer(ctx)
+
+	response := decodePayoutControllerResponse(t, recorder)
+	assert.True(t, response.Success)
+	require.NoError(t, model.DB.First(&user, user.Id).Error)
+	assert.Equal(t, 50, user.Quota)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider/earnings/balance-transfer", map[string]any{
+		"amount_quota":    61,
+		"idempotency_key": "controller-transfer-2",
+	}, user.Id)
+	CreateHubProviderBalanceTransfer(ctx)
+	response = decodePayoutControllerResponse(t, recorder)
+	assert.False(t, response.Success)
 }
 
 func TestAdminPaidWithdrawalRequiresPaymentDetails(t *testing.T) {

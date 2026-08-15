@@ -381,7 +381,7 @@ export function Wallet(props: WalletProps) {
             </TabsContent>
             {provider && (
               <TabsContent value='earnings'>
-                <ProviderEarnings />
+                <ProviderEarnings onBalanceChanged={fetchUser} />
               </TabsContent>
             )}
           </Tabs>
