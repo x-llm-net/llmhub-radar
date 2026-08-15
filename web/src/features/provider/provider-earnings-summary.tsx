@@ -29,13 +29,13 @@ export function ProviderEarningsSummary() {
   const feePercent = (data?.platform_fee_basis_points ?? 1000) / 100
   const stats = [
     {
-      label: t('Settled earnings'),
+      label: t('Total provider earnings'),
       value: data?.settled_income_quota ?? 0,
       icon: CircleDollarSign,
     },
     {
       label: t('Pending settlement'),
-      value: data?.pending_income_quota ?? 0,
+      value: data?.reserved_withdrawal_quota ?? 0,
       icon: Clock3,
     },
     {

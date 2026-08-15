@@ -342,7 +342,7 @@ export function ProviderEarnings() {
     },
     {
       label: t('Pending settlement'),
-      value: summaryData?.pending_income_quota ?? 0,
+      value: summaryData?.reserved_withdrawal_quota ?? 0,
       icon: Clock3,
     },
     {
