@@ -28,6 +28,23 @@ func TestNormalizeHubTokenRoutingPolicyRoundsPublicRangesToThreeDecimals(t *test
 	assert.False(t, policy.AllowsMultiplier("openai", 0.051))
 }
 
+func TestNormalizeHubTokenRoutingPolicyAllowsPremiumMultipliersAboveBaseline(t *testing.T) {
+	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{
+			Family:        "openai",
+			MinMultiplier: 5.0004,
+			MaxMultiplier: 6.0004,
+		}},
+	}, 0)
+
+	require.NoError(t, err)
+	require.NotNil(t, policy)
+	assert.Equal(t, 5.0, policy.Selections[0].MinMultiplier)
+	assert.Equal(t, 6.0, policy.Selections[0].MaxMultiplier)
+	assert.True(t, policy.AllowsMultiplier("openai", 5.5))
+	assert.False(t, policy.AllowsMultiplier("openai", 6.001))
+}
+
 func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultipliers(t *testing.T) {
 	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
 		Mode: HubTokenRoutingModePublic,

@@ -118,18 +118,19 @@ func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) 
 			return availability[i].Multiplier < availability[j].Multiplier
 		})
 		option := HubTokenRoutingFamilyOption{
-			Key:              family,
-			MinMultiplier:    HubTokenRoutingMinMultiplier,
-			MaxMultiplier:    1,
-			Step:             HubTokenRoutingMultiplierStep,
-			Availability:     availability,
-			ExactMultipliers: make([]float64, 0, len(availability)),
+			Key:                 family,
+			MinMultiplier:       HubTokenRoutingMinMultiplier,
+			MaxMultiplier:       HubTokenRoutingMaxMultiplier,
+			SliderMaxMultiplier: 1,
+			Step:                HubTokenRoutingMultiplierStep,
+			Availability:        availability,
+			ExactMultipliers:    make([]float64, 0, len(availability)),
 		}
-		if len(availability) > 0 && availability[len(availability)-1].Multiplier > option.MaxMultiplier {
-			option.MaxMultiplier = availability[len(availability)-1].Multiplier
+		if len(availability) > 0 && availability[len(availability)-1].Multiplier > option.SliderMaxMultiplier {
+			option.SliderMaxMultiplier = availability[len(availability)-1].Multiplier
 		}
-		if option.MaxMultiplier < 1 {
-			option.MaxMultiplier = 1
+		if option.SliderMaxMultiplier < 1 {
+			option.SliderMaxMultiplier = 1
 		}
 		providerSet := make(map[int]struct{})
 		for _, row := range rows {

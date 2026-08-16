@@ -75,7 +75,8 @@ const options: HubTokenRoutingOptions = {
     {
       key: 'openai',
       min_multiplier: 0.001,
-      max_multiplier: 1,
+      max_multiplier: 100,
+      slider_max_multiplier: 1,
       step: 0.001,
       available_channel_count: 2,
       provider_count: 3,
@@ -133,6 +134,7 @@ describe('Hub routing policy editor', () => {
     )
     assert.equal(inputs.length, 2)
     assert.equal(inputs[0]?.step, '0.001')
+    assert.equal(inputs[1]?.max, '100')
     assert.equal(inputs[0]?.value, '0.1')
     assert.equal(inputs[1]?.value, '0.2')
     assert.equal(
@@ -140,6 +142,41 @@ describe('Hub routing policy editor', () => {
       true
     )
     assert.equal(container.textContent?.includes('Economy'), true)
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  test('keeps premium multiplier ranges editable above the baseline', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+
+    await act(async () =>
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <HubRoutingPolicyEditor
+            options={options}
+            value={[
+              {
+                family: 'openai',
+                min_multiplier: 5,
+                max_multiplier: 6,
+              },
+            ]}
+            onChange={() => undefined}
+          />
+        </I18nextProvider>
+      )
+    )
+
+    const inputs = container.querySelectorAll<HTMLInputElement>(
+      'input[type="number"]'
+    )
+    assert.equal(inputs[0]?.value, '5')
+    assert.equal(inputs[1]?.value, '6')
+    assert.equal(inputs[1]?.max, '100')
+    assert.equal(container.textContent?.includes('High quality'), true)
 
     await act(async () => root.unmount())
     container.remove()

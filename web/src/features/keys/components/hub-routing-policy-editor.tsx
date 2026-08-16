@@ -71,7 +71,7 @@ function defaultSelection(option: HubTokenRoutingFamilyOption) {
   return {
     family: option.key,
     min_multiplier: option.min_multiplier,
-    max_multiplier: option.max_multiplier,
+    max_multiplier: Math.min(1, option.max_multiplier),
     exact_multiplier: option.exact_multipliers?.[0],
   }
 }
@@ -184,6 +184,11 @@ export function HubRoutingPolicyEditor({
           )
         }
         const range = [selection.min_multiplier, selection.max_multiplier]
+        const sliderMax = Math.max(
+          option.slider_max_multiplier,
+          selection.min_multiplier,
+          selection.max_multiplier
+        )
         const displayValue =
           options.mode === 'provider'
             ? (selection.exact_multiplier ?? option.exact_multipliers?.[0] ?? 0)
@@ -285,7 +290,7 @@ export function HubRoutingPolicyEditor({
               <div className='space-y-2'>
                 <Slider
                   min={option.min_multiplier}
-                  max={option.max_multiplier}
+                  max={sliderMax}
                   step={option.step}
                   value={range}
                   onValueChange={(next) => {

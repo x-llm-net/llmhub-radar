@@ -135,6 +135,7 @@ export interface HubTokenRoutingFamilyOption {
   key: string
   min_multiplier: number
   max_multiplier: number
+  slider_max_multiplier: number
   step: number
   available_channel_count: number
   provider_count: number

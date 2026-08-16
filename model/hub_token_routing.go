@@ -47,6 +47,7 @@ type HubTokenRoutingFamilyOption struct {
 	Key                   string                        `json:"key"`
 	MinMultiplier         float64                       `json:"min_multiplier"`
 	MaxMultiplier         float64                       `json:"max_multiplier"`
+	SliderMaxMultiplier   float64                       `json:"slider_max_multiplier"`
 	Step                  float64                       `json:"step"`
 	AvailableChannelCount int                           `json:"available_channel_count"`
 	ProviderCount         int                           `json:"provider_count"`
