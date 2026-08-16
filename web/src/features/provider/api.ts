@@ -95,10 +95,14 @@ export async function createProvider(
     formData.append('profile', JSON.stringify(values))
     formData.append('verify_website', 'true')
     formData.append('file', websiteEvidence)
-    const response = await api.post('/api/hub/provider', formData)
+    const response = await api.post('/api/hub/provider', formData, {
+      skipErrorHandler: true,
+    })
     return response.data
   }
-  const response = await api.post('/api/hub/provider', values)
+  const response = await api.post('/api/hub/provider', values, {
+    skipErrorHandler: true,
+  })
   return response.data
 }
 
