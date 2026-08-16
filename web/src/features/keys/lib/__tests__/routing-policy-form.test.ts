@@ -104,4 +104,27 @@ describe('API key multiplier routing policy mapping', () => {
       ],
     })
   })
+
+  test('does not substitute the range maximum for a missing provider multiplier', () => {
+    const values = {
+      ...getApiKeyFormDefaultValues(false),
+      hub_selections: [
+        {
+          family: 'google',
+          min_multiplier: 0.3,
+          max_multiplier: 0.3,
+        },
+      ],
+    }
+    const options: HubTokenRoutingOptions = {
+      ...baseOptions,
+      mode: 'provider',
+      provider_id: 7,
+    }
+
+    assert.throws(
+      () => transformFormDataToPayload(values, options),
+      /requires an exact multiplier/
+    )
+  })
 })

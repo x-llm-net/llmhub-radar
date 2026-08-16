@@ -24,6 +24,13 @@ import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { DEFAULT_GROUP } from '../constants'
 import type { ApiKey, ApiKeyFormData, HubTokenRoutingOptions } from '../types'
 
+function requireExactMultiplier(value: number | undefined): number {
+  if (value === undefined) {
+    throw new Error('Provider routing selection requires an exact multiplier')
+  }
+  return value
+}
+
 // ============================================================================
 // Form Schema
 // ============================================================================
@@ -183,7 +190,7 @@ export function transformFormDataToPayload(
             ...(routingOptions?.mode === 'provider'
               ? {
                   exact_multipliers: [
-                    selection.exact_multiplier ?? selection.max_multiplier,
+                    requireExactMultiplier(selection.exact_multiplier),
                   ],
                 }
               : {
@@ -232,7 +239,7 @@ export function transformApiKeyToFormDefaults(
     hub_selections: (apiKey.hub_routing_policy?.selections || []).map(
       (selection) => ({
         family: selection.family,
-        min_multiplier: selection.min_multiplier ?? 0.001,
+        min_multiplier: selection.min_multiplier ?? 0.01,
         max_multiplier: selection.max_multiplier ?? 1,
         exact_multiplier: selection.exact_multipliers?.[0],
       })

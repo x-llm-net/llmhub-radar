@@ -127,16 +127,27 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 
 func validateOriginTaskHubPolicy(c *gin.Context, originTask *model.Task) *dto.TaskError {
 	policy := service.GetHubTokenRoutingPolicy(c)
-	if policy == nil || policy.Mode != model.HubTokenRoutingModeProvider {
-		return nil
-	}
 	if originTask == nil || originTask.PrivateData.BillingContext == nil ||
 		originTask.PrivateData.BillingContext.RoutingPolicyMode != model.HubTokenRoutingModeProvider ||
-		originTask.PrivateData.BillingContext.OriginProviderId != policy.ProviderID {
+		originTask.PrivateData.BillingContext.OriginProviderId <= 0 {
+		// Historical tasks have no routing ownership snapshot and remain
+		// compatible with legacy/public/provider keys.
+		return nil
+	}
+	originProviderID := originTask.PrivateData.BillingContext.OriginProviderId
+	if policy == nil || policy.Mode != model.HubTokenRoutingModeProvider || policy.ProviderID != originProviderID {
 		return service.TaskErrorWrapperLocal(
 			errors.New("the origin task belongs to another provider route"),
 			"task_provider_mismatch",
 			http.StatusForbidden,
+		)
+	}
+	provider, ok := model.GetHubProviderRoutingByID(originProviderID)
+	if !ok || provider.Status != model.HubProviderStatusActive {
+		return service.TaskErrorWrapperLocal(
+			errors.New("the origin provider is unavailable"),
+			"task_provider_unavailable",
+			http.StatusServiceUnavailable,
 		)
 	}
 	return nil
@@ -497,7 +508,9 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 	}
 
-	if !snap.Equal(task.Snapshot()) {
+	// Terminal states are display-only here. The background poller owns the
+	// atomic success-settlement or failure-refund transition.
+	if !snap.Equal(task.Snapshot()) && shouldPersistRealtimeTaskSnapshot(snap.Status, task.Status) {
 		_, _ = task.UpdateWithStatus(snap.Status)
 	}
 
@@ -521,6 +534,14 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		Data: out,
 	})
 	return respBody
+}
+
+func isTaskTerminalStatus(status model.TaskStatus) bool {
+	return status == model.TaskStatusSuccess || status == model.TaskStatusFailure
+}
+
+func shouldPersistRealtimeTaskSnapshot(previous, current model.TaskStatus) bool {
+	return isTaskTerminalStatus(previous) || !isTaskTerminalStatus(current)
 }
 
 // detectVideoFormat 从 Gemini/Vertex 原始响应中探测视频格式

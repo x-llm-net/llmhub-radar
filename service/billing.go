@@ -156,6 +156,18 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 		}
 		return nil
 	}
+	if actualQuota > 0 && relayInfo.FinalPreConsumedQuota == 0 {
+		// A zero-priced base model can still incur tool or audio surcharges.
+		// Create the normal durable wallet session at settlement time instead of
+		// falling back to the legacy batched quota updater.
+		session := &BillingSession{
+			relayInfo: relayInfo,
+			funding:   &WalletFunding{userId: relayInfo.UserId},
+		}
+		relayInfo.Billing = session
+		relayInfo.BillingSource = BillingSourceWallet
+		return session.Settle(actualQuota)
+	}
 
 	// 回退：无 BillingSession 时使用旧路径
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota

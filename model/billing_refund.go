@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -72,7 +73,13 @@ func CreateBillingRefund(params BillingRefundParams) (*BillingRefund, error) {
 	if err := validateBillingRefundParams(params); err != nil {
 		return nil, err
 	}
+	return createBillingRefundTx(DB, params)
+}
 
+func createBillingRefundTx(tx *gorm.DB, params BillingRefundParams) (*BillingRefund, error) {
+	if tx == nil {
+		return nil, errors.New("billing refund transaction is nil")
+	}
 	refund := &BillingRefund{
 		RequestId:              params.RequestId,
 		Status:                 BillingRefundStatusPending,
@@ -85,18 +92,62 @@ func CreateBillingRefund(params BillingRefundParams) (*BillingRefund, error) {
 		SubscriptionExtraQuota: params.SubscriptionExtraQuota,
 		TokenQuota:             params.TokenQuota,
 	}
-	if err := DB.Create(refund).Error; err == nil {
+	result := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "request_id"}},
+		DoNothing: true,
+	}).Create(refund)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 1 {
 		return refund, nil
 	}
 
 	var existing BillingRefund
-	if err := DB.Where("request_id = ?", params.RequestId).First(&existing).Error; err != nil {
+	if err := tx.Where("request_id = ?", params.RequestId).First(&existing).Error; err != nil {
 		return nil, err
 	}
 	if !billingRefundMatches(&existing, params) {
 		return nil, ErrBillingRefundReferenceConflict
 	}
 	return &existing, nil
+}
+
+// UpdateWithStatusAndBillingRefund atomically publishes a failed task terminal
+// state and its durable refund intent. The refund itself is processed after the
+// transaction and can be resumed by the existing recovery task.
+func (t *Task) UpdateWithStatusAndBillingRefund(fromStatus TaskStatus, params BillingRefundParams) (bool, *BillingRefund, error) {
+	if t == nil || t.ID <= 0 || t.Status != TaskStatusFailure {
+		return false, nil, errors.New("billing refund task is invalid")
+	}
+	params.RequestId = strings.TrimSpace(params.RequestId)
+	params.FundingSource = strings.TrimSpace(params.FundingSource)
+	if params.TaskId != t.ID || params.UserId != t.UserId {
+		return false, nil, ErrBillingRefundReferenceConflict
+	}
+	if err := validateBillingRefundParams(params); err != nil {
+		return false, nil, err
+	}
+
+	var refund *BillingRefund
+	won := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		created, err := createBillingRefundTx(tx, params)
+		if err != nil {
+			return err
+		}
+		refund = created
+		won = true
+		return nil
+	})
+	return won, refund, err
 }
 
 func ProcessBillingRefund(requestId string) (*BillingRefund, error) {

@@ -208,6 +208,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		if relayInfo.SubscriptionPostDelta != 0 {
 			other["subscription_post_delta"] = relayInfo.SubscriptionPostDelta
 		}
+		if relayInfo.WalletOverflowPostDelta != 0 {
+			other["wallet_overflow_post_delta"] = relayInfo.WalletOverflowPostDelta
+		}
 		if relayInfo.SubscriptionPlanId != 0 {
 			other["subscription_plan_id"] = relayInfo.SubscriptionPlanId
 		}

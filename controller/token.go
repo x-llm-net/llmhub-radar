@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -123,10 +124,23 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 	return true
 }
 
-func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRoutingPolicy, existingProviderID int) (*model.HubTokenRoutingPolicy, bool, error) {
+func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRoutingPolicy, existingPolicy *model.HubTokenRoutingPolicy) (*model.HubTokenRoutingPolicy, bool, error) {
 	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
-	if providerID <= 0 {
-		providerID = existingProviderID
+	if existingPolicy != nil {
+		switch existingPolicy.Mode {
+		case model.HubTokenRoutingModeProvider:
+			if providerID > 0 && providerID != existingPolicy.ProviderID {
+				return nil, input != nil, fmt.Errorf("routing scope does not match the current domain")
+			}
+			providerID = existingPolicy.ProviderID
+		case model.HubTokenRoutingModePublic:
+			if providerID > 0 {
+				return nil, input != nil, fmt.Errorf("routing scope does not match the current domain")
+			}
+			providerID = 0
+		default:
+			return nil, input != nil, fmt.Errorf("invalid existing routing policy mode")
+		}
 	}
 	if input == nil {
 		if providerID > 0 {
@@ -310,7 +324,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	token := request.Token
-	routingPolicy, hasRoutingPolicy, err := normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, 0)
+	routingPolicy, hasRoutingPolicy, err := normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, nil)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -335,6 +349,9 @@ func AddToken(c *gin.Context) {
 		token.Group = "default"
 		token.CrossGroupRetry = false
 		_ = token.SetAutoGroups(nil)
+	} else if hub_routing_setting.Snapshot().Enabled {
+		common.ApiErrorI18n(c, i18n.MsgTokenRoutingPolicyRequired)
+		return
 	} else if !service.IsTokenGroupAllowedForWrite(token.Group) {
 		common.ApiErrorI18n(c, i18n.MsgTokenServiceTierRequired)
 		return
@@ -445,17 +462,18 @@ func UpdateToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	existingProviderID := 0
-	if existingPolicy, parseErr := cleanToken.GetHubRoutingPolicy(); parseErr != nil {
+	existingPolicy, parseErr := cleanToken.GetHubRoutingPolicy()
+	if parseErr != nil {
 		common.ApiError(c, parseErr)
 		return
-	} else if existingPolicy != nil && existingPolicy.Mode == model.HubTokenRoutingModeProvider {
-		existingProviderID = existingPolicy.ProviderID
 	}
-	routingPolicy, _, err := normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, existingProviderID)
-	if err != nil && request.HubRoutingPolicy != nil {
-		common.ApiError(c, err)
-		return
+	var routingPolicy *model.HubTokenRoutingPolicy
+	if statusOnly == "" {
+		routingPolicy, _, err = normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, existingPolicy)
+		if err != nil && request.HubRoutingPolicy != nil {
+			common.ApiErrorI18n(c, i18n.MsgTokenRoutingScopeMismatch)
+			return
+		}
 	}
 	if token.Status == common.TokenStatusEnabled {
 		if cleanToken.Status == common.TokenStatusExpired && cleanToken.ExpiredTime <= common.GetTimestamp() && cleanToken.ExpiredTime != -1 {

@@ -44,12 +44,8 @@ const FAMILY_LABELS: Record<string, string> = {
   other: 'Other models',
 }
 
-function familyLabel(key: string): string {
-  return FAMILY_LABELS[key] || key
-}
-
 function formatMultiplier(value: number): string {
-  return value.toFixed(3)
+  return `${value.toFixed(3)}x`
 }
 
 function clampMultiplier(value: number, min: number, max: number): number {
@@ -85,6 +81,7 @@ export function HubRoutingPolicyEditor({
   onChange,
 }: HubRoutingPolicyEditorProps) {
   const { t } = useTranslation()
+  const familyLabel = (key: string) => t(FAMILY_LABELS[key] || key)
   const optionByFamily = useMemo(
     () => new Map(options.families.map((option) => [option.key, option])),
     [options.families]

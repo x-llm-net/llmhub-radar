@@ -46,6 +46,68 @@ func TestNormalizeHubTokenRoutingPolicyAllowsPremiumMultipliersAboveBaseline(t *
 	assert.False(t, policy.AllowsMultiplier("openai", 6.001))
 }
 
+func TestHubTokenRoutingPolicySnapshotKeepsCapturedMultiplierGeneration(t *testing.T) {
+	const modelName = "gpt-affinity-pricing-snapshot"
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+
+	provider := HubProvider{
+		OwnerUserId: 71202,
+		Name:        "Affinity Snapshot Provider",
+		Slug:        "affinity-snapshot-provider",
+		Status:      HubProviderStatusActive,
+	}
+	require.NoError(t, DB.Create(&provider).Error)
+	channel := Channel{
+		Name:   "affinity-snapshot-channel",
+		Type:   constant.ChannelTypeOpenAI,
+		Status: common.ChannelStatusEnabled,
+		Models: modelName,
+		Group:  HubTokenRoutingAbilityGroup,
+	}
+	require.NoError(t, DB.Create(&channel).Error)
+	require.NoError(t, DB.Create(&Ability{
+		Group: HubTokenRoutingAbilityGroup, Model: modelName,
+		ChannelId: channel.Id, Enabled: true,
+	}).Error)
+	supplyGroup := HubSupplyGroup{
+		PublicId:        "affinity-pricing-snapshot",
+		ProviderId:      provider.Id,
+		NewAPIChannelId: channel.Id,
+		PriceMultiplier: 0.2,
+		Status:          HubSupplyGroupStatusAvailable,
+	}
+	require.NoError(t, DB.Create(&supplyGroup).Error)
+	require.NoError(t, RefreshHubSupplyPricingCache())
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		DB.Where("channel_id = ?", channel.Id).Delete(&Ability{})
+		DB.Delete(&HubSupplyGroup{}, supplyGroup.Id)
+		DB.Delete(&Channel{}, channel.Id)
+		DB.Delete(&HubProvider{}, provider.Id)
+		require.NoError(t, RefreshHubSupplyPricingCache())
+	})
+
+	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{
+			Family: "openai", MinMultiplier: 0.2, MaxMultiplier: 0.2,
+		}},
+	}, 0)
+	require.NoError(t, err)
+
+	captured := CaptureHubSupplyPricingSnapshot(channel.Id)
+	require.True(t, captured.Found)
+	require.Equal(t, 0.2, captured.Pricing.PriceMultiplier)
+
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).
+		Where("id = ?", supplyGroup.Id).
+		Update("price_multiplier", 0.8).Error)
+	require.NoError(t, RefreshHubSupplyPricingCache())
+
+	assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, modelName, channel.Id))
+	assert.True(t, IsChannelEnabledForHubTokenPolicySnapshot(policy, modelName, "", captured, false))
+}
+
 func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
 	const modelName = "gpt-premium-routing-only"
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled

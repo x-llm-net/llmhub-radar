@@ -33,16 +33,15 @@ func serviceTierTokenRequest(name, group string) map[string]any {
 	}
 }
 
-func TestAddTokenRequiresServiceTierWhenRoutingEnabled(t *testing.T) {
+func TestAddTokenRequiresMultiplierPolicyWhenRoutingEnabled(t *testing.T) {
 	tests := []struct {
-		name    string
-		group   string
-		allowed bool
+		name  string
+		group string
 	}{
-		{name: "special", group: hub_routing_setting.ServiceTierSpecial, allowed: true},
-		{name: "low", group: hub_routing_setting.ServiceTierLow, allowed: true},
-		{name: "medium", group: hub_routing_setting.ServiceTierMedium, allowed: true},
-		{name: "high", group: hub_routing_setting.ServiceTierHigh, allowed: true},
+		{name: "special", group: hub_routing_setting.ServiceTierSpecial},
+		{name: "low", group: hub_routing_setting.ServiceTierLow},
+		{name: "medium", group: hub_routing_setting.ServiceTierMedium},
+		{name: "high", group: hub_routing_setting.ServiceTierHigh},
 		{name: "auto", group: "auto"},
 		{name: "default", group: "default"},
 		{name: "empty", group: ""},
@@ -64,18 +63,10 @@ func TestAddTokenRequiresServiceTierWhenRoutingEnabled(t *testing.T) {
 			AddToken(ctx)
 
 			response := decodeAPIResponse(t, recorder)
-			assert.Equal(t, test.allowed, response.Success, response.Message)
+			assert.False(t, response.Success, response.Message)
 			var count int64
 			require.NoError(t, model.DB.Model(&model.Token{}).Count(&count).Error)
-			if test.allowed {
-				assert.EqualValues(t, 1, count)
-				var token model.Token
-				require.NoError(t, model.DB.First(&token).Error)
-				assert.Equal(t, test.group, token.Group)
-				assert.False(t, token.CrossGroupRetry)
-			} else {
-				assert.Zero(t, count)
-			}
+			assert.Zero(t, count)
 		})
 	}
 }

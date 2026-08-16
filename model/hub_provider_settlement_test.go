@@ -22,6 +22,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,6 +170,36 @@ func TestHubProviderEarningSnapshotsGlobalAndProviderFeeOverride(t *testing.T) {
 	assert.Equal(t, 1200, settled.PlatformFeeBasisPoints)
 	assert.Equal(t, 240, settled.PlatformFeeQuota)
 	assert.Equal(t, 1760, settled.ProviderIncomeQuota)
+}
+
+func TestUpdateHubProviderPlatformFeeRefreshesPricingSnapshot(t *testing.T) {
+	truncateTables(t)
+	provider := HubProvider{
+		OwnerUserId: 71, Slot: 1, Name: "Cached Fee Provider",
+		Slug: "cached-fee-provider", Status: HubProviderStatusActive,
+	}
+	require.NoError(t, DB.Create(&provider).Error)
+	channel := Channel{Name: "cached-fee-channel", Status: common.ChannelStatusEnabled}
+	require.NoError(t, DB.Create(&channel).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id, PriceMultiplier: 1,
+	}).Error)
+	require.NoError(t, RefreshHubSupplyPricingCache())
+	t.Cleanup(func() { require.NoError(t, RefreshHubSupplyPricingCache()) })
+
+	fee := 2500
+	_, err := UpdateHubProviderPlatformFeeBasisPoints(provider.Id, &fee)
+	require.NoError(t, err)
+	snapshot := CaptureHubSupplyPricingSnapshot(channel.Id)
+	require.True(t, snapshot.Found)
+	require.NotNil(t, snapshot.Pricing.PlatformFeeBasisPoints)
+	assert.Equal(t, fee, *snapshot.Pricing.PlatformFeeBasisPoints)
+
+	_, err = UpdateHubProviderPlatformFeeBasisPoints(provider.Id, nil)
+	require.NoError(t, err)
+	snapshot = CaptureHubSupplyPricingSnapshot(channel.Id)
+	require.True(t, snapshot.Found)
+	assert.Nil(t, snapshot.Pricing.PlatformFeeBasisPoints)
 }
 
 func TestHubProviderWithdrawalEnforcesConfiguredMinimum(t *testing.T) {

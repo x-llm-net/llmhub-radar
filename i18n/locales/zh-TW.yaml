@@ -52,6 +52,8 @@ token.auto_groups_too_many: "每個令牌最多可選擇 {{.Max}} 個 Auto 分�
 token.auto_groups_duplicate: "Auto 分組 {{.Group}} 重複"
 token.auto_groups_invalid: "Auto 分組 {{.Group}} 不可用或無權存取"
 token.service_tier_required: "請選擇一個服務檔位：特價、經濟、標準或高品質"
+token.routing_policy_required: "請至少新增一個模型類型並設定倍率範圍"
+token.routing_scope_mismatch: "此金鑰的路由歸屬與目前網域不一致，請返回建立此金鑰的網域編輯"
 
 # Redemption messages
 redemption.name_length: "兌換碼名稱長度必須在1-20之間"

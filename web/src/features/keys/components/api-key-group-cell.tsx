@@ -46,10 +46,10 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
           HUB_FAMILY_LABELS[selection.family] || selection.family
         )
         const exact = selection.exact_multipliers?.[0]
-        if (exact !== undefined) return `${family} ${exact.toFixed(3)}`
-        return `${family} ${(selection.min_multiplier ?? 0).toFixed(3)}-${(
+        if (exact !== undefined) return `${family} ${exact.toFixed(3)}x`
+        return `${family} ${(selection.min_multiplier ?? 0).toFixed(3)}x-${(
           selection.max_multiplier ?? 0
-        ).toFixed(3)}`
+        ).toFixed(3)}x`
       })
       .join(' / ')
     return (

@@ -51,6 +51,8 @@ token.auto_groups_too_many: "A token can select at most {{.Max}} Auto groups"
 token.auto_groups_duplicate: "Auto group {{.Group}} is duplicated"
 token.auto_groups_invalid: "Auto group {{.Group}} is unavailable or unauthorized"
 token.service_tier_required: "Select one service tier: special, low, medium, or high"
+token.routing_policy_required: "Add at least one model family and configure its multiplier range"
+token.routing_scope_mismatch: "This API key belongs to a different routing domain; edit it from the domain where it was created"
 
 # Redemption messages
 redemption.name_length: "Redemption code name length must be between 1-20"

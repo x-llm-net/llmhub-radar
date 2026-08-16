@@ -187,16 +187,10 @@ func taskModelName(task *model.Task) string {
 	return task.Properties.OriginModelName
 }
 
-// RefundTaskQuota 统一的任务失败退款逻辑。
-// 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
-// 返回资金来源是否已成功退还；失败时保留 quota，供显式重试或人工对账。
-func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
-	quota := task.Quota
-	if quota == 0 {
-		CancelTaskProviderEarning(ctx, task)
-		return true
+func taskBillingRefundParams(task *model.Task) (model.BillingRefundParams, error) {
+	if task == nil || task.ID < 0 || task.UserId <= 0 || task.Quota < 0 {
+		return model.BillingRefundParams{}, fmt.Errorf("invalid task billing refund")
 	}
-
 	requestId := task.PrivateData.RequestId
 	if requestId == "" {
 		requestId = "task-refund:" + common.GenerateHMAC(task.TaskID)
@@ -209,14 +203,54 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		FundingSource: task.PrivateData.BillingSource,
 	}
 	if params.TokenId > 0 {
-		params.TokenQuota = quota
+		params.TokenQuota = task.Quota
 	}
 	if params.FundingSource == BillingSourceSubscription {
 		params.SubscriptionId = task.PrivateData.SubscriptionId
-		params.SubscriptionExtraQuota = quota
+		params.SubscriptionExtraQuota = task.Quota
 	} else {
 		params.FundingSource = BillingSourceWallet
-		params.FundingQuota = quota
+		params.FundingQuota = task.Quota
+	}
+	return params, nil
+}
+
+// updateTaskFailureWithRefundIntent commits the terminal task state and refund
+// obligation together. Processing can fail independently without losing the
+// refund because the existing recovery task scans the durable pending record.
+func updateTaskFailureWithRefundIntent(ctx context.Context, task *model.Task, fromStatus model.TaskStatus) (bool, error) {
+	if task == nil || task.Status != model.TaskStatusFailure {
+		return false, fmt.Errorf("task is not in a failed terminal state")
+	}
+	if task.Quota <= 0 {
+		won, err := task.UpdateWithStatus(fromStatus)
+		if won && err == nil {
+			CancelTaskProviderEarning(ctx, task)
+		}
+		return won, err
+	}
+	params, err := taskBillingRefundParams(task)
+	if err != nil {
+		return false, err
+	}
+	won, _, err := task.UpdateWithStatusAndBillingRefund(fromStatus, params)
+	return won, err
+}
+
+// RefundTaskQuota 统一的任务失败退款逻辑。
+// 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
+// 返回资金来源是否已成功退还；失败时保留 quota，供显式重试或人工对账。
+func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
+	quota := task.Quota
+	if quota == 0 {
+		CancelTaskProviderEarning(ctx, task)
+		return true
+	}
+
+	params, err := taskBillingRefundParams(task)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("构建任务退款失败 task %s: %s", task.TaskID, err.Error()))
+		return false
 	}
 	refund, err := model.CreateBillingRefund(params)
 	if err != nil {
@@ -228,7 +262,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		CancelTaskProviderEarning(ctx, task)
 		return true
 	}
-	if _, err := model.ProcessBillingRefund(requestId); err != nil {
+	if _, err := model.ProcessBillingRefund(params.RequestId); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("执行任务退款失败 task %s: %s", task.TaskID, err.Error()))
 		return false
 	}

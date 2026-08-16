@@ -35,6 +35,12 @@ func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 	if policy == nil || !policy.AllowsModel(modelName) {
 		return false, nil
 	}
+	if policy.Mode == HubTokenRoutingModeProvider {
+		provider, ok := GetHubProviderRoutingByID(policy.ProviderID)
+		if !ok || provider.Status != HubProviderStatusActive {
+			return false, nil
+		}
+	}
 	channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
 		policy,
 		modelName,
@@ -215,22 +221,30 @@ func getHubPolicyChannelFromDB(
 // IsChannelEnabledForHubTokenPolicy is used by affinity and fixed-channel
 // paths so they cannot bypass a token's model-family or multiplier boundary.
 func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string, channelID int) bool {
-	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", channelID, false)
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", CaptureHubSupplyPricingSnapshot(channelID), false)
 }
 
 // IsChannelEnabledForHubTokenPolicyFallback validates a channel that already
 // served an origin task. Provider-scoped tokens may continue on a platform
 // fallback channel, but the model family, multiplier and endpoint stay fixed.
 func IsChannelEnabledForHubTokenPolicyFallback(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int) bool {
-	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, channelID, true)
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, CaptureHubSupplyPricingSnapshot(channelID), true)
 }
 
-func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int, allowProviderFallback bool) bool {
+// IsChannelEnabledForHubTokenPolicySnapshot validates an affinity channel
+// against the same pricing generation captured with the Channel itself.
+func IsChannelEnabledForHubTokenPolicySnapshot(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, snapshot, allowProviderFallback)
+}
+
+func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool) bool {
+	channelID := snapshot.ChannelID
 	if policy == nil || channelID <= 0 || !policy.AllowsModel(modelName) {
 		return false
 	}
 	multiplier := 1.0
-	if pricing, isSupply := GetHubSupplyPricingByChannelID(channelID); isSupply {
+	if snapshot.Found {
+		pricing := snapshot.Pricing
 		if pricing.SupplyProviderStatus != HubProviderStatusActive || pricing.PriceMultiplier <= 0 {
 			return false
 		}
@@ -238,7 +252,7 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 			return false
 		}
 		multiplier = pricing.PriceMultiplier
-	} else if policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback {
+	} else if snapshot.Configured || (policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback) {
 		return false
 	}
 	if !policy.AllowsMultiplier(ClassifyHubPublicModelFamily(modelName), multiplier) {

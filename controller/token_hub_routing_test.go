@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,4 +104,68 @@ func TestAddTokenCannotChooseProviderScopeFromRootDomain(t *testing.T) {
 	var count int64
 	require.NoError(t, model.DB.Model(&model.Token{}).Count(&count).Error)
 	assert.Zero(t, count)
+}
+
+func TestUpdateTokenCannotRebindProviderPolicyFromAnotherSubdomain(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 1, "provider-a-token", "provider-a-key")
+	require.NoError(t, token.SetHubRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModeProvider, ProviderID: 7,
+		Selections: []model.HubTokenRoutingSelection{{
+			Family: "openai", ExactMultipliers: []float64{0.2},
+		}},
+	}))
+	require.NoError(t, token.Update())
+
+	request := publicHubRoutingTokenRequest("rebound-token")
+	request["id"] = token.Id
+	request["status"] = common.TokenStatusEnabled
+	request["hub_routing_policy"] = map[string]any{
+		"mode": "provider", "provider_id": 8,
+		"selections": []map[string]any{{
+			"family": "openai", "exact_multipliers": []float64{0.2},
+		}},
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", request, 1)
+	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, 8)
+
+	UpdateToken(ctx)
+
+	assert.False(t, decodeAPIResponse(t, recorder).Success)
+	var unchanged model.Token
+	require.NoError(t, db.First(&unchanged, token.Id).Error)
+	policy, err := unchanged.GetHubRoutingPolicy()
+	require.NoError(t, err)
+	require.NotNil(t, policy)
+	assert.Equal(t, 7, policy.ProviderID)
+	assert.Equal(t, "provider-a-token", unchanged.Name)
+}
+
+func TestUpdateTokenCannotConvertPublicPolicyFromProviderSubdomain(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 1, "public-token", "public-key")
+	require.NoError(t, token.SetHubRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+		Selections: []model.HubTokenRoutingSelection{{
+			Family: "openai", MinMultiplier: 0.01, MaxMultiplier: 0.05,
+		}},
+	}))
+	require.NoError(t, token.Update())
+
+	request := publicHubRoutingTokenRequest("converted-token")
+	request["id"] = token.Id
+	request["status"] = common.TokenStatusEnabled
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", request, 1)
+	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, 8)
+
+	UpdateToken(ctx)
+
+	assert.False(t, decodeAPIResponse(t, recorder).Success)
+	var unchanged model.Token
+	require.NoError(t, db.First(&unchanged, token.Id).Error)
+	policy, err := unchanged.GetHubRoutingPolicy()
+	require.NoError(t, err)
+	require.NotNil(t, policy)
+	assert.Equal(t, model.HubTokenRoutingModePublic, policy.Mode)
+	assert.Equal(t, "public-token", unchanged.Name)
 }

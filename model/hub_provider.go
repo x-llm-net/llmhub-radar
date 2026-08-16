@@ -569,6 +569,7 @@ func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*Hu
 	if err := DB.First(&provider, providerID).Error; err != nil {
 		return nil, err
 	}
+	refreshHubProviderRoutingCache()
 	return &provider, nil
 }
 

@@ -173,6 +173,27 @@ func CaptureHubSupplyPricingSnapshot(channelID int) HubSupplyPricingSnapshot {
 	return snapshot
 }
 
+func HubSupplyPricingSnapshotProviderActive(snapshot HubSupplyPricingSnapshot) bool {
+	if snapshot.Found {
+		return snapshot.Pricing.SupplyProviderStatus == HubProviderStatusActive
+	}
+	return !snapshot.Configured
+}
+
+func HubSupplyPricingSnapshotMatchesProviderFilter(snapshot HubSupplyPricingSnapshot, filter ChannelProviderFilter) bool {
+	if filter.Mode == ChannelProviderAny || filter.ProviderID <= 0 {
+		return true
+	}
+	switch filter.Mode {
+	case ChannelProviderOnly:
+		return snapshot.Found && snapshot.Pricing.SupplyProviderId == filter.ProviderID
+	case ChannelProviderExclude:
+		return !snapshot.Found || snapshot.Pricing.SupplyProviderId != filter.ProviderID
+	default:
+		return true
+	}
+}
+
 // IsHubSupplyChannelConfigured confirms ownership from the database when the
 // in-memory pricing cache has no entry. It is intentionally used only on the
 // cache-miss path so normal requests keep the cache-only hot path.

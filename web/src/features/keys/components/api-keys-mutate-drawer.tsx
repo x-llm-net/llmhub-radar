@@ -385,10 +385,8 @@ export function ApiKeysMutateDrawer({
             !option ||
             !option.exact_multipliers?.some(
               (multiplier) =>
-                Math.abs(
-                  multiplier -
-                    (selection.exact_multiplier ?? selection.max_multiplier)
-                ) < 0.0005
+                selection.exact_multiplier !== undefined &&
+                Math.abs(multiplier - selection.exact_multiplier) < 0.0005
             )
           )
         })

@@ -29,6 +29,7 @@ type taskPollingFetchAdaptor struct {
 	blockStarted chan struct{}
 	releaseBlock chan struct{}
 	blockOnce    sync.Once
+	statusCode   int
 }
 
 type sunoFailurePollingAdaptor struct {
@@ -47,6 +48,41 @@ func TestTaskPollingMapSeparatesSameUpstreamIDAcrossChannels(t *testing.T) {
 
 	assert.Same(t, first, taskFromPollingMap(tasks, first.ChannelId, "1"))
 	assert.Same(t, second, taskFromPollingMap(tasks, second.ChannelId, "1"))
+}
+
+func TestFailedTaskTransitionPersistsRefundIntentAtomically(t *testing.T) {
+	truncate(t)
+	const userID, tokenID, channelID, taskQuota = 390, 390, 390, 1200
+	seedUser(t, userID, 5000)
+	seedToken(t, tokenID, userID, "sk-atomic-task-refund", 3000)
+	seedChannel(t, channelID)
+	task := makeTask(userID, channelID, taskQuota, tokenID, BillingSourceWallet, 0)
+	task.Status = model.TaskStatusInProgress
+	task.Progress = "50%"
+	require.NoError(t, model.DB.Create(task).Error)
+
+	fromStatus := task.Status
+	task.Status = model.TaskStatusFailure
+	task.Progress = "100%"
+	task.FailReason = "upstream failed"
+	won, err := updateTaskFailureWithRefundIntent(context.Background(), task, fromStatus)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var storedTask model.Task
+	require.NoError(t, model.DB.First(&storedTask, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusFailure, storedTask.Status)
+	assert.Equal(t, taskQuota, storedTask.Quota)
+	var refund model.BillingRefund
+	require.NoError(t, model.DB.Where("task_id = ?", task.ID).First(&refund).Error)
+	assert.Equal(t, model.BillingRefundStatusPending, refund.Status)
+	assert.Equal(t, 5000, getUserQuota(t, userID))
+
+	result, err := RecoverPendingBillingRefunds(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Completed)
+	assert.Equal(t, 6200, getUserQuota(t, userID))
+	assert.Zero(t, getTaskQuota(t, task.ID))
 }
 
 func (a *sunoFailurePollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
@@ -153,8 +189,12 @@ func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]
 	if err != nil {
 		return nil, err
 	}
+	statusCode := a.statusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: statusCode,
 		Body:       io.NopCloser(bytes.NewReader(responseBody)),
 	}, nil
 }
@@ -272,6 +312,34 @@ func TestUpdateVideoTasksCanSkipPollingSleepPerChannel(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, adaptor.fetchCount())
+}
+
+func TestUpdateVideoTasksKeepsPendingStateOnUpstreamHTTPFailure(t *testing.T) {
+	truncate(t)
+
+	const channelID = 105
+	seedTaskPollingChannel(t, channelID, true)
+	task := seedPollingTask(t, channelID, "task_http_failure", "upstream_http_failure")
+	adaptor := &taskPollingFetchAdaptor{statusCode: http.StatusInternalServerError}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	err := UpdateVideoTasks(context.Background(), constant.TaskPlatform("kling"), map[int][]string{
+		channelID: {task.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		taskPollingKey(channelID, task.GetUpstreamTaskID()): task,
+	})
+	require.NoError(t, err)
+
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusInProgress, reloaded.Status)
+	var refundCount int64
+	require.NoError(t, model.DB.Model(&model.BillingRefund{}).
+		Where("task_id = ?", task.ID).
+		Count(&refundCount).Error)
+	assert.Zero(t, refundCount)
 }
 
 func TestUpdateVideoTasksMarksProviderSupplyAdaptor(t *testing.T) {

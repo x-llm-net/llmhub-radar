@@ -118,7 +118,7 @@ func Distribute() func(c *gin.Context) {
 					preferred, preferredPricingSnapshot, err := model.CacheGetChannelWithPricing(preferredChannelID)
 					routingPolicy := service.GetHubTokenRoutingPolicy(c)
 					providerAllowed := true
-					providerActive := model.IsHubSupplyChannelProviderActive(preferredChannelID)
+					providerActive := model.HubSupplyPricingSnapshotProviderActive(preferredPricingSnapshot)
 					providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
 					if routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
 						providerID = routingPolicy.ProviderID
@@ -126,20 +126,20 @@ func Distribute() func(c *gin.Context) {
 						providerAllowed = ok && provider.Status == model.HubProviderStatusActive
 					}
 					if providerAllowed && routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
-						if model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
+						if model.HubSupplyPricingSnapshotMatchesProviderFilter(preferredPricingSnapshot, model.ChannelProviderFilter{
 							ProviderID: providerID,
 							Mode:       model.ChannelProviderOnly,
 						}) {
 							affinityPhase = "preferred"
 						} else {
-							providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
+							providerAllowed = model.HubSupplyPricingSnapshotMatchesProviderFilter(preferredPricingSnapshot, model.ChannelProviderFilter{
 								ProviderID: providerID,
 								Mode:       model.ChannelProviderExclude,
 							})
 							affinityPhase = "platform_fallback"
 						}
 					} else if providerID > 0 {
-						providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
+						providerAllowed = model.HubSupplyPricingSnapshotMatchesProviderFilter(preferredPricingSnapshot, model.ChannelProviderFilter{
 							ProviderID: providerID,
 							Mode:       model.ChannelProviderOnly,
 						})
@@ -159,9 +159,13 @@ func Distribute() func(c *gin.Context) {
 									break
 								}
 							}
-						} else if routingPolicy != nil && ((affinityPhase == "platform_fallback" &&
-							model.IsChannelEnabledForHubTokenPolicyFallback(routingPolicy, modelRequest.Model, c.Request.URL.Path, preferred.Id)) ||
-							(affinityPhase != "platform_fallback" && model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelRequest.Model, preferred.Id))) {
+						} else if routingPolicy != nil && model.IsChannelEnabledForHubTokenPolicySnapshot(
+							routingPolicy,
+							modelRequest.Model,
+							c.Request.URL.Path,
+							preferredPricingSnapshot,
+							affinityPhase == "platform_fallback",
+						) {
 							channel = preferred
 							selectGroup = usingGroup
 							affinityUsable = true
