@@ -115,9 +115,14 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
 					preferred, preferredPricingSnapshot, err := model.CacheGetChannelWithPricing(preferredChannelID)
+					routingPolicy := service.GetHubTokenRoutingPolicy(c)
 					providerAllowed := true
 					providerActive := model.IsHubSupplyChannelProviderActive(preferredChannelID)
-					if providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId); providerID > 0 {
+					providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+					if routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
+						providerID = routingPolicy.ProviderID
+					}
+					if providerID > 0 {
 						providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
 							ProviderID: providerID,
 							Mode:       model.ChannelProviderOnly,
@@ -138,7 +143,12 @@ func Distribute() func(c *gin.Context) {
 									break
 								}
 							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
+						} else if routingPolicy != nil && model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelRequest.Model, preferred.Id) {
+							channel = preferred
+							selectGroup = usingGroup
+							affinityUsable = true
+							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+						} else if routingPolicy == nil && model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
 							channel = preferred
 							selectGroup = usingGroup
 							affinityUsable = true
@@ -207,6 +217,9 @@ func Distribute() func(c *gin.Context) {
 }
 
 func affinityRoutingPhase(c *gin.Context) string {
+	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
+		return "preferred"
+	}
 	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) > 0 {
 		return "preferred"
 	}
@@ -226,9 +239,17 @@ func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channe
 	}
 
 	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	routingPolicy := service.GetHubTokenRoutingPolicy(c)
 	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+	if routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
+		providerID = routingPolicy.ProviderID
+	}
+	channelEnabled := model.IsChannelEnabledForGroupModel(group, modelName, channel.Id)
+	if routingPolicy != nil {
+		channelEnabled = model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelName, channel.Id)
+	}
 	available := channel.Status == common.ChannelStatusEnabled &&
-		model.IsChannelEnabledForGroupModel(group, modelName, channel.Id) &&
+		channelEnabled &&
 		channelSupportsRequestPath(channel, c.Request.URL.Path, modelName) &&
 		model.IsHubSupplyChannelProviderActive(channel.Id)
 	if providerID > 0 {
@@ -249,6 +270,9 @@ func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channe
 // ServiceTierUnavailableMessage returns the public error for an exhausted
 // service tier without exposing internal group or distributor terminology.
 func ServiceTierUnavailableMessage(c *gin.Context, group, modelName string) string {
+	if _, exists := common.GetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy); exists {
+		return i18n.T(c, i18n.MsgDistributorMultiplierUnavailable, map[string]any{"Model": modelName})
+	}
 	tierKey := map[string]string{
 		hub_routing_setting.ServiceTierSpecial: i18n.MsgServiceTierSpecial,
 		hub_routing_setting.ServiceTierLow:     i18n.MsgServiceTierLow,

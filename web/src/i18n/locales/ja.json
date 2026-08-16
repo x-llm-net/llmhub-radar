@@ -5937,6 +5937,23 @@
     "Enable browser notifications while this page is open": "Enable browser notifications while this page is open",
     "Browser notifications are enabled": "Browser notifications are enabled",
     "No provider notifications": "No provider notifications",
-    "Open provider management": "Open provider management"
+    "Open provider management": "Open provider management",
+    "Routing": "Routing",
+    "Available provider routes": "Available provider routes",
+    "Model families and multiplier ranges": "Model families and multiplier ranges",
+    "Choose the exact multiplier published by this provider. Fallback keeps the same choices.": "Choose the exact multiplier published by this provider. Fallback keeps the same choices.",
+    "Each model family uses its own inclusive multiplier range. Step: 0.001.": "Each model family uses its own inclusive multiplier range. Step: 0.001.",
+    "Add model family": "Add model family",
+    "Add at least one model family": "Add at least one model family",
+    "Add at least one model family to control which channels this key can use.": "Add at least one model family to control which channels this key can use.",
+    "This provider has no published routes available for API keys.": "This provider has no published routes available for API keys.",
+    "Remove model family": "Remove model family",
+    "Select a published multiplier": "Select a published multiplier",
+    "Multiplier range": "Multiplier range",
+    "Minimum multiplier": "Minimum multiplier",
+    "Maximum multiplier": "Maximum multiplier",
+    "{{channels}} channels / {{providers}} providers": "{{channels}} channels / {{providers}} providers",
+    "This previously selected route is no longer available.": "This previously selected route is no longer available.",
+    "Remove unavailable routes before saving": "Remove unavailable routes before saving"
   }
 }

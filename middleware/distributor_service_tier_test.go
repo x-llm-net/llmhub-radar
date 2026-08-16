@@ -178,6 +178,24 @@ func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T
 		assert.Equal(t, channel.Id, common.GetContextKeyInt(ctx, constant.ContextKeyChannelId))
 	})
 
+	t.Run("hub policy rejects a fixed channel outside the multiplier range", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-policy-multiplier")
+		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-policy-multiplier", "/v1/chat/completions", `{"model":"fixed-policy-multiplier","messages":[]}`, provider.Id)
+		common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+			Mode: model.HubTokenRoutingModePublic,
+			Selections: []model.HubTokenRoutingSelection{{
+				Family:        "other",
+				MinMultiplier: 0.2,
+				MaxMultiplier: 0.2,
+			}},
+		})
+
+		Distribute()(ctx)
+
+		assertServiceTierUnavailable(t, recorder)
+	})
+
 	t.Run("missing ability is unavailable", func(t *testing.T) {
 		db := setupDistributorServiceTierTestDB(t)
 		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-tier-no-ability")

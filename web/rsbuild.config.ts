@@ -19,7 +19,8 @@ export default defineConfig(({ envMode }) => {
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      // Preserve provider.localhost so the backend can resolve provider scope.
+      { target: serverUrl, changeOrigin: false },
     ])
   ) as Record<string, { target: string; changeOrigin: boolean }>
 

@@ -274,6 +274,7 @@ distributor.group_access_denied: "No permission to access this group"
 distributor.get_channel_failed: "Failed to get available channel for model {{.Model}} under group {{.Group}} (distributor): {{.Error}}"
 distributor.no_available_channel: "No available channel for model {{.Model}} under group {{.Group}} (distributor)"
 distributor.service_tier_unavailable: "Model {{.Model}} is temporarily unavailable in the {{.Tier}} service tier. Cross-tier fallback was not used. Please try again later."
+distributor.multiplier_unavailable: "Model {{.Model}} is temporarily unavailable within this key's multiplier range. The range was not exceeded. Please try again later."
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
 

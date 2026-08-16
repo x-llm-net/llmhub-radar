@@ -33,12 +33,14 @@ func (input *tokenAutoGroupsInput) UnmarshalJSON(data []byte) error {
 
 type tokenRequest struct {
 	model.Token
-	AutoGroups tokenAutoGroupsInput `json:"auto_groups"`
+	AutoGroups       tokenAutoGroupsInput         `json:"auto_groups"`
+	HubRoutingPolicy *model.HubTokenRoutingPolicy `json:"hub_routing_policy"`
 }
 
 type tokenResponse struct {
 	*model.Token
-	AutoGroups []string `json:"auto_groups"`
+	AutoGroups       []string                     `json:"auto_groups"`
+	HubRoutingPolicy *model.HubTokenRoutingPolicy `json:"hub_routing_policy,omitempty"`
 }
 
 func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
@@ -55,7 +57,12 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	policy, err := token.GetHubRoutingPolicy()
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to parse hub routing policy for token %d: %v", token.Id, err))
+		policy = nil
+	}
+	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups, HubRoutingPolicy: policy}
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
@@ -116,6 +123,27 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 	return true
 }
 
+func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRoutingPolicy, existingProviderID int) (*model.HubTokenRoutingPolicy, bool, error) {
+	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+	if providerID <= 0 {
+		providerID = existingProviderID
+	}
+	if input == nil {
+		if providerID > 0 {
+			return nil, false, fmt.Errorf("provider subdomain requires a routing policy")
+		}
+		return nil, false, nil
+	}
+	policy, err := model.NormalizeHubTokenRoutingPolicy(input, providerID)
+	if err != nil {
+		return nil, true, err
+	}
+	if err := model.ValidateHubTokenProviderSelections(policy); err != nil {
+		return nil, true, err
+	}
+	return policy, true, nil
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -172,6 +200,19 @@ func GetTokenAutoGroups(c *gin.Context) {
 		"groups":    service.GetUserAutoGroup(userGroup),
 		"max_count": setting.GetMaxTokenAutoGroups(),
 	})
+}
+
+func GetHubTokenRoutingOptions(c *gin.Context) {
+	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+	if providerID <= 0 {
+		providerID, _ = strconv.Atoi(c.Query("provider_id"))
+	}
+	options, err := model.GetHubTokenRoutingOptions(providerID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": options})
 }
 
 func GetTokenKey(c *gin.Context) {
@@ -269,6 +310,11 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	token := request.Token
+	routingPolicy, hasRoutingPolicy, err := normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, 0)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
@@ -285,7 +331,11 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	}
-	if !service.IsTokenGroupAllowedForWrite(token.Group) {
+	if hasRoutingPolicy {
+		token.Group = "default"
+		token.CrossGroupRetry = false
+		_ = token.SetAutoGroups(nil)
+	} else if !service.IsTokenGroupAllowedForWrite(token.Group) {
 		common.ApiErrorI18n(c, i18n.MsgTokenServiceTierRequired)
 		return
 	}
@@ -332,6 +382,13 @@ func AddToken(c *gin.Context) {
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
 		AutoGroups:         token.AutoGroups,
+		HubRoutingPolicy:   token.HubRoutingPolicy,
+	}
+	if hasRoutingPolicy {
+		if err := cleanToken.SetHubRoutingPolicy(routingPolicy); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -388,6 +445,18 @@ func UpdateToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	existingProviderID := 0
+	if existingPolicy, parseErr := cleanToken.GetHubRoutingPolicy(); parseErr != nil {
+		common.ApiError(c, parseErr)
+		return
+	} else if existingPolicy != nil && existingPolicy.Mode == model.HubTokenRoutingModeProvider {
+		existingProviderID = existingPolicy.ProviderID
+	}
+	routingPolicy, _, err := normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, existingProviderID)
+	if err != nil && request.HubRoutingPolicy != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if token.Status == common.TokenStatusEnabled {
 		if cleanToken.Status == common.TokenStatusExpired && cleanToken.ExpiredTime <= common.GetTimestamp() && cleanToken.ExpiredTime != -1 {
 			common.ApiErrorI18n(c, i18n.MsgTokenExpiredCannotEnable)
@@ -401,7 +470,19 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
-		if !service.IsTokenGroupAllowedForWrite(token.Group) {
+		if request.HubRoutingPolicy != nil {
+			cleanToken.Group = "default"
+			cleanToken.CrossGroupRetry = false
+			_ = cleanToken.SetAutoGroups(nil)
+			if err := cleanToken.SetHubRoutingPolicy(routingPolicy); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		} else if cleanToken.HubRoutingPolicy != "" {
+			// Existing policy tokens keep their policy when an older client only
+			// sends the legacy fields. The UI always sends the policy explicitly.
+			token.Group = cleanToken.Group
+		} else if !service.IsTokenGroupAllowedForWrite(token.Group) {
 			common.ApiErrorI18n(c, i18n.MsgTokenServiceTierRequired)
 			return
 		}
@@ -413,9 +494,14 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
+		if cleanToken.HubRoutingPolicy == "" {
+			cleanToken.Group = token.Group
+		}
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		if token.Group != "auto" {
+		if cleanToken.HubRoutingPolicy != "" {
+			cleanToken.CrossGroupRetry = false
+			_ = cleanToken.SetAutoGroups(nil)
+		} else if token.Group != "auto" {
 			cleanToken.CrossGroupRetry = false
 			_ = cleanToken.SetAutoGroups(nil)
 		} else if request.AutoGroups.Set {

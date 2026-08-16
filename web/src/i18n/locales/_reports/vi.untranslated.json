@@ -136,5 +136,8 @@
   "Failed to load provider notification settings": "Failed to load provider notification settings",
   "Failed to update provider notification settings": "Failed to update provider notification settings",
   "Failed to send test notification": "Failed to send test notification",
-  "Provider application and review events": "Provider application and review events"
+  "Provider application and review events": "Provider application and review events",
+  "Model families and multiplier ranges": "Model families and multiplier ranges",
+  "Choose the exact multiplier published by this provider. Fallback keeps the same choices.": "Choose the exact multiplier published by this provider. Fallback keeps the same choices.",
+  "Add at least one model family to control which channels this key can use.": "Add at least one model family to control which channels this key can use."
 }

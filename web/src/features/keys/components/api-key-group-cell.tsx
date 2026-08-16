@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell, TruncatedCell } from '@/components/data-table'
@@ -27,6 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
+import type { HubTokenRoutingPolicy } from '../types'
 import {
   // AutoGroupBadge,
   GroupRatioBadge,
@@ -38,10 +21,46 @@ type ApiKeyGroupCellProps = {
   group: string
   ratio?: GroupRatio
   shouldReduceMotion: boolean
+  policy?: HubTokenRoutingPolicy | null
+}
+
+const HUB_FAMILY_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Claude',
+  google: 'Gemini',
+  xai: 'Grok',
+  deepseek: 'DeepSeek',
+  alibaba: 'Qwen',
+  bytedance: 'ByteDance',
+  zhipu: 'GLM',
+  other: 'Other models',
 }
 
 export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   const { t } = useTranslation()
+
+  if (props.policy?.selections.length) {
+    const summary = props.policy.selections
+      .map((selection) => {
+        const family = t(
+          HUB_FAMILY_LABELS[selection.family] || selection.family
+        )
+        const exact = selection.exact_multipliers?.[0]
+        if (exact !== undefined) return `${family} ${exact.toFixed(3)}`
+        return `${family} ${(selection.min_multiplier ?? 0).toFixed(3)}-${(
+          selection.max_multiplier ?? 0
+        ).toFixed(3)}`
+      })
+      .join(' / ')
+    return (
+      <TruncatedCell
+        className='max-w-[210px] font-mono text-xs'
+        tooltipContent={summary}
+      >
+        {summary}
+      </TruncatedCell>
+    )
+  }
 
   if (props.group !== 'auto') {
     const ratio = typeof props.ratio === 'number' ? props.ratio : undefined
@@ -66,11 +85,7 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
           />
         }
       >
-        <StatusBadge
-          label={t('Cross-group')}
-          variant='info'
-          copyable={false}
-        />
+        <StatusBadge label={t('Cross-group')} variant='info' copyable={false} />
         {/*<AutoGroupBadge shouldReduceMotion={props.shouldReduceMotion} />*/}
         <GroupRatioBadge
           ratio={props.ratio}

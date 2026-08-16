@@ -86,6 +86,9 @@ func IsHubServiceTierRequest(ctx *gin.Context) bool {
 	if ctx == nil {
 		return false
 	}
+	if _, exists := common.GetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy); exists {
+		return true
+	}
 	return hub_routing_setting.IsServiceTier(
 		common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup),
 	)

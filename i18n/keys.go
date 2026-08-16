@@ -333,6 +333,7 @@ const (
 	MsgDistributorGetChannelFailed        = "distributor.get_channel_failed"
 	MsgDistributorNoAvailableChannel      = "distributor.no_available_channel"
 	MsgDistributorServiceTierUnavailable  = "distributor.service_tier_unavailable"
+	MsgDistributorMultiplierUnavailable   = "distributor.multiplier_unavailable"
 	MsgDistributorInvalidMidjourney       = "distributor.invalid_midjourney_request"
 	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
 )

@@ -46,6 +46,20 @@ export const apiKeySchema = z.object({
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
+  hub_routing_policy: z
+    .object({
+      mode: z.enum(['public_pool', 'provider']),
+      provider_id: z.number().optional(),
+      selections: z.array(
+        z.object({
+          family: z.string(),
+          min_multiplier: z.number().optional(),
+          max_multiplier: z.number().optional(),
+          exact_multipliers: z.array(z.number()).optional(),
+        })
+      ),
+    })
+    .nullish(),
 })
 
 export type ApiKey = z.infer<typeof apiKeySchema>
@@ -94,6 +108,50 @@ export interface ApiKeyFormData {
   group: string
   auto_groups: string[]
   cross_group_retry: boolean
+  hub_routing_policy?: HubTokenRoutingPolicy
+}
+
+export interface HubTokenRoutingSelection {
+  family: string
+  min_multiplier?: number
+  max_multiplier?: number
+  exact_multipliers?: number[]
+}
+
+export interface HubTokenRoutingPolicy {
+  mode: 'public_pool' | 'provider'
+  provider_id?: number
+  selections: HubTokenRoutingSelection[]
+}
+
+export interface HubTokenRoutingAvailability {
+  multiplier: number
+  channel_count: number
+  provider_count: number
+  provider_ids?: number[]
+}
+
+export interface HubTokenRoutingFamilyOption {
+  key: string
+  min_multiplier: number
+  max_multiplier: number
+  step: number
+  available_channel_count: number
+  provider_count: number
+  exact_multipliers?: number[]
+  availability: HubTokenRoutingAvailability[]
+}
+
+export interface HubTokenRoutingOptions {
+  mode: 'public_pool' | 'provider'
+  provider_id?: number
+  provider_name?: string
+  provider_slug?: string
+  families: HubTokenRoutingFamilyOption[]
+  tier_ceilings: Record<
+    string,
+    { special: number; low: number; medium: number; high: number }
+  >
 }
 
 export interface TokenAutoGroupsConfig {

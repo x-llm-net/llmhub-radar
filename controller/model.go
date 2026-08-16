@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
@@ -194,6 +195,14 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 			ownerGroups: service.GetRequestAutoGroups(c, userGroup),
 		}, nil
 	}
+	if _, hasHubPolicy := common.GetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy); hasHubPolicy {
+		ownerGroups := append(hub_routing_setting.ServiceTiers(), "default")
+		return modelListGroups{
+			userGroup:   userGroup,
+			tokenGroup:  tokenGroup,
+			ownerGroups: ownerGroups,
+		}, nil
+	}
 
 	group := userGroup
 	if tokenGroup != "" {
@@ -240,7 +249,15 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
+	hubPolicy, _ := common.GetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy)
+	var routingPolicy *model.HubTokenRoutingPolicy
+	if value, ok := hubPolicy.(*model.HubTokenRoutingPolicy); ok {
+		routingPolicy = value
+	}
 	for _, modelName := range models {
+		if routingPolicy != nil && !routingPolicy.AllowsModel(modelName) {
+			continue
+		}
 		if modelLimitEnable {
 			matchingName := ratio_setting.FormatMatchingModelName(modelName)
 			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {

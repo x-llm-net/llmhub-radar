@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
@@ -61,6 +43,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useStatus } from '@/hooks/use-status'
@@ -73,6 +56,7 @@ import {
   updateApiKey,
   getApiKey,
   getTokenAutoGroups,
+  getHubTokenRoutingOptions,
 } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
@@ -89,6 +73,7 @@ import {
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
+import { HubRoutingPolicyEditor } from './hub-routing-policy-editor'
 
 const SERVICE_TIER_ORDER = ['special', 'low', 'medium', 'high'] as const
 
@@ -165,6 +150,23 @@ export function ApiKeysMutateDrawer({
     staleTime: 0,
   })
 
+  const editingProviderId =
+    apiKeyData?.data?.hub_routing_policy?.mode === 'provider'
+      ? apiKeyData.data.hub_routing_policy.provider_id
+      : undefined
+  const { data: routingOptionsData, isFetching: routingOptionsFetching } =
+    useQuery({
+      queryKey: [
+        'hub-token-routing-options',
+        window.location.hostname,
+        editingProviderId,
+      ],
+      queryFn: () => getHubTokenRoutingOptions(editingProviderId),
+      enabled: open && (!isUpdate || apiKeyFetched),
+      staleTime: 15_000,
+      retry: false,
+    })
+
   const {
     data: autoGroupsData,
     isFetched: autoGroupsFetched,
@@ -235,6 +237,10 @@ export function ApiKeysMutateDrawer({
     () => getApiKeyFormSchema(t, maxAutoGroups),
     [t, maxAutoGroups]
   )
+  const routingOptions = routingOptionsData?.success
+    ? routingOptionsData.data
+    : undefined
+  const hubRoutingEnabled = !!routingOptions
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
@@ -306,7 +312,11 @@ export function ApiKeysMutateDrawer({
   useEffect(() => {
     if (groups.length === 0) return
     const currentGroup = selectedGroup
-    if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
+    if (
+      !hubRoutingEnabled &&
+      currentGroup &&
+      !groups.some((g) => g.value === currentGroup)
+    ) {
       const fallback = usesServiceTiers
         ? ''
         : (groups.find((g) => g.value === 'default')?.value ??
@@ -319,12 +329,43 @@ export function ApiKeysMutateDrawer({
         form.setValue('cross_group_retry', false)
       }
     }
-  }, [groups, form, selectedGroup, usesServiceTiers])
+  }, [groups, form, selectedGroup, usesServiceTiers, hubRoutingEnabled])
+
+  useEffect(() => {
+    if (hubRoutingEnabled && selectedGroup !== 'default') {
+      form.setValue('group', 'default', { shouldValidate: false })
+    }
+  }, [form, hubRoutingEnabled, selectedGroup])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
     try {
-      const basePayload = transformFormDataToPayload(data)
+      if (routingOptions && data.hub_selections.length === 0) {
+        toast.error(t('Add at least one model family'))
+        return
+      }
+      if (
+        routingOptions?.mode === 'provider' &&
+        data.hub_selections.some((selection) => {
+          const option = routingOptions.families.find(
+            (family) => family.key === selection.family
+          )
+          return (
+            !option ||
+            !option.exact_multipliers?.some(
+              (multiplier) =>
+                Math.abs(
+                  multiplier -
+                    (selection.exact_multiplier ?? selection.max_multiplier)
+                ) < 0.0005
+            )
+          )
+        })
+      ) {
+        toast.error(t('Remove unavailable routes before saving'))
+        return
+      }
+      const basePayload = transformFormDataToPayload(data, routingOptions)
 
       if (isUpdate && currentRow) {
         const result = await updateApiKey({
@@ -403,6 +444,7 @@ export function ApiKeysMutateDrawer({
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const hubSelections = form.watch('hub_selections')
 
   return (
     <Sheet
@@ -456,49 +498,75 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name='group'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {usesServiceTiers ? t('Service tier') : t('Group')}
-                    </FormLabel>
-                    <FormControl>
-                      <ApiKeyGroupCombobox
-                        options={groups}
-                        value={field.value}
-                        onValueChange={(group) => {
-                          field.onChange(group)
-                          if (group === 'auto') {
-                            form.setValue('cross_group_retry', true, {
+              {routingOptionsFetching && (
+                <div className='space-y-3 rounded-md border p-3'>
+                  <Skeleton className='h-5 w-44' />
+                  <Skeleton className='h-20 w-full' />
+                </div>
+              )}
+              {!routingOptionsFetching && hubRoutingEnabled && (
+                <FormField
+                  control={form.control}
+                  name='hub_selections'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <HubRoutingPolicyEditor
+                          options={routingOptions}
+                          value={hubSelections}
+                          onChange={(value) => field.onChange(value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              {!routingOptionsFetching && !hubRoutingEnabled && (
+                <FormField
+                  control={form.control}
+                  name='group'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {usesServiceTiers ? t('Service tier') : t('Group')}
+                      </FormLabel>
+                      <FormControl>
+                        <ApiKeyGroupCombobox
+                          options={groups}
+                          value={field.value}
+                          onValueChange={(group) => {
+                            field.onChange(group)
+                            if (group === 'auto') {
+                              form.setValue('cross_group_retry', true, {
+                                shouldDirty: true,
+                              })
+                              return
+                            }
+                            form.setValue('cross_group_retry', false, {
                               shouldDirty: true,
                             })
-                            return
+                          }}
+                          placeholder={t(
+                            usesServiceTiers
+                              ? 'Please select a service tier'
+                              : 'Select a group'
+                          )}
+                          emptyMessage={
+                            usesServiceTiers
+                              ? t('No service tier found.')
+                              : undefined
                           }
-                          form.setValue('cross_group_retry', false, {
-                            shouldDirty: true,
-                          })
-                        }}
-                        placeholder={t(
-                          usesServiceTiers
-                            ? 'Please select a service tier'
-                            : 'Select a group'
-                        )}
-                        emptyMessage={
-                          usesServiceTiers
-                            ? t('No service tier found.')
-                            : undefined
-                        }
-                        showRatio={!usesServiceTiers}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                          showRatio={!usesServiceTiers}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-              {selectedGroup === 'auto' && (
+              {!hubRoutingEnabled && selectedGroup === 'auto' && (
                 <FormField
                   control={form.control}
                   name='auto_groups'
@@ -539,7 +607,7 @@ export function ApiKeysMutateDrawer({
                 />
               )}
 
-              {selectedGroup === 'auto' && (
+              {!hubRoutingEnabled && selectedGroup === 'auto' && (
                 <FormField
                   control={form.control}
                   name='cross_group_retry'
@@ -815,7 +883,9 @@ export function ApiKeysMutateDrawer({
           <Button
             type='button'
             onClick={form.handleSubmit(onSubmit, onInvalid)}
-            disabled={!isFormInitialized || isSubmitting}
+            disabled={
+              !isFormInitialized || isSubmitting || routingOptionsFetching
+            }
             className='w-full sm:w-auto'
           >
             {isSubmitting ? t('Saving...') : t('Save changes')}

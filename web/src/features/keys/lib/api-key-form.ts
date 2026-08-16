@@ -22,7 +22,7 @@ import { z } from 'zod'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 
 import { DEFAULT_GROUP } from '../constants'
-import type { ApiKey, ApiKeyFormData } from '../types'
+import type { ApiKey, ApiKeyFormData, HubTokenRoutingOptions } from '../types'
 
 // ============================================================================
 // Form Schema
@@ -40,10 +40,18 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
       unlimited_quota: z.boolean(),
       model_limits: z.array(z.string()),
       allow_ips: z.string().optional(),
-		group: z.string().min(1, t('Please select a service tier')),
+      group: z.string().min(1, t('Please select a service tier')),
       auto_groups_mode: z.enum(['inherit', 'custom']),
       auto_groups: z.array(z.string()),
       cross_group_retry: z.boolean().optional(),
+      hub_selections: z.array(
+        z.object({
+          family: z.string(),
+          min_multiplier: z.number(),
+          max_multiplier: z.number(),
+          exact_multiplier: z.number().optional(),
+        })
+      ),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
@@ -114,6 +122,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   auto_groups_mode: 'inherit',
   auto_groups: [],
   cross_group_retry: true,
+  hub_selections: [],
   tokenCount: 1,
 }
 
@@ -137,7 +146,8 @@ export function getApiKeyFormDefaultValues(
  * Transform form data to API payload
  */
 export function transformFormDataToPayload(
-  data: ApiKeyFormValues
+  data: ApiKeyFormValues,
+  routingOptions?: HubTokenRoutingOptions
 ): ApiKeyFormData {
   return {
     name: data.name,
@@ -157,6 +167,32 @@ export function transformFormDataToPayload(
         ? data.auto_groups
         : [],
     cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    ...(routingOptions &&
+      data.hub_selections.length > 0 && {
+        group: 'default',
+        auto_groups: [],
+        cross_group_retry: false,
+        hub_routing_policy: {
+          mode:
+            routingOptions?.mode === 'provider' ? 'provider' : 'public_pool',
+          ...(routingOptions?.provider_id
+            ? { provider_id: routingOptions.provider_id }
+            : {}),
+          selections: data.hub_selections.map((selection) => ({
+            family: selection.family,
+            ...(routingOptions?.mode === 'provider'
+              ? {
+                  exact_multipliers: [
+                    selection.exact_multiplier ?? selection.max_multiplier,
+                  ],
+                }
+              : {
+                  min_multiplier: selection.min_multiplier,
+                  max_multiplier: selection.max_multiplier,
+                }),
+          })),
+        },
+      }),
   }
 }
 
@@ -193,6 +229,14 @@ export function transformApiKeyToFormDefaults(
     auto_groups_mode: autoGroupsMode,
     auto_groups: autoGroups,
     cross_group_retry: !!apiKey.cross_group_retry,
+    hub_selections: (apiKey.hub_routing_policy?.selections || []).map(
+      (selection) => ({
+        family: selection.family,
+        min_multiplier: selection.min_multiplier ?? 0.001,
+        max_multiplier: selection.max_multiplier ?? 1,
+        exact_multiplier: selection.exact_multipliers?.[0],
+      })
+    ),
     tokenCount: 1,
   }
 }

@@ -502,6 +502,11 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+	if policy, err := token.GetHubRoutingPolicy(); err != nil {
+		return fmt.Errorf("invalid hub routing policy: %w", err)
+	} else if policy != nil {
+		common.SetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy, policy)
+	}
 	if token.AutoGroups != "" {
 		autoGroups, err := token.GetAutoGroups()
 		if err != nil {

@@ -115,6 +115,8 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
             data: { groups: ['vip', 'default'], max_count: 3 },
           },
         }
+      case '/api/token/routing-options':
+        return { data: { success: false } }
       default:
         throw new Error(`Unexpected GET ${url}`)
     }
@@ -190,6 +192,11 @@ async function renderCreateDrawer(): Promise<void> {
       success: true,
       data: { groups: ['vip', 'default'], max_count: 3 },
     },
+    { updatedAt: freshAt }
+  )
+  queryClient.setQueryData(
+    ['hub-token-routing-options', window.location.hostname, undefined],
+    { success: false },
     { updatedAt: freshAt }
   )
   renderedDrawer = { host, queryClient, root }

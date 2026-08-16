@@ -5937,6 +5937,23 @@
     "Enable browser notifications while this page is open": "启用浏览器通知（仅在页面打开时有效）",
     "Browser notifications are enabled": "浏览器通知已启用",
     "No provider notifications": "暂无渠道商通知",
-    "Open provider management": "打开渠道商管理"
+    "Open provider management": "打开渠道商管理",
+    "Routing": "路由范围",
+    "Available provider routes": "当前渠道商可用路由",
+    "Model families and multiplier ranges": "模型类型与倍率范围",
+    "Choose the exact multiplier published by this provider. Fallback keeps the same choices.": "选择该渠道商已发布的具体倍率，平台兜底时也不会超出所选倍率。",
+    "Each model family uses its own inclusive multiplier range. Step: 0.001.": "每个模型类型单独设置包含边界的倍率范围，精度为 0.001。",
+    "Add model family": "添加模型类型",
+    "Add at least one model family": "请至少添加一个模型类型",
+    "Add at least one model family to control which channels this key can use.": "请至少添加一个模型类型，用于限定此密钥可使用的渠道。",
+    "This provider has no published routes available for API keys.": "该渠道商目前没有可供 API 密钥使用的已上架路由。",
+    "Remove model family": "移除模型类型",
+    "Select a published multiplier": "选择已发布倍率",
+    "Multiplier range": "倍率范围",
+    "Minimum multiplier": "最低倍率",
+    "Maximum multiplier": "最高倍率",
+    "{{channels}} channels / {{providers}} providers": "{{channels}} 条渠道 / {{providers}} 家渠道商",
+    "This previously selected route is no longer available.": "之前选择的路由已不可用，请移除后重新选择。",
+    "Remove unavailable routes before saving": "请先移除不可用路由再保存"
   }
 }

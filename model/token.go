@@ -29,6 +29,7 @@ type Token struct {
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	AutoGroups         string         `json:"-" gorm:"type:text"`
+	HubRoutingPolicy   string         `json:"-" gorm:"type:text"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
@@ -317,7 +318,7 @@ func (token *Token) Insert() error {
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (token *Token) Update() (err error) {
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "auto_groups").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "auto_groups", "hub_routing_policy").Updates(token).Error
 	if shouldUpdateRedis(true, err) {
 		if cacheErr := cacheSetToken(*token); cacheErr != nil {
 			common.SysLog("failed to update token cache: " + cacheErr.Error())

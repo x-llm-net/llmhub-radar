@@ -321,6 +321,33 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
+func TestListModelsFiltersModelsByHubTokenRoutingFamilies(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-hub-policy-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "claude-hub-policy-model", ChannelId: 1, Enabled: true},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+		Selections: []model.HubTokenRoutingSelection{{
+			Family:        "openai",
+			MinMultiplier: 0.1,
+			MaxMultiplier: 0.2,
+		}},
+	})
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	ids := decodeListModelsResponse(t, recorder)
+	assert.Contains(t, ids, "gpt-hub-policy-model")
+	assert.NotContains(t, ids, "claude-hub-policy-model")
+}
+
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
