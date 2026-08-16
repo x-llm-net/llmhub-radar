@@ -218,6 +218,13 @@ func SetApiRouter(router *gin.Engine) {
 			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
 			hubAdminRoute.GET("/routing-metrics", controller.AdminListHubRoutingMetrics)
 		}
+		hubAdminNotificationsRoute := apiRouter.Group("/hub/admin/notifications")
+		{
+			hubAdminNotificationsRoute.GET("", middleware.AdminAuth(), controller.ListHubAdminNotifications)
+			hubAdminNotificationsRoute.GET("/settings", middleware.RootAuth(), controller.GetHubProviderNotificationSettings)
+			hubAdminNotificationsRoute.PUT("/settings", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderNotificationSettings)
+			hubAdminNotificationsRoute.POST("/settings/test", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.TestHubProviderNotification)
+		}
 
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")

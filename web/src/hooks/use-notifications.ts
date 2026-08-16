@@ -17,10 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { getHubAdminNotifications } from '@/features/hub-notifications/api'
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 import { useNotificationStore } from '@/stores/notification-store'
 
 function hashString(input: string): string {
@@ -64,9 +67,19 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
-    'notice'
-  )
+  const [activeTab, setActiveTab] = useState<
+    'notice' | 'announcements' | 'admin'
+  >('notice')
+  const [browserPermission, setBrowserPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return 'unsupported'
+    }
+    return window.Notification.permission
+  })
+  const user = useAuthStore((state) => state.auth.user)
+  const isAdmin = (user?.role ?? 0) >= ROLE.ADMIN
 
   // Fetch Notice from API
   const {
@@ -82,10 +95,16 @@ export function useNotifications() {
   // Fetch Announcements from status
   const { status, loading: statusLoading } = useStatus()
   const announcementsEnabled = status?.announcements_enabled ?? false
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const announcements: Record<string, unknown>[] = announcementsEnabled
-    ? ((status?.announcements || []) as Record<string, unknown>[]).slice(0, 20)
-    : []
+  const announcements = useMemo<Record<string, unknown>[]>(
+    () =>
+      announcementsEnabled
+        ? ((status?.announcements || []) as Record<string, unknown>[]).slice(
+            0,
+            20
+          )
+        : [],
+    [announcementsEnabled, status?.announcements]
+  )
 
   // Notification store
   const {
@@ -93,7 +112,20 @@ export function useNotifications() {
     markNoticeRead,
     markAnnouncementsRead,
     isAnnouncementRead,
+    markAdminNotificationsRead,
+    isAdminNotificationRead,
   } = useNotificationStore()
+
+  const {
+    data: adminNotifications = [],
+    isLoading: adminNotificationsLoading,
+  } = useQuery({
+    queryKey: ['hub-admin-notifications'],
+    queryFn: getHubAdminNotifications,
+    enabled: isAdmin,
+    refetchInterval: isAdmin ? 30_000 : false,
+    staleTime: 10_000,
+  })
 
   // Extract notice content
   const noticeContent = noticeResponse?.success
@@ -112,12 +144,24 @@ export function useNotifications() {
       }
     ).length
 
+    const adminNotificationsUnread = adminNotifications.filter(
+      (item) => !isAdminNotificationRead(item.id)
+    ).length
+
     return {
       notice: noticeUnread,
       announcements: announcementsUnread,
-      total: noticeUnread + announcementsUnread,
+      admin: adminNotificationsUnread,
+      total: noticeUnread + announcementsUnread + adminNotificationsUnread,
     }
-  }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+  }, [
+    noticeContent,
+    lastReadNotice,
+    announcements,
+    isAnnouncementRead,
+    adminNotifications,
+    isAdminNotificationRead,
+  ])
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {
@@ -129,7 +173,7 @@ export function useNotifications() {
   }
 
   // Handle popover open
-  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
+  const handleOpenPopover = (tab?: 'notice' | 'announcements' | 'admin') => {
     const nextTab = tab || activeTab
 
     // Mark currently visible content as read when opening the notification center
@@ -138,6 +182,9 @@ export function useNotifications() {
     }
     if (nextTab === 'announcements') {
       markAnnouncementsAsRead()
+    }
+    if (nextTab === 'admin') {
+      markAdminNotificationsRead(adminNotifications.map((item) => item.id))
     }
 
     setActiveTab(nextTab)
@@ -154,13 +201,56 @@ export function useNotifications() {
   }
 
   // Handle tab change - mark announcements as read when switching to that tab
-  const handleTabChange = (tab: 'notice' | 'announcements') => {
+  const handleTabChange = (tab: 'notice' | 'announcements' | 'admin') => {
     setActiveTab(tab)
 
     if (tab === 'announcements') {
       markAnnouncementsAsRead()
     }
+    if (tab === 'admin') {
+      markAdminNotificationsRead(adminNotifications.map((item) => item.id))
+    }
   }
+
+  const requestBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setBrowserPermission('unsupported')
+      return
+    }
+    const permission = await window.Notification.requestPermission()
+    setBrowserPermission(permission)
+  }
+
+  const knownAdminNotificationIds = useRef(new Set<number>())
+  const adminNotificationsInitialized = useRef(false)
+  useEffect(() => {
+    if (!isAdmin) {
+      knownAdminNotificationIds.current.clear()
+      adminNotificationsInitialized.current = false
+      return
+    }
+    if (adminNotificationsLoading) return
+
+    const unseen = adminNotifications.filter(
+      (item) => !knownAdminNotificationIds.current.has(item.id)
+    )
+    for (const item of adminNotifications) {
+      knownAdminNotificationIds.current.add(item.id)
+    }
+    if (!adminNotificationsInitialized.current) {
+      adminNotificationsInitialized.current = true
+      return
+    }
+    if (browserPermission !== 'granted') return
+    for (const item of unseen) {
+      new window.Notification(item.title, { body: item.content })
+    }
+  }, [
+    adminNotifications,
+    adminNotificationsLoading,
+    browserPermission,
+    isAdmin,
+  ])
 
   return {
     // Data
@@ -172,6 +262,12 @@ export function useNotifications() {
     unreadCount: unreadCounts.total,
     unreadNoticeCount: unreadCounts.notice,
     unreadAnnouncementsCount: unreadCounts.announcements,
+    unreadAdminNotificationCount: unreadCounts.admin,
+    adminNotifications,
+    adminNotificationsLoading,
+    isAdmin,
+    browserPermission,
+    requestBrowserNotifications,
 
     // Popover state
     popoverOpen,

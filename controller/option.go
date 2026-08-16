@@ -91,6 +91,9 @@ func GetOptions(c *gin.Context) {
 			strings.HasSuffix(k, "Key") ||
 			strings.HasSuffix(k, "secret") ||
 			strings.HasSuffix(k, "api_key")
+		if k == "hub_provider_notification.settings" {
+			continue
+		}
 		if isSensitiveKey {
 			continue
 		}

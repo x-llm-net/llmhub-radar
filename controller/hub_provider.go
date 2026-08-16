@@ -29,6 +29,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -211,6 +212,7 @@ func CreateHubProvider(c *gin.Context) {
 
 	model.HydrateHubProviderVerificationFields(provider)
 	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
+	service.NotifyHubProviderApplication(provider)
 	common.ApiSuccess(c, provider)
 }
 
@@ -406,6 +408,7 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 			return
 		}
 	}
+	service.NotifyHubProviderReview(providerID, req.Status, req.ReviewRemark)
 	common.ApiSuccess(c, gin.H{"id": providerID, "status": req.Status})
 }
 

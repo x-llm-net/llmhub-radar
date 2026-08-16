@@ -131,5 +131,10 @@
   "Failed to load channel health data": "Failed to load channel health data",
   "Group link, support account, channel, or email": "Group link, support account, channel, or email",
   "Review contact is private. The public support entry is shown to users on your provider homepage.": "Review contact is private. The public support entry is shown to users on your provider homepage.",
-  "Used only for application review and operations": "Used only for application review and operations"
+  "Used only for application review and operations": "Used only for application review and operations",
+  "Use SMTP settings to send provider notifications to multiple administrators.": "Use SMTP settings to send provider notifications to multiple administrators.",
+  "Failed to load provider notification settings": "Failed to load provider notification settings",
+  "Failed to update provider notification settings": "Failed to update provider notification settings",
+  "Failed to send test notification": "Failed to send test notification",
+  "Provider application and review events": "Provider application and review events"
 }

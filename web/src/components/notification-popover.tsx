@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-import { Bell, Megaphone } from 'lucide-react'
+import { Bell, ExternalLink, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { RichContent } from '@/components/rich-content'
@@ -40,6 +40,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { HubAdminNotification } from '@/features/hub-notifications/api'
 import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -56,11 +57,16 @@ interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
+  activeTab: 'notice' | 'announcements' | 'admin'
+  onTabChange: (tab: 'notice' | 'announcements' | 'admin') => void
   notice: string
   announcements: AnnouncementItem[]
   loading: boolean
+  isAdmin: boolean
+  adminNotifications: HubAdminNotification[]
+  adminNotificationsLoading: boolean
+  browserPermission: NotificationPermission | 'unsupported'
+  onRequestBrowserNotifications: () => void
   className?: string
 }
 
@@ -287,6 +293,97 @@ function AnnouncementsContent({
   )
 }
 
+function AdminNotificationsContent({
+  notifications,
+  loading,
+  browserPermission,
+  onRequestBrowserNotifications,
+  t,
+}: {
+  notifications: HubAdminNotification[]
+  loading: boolean
+  browserPermission: NotificationPermission | 'unsupported'
+  onRequestBrowserNotifications: () => void
+  t: TFunction
+}) {
+  if (loading) {
+    return (
+      <EmptyState
+        icon={<Bell />}
+        title={t('Loading...')}
+        description={t('Provider application and review events')}
+      />
+    )
+  }
+
+  return (
+    <div className='space-y-3'>
+      <div className='bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2'>
+        <p className='text-muted-foreground min-w-0 text-xs'>
+          {browserPermission === 'granted'
+            ? t('Browser notifications are enabled')
+            : t('Enable browser notifications while this page is open')}
+        </p>
+        {browserPermission !== 'granted' &&
+        browserPermission !== 'unsupported' ? (
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            onClick={onRequestBrowserNotifications}
+          >
+            {t('Enable')}
+          </Button>
+        ) : null}
+      </div>
+      {notifications.length === 0 ? (
+        <EmptyState
+          icon={<Bell />}
+          title={t('No provider notifications')}
+          description={t('Provider application and review events')}
+        />
+      ) : (
+        <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
+          <div className='flex flex-col'>
+            {notifications.map((item, idx) => {
+              const publishedAt = new Date(item.created_at * 1000)
+              return (
+                <div key={item.id}>
+                  <div className='py-3'>
+                    <div className='flex items-start gap-3'>
+                      <AnnouncementDot type='info' />
+                      <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                        <div className='text-sm font-medium'>{item.title}</div>
+                        <div className='text-muted-foreground text-sm whitespace-pre-line'>
+                          {item.content}
+                        </div>
+                        <div className='text-muted-foreground text-xs'>
+                          {getRelativeTime(publishedAt, t)} •{' '}
+                          {formatDateTimeObject(publishedAt)}
+                        </div>
+                        {item.link ? (
+                          <a
+                            href={item.link}
+                            className='text-primary inline-flex items-center gap-1 text-xs hover:underline'
+                          >
+                            {t('Open provider management')}
+                            <ExternalLink className='size-3' />
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  {idx < notifications.length - 1 ? <Separator /> : null}
+                </div>
+              )
+            })}
+          </div>
+        </ScrollArea>
+      )}
+    </div>
+  )
+}
+
 /**
  * Notification popover with Notice and Announcements tabs
  */
@@ -299,6 +396,11 @@ export function NotificationPopover({
   notice,
   announcements,
   loading,
+  isAdmin,
+  adminNotifications,
+  adminNotificationsLoading,
+  browserPermission,
+  onRequestBrowserNotifications,
   className,
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
@@ -341,7 +443,12 @@ export function NotificationPopover({
           value={activeTab}
           onValueChange={onTabChange as (value: string) => void}
         >
-          <TabsList className='grid w-full grid-cols-2'>
+          <TabsList
+            className={cn(
+              'grid w-full',
+              isAdmin ? 'grid-cols-3' : 'grid-cols-2'
+            )}
+          >
             <TabsTrigger value='notice' className='gap-1.5'>
               <Bell className='size-3.5' />
               {t('Notice')}
@@ -350,6 +457,12 @@ export function NotificationPopover({
               <Megaphone className='size-3.5' />
               {t('Timeline')}
             </TabsTrigger>
+            {isAdmin ? (
+              <TabsTrigger value='admin' className='gap-1.5'>
+                <Bell className='size-3.5' />
+                {t('Provider alerts')}
+              </TabsTrigger>
+            ) : null}
           </TabsList>
 
           <TabsContent value='notice' className='mt-2'>
@@ -363,6 +476,18 @@ export function NotificationPopover({
               t={t}
             />
           </TabsContent>
+
+          {isAdmin ? (
+            <TabsContent value='admin' className='mt-2'>
+              <AdminNotificationsContent
+                notifications={adminNotifications}
+                loading={adminNotificationsLoading}
+                browserPermission={browserPermission}
+                onRequestBrowserNotifications={onRequestBrowserNotifications}
+                t={t}
+              />
+            </TabsContent>
+          ) : null}
         </Tabs>
 
         <div className='flex justify-end'>

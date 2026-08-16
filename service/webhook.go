@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -21,6 +22,71 @@ type WebhookPayload struct {
 	Content   string        `json:"content"`
 	Values    []interface{} `json:"values,omitempty"`
 	Timestamp int64         `json:"timestamp"`
+}
+
+type weComWebhookPayload struct {
+	MsgType  string `json:"msgtype"`
+	Markdown struct {
+		Content string `json:"content"`
+	} `json:"markdown"`
+}
+
+type weComWebhookResponse struct {
+	ErrCode int    `json:"errcode"`
+	ErrMsg  string `json:"errmsg"`
+}
+
+func SendWeComWebhook(webhookURL string, content string) error {
+	payload := weComWebhookPayload{MsgType: "markdown"}
+	payload.Markdown.Content = content
+	payloadBytes, err := common.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal enterprise WeChat payload: %v", err)
+	}
+
+	var resp *http.Response
+	if system_setting.EnableWorker() {
+		resp, err = DoWorkerRequest(&WorkerRequest{
+			URL:    webhookURL,
+			Key:    system_setting.WorkerValidKey,
+			Method: http.MethodPost,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: payloadBytes,
+		})
+	} else {
+		if err := ValidateSSRFProtectedFetchURL(webhookURL); err != nil {
+			return fmt.Errorf("request reject: %v", err)
+		}
+		request, requestErr := http.NewRequest(http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
+		if requestErr != nil {
+			return fmt.Errorf("failed to create enterprise WeChat request: %v", requestErr)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		resp, err = GetSSRFProtectedHTTPClient().Do(request)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to send enterprise WeChat webhook: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("enterprise WeChat webhook failed with status code: %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("failed to read enterprise WeChat response: %v", err)
+	}
+	var result weComWebhookResponse
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := common.Unmarshal(body, &result); err != nil {
+			return fmt.Errorf("invalid enterprise WeChat response: %v", err)
+		}
+		if result.ErrCode != 0 {
+			return fmt.Errorf("enterprise WeChat webhook rejected message (%d): %s", result.ErrCode, result.ErrMsg)
+		}
+	}
+	return nil
 }
 
 // generateSignature 生成 webhook 签名

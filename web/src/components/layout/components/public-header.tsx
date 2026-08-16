@@ -254,6 +254,15 @@ export function PublicHeader(props: PublicHeaderProps) {
                   notice={notifications.notice}
                   announcements={notifications.announcements}
                   loading={notifications.loading}
+                  isAdmin={notifications.isAdmin}
+                  adminNotifications={notifications.adminNotifications}
+                  adminNotificationsLoading={
+                    notifications.adminNotificationsLoading
+                  }
+                  browserPermission={notifications.browserPermission}
+                  onRequestBrowserNotifications={
+                    notifications.requestBrowserNotifications
+                  }
                 />
               )}
 

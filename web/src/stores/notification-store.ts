@@ -24,14 +24,18 @@ interface NotificationState {
   lastReadNotice: string
   // Array of read announcement keys (id or content hash)
   readAnnouncementKeys: string[]
+  // IDs of administrator notifications read in this browser
+  readAdminNotificationIds: number[]
   // Timestamp of last "Close Today" action
   closedUntilDate: string | null
 
   // Actions
   markNoticeRead: (noticeContent: string) => void
   markAnnouncementsRead: (keys: string[]) => void
+  markAdminNotificationsRead: (ids: number[]) => void
   setClosedUntilDate: (date: string | null) => void
   isAnnouncementRead: (key: string) => boolean
+  isAdminNotificationRead: (id: number) => boolean
   isNoticeClosed: () => boolean
 }
 
@@ -44,6 +48,7 @@ export const useNotificationStore = create<NotificationState>()(
     (set, get) => ({
       lastReadNotice: '',
       readAnnouncementKeys: [],
+      readAdminNotificationIds: [],
       closedUntilDate: null,
 
       markNoticeRead: (noticeContent: string) => {
@@ -60,12 +65,24 @@ export const useNotificationStore = create<NotificationState>()(
         }))
       },
 
+      markAdminNotificationsRead: (ids: number[]) => {
+        set((state) => ({
+          readAdminNotificationIds: [
+            ...new Set([...state.readAdminNotificationIds, ...ids]),
+          ],
+        }))
+      },
+
       setClosedUntilDate: (date: string | null) => {
         set({ closedUntilDate: date })
       },
 
       isAnnouncementRead: (key: string) => {
         return get().readAnnouncementKeys.includes(key)
+      },
+
+      isAdminNotificationRead: (id: number) => {
+        return get().readAdminNotificationIds.includes(id)
       },
 
       isNoticeClosed: () => {
@@ -81,6 +98,7 @@ export const useNotificationStore = create<NotificationState>()(
       partialize: (state) => ({
         lastReadNotice: state.lastReadNotice,
         readAnnouncementKeys: state.readAnnouncementKeys,
+        readAdminNotificationIds: state.readAdminNotificationIds,
         closedUntilDate: state.closedUntilDate,
       }),
     }
