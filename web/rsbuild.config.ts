@@ -65,6 +65,10 @@ export default defineConfig(({ envMode }) => {
     html: {
       template: './index.html',
     },
+    dev: {
+      hmr: false,
+      liveReload: true,
+    },
     server: {
       host: '0.0.0.0',
       strictPort: false,
