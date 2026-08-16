@@ -265,6 +265,7 @@ export function ProviderOnboarding() {
             <CardContent>
               <Form {...form}>
                 <form
+                  id='provider-onboarding-form'
                   onSubmit={form.handleSubmit(onSubmit)}
                   className='grid gap-5'
                 >
@@ -462,19 +463,24 @@ export function ProviderOnboarding() {
                   </div>
 
                   <ProviderContactFields form={form} idPrefix='provider' />
-
-                  <div className='flex justify-end border-t pt-5'>
-                    <Button type='submit' disabled={mutation.isPending}>
-                      <Plus className='size-4' aria-hidden='true' />
-                      {mutation.isPending
-                        ? t('Submitting...')
-                        : t('Submit application')}
-                    </Button>
-                  </div>
                 </form>
               </Form>
             </CardContent>
           </Card>
+        </div>
+      </div>
+      <div className='bg-background shrink-0 border-t px-3 py-3 sm:px-4'>
+        <div className='mx-auto flex w-full max-w-3xl justify-end'>
+          <Button
+            type='submit'
+            form='provider-onboarding-form'
+            disabled={mutation.isPending}
+          >
+            <Plus className='size-4' aria-hidden='true' />
+            {mutation.isPending
+              ? t('Submitting...')
+              : t('Submit application')}
+          </Button>
         </div>
       </div>
     </Main>
