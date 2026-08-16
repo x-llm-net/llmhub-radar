@@ -104,7 +104,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
           ? 'Saving changes will submit the application for review again.'
           : 'These details are shown on your public channel provider homepage.'
       )}
-      contentClassName='max-h-[90vh] overflow-y-auto sm:max-w-2xl'
+      contentClassName='sm:max-w-2xl'
       footer={
         <>
           <Button
