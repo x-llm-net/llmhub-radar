@@ -43,12 +43,16 @@ type hubFinalAttemptBilling struct {
 }
 
 type HubRelayAttempt struct {
-	AttemptIndex         int     `json:"attempt_index"`
-	Model                string  `json:"model"`
-	EndpointType         string  `json:"endpoint_type"`
-	SampleSource         string  `json:"sample_source"`
-	SkipReason           string  `json:"skip_reason,omitempty"`
-	ServiceTier          string  `json:"service_tier"`
+	AttemptIndex int    `json:"attempt_index"`
+	Model        string `json:"model"`
+	EndpointType string `json:"endpoint_type"`
+	SampleSource string `json:"sample_source"`
+	SkipReason   string `json:"skip_reason,omitempty"`
+	// ServiceTier is retained for legacy service-tier requests. New routing
+	// policy tokens use RoutingPolicyMode instead, so their internal default
+	// group is not exposed as a user-facing service tier.
+	ServiceTier          string  `json:"service_tier,omitempty"`
+	RoutingPolicyMode    string  `json:"routing_policy_mode,omitempty"`
 	RoutingPhase         string  `json:"routing_phase"`
 	OriginProviderID     int     `json:"origin_provider_id,omitempty"`
 	ProviderID           int     `json:"provider_id,omitempty"`
@@ -82,12 +86,28 @@ type HubRelayAttempt struct {
 	ChargedQuota         *int    `json:"charged_quota,omitempty"`
 }
 
-func IsHubServiceTierRequest(ctx *gin.Context) bool {
+// IsHubTokenRoutingRequest identifies the new multiplier-policy token path.
+// Keep this separate from legacy service-tier detection so logs and future
+// routing behavior do not depend on the token's compatibility group value.
+func IsHubTokenRoutingRequest(ctx *gin.Context) bool {
 	if ctx == nil {
 		return false
 	}
 	if _, exists := common.GetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy); exists {
 		return true
+	}
+	return false
+}
+
+// IsHubServiceTierRequest is the compatibility predicate used by the shared
+// retry, billing, and observability paths. It includes both legacy service
+// tiers and the new multiplier-policy token path.
+func IsHubServiceTierRequest(ctx *gin.Context) bool {
+	if IsHubTokenRoutingRequest(ctx) {
+		return true
+	}
+	if ctx == nil {
+		return false
 	}
 	return hub_routing_setting.IsServiceTier(
 		common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup),
@@ -289,8 +309,11 @@ func AttachHubRelayLogInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 	if !IsHubServiceTierRequest(ctx) || other == nil {
 		return
 	}
-	serviceTier := common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup)
-	other["service_tier"] = serviceTier
+	if policy := GetHubTokenRoutingPolicy(ctx); policy != nil {
+		other["routing_policy_mode"] = policy.Mode
+	} else {
+		other["service_tier"] = common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup)
+	}
 	other["origin_provider_id"] = common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId)
 	other["routing_phase"] = common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase)
 	other["served_provider_id"] = common.GetContextKeyInt(ctx, constant.ContextKeyHubRelayAttemptProvider)
@@ -388,7 +411,6 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		Model:             hubAttemptModel(ctx, relayInfo),
 		EndpointType:      hubAttemptEndpointType(relayInfo),
 		SampleSource:      HubSampleSourceRealRequest,
-		ServiceTier:       common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup),
 		RoutingPhase:      common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase),
 		OriginProviderID:  common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId),
 		ProviderID:        common.GetContextKeyInt(ctx, constant.ContextKeyHubRelayAttemptProvider),
@@ -399,6 +421,11 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		UpstreamRequestID: ctx.GetString(common.UpstreamRequestIdKey),
 		SupplyMultiplier:  ctx.GetFloat64(string(constant.ContextKeyHubRelayAttemptMultiplier)),
 		BillingRatio:      ctx.GetFloat64(string(constant.ContextKeyHubRelayAttemptBillingRatio)),
+	}
+	if policy := GetHubTokenRoutingPolicy(ctx); policy != nil {
+		attempt.RoutingPolicyMode = policy.Mode
+	} else {
+		attempt.ServiceTier = common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup)
 	}
 	if relayInfo != nil {
 		attempt.RequestReadyMS = elapsedMilliseconds(startedAt, relayInfo.OutboundRequestReadyTime)

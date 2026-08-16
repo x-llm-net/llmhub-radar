@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -133,6 +134,29 @@ func TestApplyHubStreamBillingPolicyOnlyChangesServiceTiers(t *testing.T) {
 	quota, result = ApplyHubStreamBillingPolicy(hubCtx, partialInfo, &dto.Usage{CompletionTokens: 5}, 88)
 	assert.Equal(t, 88, quota)
 	assert.Equal(t, HubAttemptResultPartialSuccess, result)
+}
+
+func TestHubTokenRoutingLogsPolicyInsteadOfCompatibilityServiceTier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+
+	assert.True(t, IsHubTokenRoutingRequest(ctx))
+	assert.True(t, IsHubServiceTierRequest(ctx))
+
+	other := map[string]interface{}{}
+	AttachHubRelayLogInfo(ctx, &relaycommon.RelayInfo{OriginModelName: "gpt-5"}, other, true)
+	assert.Equal(t, model.HubTokenRoutingModePublic, other["routing_policy_mode"])
+	assert.NotContains(t, other, "service_tier")
+
+	attempts, ok := other["hub_attempts"].([]HubRelayAttempt)
+	require.True(t, ok)
+	require.Len(t, attempts, 1)
+	assert.Equal(t, model.HubTokenRoutingModePublic, attempts[0].RoutingPolicyMode)
+	assert.Empty(t, attempts[0].ServiceTier)
 }
 
 func TestHubFinalAttemptRecordsPartialChargeAndClientDisconnect(t *testing.T) {

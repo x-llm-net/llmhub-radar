@@ -69,6 +69,27 @@ func TestPrepareBillingForSelectedChannelUsesFinalRetryChannelPricing(t *testing
 	assert.Equal(t, 21, other["hub_provider_id"])
 }
 
+func TestPrepareBillingForSelectedChannelSupportsMultiplierAboveOne(t *testing.T) {
+	billing := &recordingBillingSettler{preConsumedQuota: 1000}
+	info := &relaycommon.RelayInfo{
+		Billing: billing,
+		PriceData: types.PriceData{
+			QuotaBeforeGroup: 1000,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio:       5.5,
+				BaseGroupRatio:   1,
+				SupplyMultiplier: 5.5,
+				HasSupplyPricing: true,
+			},
+		},
+	}
+
+	require.Nil(t, PrepareBillingForSelectedChannel(nil, info))
+	assert.Equal(t, []int{5500}, billing.reserveTargets)
+	assert.Equal(t, 5500, info.FinalPreConsumedQuota)
+	assert.Equal(t, 5500, info.PriceData.QuotaToPreConsume)
+}
+
 func TestAppendBillingInfoSeparatesConsumerAndSupplyRatios(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		PriceData: types.PriceData{

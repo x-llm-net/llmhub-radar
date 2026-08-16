@@ -64,6 +64,49 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	assert.Equal(t, 900, entries[0].ProviderIncomeQuota)
 }
 
+func TestSettleBillingAndProviderEarningUsesProviderFeeOverrideSnapshot(t *testing.T) {
+	truncate(t)
+	provider := &model.HubProvider{
+		OwnerUserId: 99010,
+		Name:        "Fee Override Provider",
+		Slug:        "fee-override-provider",
+		PlatformFeeBasisPoints: func() *int {
+			fee := 2500
+			return &fee
+		}(),
+	}
+	require.NoError(t, model.DB.Create(provider).Error)
+
+	ctx, _ := gin.CreateTestContext(nil)
+	info := &relaycommon.RelayInfo{
+		RequestId:       "req-provider-fee-override",
+		UserId:          10,
+		TokenId:         20,
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 30},
+		OriginModelName: "gpt-5",
+		BillingSource:   BillingSourceWallet,
+		PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{
+			GroupRatio:        5.5,
+			BaseGroupRatio:    1,
+			SupplyMultiplier:  5.5,
+			HasSupplyPricing:  true,
+			SupplyGroupId:     40,
+			SupplyProviderId:  provider.Id,
+			SupplyOwnerUserId: provider.OwnerUserId,
+		}},
+	}
+
+	require.NoError(t, SettleBillingAndProviderEarning(ctx, info, 1000))
+	assert.True(t, info.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
+	assert.Equal(t, 2500, info.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
+
+	var earning model.HubProviderEarning
+	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)
+	assert.Equal(t, 2500, earning.PlatformFeeBasisPoints)
+	assert.Equal(t, 250, earning.PlatformFeeQuota)
+	assert.Equal(t, 750, earning.ProviderIncomeQuota)
+}
+
 func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 	truncate(t)
 	ctx, _ := gin.CreateTestContext(nil)
