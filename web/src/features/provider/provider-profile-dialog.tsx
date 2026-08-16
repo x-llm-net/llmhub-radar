@@ -8,8 +8,8 @@ License, or (at your option) any later version.
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { Pencil, Save } from 'lucide-react'
-import { useEffect } from 'react'
+import { Pencil, Save, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { Dialog } from '@/components/dialog'
 import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import {
@@ -30,6 +31,7 @@ import { getProviderRootDomain } from '@/lib/provider-domain'
 
 import { updateProvider } from './api'
 import { ProviderContactFields } from './provider-contact-fields'
+import { ProviderWebsiteEvidenceImage } from './provider-website-evidence-image'
 import {
   providerFormSchema,
   type HubProvider,
@@ -58,14 +60,43 @@ function valuesFromProvider(provider: HubProvider): ProviderFormValues {
   }
 }
 
+function websiteOrigin(value: string): string {
+  try {
+    return new URL(value.trim()).origin
+  } catch {
+    return ''
+  }
+}
+
 export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
   const { t } = useTranslation()
+  const editingApplication = props.provider.status !== 'active'
+  const [verifyWebsite, setVerifyWebsite] = useState(false)
+  const [websiteEvidence, setWebsiteEvidence] = useState<File | null>(null)
   const form = useForm<ProviderFormValues>({
     resolver: zodResolver(providerFormSchema),
     defaultValues: valuesFromProvider(props.provider),
   })
+  const website = form.watch('website').trim()
+  const currentWebsiteOrigin = websiteOrigin(website)
+  const verificationApplies =
+    currentWebsiteOrigin !== '' &&
+    currentWebsiteOrigin === props.provider.website_verified_origin
+  const verificationPending =
+    verificationApplies &&
+    props.provider.website_verification_status === 'pending'
+  const verificationVerified =
+    verificationApplies &&
+    props.provider.website_verification_status === 'verified'
+  const existingManualEvidence =
+    verificationApplies &&
+    props.provider.website_verification_method === 'manual' &&
+    props.provider.website_evidence_asset_id > 0
   const mutation = useMutation({
-    mutationFn: updateProvider,
+    mutationFn: (input: {
+      values: ProviderFormValues
+      websiteEvidence?: File
+    }) => updateProvider(input.values, input.websiteEvidence),
     onSuccess: (response) => {
       if (!response.success || !response.data) {
         toast.error(response.message || t('Failed to update provider profile'))
@@ -85,8 +116,31 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
   })
 
   useEffect(() => {
-    if (props.open) form.reset(valuesFromProvider(props.provider))
+    if (props.open) {
+      form.reset(valuesFromProvider(props.provider))
+      setVerifyWebsite(false)
+      setWebsiteEvidence(null)
+    }
   }, [form, props.open, props.provider])
+
+  useEffect(() => {
+    if (website) return
+    setVerifyWebsite(false)
+    setWebsiteEvidence(null)
+  }, [website])
+
+  const onSubmit = (values: ProviderFormValues) => {
+    if (verifyWebsite && !websiteEvidence) {
+      toast.error(t('Select a verification screenshot'))
+      return
+    }
+    mutation.mutate({
+      values,
+      websiteEvidence: verifyWebsite
+        ? (websiteEvidence ?? undefined)
+        : undefined,
+    })
+  }
 
   return (
     <Dialog
@@ -95,12 +149,10 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
         if (!mutation.isPending) props.onOpenChange(open)
       }}
       title={t(
-        props.provider.status === 'rejected'
-          ? 'Edit application'
-          : 'Edit public profile'
+        editingApplication ? 'Edit application' : 'Edit public profile'
       )}
       description={t(
-        props.provider.status === 'rejected'
+        editingApplication
           ? 'Saving changes will submit the application for review again.'
           : 'These details are shown on your public channel provider homepage.'
       )}
@@ -133,7 +185,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       <Form {...form}>
         <form
           id='provider-public-profile-form'
-          onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+          onSubmit={form.handleSubmit(onSubmit)}
           className='grid gap-5'
         >
           <div className='grid gap-2'>
@@ -156,6 +208,11 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               placeholder='https://example.com'
               {...form.register('website')}
             />
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Optional. Before verification, the website is visible only to you and administrators. After verification, it can be shown publicly as your official website.'
+              )}
+            </p>
             {form.formState.errors.website && (
               <p className='text-destructive text-sm'>
                 {t(
@@ -165,6 +222,117 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               </p>
             )}
           </div>
+
+          {website && (
+            <div className='grid gap-4 rounded-md border p-4'>
+              {verificationVerified ? (
+                <div className='flex items-start gap-3'>
+                  <ShieldCheck className='text-success mt-0.5 size-5 shrink-0' />
+                  <div className='grid gap-1'>
+                    <p className='text-sm font-medium'>
+                      {t('Website ownership verified')}
+                    </p>
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'After verification, your official website is shown publicly with verified ownership. The active subdomain stays unchanged so existing links and API Base URLs keep working.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {verificationPending && (
+                    <div className='flex items-start gap-3'>
+                      <ShieldCheck className='text-warning mt-0.5 size-5 shrink-0' />
+                      <div className='grid gap-1'>
+                        <p className='text-sm font-medium'>
+                          {t('Screenshot submitted for review')}
+                        </p>
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'Verification publishes your official website with verified ownership and lets the administrator enable the clean subdomain.'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {existingManualEvidence && (
+                    <ProviderWebsiteEvidenceImage
+                      assetId={props.provider.website_evidence_asset_id}
+                      alt={t('Submitted verification screenshot')}
+                      className='max-h-48 max-w-full rounded-md border object-contain'
+                    />
+                  )}
+
+                  <div className='flex items-start gap-3 border-t pt-4'>
+                    <Checkbox
+                      id='provider-profile-verify-website'
+                      checked={verifyWebsite}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true
+                        setVerifyWebsite(enabled)
+                        if (!enabled) setWebsiteEvidence(null)
+                      }}
+                    />
+                    <div className='grid gap-1'>
+                      <Label htmlFor='provider-profile-verify-website'>
+                        {t(
+                          existingManualEvidence
+                            ? 'Replace image'
+                            : 'Verify website ownership (recommended)'
+                        )}
+                      </Label>
+                      {!verificationPending && (
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'Verification publishes your official website with verified ownership and lets the administrator enable the clean subdomain.'
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {verifyWebsite ? (
+                    <div className='grid gap-2 border-t pt-4'>
+                      <Label htmlFor='provider-profile-evidence'>
+                        {t('Verification screenshot')}
+                      </Label>
+                      <Input
+                        id='provider-profile-evidence'
+                        type='file'
+                        accept='image/png,image/jpeg,image/webp'
+                        onChange={(event) =>
+                          setWebsiteEvidence(
+                            event.target.files?.item(0) ?? null
+                          )
+                        }
+                      />
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'Upload a screenshot showing the browser address bar and the logged-in management page. Mask API keys, balances, and order details.'
+                        )}
+                      </p>
+                      <p className='text-muted-foreground text-xs'>
+                        {t('PNG, JPEG, or WebP, up to 5 MB.')}
+                      </p>
+                    </div>
+                  ) : (
+                    !verificationPending && (
+                      <div className='bg-muted/30 flex items-start gap-2 rounded-md px-3 py-2 text-xs'>
+                        <ShieldCheck className='text-muted-foreground mt-0.5 size-4 shrink-0' />
+                        <p className='text-muted-foreground'>
+                          {t(
+                            'Without verification, the website stays private and the suffixed subdomain becomes fixed after onboarding approval.'
+                          )}
+                        </p>
+                      </div>
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div className='grid gap-2'>
             <Label htmlFor='provider-profile-slug'>

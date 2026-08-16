@@ -50,8 +50,9 @@ func decodeHubProviderAPIResponse(t *testing.T, body []byte) hubProviderAPIRespo
 	return response
 }
 
-func newHubProviderMultipartCreateContext(
+func newHubProviderMultipartContext(
 	t *testing.T,
+	method string,
 	profile map[string]string,
 	verifyWebsite bool,
 	filename string,
@@ -75,7 +76,7 @@ func newHubProviderMultipartCreateContext(
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/hub/provider", &body)
+	ctx.Request = httptest.NewRequest(method, "/api/hub/provider", &body)
 	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
 	ctx.Set("id", userID)
 	return ctx, recorder
@@ -125,7 +126,7 @@ func TestCreateHubProviderCanSubmitManualWebsiteVerificationAtomically(t *testin
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
 	)
 	require.NoError(t, err)
-	ctx, recorder := newHubProviderMultipartCreateContext(t, map[string]string{
+	ctx, recorder := newHubProviderMultipartContext(t, http.MethodPost, map[string]string{
 		"name":          "Verified Acme",
 		"slug":          "verified-acme",
 		"website":       "https://verified.example/admin",
@@ -156,7 +157,7 @@ func TestCreateHubProviderRejectsInvalidOnboardingEvidenceWithoutCreatingProvide
 		&model.HubProvider{},
 		&model.HubProviderWebsiteEvidenceAsset{},
 	))
-	ctx, recorder := newHubProviderMultipartCreateContext(t, map[string]string{
+	ctx, recorder := newHubProviderMultipartContext(t, http.MethodPost, map[string]string{
 		"name":          "Invalid Evidence",
 		"slug":          "invalid-evidence",
 		"website":       "https://invalid.example",
@@ -238,6 +239,85 @@ func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, "New name", stored.Name)
+}
+
+func TestUpdateHubProviderCanSubmitManualWebsiteVerificationAtomically(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	provider := &model.HubProvider{
+		OwnerUserId: 42,
+		Name:        "Pending provider",
+		Website:     "https://old.example",
+		Status:      model.HubProviderStatusPending,
+	}
+	require.NoError(t, model.CreateHubProvider(provider))
+	png, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	)
+	require.NoError(t, err)
+	ctx, recorder := newHubProviderMultipartContext(t, http.MethodPut, map[string]string{
+		"name":          "Updated pending provider",
+		"slug":          provider.Slug,
+		"website":       "https://new.example/admin",
+		"description":   "Updated with verification",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+	}, true, "admin.png", png, 42)
+
+	UpdateHubProviderProfile(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	assert.Equal(t, "Updated pending provider", response.Data.Name)
+	assert.Equal(t, "https://new.example/admin", response.Data.Website)
+	assert.Equal(t, model.HubProviderWebsiteVerificationStatusPending, response.Data.WebsiteVerificationStatus)
+	assert.Equal(t, model.HubProviderWebsiteVerificationMethodManual, response.Data.WebsiteVerificationMethod)
+	assert.Equal(t, "https://new.example", response.Data.WebsiteVerifiedOrigin)
+	require.Positive(t, response.Data.WebsiteEvidenceAssetId)
+
+	asset, err := model.GetHubProviderWebsiteEvidenceAsset(response.Data.WebsiteEvidenceAssetId)
+	require.NoError(t, err)
+	assert.Equal(t, response.Data.Id, asset.ProviderId)
+	assert.Equal(t, png, asset.Data)
+}
+
+func TestUpdateHubProviderRejectsInvalidEvidenceWithoutChangingProfile(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	provider := &model.HubProvider{
+		OwnerUserId: 42,
+		Name:        "Original provider",
+		Website:     "https://old.example",
+		Status:      model.HubProviderStatusPending,
+	}
+	require.NoError(t, model.CreateHubProvider(provider))
+	ctx, recorder := newHubProviderMultipartContext(t, http.MethodPut, map[string]string{
+		"name":          "Should not be saved",
+		"slug":          provider.Slug,
+		"website":       "https://new.example",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+	}, true, "evidence.txt", []byte("not an image"), 42)
+
+	UpdateHubProviderProfile(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	assert.False(t, response.Success)
+	stored, err := model.GetHubProviderByOwnerUserID(42)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, "Original provider", stored.Name)
+	assert.Equal(t, "https://old.example", stored.Website)
+	var assetCount int64
+	require.NoError(t, db.Model(&model.HubProviderWebsiteEvidenceAsset{}).Count(&assetCount).Error)
+	assert.Zero(t, assetCount)
 }
 
 func TestUpdateHubProviderRequiresExistingProfile(t *testing.T) {

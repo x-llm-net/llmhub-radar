@@ -64,8 +64,8 @@ type hubProviderSettlementSettingsUpdateRequest struct {
 	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
 }
 
-func decodeHubProviderCreateRequest(c *gin.Context) (hubProviderCreateRequest, bool, string, []byte, error) {
-	var req hubProviderCreateRequest
+func decodeHubProviderProfileRequest(c *gin.Context) (hubProviderProfileRequest, bool, string, []byte, error) {
+	var req hubProviderProfileRequest
 	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
 		return req, false, "", nil, common.DecodeJson(c.Request.Body, &req)
 	}
@@ -121,7 +121,7 @@ func GetPublicHubHome(c *gin.Context) {
 }
 
 func CreateHubProvider(c *gin.Context) {
-	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderCreateRequest(c)
+	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderProfileRequest(c)
 	if err != nil {
 		if errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
@@ -178,8 +178,12 @@ func CreateHubProvider(c *gin.Context) {
 }
 
 func UpdateHubProviderProfile(c *gin.Context) {
-	var req hubProviderProfileRequest
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderProfileRequest(c)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
+			return
+		}
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -188,10 +192,19 @@ func UpdateHubProviderProfile(c *gin.Context) {
 		return
 	}
 
-	provider, err := model.UpdateHubProviderProfile(
-		c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
-		req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
-	)
+	var provider *model.HubProvider
+	if verifyWebsite {
+		provider, err = model.UpdateHubProviderProfileWithManualWebsiteVerification(
+			c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
+			req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
+			evidenceContentType, evidence,
+		)
+	} else {
+		provider, err = model.UpdateHubProviderProfile(
+			c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
+			req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
+		)
+	}
 	if err != nil {
 		if err == model.ErrHubProviderNotFound {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
@@ -199,6 +212,11 @@ func UpdateHubProviderProfile(c *gin.Context) {
 		}
 		if err == model.ErrHubProviderSlugAlreadyExists {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderSlugAlreadyExists)
+			return
+		}
+		if errors.Is(err, model.ErrHubProviderWebsiteRequired) ||
+			errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
+			hubProviderWebsiteVerificationError(c, err)
 			return
 		}
 		common.ApiError(c, err)

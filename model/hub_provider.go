@@ -375,7 +375,8 @@ func CreateHubProvider(provider *HubProvider) error {
 
 // UpdateHubProviderProfile changes the provider profile owned by the user. A
 // rejected application returns to pending review when the user resubmits it.
-func UpdateHubProviderProfile(
+func updateHubProviderProfile(
+	db *gorm.DB,
 	ownerUserID int,
 	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
@@ -385,7 +386,7 @@ func UpdateHubProviderProfile(
 	}
 
 	var provider HubProvider
-	if err := DB.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
+	if err := db.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrHubProviderNotFound
 		}
@@ -421,7 +422,7 @@ func UpdateHubProviderProfile(
 		updates["reviewed_at"] = 0
 	}
 
-	result := DB.Model(&HubProvider{}).
+	result := db.Model(&HubProvider{}).
 		Where("id = ? AND owner_user_id = ?", provider.Id, ownerUserID).
 		Updates(updates)
 	if result.Error != nil {
@@ -430,13 +431,28 @@ func UpdateHubProviderProfile(
 	if result.RowsAffected == 0 {
 		return nil, ErrHubProviderNotFound
 	}
-	if err := DB.First(&provider, provider.Id).Error; err != nil {
+	if err := db.First(&provider, provider.Id).Error; err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
+
+func UpdateHubProviderProfile(
+	ownerUserID int,
+	name, website, description, logoURL string,
+	contactType, contactValue, supportType, supportValue string,
+) (*HubProvider, error) {
+	provider, err := updateHubProviderProfile(
+		DB, ownerUserID, name, website, description, logoURL,
+		contactType, contactValue, supportType, supportValue,
+	)
+	if err != nil {
 		return nil, err
 	}
 	if err := RefreshHubSupplyPricingCache(); err != nil {
 		common.SysError("failed to refresh hub provider routing cache: " + err.Error())
 	}
-	return &provider, nil
+	return provider, nil
 }
 
 func IsValidHubProviderStatus(status string) bool {

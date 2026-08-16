@@ -65,13 +65,26 @@ export function ProviderWebsiteVerification(
     props.provider.website_verification_method || 'manual'
   )
   const [file, setFile] = useState<File | null>(null)
+  const [replaceManualEvidence, setReplaceManualEvidence] = useState(false)
   const status = verificationStatus(props.provider)
+  const manualReviewPending =
+    props.provider.website_verification_status === 'pending' &&
+    props.provider.website_verification_method === 'manual' &&
+    props.provider.website_evidence_asset_id > 0
 
   useEffect(() => {
     if (props.provider.website_verification_method) {
       setMethod(props.provider.website_verification_method)
     }
   }, [props.provider.website_verification_method])
+
+  useEffect(() => {
+    setReplaceManualEvidence(false)
+    setFile(null)
+  }, [
+    props.provider.website_evidence_asset_id,
+    props.provider.website_verification_status,
+  ])
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -166,20 +179,13 @@ export function ProviderWebsiteVerification(
           )}
         </div>
 
-        {!props.provider.website && (
-          <p className='text-muted-foreground text-sm'>
-            {t(
-              'No website is required. You can add one later from the application details.'
-            )}
-          </p>
-        )}
-        {props.provider.website &&
-          props.provider.website_verification_status === 'verified' && (
-            <div className='border-success/30 bg-success/5 flex items-start gap-3 rounded-md border px-4 py-3'>
-              <CheckCircle2 className='text-success mt-0.5 size-5 shrink-0' />
+        {manualReviewPending ? (
+          <div className='space-y-4'>
+            <div className='border-warning/30 bg-warning/5 flex items-start gap-3 rounded-md border px-4 py-3'>
+              <ShieldCheck className='text-warning mt-0.5 size-5 shrink-0' />
               <div>
                 <p className='text-sm font-medium'>
-                  {t('Website ownership verified')}
+                  {t('Screenshot submitted for review')}
                 </p>
                 <p className='text-muted-foreground mt-1 text-sm'>
                   {t(
@@ -188,10 +194,94 @@ export function ProviderWebsiteVerification(
                 </p>
               </div>
             </div>
-          )}
-        {props.provider.website &&
-          props.provider.website_verification_status !== 'verified' && (
-            <Tabs
+            <ProviderWebsiteEvidenceImage
+              assetId={props.provider.website_evidence_asset_id}
+              alt={t('Submitted verification screenshot')}
+              className='max-h-64 max-w-full rounded-md border object-contain'
+            />
+            {!replaceManualEvidence ? (
+              <Button
+                type='button'
+                variant='outline'
+                onClick={() => setReplaceManualEvidence(true)}
+              >
+                <ImageUp />
+                {t('Replace image')}
+              </Button>
+            ) : (
+              <div className='grid gap-3 border-t pt-4'>
+                <div className='grid gap-2'>
+                  <Label htmlFor='provider-website-evidence'>
+                    {t('Verification screenshot')}
+                  </Label>
+                  <Input
+                    id='provider-website-evidence'
+                    type='file'
+                    accept='image/png,image/jpeg,image/webp'
+                    onChange={(event) =>
+                      setFile(event.target.files?.item(0) ?? null)
+                    }
+                  />
+                  <p className='text-muted-foreground text-xs'>
+                    {t('PNG, JPEG, or WebP, up to 5 MB.')}
+                  </p>
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    type='button'
+                    onClick={() => submitMutation.mutate()}
+                    disabled={submitMutation.isPending || !file}
+                  >
+                    {submitMutation.isPending ? (
+                      <Loader2 className='animate-spin' />
+                    ) : (
+                      <ImageUp />
+                    )}
+                    {t('Submit screenshot')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={submitMutation.isPending}
+                    onClick={() => {
+                      setReplaceManualEvidence(false)
+                      setFile(null)
+                    }}
+                  >
+                    {t('Cancel')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {!props.provider.website && (
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'No website is required. You can add one later from the application details.'
+                )}
+              </p>
+            )}
+            {props.provider.website &&
+              props.provider.website_verification_status === 'verified' && (
+                <div className='border-success/30 bg-success/5 flex items-start gap-3 rounded-md border px-4 py-3'>
+                  <CheckCircle2 className='text-success mt-0.5 size-5 shrink-0' />
+                  <div>
+                    <p className='text-sm font-medium'>
+                      {t('Website ownership verified')}
+                    </p>
+                    <p className='text-muted-foreground mt-1 text-sm'>
+                      {t(
+                        'The administrator can promote your subdomain when approving the provider.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              )}
+            {props.provider.website &&
+              props.provider.website_verification_status !== 'verified' && (
+                <Tabs
               value={method}
               onValueChange={(value) =>
                 setMethod(value as HubProviderWebsiteVerificationMethod)
@@ -339,15 +429,17 @@ export function ProviderWebsiteVerification(
                   </TabsContent>
                 )
               })}
-            </Tabs>
-          )}
+                </Tabs>
+              )}
 
-        {props.provider.website_verification_remark &&
-          props.provider.website_verification_status === 'rejected' && (
-            <p className='text-destructive text-sm'>
-              {props.provider.website_verification_remark}
-            </p>
-          )}
+            {props.provider.website_verification_remark &&
+              props.provider.website_verification_status === 'rejected' && (
+                <p className='text-destructive text-sm'>
+                  {props.provider.website_verification_remark}
+                </p>
+              )}
+          </>
+        )}
       </CardContent>
     </Card>
   )

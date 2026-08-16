@@ -142,6 +142,77 @@ func CreateHubProviderWithManualWebsiteVerification(provider *HubProvider, conte
 	return nil
 }
 
+func UpdateHubProviderProfileWithManualWebsiteVerification(
+	ownerUserID int,
+	name, website, description, logoURL string,
+	contactType, contactValue, supportType, supportValue string,
+	contentType string,
+	data []byte,
+) (*HubProvider, error) {
+	contentType = strings.TrimSpace(contentType)
+	if contentType == "" || len(data) == 0 {
+		return nil, ErrHubProviderWebsiteEvidenceInvalid
+	}
+	origin, _, err := NormalizeHubProviderOrigin(website)
+	if err != nil {
+		return nil, ErrHubProviderWebsiteRequired
+	}
+
+	var updated *HubProvider
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var previous HubProvider
+		if err := tx.Where("owner_user_id = ?", ownerUserID).First(&previous).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrHubProviderNotFound
+			}
+			return err
+		}
+
+		updated, err = updateHubProviderProfile(
+			tx, ownerUserID, name, website, description, logoURL,
+			contactType, contactValue, supportType, supportValue,
+		)
+		if err != nil {
+			return err
+		}
+
+		asset := &HubProviderWebsiteEvidenceAsset{
+			ProviderId:  updated.Id,
+			ContentType: contentType,
+			Data:        data,
+		}
+		if err := tx.Create(asset).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{
+			"website_verified_origin":         origin,
+			"website_verification_status":     HubProviderWebsiteVerificationStatusPending,
+			"website_verification_method":     HubProviderWebsiteVerificationMethodManual,
+			"website_verification_token":      "",
+			"website_evidence_asset_id":       asset.Id,
+			"website_verification_remark":     "",
+			"website_verification_last_error": "",
+			"website_verified_at":             0,
+			"updated_at":                      common.GetTimestamp(),
+		}
+		if err := tx.Model(&HubProvider{}).Where("id = ?", updated.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		if previous.WebsiteEvidenceAssetId > 0 && previous.WebsiteEvidenceAssetId != asset.Id {
+			if err := tx.Delete(&HubProviderWebsiteEvidenceAsset{}, previous.WebsiteEvidenceAssetId).Error; err != nil {
+				return err
+			}
+		}
+		return tx.First(updated, updated.Id).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	refreshHubProviderRoutingCache()
+	HydrateHubProviderVerificationFields(updated)
+	return updated, nil
+}
+
 func GetHubProviderWebsiteEvidenceAsset(assetID int) (*HubProviderWebsiteEvidenceAsset, error) {
 	if assetID <= 0 {
 		return nil, ErrHubProviderWebsiteEvidenceInvalid
