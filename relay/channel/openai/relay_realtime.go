@@ -2,6 +2,7 @@ package openai
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -22,6 +23,9 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	}
 
 	info.IsStream = true
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
 	clientConn := info.ClientWs
 	targetConn := info.TargetWs
 
@@ -34,6 +38,8 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	usage := &dto.RealtimeUsage{}
 	localUsage := &dto.RealtimeUsage{}
 	sumUsage := &dto.RealtimeUsage{}
+	var usageMu sync.Mutex
+	stopped := false
 
 	gopool.Go(func() {
 		defer func() {
@@ -50,6 +56,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from client: %v", err)
+						return
 					}
 					close(clientClosed)
 					return
@@ -62,6 +69,11 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					return
 				}
 
+				usageMu.Lock()
+				if stopped {
+					usageMu.Unlock()
+					return
+				}
 				if realtimeEvent.Type == dto.RealtimeEventTypeSessionUpdate {
 					if realtimeEvent.Session != nil {
 						if realtimeEvent.Session.Tools != nil {
@@ -72,6 +84,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 				textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 				if err != nil {
+					usageMu.Unlock()
 					errChan <- fmt.Errorf("error counting text token: %v", err)
 					return
 				}
@@ -80,6 +93,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				localUsage.InputTokens += textToken + audioToken
 				localUsage.InputTokenDetails.TextTokens += textToken
 				localUsage.InputTokenDetails.AudioTokens += audioToken
+				usageMu.Unlock()
 
 				err = helper.WssString(c, targetConn, string(message))
 				if err != nil {
@@ -110,11 +124,11 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from target: %v", err)
+						return
 					}
 					close(targetClosed)
 					return
 				}
-				info.SetFirstResponseTime()
 				realtimeEvent := &dto.RealtimeEvent{}
 				err = common.Unmarshal(message, realtimeEvent)
 				if err != nil {
@@ -122,8 +136,17 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					return
 				}
 
+				usageMu.Lock()
+				if stopped {
+					usageMu.Unlock()
+					return
+				}
+				info.SetFirstResponseTime()
 				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone {
-					realtimeUsage := realtimeEvent.Response.Usage
+					var realtimeUsage *dto.RealtimeUsage
+					if realtimeEvent.Response != nil {
+						realtimeUsage = realtimeEvent.Response.Usage
+					}
 					if realtimeUsage != nil {
 						usage.TotalTokens += realtimeUsage.TotalTokens
 						usage.InputTokens += realtimeUsage.InputTokens
@@ -133,18 +156,22 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						usage.InputTokenDetails.TextTokens += realtimeUsage.InputTokenDetails.TextTokens
 						usage.OutputTokenDetails.AudioTokens += realtimeUsage.OutputTokenDetails.AudioTokens
 						usage.OutputTokenDetails.TextTokens += realtimeUsage.OutputTokenDetails.TextTokens
+						if realtimeUsage.OutputTokens > 0 || realtimeUsage.OutputTokenDetails.TextTokens > 0 || realtimeUsage.OutputTokenDetails.AudioTokens > 0 {
+							info.SetFirstTokenTime()
+						}
 						err := preConsumeUsage(c, info, usage, sumUsage)
+						usage = &dto.RealtimeUsage{}
 						if err != nil {
+							usageMu.Unlock()
 							errChan <- fmt.Errorf("error consume usage: %v", err)
 							return
 						}
-						// 本次计费完成，清除
-						usage = &dto.RealtimeUsage{}
 
 						localUsage = &dto.RealtimeUsage{}
 					} else {
 						textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 						if err != nil {
+							usageMu.Unlock()
 							errChan <- fmt.Errorf("error counting text token: %v", err)
 							return
 						}
@@ -155,13 +182,12 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						localUsage.InputTokenDetails.TextTokens += textToken
 						localUsage.InputTokenDetails.AudioTokens += audioToken
 						err = preConsumeUsage(c, info, localUsage, sumUsage)
+						localUsage = &dto.RealtimeUsage{}
 						if err != nil {
+							usageMu.Unlock()
 							errChan <- fmt.Errorf("error consume usage: %v", err)
 							return
 						}
-						// 本次计费完成，清除
-						localUsage = &dto.RealtimeUsage{}
-						// print now usage
 					}
 					logger.LogInfo(c, fmt.Sprintf("realtime streaming sumUsage: %v", sumUsage))
 					logger.LogInfo(c, fmt.Sprintf("realtime streaming localUsage: %v", localUsage))
@@ -177,6 +203,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				} else {
 					textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 					if err != nil {
+						usageMu.Unlock()
 						errChan <- fmt.Errorf("error counting text token: %v", err)
 						return
 					}
@@ -185,7 +212,11 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					localUsage.OutputTokens += textToken + audioToken
 					localUsage.OutputTokenDetails.TextTokens += textToken
 					localUsage.OutputTokenDetails.AudioTokens += audioToken
+					if textToken > 0 || audioToken > 0 {
+						info.SetFirstTokenTime()
+					}
 				}
+				usageMu.Unlock()
 
 				err = helper.WssString(c, clientConn, string(message))
 				if err != nil {
@@ -201,26 +232,41 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 		}
 	})
 
+	var handlerErr error
 	select {
 	case <-clientClosed:
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, nil)
 	case <-targetClosed:
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	case err := <-errChan:
-		//return service.OpenAIErrorWrapper(err, "realtime_error", http.StatusInternalServerError), nil
+		handlerErr = err
 		logger.LogError(c, "realtime error: "+err.Error())
+		info.StreamStatus.RecordError(err.Error())
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 	case <-c.Done():
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Err())
 	}
 
+	usageMu.Lock()
+	stopped = true
 	if usage.TotalTokens != 0 {
-		_ = preConsumeUsage(c, info, usage, sumUsage)
+		if err := preConsumeUsage(c, info, usage, sumUsage); err != nil && handlerErr == nil {
+			handlerErr = fmt.Errorf("error consume final usage: %v", err)
+		}
 	}
 
 	if localUsage.TotalTokens != 0 {
-		_ = preConsumeUsage(c, info, localUsage, sumUsage)
+		if err := preConsumeUsage(c, info, localUsage, sumUsage); err != nil && handlerErr == nil {
+			handlerErr = fmt.Errorf("error consume final local usage: %v", err)
+		}
 	}
+	finalUsage := *sumUsage
+	usageMu.Unlock()
 
-	// check usage total tokens, if 0, use local usage
-
-	return nil, sumUsage
+	if handlerErr != nil {
+		return types.NewError(handlerErr, types.ErrorCodeBadResponse), &finalUsage
+	}
+	return nil, &finalUsage
 }
 
 func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.RealtimeUsage, totalUsage *dto.RealtimeUsage) error {
@@ -237,6 +283,6 @@ func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.R
 	totalUsage.OutputTokenDetails.TextTokens += usage.OutputTokenDetails.TextTokens
 	totalUsage.OutputTokenDetails.AudioTokens += usage.OutputTokenDetails.AudioTokens
 	// clear usage
-	err := service.PreWssConsumeQuota(ctx, info, usage)
+	err := service.PreWssConsumeQuota(ctx, info, totalUsage)
 	return err
 }

@@ -374,23 +374,23 @@ func buildChannelAbilitiesWithRoutingSetting(tx *gorm.DB, channel *Channel, rout
 				continue
 			}
 			family := ClassifyHubPublicModelFamily(modelName)
+			groups = []string{HubTokenRoutingAbilityGroup}
+			var serviceTiers []string
 			if routingSetting == nil {
-				groups = hub_routing_setting.ResolveEligibleServiceTiers(
+				serviceTiers = hub_routing_setting.ResolveEligibleServiceTiers(
 					family,
 					supplyGroup.PriceMultiplier,
 					supplyGroup.ProviderId,
 				)
 			} else {
-				groups = hub_routing_setting.ResolveEligibleServiceTiersWithSetting(
+				serviceTiers = hub_routing_setting.ResolveEligibleServiceTiersWithSetting(
 					*routingSetting,
 					family,
 					supplyGroup.PriceMultiplier,
 					supplyGroup.ProviderId,
 				)
 			}
-			if len(groups) == 0 {
-				continue
-			}
+			groups = append(groups, serviceTiers...)
 		}
 		for _, group := range groups {
 			key := group + "|" + modelName

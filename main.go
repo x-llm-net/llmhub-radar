@@ -75,6 +75,13 @@ func main() {
 		}
 	}()
 
+	// Rebuild Hub supply abilities on startup so code-level routing groups are
+	// applied to supplies created by an earlier version.
+	if err := model.RefreshHubSupplyAbilities(); err != nil {
+		common.FatalLog("failed to refresh hub supply abilities: " + err.Error())
+		return
+	}
+
 	if common.RedisEnabled {
 		// for compatibility with old versions
 		common.MemoryCacheEnabled = true

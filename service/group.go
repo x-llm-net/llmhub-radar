@@ -56,6 +56,9 @@ func IsUserSelectableGroup(userGroup, groupName string) bool {
 // IsTokenGroupAllowedForWrite preserves legacy group writes when marketplace
 // routing is disabled and requires an explicit service tier when it is enabled.
 func IsTokenGroupAllowedForWrite(groupName string) bool {
+	if model.IsHubTokenRoutingAbilityGroup(groupName) {
+		return false
+	}
 	if !hub_routing_setting.Snapshot().Enabled {
 		return true
 	}

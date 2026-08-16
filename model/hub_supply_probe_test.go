@@ -35,7 +35,7 @@ func getChannelAbilityModels(t *testing.T, channelID int) []string {
 	models := make([]string, 0)
 	require.NoError(t, DB.Model(&Ability{}).
 		Where("channel_id = ? AND enabled = ?", channelID, true).
-		Order("model ASC").Pluck("model", &models).Error)
+		Distinct("model").Order("model ASC").Pluck("model", &models).Error)
 	return models
 }
 

@@ -477,7 +477,7 @@ func TestUpdateHubProviderChannelModelsPublicationChecksBatchAndOwnership(t *tes
 	var abilityModels []string
 	require.NoError(t, model.DB.Model(&model.Ability{}).
 		Where("channel_id = ? AND enabled = ?", channel.Id, true).
-		Order("model ASC").Pluck("model", &abilityModels).Error)
+		Distinct("model").Order("model ASC").Pluck("model", &abilityModels).Error)
 	assert.Equal(t, []string{"gpt-5"}, abilityModels)
 
 	invalidCtx, invalidRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider/channels/1/model-publication/batch", map[string]any{

@@ -196,7 +196,7 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 		}, nil
 	}
 	if _, hasHubPolicy := common.GetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy); hasHubPolicy {
-		ownerGroups := append(hub_routing_setting.ServiceTiers(), "default")
+		ownerGroups := append(hub_routing_setting.ServiceTiers(), "default", model.HubTokenRoutingAbilityGroup)
 		return modelListGroups{
 			userGroup:   userGroup,
 			tokenGroup:  tokenGroup,

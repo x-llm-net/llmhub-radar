@@ -632,7 +632,7 @@ model family + min multiplier + max multiplier
 
 1. 同一模型族第一版只保存一个范围，最多选择八个模型族。
 2. 渠道商同一模型族有多个精确倍率时第一版单选；平台兜底仍严格匹配这个精确倍率。
-3. 可用性接口只统计 `default` 和四个服务档位中的已启用 Ability，不把 `vip/svip` 等私有分组暴露为公共供给。
+3. 新倍率策略使用内部 `hub-routing` Ability 发现供给；该 Ability 不属于普通 New API Group，普通 `default` Token 不会读取它。可用性接口兼容读取 `hub-routing`、`default` 和旧四档 Ability，不把 `vip/svip` 等私有分组暴露为公共供给。
 4. 候选继续先选渠道商，再按该渠道商内部 Channel 的 priority/weight 选择，拆分 Channel 不增加渠道商流量份额。
 5. 普通选择、Affinity 命中和管理员固定 Channel 都必须通过模型族、倍率、Provider 状态和渠道商作用域校验。
 6. `/v1/models` 只返回 Token 已选择模型族中的模型；旧 Token 没有策略字段时完全保持原行为。
@@ -642,3 +642,7 @@ model family + min multiplier + max multiplier
 1. 根域名新增模型族时，默认范围暂为 `0.01-1.00`；数值输入允许扩大到 `100.000`。滑块默认只展示到 `1.000`，已有高倍率供给或已保存高倍率策略时自动扩展滑块范围。
 2. 根域名允许保存当前供给数为零的范围，请求时返回统一 `503 service_tier_unavailable`。是否在创建时增加更强提示，待内测反馈决定。
 3. 旧档位名称目前只按所选最高倍率展示辅助标签，不参与路由；质量探针接入后的标签名称和质量表达另行讨论。
+
+### Realtime 计费边界
+
+Realtime/WebSocket 请求沿用同一个 BillingSession。每个 `response.done` 只把累计 usage 换算成目标额度并调用 `Reserve` 补足预留，不再触发一次旧式中途扣费；连接结束后按最终累计 usage 统一执行一次用户结算和一次最终渠道商收益结算。新倍率策略请求异常结束且没有有效输出时最终额度为零并退回预留，已经有有效输出或客户端主动断开时按可可靠统计的实际用量结算。

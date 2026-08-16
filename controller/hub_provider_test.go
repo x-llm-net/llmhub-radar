@@ -653,7 +653,7 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 			Count(&enabledAbilities).Error)
 		assert.Equal(t, expectedEnabledAbilities, enabledAbilities)
 	}
-	assertHubProviderRouteState(model.HubProviderStatusActive, common.ChannelStatusEnabled, 1)
+	assertHubProviderRouteState(model.HubProviderStatusActive, common.ChannelStatusEnabled, 2)
 
 	disableCtx, disableRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/status", map[string]string{
 		"status": model.HubProviderStatusDisabled,
@@ -677,7 +677,7 @@ func TestAdminUpdateHubProviderStatusRemovesAndRestoresPublishedModels(t *testin
 	}
 	require.NoError(t, common.Unmarshal(enableRecorder.Body.Bytes(), &enableResponse))
 	require.True(t, enableResponse.Success, enableRecorder.Body.String())
-	assertHubProviderRouteState(model.HubProviderStatusActive, common.ChannelStatusEnabled, 1)
+	assertHubProviderRouteState(model.HubProviderStatusActive, common.ChannelStatusEnabled, 2)
 }
 
 func TestAdminRejectHubProviderRequiresReason(t *testing.T) {

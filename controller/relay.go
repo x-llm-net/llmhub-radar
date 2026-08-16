@@ -362,7 +362,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 
 	groupRatioInfo := helper.HandleGroupRatio(c, info)
-	groupRatioInfo, pricingErr := helper.ApplyHubSupplyPricing(groupRatioInfo, channel.Id)
+	groupRatioInfo, pricingErr := helper.ApplyHubSupplyPricingFromRequest(c, groupRatioInfo, channel.Id)
 	if pricingErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			pricingErr,
@@ -711,11 +711,19 @@ func RelayTask(c *gin.Context) {
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			channel = lockedCh
-			if retryParam.GetRetry() > 0 {
-				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
-					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
-					break
-				}
+			if policy := service.GetHubTokenRoutingPolicy(c); policy != nil &&
+				!model.IsChannelEnabledForHubTokenPolicyFallback(policy, relayInfo.OriginModelName, c.Request.URL.Path, channel.Id) {
+				taskErr = taskErrorFromChannelSelection(c, newServiceTierUnavailableError(
+					c,
+					errors.New("the channel of the origin task does not satisfy the token routing policy"),
+					relayInfo.TokenGroup,
+					relayInfo.OriginModelName,
+				))
+				break
+			}
+			if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
+				taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
+				break
 			}
 		} else {
 			var channelErr *types.NewAPIError

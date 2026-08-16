@@ -78,6 +78,24 @@ func pricingEndpointTypesFromPricing(pricings []Pricing) map[string][]constant.E
 	return byModel
 }
 
+func TestPricingHidesInternalHubRoutingGroup(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 100, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	require.NoError(t, DB.Create(&Ability{
+		Group:     HubTokenRoutingAbilityGroup,
+		Model:     "gpt-internal-hub-routing-only",
+		ChannelId: 100,
+		Enabled:   true,
+	}).Error)
+
+	InitChannelCache()
+	for _, pricing := range GetPricing() {
+		assert.NotEqual(t, "gpt-internal-hub-routing-only", pricing.ModelName)
+		assert.NotContains(t, pricing.EnableGroup, HubTokenRoutingAbilityGroup)
+	}
+}
+
 func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 

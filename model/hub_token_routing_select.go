@@ -50,7 +50,7 @@ func getHubPolicyChannelFromCache(
 	seen := make(map[int]struct{})
 	candidates := make([]hubTierChannelCandidate, 0)
 	for group, groups := range group2model2channels {
-		if group != "default" && !hub_routing_setting.IsServiceTier(group) {
+		if !isHubTokenRoutingCandidateAbilityGroup(group) {
 			continue
 		}
 		for _, candidateModel := range modelNames {
@@ -117,7 +117,7 @@ func getHubPolicyChannelFromDB(
 	normalized := ratio_setting.FormatMatchingModelName(modelName)
 	filtered := make([]Ability, 0)
 	for _, ability := range abilities {
-		if ability.Group != "default" && !hub_routing_setting.IsServiceTier(ability.Group) {
+		if !isHubTokenRoutingCandidateAbilityGroup(ability.Group) {
 			continue
 		}
 		if ability.Model != modelName && (normalized == "" || ability.Model != normalized) {
@@ -198,6 +198,17 @@ func getHubPolicyChannelFromDB(
 // IsChannelEnabledForHubTokenPolicy is used by affinity and fixed-channel
 // paths so they cannot bypass a token's model-family or multiplier boundary.
 func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string, channelID int) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", channelID, false)
+}
+
+// IsChannelEnabledForHubTokenPolicyFallback validates a channel that already
+// served an origin task. Provider-scoped tokens may continue on a platform
+// fallback channel, but the model family, multiplier and endpoint stay fixed.
+func IsChannelEnabledForHubTokenPolicyFallback(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, channelID, true)
+}
+
+func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int, allowProviderFallback bool) bool {
 	if policy == nil || channelID <= 0 || !policy.AllowsModel(modelName) {
 		return false
 	}
@@ -206,14 +217,17 @@ func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 		if pricing.SupplyProviderStatus != HubProviderStatusActive || pricing.PriceMultiplier <= 0 {
 			return false
 		}
-		if policy.Mode == HubTokenRoutingModeProvider && pricing.SupplyProviderId != policy.ProviderID {
+		if policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback && pricing.SupplyProviderId != policy.ProviderID {
 			return false
 		}
 		multiplier = pricing.PriceMultiplier
-	} else if policy.Mode == HubTokenRoutingModeProvider {
+	} else if policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback {
 		return false
 	}
 	if !policy.AllowsMultiplier(ClassifyHubPublicModelFamily(modelName), multiplier) {
+		return false
+	}
+	if requestPath != "" && !IsHubSupplyChannelRoutableForRequest(channelID, modelName, requestPath) {
 		return false
 	}
 
@@ -226,7 +240,7 @@ func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 		channelSyncLock.RLock()
 		defer channelSyncLock.RUnlock()
 		for group, models := range group2model2channels {
-			if group != "default" && !hub_routing_setting.IsServiceTier(group) {
+			if !isHubTokenRoutingCandidateAbilityGroup(group) {
 				continue
 			}
 			for _, candidateModel := range modelNames {
@@ -245,9 +259,13 @@ func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 		return false
 	}
 	for _, ability := range abilities {
-		if ability.Group == "default" || hub_routing_setting.IsServiceTier(ability.Group) {
+		if isHubTokenRoutingCandidateAbilityGroup(ability.Group) {
 			return true
 		}
 	}
 	return false
+}
+
+func isHubTokenRoutingCandidateAbilityGroup(group string) bool {
+	return IsHubTokenRoutingAbilityGroup(group) || group == "default" || hub_routing_setting.IsServiceTier(group)
 }

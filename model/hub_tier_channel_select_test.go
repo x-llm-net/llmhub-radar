@@ -54,11 +54,12 @@ func TestBuildChannelAbilitiesCreatesPriceAndHighQualityRows(t *testing.T) {
 
 	abilities, err := buildChannelAbilities(nil, channel)
 	require.NoError(t, err)
-	require.Len(t, abilities, 2)
-	assert.Equal(t, hub_routing_setting.ServiceTierSpecial, abilities[0].Group)
-	assert.Equal(t, hub_routing_setting.ServiceTierHigh, abilities[1].Group)
+	require.Len(t, abilities, 3)
+	assert.Equal(t, HubTokenRoutingAbilityGroup, abilities[0].Group)
+	assert.Equal(t, hub_routing_setting.ServiceTierSpecial, abilities[1].Group)
+	assert.Equal(t, hub_routing_setting.ServiceTierHigh, abilities[2].Group)
 	assert.Equal(t, "gpt-5", abilities[0].Model)
-	assert.Equal(t, channel.Id, abilities[1].ChannelId)
+	assert.Equal(t, channel.Id, abilities[2].ChannelId)
 }
 
 func TestSelectHubTierChannelStrictlyExcludesFailedChannels(t *testing.T) {

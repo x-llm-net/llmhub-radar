@@ -12,13 +12,21 @@ import (
 )
 
 const (
-	HubTokenRoutingModePublic     = "public_pool"
-	HubTokenRoutingModeProvider   = "provider"
+	HubTokenRoutingModePublic   = "public_pool"
+	HubTokenRoutingModeProvider = "provider"
+	// HubTokenRoutingAbilityGroup is internal-only. It lets multiplier-policy
+	// tokens discover supply that sits outside the legacy service-tier bands
+	// without exposing that supply to ordinary New API groups.
+	HubTokenRoutingAbilityGroup   = "hub-routing"
 	HubTokenRoutingMaxSelections  = 8
 	HubTokenRoutingMinMultiplier  = 0.01
 	HubTokenRoutingMaxMultiplier  = 100
 	HubTokenRoutingMultiplierStep = 0.001
 )
+
+func IsHubTokenRoutingAbilityGroup(group string) bool {
+	return group == HubTokenRoutingAbilityGroup
+}
 
 // HubTokenRoutingSelection is the user-facing supply constraint for one model
 // family. Public keys use an inclusive range; provider-scoped keys use the

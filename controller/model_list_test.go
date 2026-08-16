@@ -327,6 +327,7 @@ func TestListModelsFiltersModelsByHubTokenRoutingFamilies(t *testing.T) {
 	require.NoError(t, db.Create(&[]model.Ability{
 		{Group: "default", Model: "gpt-hub-policy-model", ChannelId: 1, Enabled: true},
 		{Group: "default", Model: "claude-hub-policy-model", ChannelId: 1, Enabled: true},
+		{Group: model.HubTokenRoutingAbilityGroup, Model: "gpt-premium-policy-model", ChannelId: 2, Enabled: true},
 	}).Error)
 
 	recorder := httptest.NewRecorder()
@@ -345,6 +346,7 @@ func TestListModelsFiltersModelsByHubTokenRoutingFamilies(t *testing.T) {
 
 	ids := decodeListModelsResponse(t, recorder)
 	assert.Contains(t, ids, "gpt-hub-policy-model")
+	assert.Contains(t, ids, "gpt-premium-policy-model")
 	assert.NotContains(t, ids, "claude-hub-policy-model")
 }
 

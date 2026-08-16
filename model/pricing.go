@@ -261,6 +261,9 @@ func updatePricing() {
 	modelGroupsMap := make(map[string]*types.Set[string])
 
 	for _, ability := range enableAbilities {
+		if IsHubTokenRoutingAbilityGroup(ability.Group) {
+			continue
+		}
 		groups, ok := modelGroupsMap[ability.Model]
 		if !ok {
 			groups = types.NewSet[string]()

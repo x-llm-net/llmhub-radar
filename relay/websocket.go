@@ -36,11 +36,22 @@ func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, nil, info)
+	realtimeUsage, ok := usage.(*dto.RealtimeUsage)
+	if !ok || realtimeUsage == nil {
+		if newAPIError != nil {
+			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+			return newAPIError
+		}
+		return types.NewError(fmt.Errorf("invalid realtime usage"), types.ErrorCodeBadResponse)
+	}
+	settlementErr := service.PostWssConsumeQuota(c, info, info.UpstreamModelName, realtimeUsage, "")
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
-	service.PostWssConsumeQuota(c, info, info.UpstreamModelName, usage.(*dto.RealtimeUsage), "")
+	if settlementErr != nil {
+		return types.NewError(settlementErr, types.ErrorCodeUpdateDataError)
+	}
 	return nil
 }

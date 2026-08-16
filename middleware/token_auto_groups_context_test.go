@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -45,4 +46,27 @@ func TestSetupContextForTokenMalformedAutoGroupsFailsClosed(t *testing.T) {
 	value, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
 	require.True(t, ok)
 	assert.Equal(t, []string{}, value)
+}
+
+func TestSetupContextForTokenRejectsAnotherProviderSubdomain(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, 8)
+	token := &model.Token{Id: 1, UserId: 2}
+	require.NoError(t, token.SetHubRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Mode:       model.HubTokenRoutingModeProvider,
+		ProviderID: 7,
+		Selections: []model.HubTokenRoutingSelection{{
+			Family:           "openai",
+			ExactMultipliers: []float64{0.2},
+		}},
+	}))
+
+	err := SetupContextForToken(ctx, token)
+
+	require.Error(t, err)
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+	_, exists := common.GetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy)
+	assert.False(t, exists)
 }

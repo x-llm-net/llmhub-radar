@@ -505,6 +505,13 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	if policy, err := token.GetHubRoutingPolicy(); err != nil {
 		return fmt.Errorf("invalid hub routing policy: %w", err)
 	} else if policy != nil {
+		requestedProviderID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+		if requestedProviderID > 0 && policy.Mode == model.HubTokenRoutingModeProvider &&
+			policy.ProviderID != requestedProviderID {
+			err := fmt.Errorf("token is bound to another provider")
+			abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
+			return err
+		}
 		common.SetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy, policy)
 	}
 	if token.AutoGroups != "" {

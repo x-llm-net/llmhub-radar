@@ -66,7 +66,7 @@ func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) 
 	providersByFamily := make(map[string]map[float64]map[int]struct{})
 	for _, row := range rows {
 		if row.ChannelStatus != common.ChannelStatusEnabled ||
-			(row.AbilityGroup != "default" && !hub_routing_setting.IsServiceTier(row.AbilityGroup)) ||
+			!isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
 			(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) {
 			continue
 		}
@@ -135,7 +135,7 @@ func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) 
 		providerSet := make(map[int]struct{})
 		for _, row := range rows {
 			if ClassifyHubPublicModelFamily(row.ModelName) != family || row.ProviderID <= 0 ||
-				(row.AbilityGroup != "default" && !hub_routing_setting.IsServiceTier(row.AbilityGroup)) ||
+				!isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
 				(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) {
 				continue
 			}
