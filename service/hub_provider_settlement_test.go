@@ -30,6 +30,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type providerSettlementProbe struct {
+	settleCalls int
+}
+
+func (p *providerSettlementProbe) Settle(int) error {
+	p.settleCalls++
+	return nil
+}
+func (*providerSettlementProbe) Refund(*gin.Context)       {}
+func (*providerSettlementProbe) NeedsRefund() bool         { return false }
+func (*providerSettlementProbe) GetPreConsumedQuota() int  { return 0 }
+func (*providerSettlementProbe) Reserve(int) error         { return nil }
+func (*providerSettlementProbe) SettlementCommitted() bool { return false }
+
+func TestProviderEarningPreparationFailureStopsConsumerSettlement(t *testing.T) {
+	truncate(t)
+	ctx, _ := gin.CreateTestContext(nil)
+	billing := &providerSettlementProbe{}
+	info := &relaycommon.RelayInfo{
+		RequestId:       "req-invalid-provider-fee-snapshot",
+		UserId:          10,
+		TokenId:         20,
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 30},
+		OriginModelName: "gpt-5",
+		BillingSource:   BillingSourceWallet,
+		Billing:         billing,
+		PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{
+			GroupRatio:                5.5,
+			BaseGroupRatio:            1,
+			SupplyMultiplier:          5.5,
+			HasSupplyPricing:          true,
+			SupplyGroupId:             40,
+			SupplyProviderId:          50,
+			SupplyOwnerUserId:         60,
+			PlatformFeeBasisPoints:    10001,
+			HasPlatformFeeBasisPoints: true,
+		}},
+	}
+
+	err := SettleBillingAndProviderEarning(ctx, info, 1000)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid hub provider platform fee snapshot")
+	assert.Zero(t, billing.settleCalls)
+}
+
 func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	truncate(t)
 	ctx, _ := gin.CreateTestContext(nil)

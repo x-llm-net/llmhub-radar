@@ -106,10 +106,12 @@ func TestApplyHubSupplyPricingFailsClosedOnMissingSnapshot(t *testing.T) {
 
 func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 	db := setupHubSupplyPricingTestDB(t)
+	feeOverride := 1750
 	provider := &model.HubProvider{
-		OwnerUserId: 98002,
-		Name:        "Request Snapshot Provider",
-		Slug:        "request-snapshot-provider",
+		OwnerUserId:            98002,
+		Name:                   "Request Snapshot Provider",
+		Slug:                   "request-snapshot-provider",
+		PlatformFeeBasisPoints: &feeOverride,
 	}
 	require.NoError(t, db.Create(provider).Error)
 	group := &model.HubSupplyGroup{
@@ -125,6 +127,7 @@ func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 
 	// A later cache refresh must not change the pricing used by this request.
 	require.NoError(t, db.Model(group).Update("price_multiplier", 0.9).Error)
+	require.NoError(t, db.Model(provider).Update("platform_fee_basis_points", 2500).Error)
 	require.NoError(t, model.RefreshHubSupplyPricingCache())
 
 	priced, err := ApplyHubSupplyPricingFromRequest(ctx, hosttypes.GroupRatioInfo{GroupRatio: 1}, group.NewAPIChannelId)
@@ -132,6 +135,8 @@ func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 	require.Equal(t, 0.4, priced.SupplyMultiplier)
 	require.Equal(t, 0.4, priced.GroupRatio)
 	require.Equal(t, group.Id, priced.SupplyGroupId)
+	require.True(t, priced.HasPlatformFeeBasisPoints)
+	require.Equal(t, 1750, priced.PlatformFeeBasisPoints)
 }
 
 func TestApplyHubSupplyPricingFromRequestFailsClosedOnIncompleteCapturedSnapshot(t *testing.T) {

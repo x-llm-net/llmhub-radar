@@ -85,9 +85,13 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 		if containAudioTokens && containsAudioRatios {
-			service.PostAudioConsumeQuota(c, info, usage, "")
+			if err := service.PostAudioConsumeQuota(c, info, usage, ""); err != nil {
+				return service.NewBillingSettlementError(err)
+			}
 		} else {
-			service.PostTextConsumeQuota(c, info, usage, nil)
+			if err := service.PostTextConsumeQuota(c, info, usage, nil); err != nil {
+				return service.NewBillingSettlementError(err)
+			}
 		}
 		return nil
 	}
@@ -221,9 +225,13 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 	if containAudioTokens && containsAudioRatios {
-		service.PostAudioConsumeQuota(c, info, usageDto, "")
+		if err := service.PostAudioConsumeQuota(c, info, usageDto, ""); err != nil {
+			return service.NewBillingSettlementError(err)
+		}
 	} else {
-		service.PostTextConsumeQuota(c, info, usageDto, nil)
+		if err := service.PostTextConsumeQuota(c, info, usageDto, nil); err != nil {
+			return service.NewBillingSettlementError(err)
+		}
 	}
 	return nil
 }

@@ -17,6 +17,18 @@ const (
 	BillingSourceSubscription = "subscription"
 )
 
+func NewBillingSettlementError(err error) *types.NewAPIError {
+	if err == nil {
+		return nil
+	}
+	return types.NewErrorWithStatusCode(
+		fmt.Errorf("billing settlement failed: %w", err),
+		types.ErrorCodeUpdateDataError,
+		http.StatusInternalServerError,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
+
 // PreConsumeBilling 根据用户计费偏好创建 BillingSession 并执行预扣费。
 // 会话存储在 relayInfo.Billing 上，供后续 Settle / Refund 使用。
 func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {

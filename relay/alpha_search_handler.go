@@ -116,7 +116,9 @@ func AlphaSearchHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError
 	}
 
 	usage := &dto.Usage{}
-	service.PostTextConsumeQuota(c, info, usage, nil)
+	if err := service.PostTextConsumeQuota(c, info, usage, nil); err != nil {
+		return service.NewBillingSettlementError(err)
+	}
 	return nil
 }
 

@@ -13,6 +13,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -125,6 +126,8 @@ func resetHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.Gr
 	groupRatioInfo.SupplyGroupId = 0
 	groupRatioInfo.SupplyProviderId = 0
 	groupRatioInfo.SupplyOwnerUserId = 0
+	groupRatioInfo.PlatformFeeBasisPoints = 0
+	groupRatioInfo.HasPlatformFeeBasisPoints = false
 	return groupRatioInfo
 }
 
@@ -155,6 +158,12 @@ func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, chan
 	groupRatioInfo.SupplyGroupId = pricing.SupplyGroupId
 	groupRatioInfo.SupplyProviderId = pricing.SupplyProviderId
 	groupRatioInfo.SupplyOwnerUserId = pricing.SupplyOwnerUserId
+	feeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()
+	if pricing.PlatformFeeBasisPoints != nil && *pricing.PlatformFeeBasisPoints >= 0 && *pricing.PlatformFeeBasisPoints <= 10000 {
+		feeBasisPoints = *pricing.PlatformFeeBasisPoints
+	}
+	groupRatioInfo.PlatformFeeBasisPoints = feeBasisPoints
+	groupRatioInfo.HasPlatformFeeBasisPoints = true
 	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * pricing.PriceMultiplier
 	return groupRatioInfo, nil
 }

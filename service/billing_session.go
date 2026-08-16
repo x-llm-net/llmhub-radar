@@ -63,9 +63,9 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	var tokenErr error
 	if !s.relayInfo.IsPlayground {
 		if delta > 0 {
-			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
+			tokenErr = model.DecreaseTokenQuotaDirect(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
 		} else {
-			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
+			tokenErr = model.IncreaseTokenQuotaDirect(s.relayInfo.TokenId, s.relayInfo.TokenKey, -delta)
 		}
 		if tokenErr != nil {
 			requestId := strings.TrimSpace(s.relayInfo.RequestId)
@@ -73,11 +73,18 @@ func (s *BillingSession) Settle(actualQuota int) error {
 				requestId = common.NewRequestId()
 				s.relayInfo.RequestId = requestId
 			}
-			if _, err := model.CreateBillingTokenAdjustment(requestId, s.relayInfo.TokenId, delta, tokenErr); err != nil {
+			persistErr := billingOperationWithRetry(func() error {
+				_, err := model.CreateBillingTokenAdjustment(requestId, s.relayInfo.TokenId, delta, tokenErr)
+				return err
+			})
+			if persistErr != nil {
 				common.SysLog(fmt.Sprintf("error persisting token quota adjustment (requestId=%s, userId=%d, tokenId=%d, delta=%d): %s",
-					requestId, s.relayInfo.UserId, s.relayInfo.TokenId, delta, err.Error()))
+					requestId, s.relayInfo.UserId, s.relayInfo.TokenId, delta, persistErr.Error()))
+				s.settled = true
+				return fmt.Errorf("token quota adjustment failed and recovery intent could not be persisted: %w", tokenErr)
 			}
-			// 资金来源已提交，令牌调整失败交给持久化任务恢复；标记 settled 防止 Refund 误退资金。
+			// The funding change is committed and the token delta is now durable;
+			// recovery completes it without turning a successful charge into an error.
 			common.SysLog(fmt.Sprintf("error adjusting token quota after funding settled (userId=%d, tokenId=%d, delta=%d): %s",
 				s.relayInfo.UserId, s.relayInfo.TokenId, delta, tokenErr.Error()))
 		}
@@ -87,7 +94,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		s.relayInfo.SubscriptionPostDelta += int64(delta)
 	}
 	s.settled = true
-	return tokenErr
+	return nil
 }
 
 // Refund records a durable refund before returning the pre-consumed quota
@@ -104,9 +111,13 @@ func (s *BillingSession) Refund(c *gin.Context) {
 		common.SysLog("failed to build billing refund record: " + err.Error())
 		return
 	}
-	if _, err := model.CreateBillingRefund(params); err != nil {
+	createErr := billingOperationWithRetry(func() error {
+		_, err := model.CreateBillingRefund(params)
+		return err
+	})
+	if createErr != nil {
 		s.mu.Unlock()
-		common.SysLog("failed to persist billing refund record: " + err.Error())
+		common.SysLog("failed to persist billing refund record: " + createErr.Error())
 		return
 	}
 	s.refunded = true
@@ -175,6 +186,14 @@ func (s *BillingSession) FundingCommitted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.fundingSettled
+}
+
+// SettlementCommitted reports whether the final charge is already durable.
+// Token reconciliation may still be pending in billing_token_adjustments.
+func (s *BillingSession) SettlementCommitted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settled || s.fundingSettled
 }
 
 func (s *BillingSession) needsRefundLocked() bool {
@@ -256,11 +275,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		// 预扣费失败，回滚令牌额度
 		if s.tokenConsumed > 0 && !s.relayInfo.IsPlayground {
 			var rollbackErr error
-			if s.relayInfo.TaskRelayInfo != nil {
-				rollbackErr = model.IncreaseTokenQuotaDirect(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed)
-			} else {
-				rollbackErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed)
-			}
+			rollbackErr = model.IncreaseTokenQuotaDirect(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed)
 			if rollbackErr != nil {
 				common.SysLog(fmt.Sprintf("error rolling back token quota (userId=%d, tokenId=%d, amount=%d, fundingErr=%s): %s",
 					s.relayInfo.UserId, s.relayInfo.TokenId, s.tokenConsumed, err.Error(), rollbackErr.Error()))
@@ -329,7 +344,7 @@ func (s *BillingSession) reserveFunding(delta int) error {
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+		if err := model.IncreaseUserQuota(funding.userId, delta, true); err != nil {
 			common.SysLog("error rolling back wallet funding reserve: " + err.Error())
 		} else {
 			funding.consumed -= delta

@@ -394,7 +394,7 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 	return "openai"
 }
 
-func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
+func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) error {
 	originUsage := usage
 	billingUsage := effectiveBillingUsage(usage)
 	if usage == nil {
@@ -424,6 +424,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	hubAttemptResult := ClassifyHubFinalStreamResult(relayInfo, billingUsage)
 	summary.Quota, hubAttemptResult = ApplyHubStreamBillingPolicy(ctx, relayInfo, billingUsage, summary.Quota)
+	recordBillableUsage := false
 	if hubAttemptResult == HubAttemptResultFailed {
 		extraContent = append(extraContent, "流式响应异常结束且没有有效输出，本次不扣费")
 	}
@@ -452,12 +453,22 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
+		recordBillableUsage = true
+	}
+
+	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, summary.Quota)
+	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	if recordBillableUsage && billingCommitted {
 		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
-
-	if err := SettleBillingAndProviderEarning(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	logQuota := summary.Quota
+	if settlementErr != nil {
+		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
+		if !billingCommitted {
+			logQuota = 0
+			extraContent = append(extraContent, "计费结算失败，本次未扣费")
+		}
 	}
 
 	logModel := summary.ModelName
@@ -537,7 +548,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		CompletionTokens: summary.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
+		Quota:            logQuota,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(summary.UseTimeSeconds),
@@ -551,4 +562,5 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			perfmetrics.RecordRelaySample(relayInfo, relaySampleSuccess, int64(summary.CompletionTokens))
 		})
 	}
+	return settlementErr
 }

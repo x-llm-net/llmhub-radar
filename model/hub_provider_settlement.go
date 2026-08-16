@@ -50,6 +50,7 @@ const (
 var (
 	ErrHubProviderEarningReferenceConflict    = errors.New("hub provider earning reference conflict")
 	ErrHubProviderEarningCancelled            = errors.New("hub provider earning is cancelled")
+	ErrHubProviderEarningAlreadySettled       = errors.New("hub provider earning is already settled")
 	ErrHubProviderEarningSettlementDeferred   = errors.New("hub provider earning settlement is deferred")
 	ErrHubProviderWithdrawalPending           = errors.New("hub provider already has a pending withdrawal")
 	ErrHubProviderWithdrawalBelowMinimum      = errors.New("hub provider withdrawal amount is below the minimum")
@@ -181,20 +182,22 @@ func normalizeHubProviderWithdrawalPayment(payment HubProviderWithdrawalPayment)
 }
 
 type HubProviderEarningParams struct {
-	RequestId          string
-	ProviderId         int
-	OwnerUserId        int
-	ConsumerUserId     int
-	TokenId            int
-	SupplyGroupId      int
-	ChannelId          int
-	ModelName          string
-	BillingSource      string
-	GrossQuota         int
-	BaseGroupRatio     float64
-	SupplyMultiplier   float64
-	BillingRatio       float64
-	SettlementDeferred *bool
+	RequestId                 string
+	ProviderId                int
+	OwnerUserId               int
+	ConsumerUserId            int
+	TokenId                   int
+	SupplyGroupId             int
+	ChannelId                 int
+	ModelName                 string
+	BillingSource             string
+	GrossQuota                int
+	BaseGroupRatio            float64
+	SupplyMultiplier          float64
+	BillingRatio              float64
+	PlatformFeeBasisPoints    int
+	HasPlatformFeeBasisPoints bool
+	SettlementDeferred        *bool
 }
 
 type HubProviderSettlementSummary struct {
@@ -261,9 +264,15 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		params.SupplyGroupId <= 0 || params.ChannelId <= 0 || params.GrossQuota <= 0 {
 		return nil, errors.New("invalid hub provider earning")
 	}
-	feeBasisPoints, err := ResolveHubProviderPlatformFeeBasisPoints(params.ProviderId)
-	if err != nil {
-		return nil, err
+	feeBasisPoints := params.PlatformFeeBasisPoints
+	if !params.HasPlatformFeeBasisPoints {
+		var err error
+		feeBasisPoints, err = ResolveHubProviderPlatformFeeBasisPoints(params.ProviderId)
+		if err != nil {
+			return nil, err
+		}
+	} else if feeBasisPoints < 0 || feeBasisPoints > 10000 {
+		return nil, errors.New("invalid hub provider platform fee snapshot")
 	}
 	platformFee, providerIncome := CalculateHubProviderRevenueSplit(params.GrossQuota, feeBasisPoints)
 	earning := &HubProviderEarning{
@@ -370,12 +379,12 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 	})
 }
 
-// MarkHubProviderEarningReady releases a deferred earning after the consumer
-// billing and its asynchronous task success are durable.
-func MarkHubProviderEarningReady(requestId string) error {
+// MarkHubProviderEarningReady atomically publishes the final gross amount and
+// releases a deferred earning after consumer billing is durable.
+func MarkHubProviderEarningReady(requestId string, grossQuota int) error {
 	requestId = strings.TrimSpace(requestId)
-	if requestId == "" {
-		return errors.New("invalid hub provider earning request id")
+	if requestId == "" || grossQuota <= 0 {
+		return errors.New("invalid hub provider earning release")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var earning HubProviderEarning
@@ -384,17 +393,31 @@ func MarkHubProviderEarningReady(requestId string) error {
 		}
 		switch earning.Status {
 		case HubProviderEarningStatusSettled:
+			if earning.GrossQuota != grossQuota {
+				return ErrHubProviderEarningReferenceConflict
+			}
 			return nil
 		case HubProviderEarningStatusCancelled:
 			return ErrHubProviderEarningCancelled
 		}
+		platformFee, providerIncome := CalculateHubProviderRevenueSplit(grossQuota, earning.PlatformFeeBasisPoints)
 		falseValue := false
-		return tx.Model(&HubProviderEarning{}).
+		result := tx.Model(&HubProviderEarning{}).
 			Where("id = ? AND status = ?", earning.Id, HubProviderEarningStatusPending).
 			Updates(map[string]any{
-				"settlement_deferred": &falseValue,
-				"updated_at":          common.GetTimestamp(),
-			}).Error
+				"settlement_deferred":   &falseValue,
+				"gross_quota":           grossQuota,
+				"platform_fee_quota":    platformFee,
+				"provider_income_quota": providerIncome,
+				"updated_at":            common.GetTimestamp(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrHubProviderEarningReferenceConflict
+		}
+		return nil
 	})
 }
 
@@ -424,14 +447,44 @@ func CancelHubProviderEarning(requestId string) error {
 	if requestId == "" {
 		return nil
 	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return cancelHubProviderEarningTx(tx, requestId)
+	})
+}
+
+func cancelHubProviderEarningTx(tx *gorm.DB, requestId string) error {
+	var earning HubProviderEarning
+	err := lockForUpdate(tx).Where("request_id = ?", requestId).First(&earning).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch earning.Status {
+	case HubProviderEarningStatusCancelled:
+		return nil
+	case HubProviderEarningStatusSettled:
+		return ErrHubProviderEarningAlreadySettled
+	case HubProviderEarningStatusPending:
+	default:
+		return ErrHubProviderEarningReferenceConflict
+	}
 	now := common.GetTimestamp()
-	return DB.Model(&HubProviderEarning{}).
-		Where("request_id = ? AND status = ?", requestId, HubProviderEarningStatusPending).
+	result := tx.Model(&HubProviderEarning{}).
+		Where("id = ? AND status = ?", earning.Id, HubProviderEarningStatusPending).
 		Updates(map[string]any{
 			"status":       HubProviderEarningStatusCancelled,
 			"cancelled_at": now,
 			"updated_at":   now,
-		}).Error
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrHubProviderEarningReferenceConflict
+	}
+	return nil
 }
 
 func CreateHubProviderManualAdjustment(providerId, amountQuota, operatorUserId int, remark string) (*HubProviderEarning, error) {

@@ -41,6 +41,16 @@ type hubProviderChannelAPIResponse struct {
 	Data    hubProviderChannelResponse `json:"data"`
 }
 
+func TestValidateHubSupplySettingsNormalizesToRoutingPrecision(t *testing.T) {
+	req := &hubSupplySettingsRequest{
+		PriceMultiplier:   5.5555,
+		TextProbeMinutes:  10,
+		ImageProbeMinutes: 30,
+	}
+	require.NoError(t, validateHubSupplySettings(req, nil))
+	assert.Equal(t, 5.556, req.PriceMultiplier)
+}
+
 func TestHubSupplyChannelPricingFeedsBillingMultiplier(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)

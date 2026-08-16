@@ -105,6 +105,33 @@ func TestHubProviderEarningSettlementIsIdempotentByRequest(t *testing.T) {
 	assert.ErrorIs(t, err, ErrHubProviderEarningReferenceConflict)
 }
 
+func TestMarkHubProviderEarningReadyPublishesFinalGrossBeforeRecovery(t *testing.T) {
+	truncateTables(t)
+	deferred := true
+	params := HubProviderEarningParams{
+		RequestId: "req-provider-final-gross", ProviderId: 7, OwnerUserId: 70,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "video-model", BillingSource: "wallet", GrossQuota: 2000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+		SettlementDeferred: &deferred,
+	}
+	_, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	require.NoError(t, MarkHubProviderEarningReady(params.RequestId, 3000))
+
+	var earning HubProviderEarning
+	require.NoError(t, DB.Where("request_id = ?", params.RequestId).First(&earning).Error)
+	require.NotNil(t, earning.SettlementDeferred)
+	assert.False(t, *earning.SettlementDeferred)
+	assert.Equal(t, 3000, earning.GrossQuota)
+	assert.Equal(t, 3000, earning.PlatformFeeQuota+earning.ProviderIncomeQuota)
+
+	require.NoError(t, SettleHubProviderEarning(params.RequestId, earning.GrossQuota))
+	require.NoError(t, DB.Where("request_id = ?", params.RequestId).First(&earning).Error)
+	assert.Equal(t, HubProviderEarningStatusSettled, earning.Status)
+	assert.Equal(t, 3000, earning.GrossQuota)
+}
+
 func TestHubProviderEarningSnapshotsGlobalAndProviderFeeOverride(t *testing.T) {
 	truncateTables(t)
 	settings := hub_provider_settlement_setting.Get()

@@ -206,7 +206,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
-	service.PostTextConsumeQuota(c, info, usageDto, nil)
+	if err := service.PostTextConsumeQuota(c, info, usageDto, nil); err != nil {
+		return service.NewBillingSettlementError(err)
+	}
 	return nil
 }
 
@@ -307,6 +309,8 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo) (newAPI
 		return openaiErr
 	}
 
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	if err := service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil); err != nil {
+		return service.NewBillingSettlementError(err)
+	}
 	return nil
 }

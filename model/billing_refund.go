@@ -118,6 +118,12 @@ func ProcessBillingRefund(requestId string) (*BillingRefund, error) {
 		if refund.Status != BillingRefundStatusPending {
 			return fmt.Errorf("unsupported billing refund status: %s", refund.Status)
 		}
+		// A refund and cancellation of the matching provider earning are one
+		// accounting decision. If the earning is already settled, fail the
+		// refund transaction instead of making the platform absorb both sides.
+		if err := cancelHubProviderEarningTx(tx, refund.RequestId); err != nil {
+			return err
+		}
 
 		now := common.GetTimestamp()
 		switch refund.FundingSource {

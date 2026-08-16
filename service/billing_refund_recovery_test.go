@@ -151,3 +151,30 @@ func TestRecoverTaskRefundClearsQuotaAndCancelsProviderEarning(t *testing.T) {
 	require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&earning).Error)
 	assert.Equal(t, model.HubProviderEarningStatusCancelled, earning.Status)
 }
+
+func TestBillingRefundCannotOutrunSettledProviderEarning(t *testing.T) {
+	truncate(t)
+	const userID = 205
+	const requestID = "refund-after-provider-settled"
+	seedUser(t, userID, 500)
+	_, err := model.PrepareHubProviderEarning(model.HubProviderEarningParams{
+		RequestId: requestID, ProviderId: 401, OwnerUserId: 402, ConsumerUserId: userID,
+		TokenId: 403, SupplyGroupId: 404, ChannelId: 405, ModelName: "gpt-5",
+		BillingSource: BillingSourceWallet, GrossQuota: 200,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.SettleHubProviderEarning(requestID, 200))
+	_, err = model.CreateBillingRefund(model.BillingRefundParams{
+		RequestId: requestID, UserId: userID,
+		FundingSource: BillingSourceWallet, FundingQuota: 200,
+	})
+	require.NoError(t, err)
+
+	_, err = model.ProcessBillingRefund(requestID)
+	require.ErrorIs(t, err, model.ErrHubProviderEarningAlreadySettled)
+	assert.Equal(t, 500, getUserQuota(t, userID))
+
+	var refund model.BillingRefund
+	require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&refund).Error)
+	assert.Equal(t, model.BillingRefundStatusPending, refund.Status)
+}

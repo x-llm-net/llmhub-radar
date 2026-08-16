@@ -37,6 +37,18 @@ type sunoFailurePollingAdaptor struct {
 
 type sunoSuccessPollingAdaptor struct{}
 
+func TestTaskPollingMapSeparatesSameUpstreamIDAcrossChannels(t *testing.T) {
+	first := &model.Task{ID: 1, ChannelId: 101}
+	second := &model.Task{ID: 2, ChannelId: 202}
+	tasks := map[string]*model.Task{
+		taskPollingKey(first.ChannelId, "1"):  first,
+		taskPollingKey(second.ChannelId, "1"): second,
+	}
+
+	assert.Same(t, first, taskFromPollingMap(tasks, first.ChannelId, "1"))
+	assert.Same(t, second, taskFromPollingMap(tasks, second.ChannelId, "1"))
+}
+
 func (a *sunoFailurePollingAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
 func (a *sunoFailurePollingAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {

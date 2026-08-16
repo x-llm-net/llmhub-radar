@@ -196,6 +196,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	}
 
 	// record all the consume log even if quota is 0
+	recordBillableUsage := false
 	if hubAttemptResult == HubAttemptResultFailed {
 		logContent += "，流式响应异常结束且没有有效输出，本次不扣费"
 		logger.LogError(ctx, fmt.Sprintf("abnormal realtime stream ended without usable output, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota))
@@ -207,13 +208,22 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, "+
 			"tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota))
 	} else {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
+		recordBillableUsage = true
 	}
 
 	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, quota)
+	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	if recordBillableUsage && billingCommitted {
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
+	}
 	if settlementErr != nil {
 		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
+	}
+	logQuota := quota
+	if settlementErr != nil && !billingCommitted {
+		logQuota = 0
+		logContent += "，计费结算失败，本次未扣费"
 	}
 
 	logModel := modelName
@@ -232,7 +242,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		CompletionTokens: usage.OutputTokens,
 		ModelName:        logModel,
 		TokenName:        tokenName,
-		Quota:            quota,
+		Quota:            logQuota,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),
@@ -279,7 +289,7 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 		(promptCacheCreatePrice - quotaPrice)))
 }
 
-func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent string) {
+func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent string) error {
 
 	var tieredUsedVars map[string]bool
 	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
@@ -319,6 +329,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		},
 		ModelName:  relayInfo.OriginModelName,
 		UsePrice:   usePrice,
+		ModelPrice: modelPrice,
 		ModelRatio: modelRatio,
 		GroupRatio: groupRatio,
 	}
@@ -342,6 +353,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 
 	// record all the consume log even if quota is 0
+	recordBillableUsage := false
 	if hubAttemptResult == HubAttemptResultFailed {
 		logContent += "，流式响应异常结束且没有有效输出，本次不扣费"
 		logger.LogError(ctx, fmt.Sprintf("abnormal audio stream ended without usable output, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, relayInfo.OriginModelName, relayInfo.FinalPreConsumedQuota))
@@ -353,12 +365,25 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, "+
 			"tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, relayInfo.OriginModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
+		recordBillableUsage = true
+	}
+
+	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, quota)
+	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	if recordBillableUsage && billingCommitted {
 		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
-
-	if err := SettleBillingAndProviderEarning(ctx, relayInfo, quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	logQuota := quota
+	if settlementErr != nil {
+		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
+		if !billingCommitted {
+			logQuota = 0
+			if extraContent != "" {
+				extraContent += ", "
+			}
+			extraContent += "计费结算失败，本次未扣费"
+		}
 	}
 
 	logModel := relayInfo.OriginModelName
@@ -377,7 +402,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		CompletionTokens: usage.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        tokenName,
-		Quota:            quota,
+		Quota:            logQuota,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(useTimeSeconds),
@@ -391,6 +416,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 			perfmetrics.RecordRelaySample(relayInfo, relaySampleSuccess, int64(usage.CompletionTokens))
 		})
 	}
+	return settlementErr
 }
 
 func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
@@ -410,11 +436,7 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 	if !relayInfo.TokenUnlimited && token.RemainQuota < quota {
 		return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota(token.RemainQuota), logger.FormatQuota(quota))
 	}
-	if relayInfo.TaskRelayInfo != nil {
-		err = model.DecreaseTokenQuotaDirect(relayInfo.TokenId, relayInfo.TokenKey, quota)
-	} else {
-		err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
-	}
+	err = model.DecreaseTokenQuotaDirect(relayInfo.TokenId, relayInfo.TokenKey, quota)
 	if err != nil {
 		return err
 	}

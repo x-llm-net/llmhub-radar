@@ -161,17 +161,24 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			info.PriceData = originPriceData
 			return types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry(), types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		}
-		service.PostTextConsumeQuota(c, info, usageDto, nil)
+		settlementErr := service.PostTextConsumeQuota(c, info, usageDto, nil)
 
 		info.OriginModelName = originModelName
 		info.PriceData = originPriceData
+		if settlementErr != nil {
+			return service.NewBillingSettlementError(settlementErr)
+		}
 		return nil
 	}
 
 	if strings.HasPrefix(info.OriginModelName, "gpt-4o-audio") {
-		service.PostAudioConsumeQuota(c, info, usageDto, "")
+		if err := service.PostAudioConsumeQuota(c, info, usageDto, ""); err != nil {
+			return service.NewBillingSettlementError(err)
+		}
 	} else {
-		service.PostTextConsumeQuota(c, info, usageDto, nil)
+		if err := service.PostTextConsumeQuota(c, info, usageDto, nil); err != nil {
+			return service.NewBillingSettlementError(err)
+		}
 	}
 	return nil
 }

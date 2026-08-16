@@ -101,7 +101,7 @@ func validateHubSupplySettings(req *hubSupplySettingsRequest, existing *model.Hu
 	if !validHubProviderChannelProbeMinutes(req.TextProbeMinutes, req.ImageProbeMinutes) {
 		return fmt.Errorf("probe intervals must be between %d and %d minutes", hubProviderChannelProbeMinutesMin, hubProviderChannelProbeMinutesMax)
 	}
-	req.PriceMultiplier = math.Round(req.PriceMultiplier*10000) / 10000
+	req.PriceMultiplier = math.Round(req.PriceMultiplier*1000) / 1000
 	return nil
 }
 

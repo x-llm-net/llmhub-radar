@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -19,11 +20,13 @@ type realtimeBillingSettler struct {
 	preConsumedQuota int
 	reserveTargets   []int
 	settleTargets    []int
+	settleErr        error
+	committed        bool
 }
 
 func (s *realtimeBillingSettler) Settle(quota int) error {
 	s.settleTargets = append(s.settleTargets, quota)
-	return nil
+	return s.settleErr
 }
 
 func (*realtimeBillingSettler) Refund(*gin.Context) {}
@@ -39,6 +42,8 @@ func (s *realtimeBillingSettler) Reserve(targetQuota int) error {
 	}
 	return nil
 }
+
+func (s *realtimeBillingSettler) SettlementCommitted() bool { return s.committed }
 
 func TestRealtimeBillingReservesCumulativeUsageAndSettlesOnce(t *testing.T) {
 	truncate(t)
@@ -167,6 +172,83 @@ func TestRealtimeFixedPriceSettlesConfiguredPrice(t *testing.T) {
 
 	assert.Equal(t, []int{expectedQuota}, billing.settleTargets)
 	assert.Greater(t, expectedQuota, 0)
+}
+
+func TestAudioFixedPriceSettlesConfiguredPrice(t *testing.T) {
+	truncate(t)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	billing := &realtimeBillingSettler{}
+	info := &relaycommon.RelayInfo{
+		RequestId:       "audio-fixed-price",
+		UserId:          103,
+		TokenId:         203,
+		OriginModelName: "audio-fixed-price-model",
+		UsingGroup:      "default",
+		BillingSource:   BillingSourceWallet,
+		Billing:         billing,
+		StartTime:       time.Now().Add(-time.Second),
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 303},
+		PriceData: hosttypes.PriceData{
+			UsePrice:   true,
+			ModelPrice: 0.25,
+			GroupRatioInfo: hosttypes.GroupRatioInfo{
+				GroupRatio: 2,
+			},
+		},
+	}
+	usage := &dto.Usage{
+		PromptTokens:     1,
+		CompletionTokens: 1,
+		TotalTokens:      2,
+		PromptTokensDetails: dto.InputTokenDetails{
+			TextTokens: 1,
+		},
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			TextTokens: 1,
+		},
+	}
+	expectedQuota, clamp := calculateAudioQuota(QuotaInfo{
+		UsePrice: true, ModelPrice: 0.25, GroupRatio: 2,
+	})
+	require.Nil(t, clamp)
+
+	require.NoError(t, PostAudioConsumeQuota(ctx, info, usage, ""))
+	assert.Equal(t, []int{expectedQuota}, billing.settleTargets)
+	assert.Greater(t, expectedQuota, 0)
+}
+
+func TestTextSettlementFailureDoesNotIncrementUsageCounters(t *testing.T) {
+	truncate(t)
+	const userID = 104
+	const channelID = 304
+	seedUser(t, userID, 1000)
+	seedChannel(t, channelID)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	billing := &realtimeBillingSettler{settleErr: assert.AnError}
+	info := &relaycommon.RelayInfo{
+		RequestId:       "text-settlement-failure",
+		UserId:          userID,
+		TokenId:         204,
+		OriginModelName: "gpt-5",
+		UsingGroup:      "default",
+		BillingSource:   BillingSourceWallet,
+		Billing:         billing,
+		StartTime:       time.Now().Add(-time.Second),
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: channelID},
+		PriceData: hosttypes.PriceData{
+			ModelRatio:     1,
+			GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+	usage := &dto.Usage{PromptTokens: 10, CompletionTokens: 1, TotalTokens: 11}
+
+	require.ErrorIs(t, PostTextConsumeQuota(ctx, info, usage, nil), assert.AnError)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, userID).Error)
+	assert.Zero(t, user.UsedQuota)
+	assert.Zero(t, user.RequestCount)
 }
 
 func TestCountTokenRealtimeRecognizesTextDeltaEvents(t *testing.T) {

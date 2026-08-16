@@ -736,6 +736,17 @@ func RelayTask(c *gin.Context) {
 				taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
 				break
 			}
+			if policy := service.GetHubTokenRoutingPolicy(c); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
+				phase := "preferred"
+				if !model.ChannelMatchesProviderFilter(channel.Id, model.ChannelProviderFilter{
+					ProviderID: policy.ProviderID,
+					Mode:       model.ChannelProviderOnly,
+				}) {
+					phase = "platform_fallback"
+				}
+				common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, phase)
+				common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, phase == "platform_fallback")
+			}
 		} else {
 			var channelErr *types.NewAPIError
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
@@ -802,7 +813,16 @@ func RelayTask(c *gin.Context) {
 	if taskErr == nil {
 		if settleErr := service.SettleTaskBillingAndPrepareProviderEarning(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
+			if !service.BillingSettlementCommitted(relayInfo) {
+				taskErr = service.TaskErrorWrapperLocal(
+					fmt.Errorf("billing settlement failed: %w", settleErr),
+					"billing_settlement_failed",
+					http.StatusInternalServerError,
+				)
+			}
 		}
+	}
+	if taskErr == nil {
 		service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)

@@ -147,7 +147,7 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 				nullTaskIds = append(nullTaskIds, task.ID)
 				continue
 			}
-			taskM[upstreamID] = task
+			taskM[taskPollingKey(task.ChannelId, upstreamID)] = task
 			taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], upstreamID)
 		}
 		if len(nullTaskIds) > 0 {
@@ -220,7 +220,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
 		var failedIDs []int64
 		for _, upstreamID := range taskIds {
-			if t, ok := taskM[upstreamID]; ok {
+			if t := taskFromPollingMap(taskM, channelId, upstreamID); t != nil {
 				failedIDs = append(failedIDs, t.ID)
 			}
 		}
@@ -276,7 +276,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		task := taskM[responseItem.TaskID]
+		task := taskFromPollingMap(taskM, channelId, responseItem.TaskID)
 		if task == nil {
 			logger.LogWarn(ctx, fmt.Sprintf("Suno task response ignored: unknown task_id=%s", responseItem.TaskID))
 			continue
@@ -413,7 +413,7 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
 		var failedIDs []int64
 		for _, upstreamID := range taskIds {
-			if t, ok := taskM[upstreamID]; ok {
+			if t := taskFromPollingMap(taskM, channelId, upstreamID); t != nil {
 				failedIDs = append(failedIDs, t.ID)
 			}
 		}
@@ -479,7 +479,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		proxy = HubSupplyTaskProxyMarker
 	}
 
-	task := taskM[taskId]
+	task := taskFromPollingMap(taskM, ch.Id, taskId)
 	if task == nil {
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
@@ -648,6 +648,18 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	return nil
+}
+
+func taskPollingKey(channelId int, upstreamTaskId string) string {
+	return fmt.Sprintf("%d\x00%s", channelId, upstreamTaskId)
+}
+
+func taskFromPollingMap(taskM map[string]*model.Task, channelId int, upstreamTaskId string) *model.Task {
+	if task := taskM[taskPollingKey(channelId, upstreamTaskId)]; task != nil {
+		return task
+	}
+	// Keep compatibility with focused callers that build a one-channel map.
+	return taskM[upstreamTaskId]
 }
 
 func redactVideoResponseBody(body []byte) []byte {

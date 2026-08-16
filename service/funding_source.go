@@ -53,9 +53,9 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
+		return model.DecreaseUserQuota(w.userId, delta, true)
 	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	return model.IncreaseUserQuota(w.userId, -delta, true)
 }
 
 func (w *WalletFunding) Refund() error {
@@ -64,7 +64,7 @@ func (w *WalletFunding) Refund() error {
 	}
 	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
 	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	return model.IncreaseUserQuota(w.userId, w.consumed, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -116,14 +116,13 @@ func (s *SubscriptionFunding) Refund() error {
 	if s.preConsumed <= 0 {
 		return nil
 	}
-	return refundWithRetry(func() error {
+	return billingOperationWithRetry(func() error {
 		return model.RefundSubscriptionPreConsume(s.requestId)
 	})
 }
 
-// refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！
-// try to refund with retries, only for refund functions based on transactions!!!
-func refundWithRetry(fn func() error) error {
+// billingOperationWithRetry is only for idempotent database operations.
+func billingOperationWithRetry(fn func() error) error {
 	if fn == nil {
 		return nil
 	}
