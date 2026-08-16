@@ -44,23 +44,27 @@ var (
 	hubSupplyPricingByChannel = map[int]HubSupplyPricing{}
 	hubSupplyConfiguredIDs    = map[int]struct{}{}
 	hubProviderRoutingBySlug  = map[string]HubProviderRoutingInfo{}
+	hubProviderRoutingByID    = map[int]HubProviderRoutingInfo{}
 )
 
 type hubSupplyPricingCacheData struct {
 	pricingByChannel map[int]HubSupplyPricing
 	configuredIDs    map[int]struct{}
 	providerBySlug   map[string]HubProviderRoutingInfo
+	providerByID     map[int]HubProviderRoutingInfo
 }
 
 func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	pricingByChannel := make(map[int]HubSupplyPricing)
 	configuredIDs := make(map[int]struct{})
 	providerBySlug := make(map[string]HubProviderRoutingInfo)
+	providerByID := make(map[int]HubProviderRoutingInfo)
 	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) || !DB.Migrator().HasTable(&HubProvider{}) {
 		return &hubSupplyPricingCacheData{
 			pricingByChannel: pricingByChannel,
 			configuredIDs:    configuredIDs,
 			providerBySlug:   providerBySlug,
+			providerByID:     providerByID,
 		}, nil
 	}
 
@@ -69,9 +73,11 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		return nil, err
 	}
 	for _, provider := range providers {
-		providerBySlug[provider.Slug] = HubProviderRoutingInfo{
+		info := HubProviderRoutingInfo{
 			Id: provider.Id, Slug: provider.Slug, Status: provider.Status,
 		}
+		providerBySlug[provider.Slug] = info
+		providerByID[provider.Id] = info
 	}
 
 	type hubSupplyPricingRow struct {
@@ -107,6 +113,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		pricingByChannel: pricingByChannel,
 		configuredIDs:    configuredIDs,
 		providerBySlug:   providerBySlug,
+		providerByID:     providerByID,
 	}, nil
 }
 
@@ -122,6 +129,7 @@ func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
 	hubSupplyPricingByChannel = data.pricingByChannel
 	hubSupplyConfiguredIDs = data.configuredIDs
 	hubProviderRoutingBySlug = data.providerBySlug
+	hubProviderRoutingByID = data.providerByID
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
 }
@@ -189,6 +197,13 @@ func IsHubSupplyChannelProviderActive(channelID int) bool {
 func GetHubProviderRoutingBySlug(slug string) (HubProviderRoutingInfo, bool) {
 	hubSupplyPricingMu.RLock()
 	provider, ok := hubProviderRoutingBySlug[slug]
+	hubSupplyPricingMu.RUnlock()
+	return provider, ok
+}
+
+func GetHubProviderRoutingByID(providerID int) (HubProviderRoutingInfo, bool) {
+	hubSupplyPricingMu.RLock()
+	provider, ok := hubProviderRoutingByID[providerID]
 	hubSupplyPricingMu.RUnlock()
 	return provider, ok
 }

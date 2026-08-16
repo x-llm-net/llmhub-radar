@@ -181,4 +181,53 @@ describe('Hub routing policy editor', () => {
     await act(async () => root.unmount())
     container.remove()
   })
+
+  test('initializes premium-only families with a valid range', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let nextValue: Array<{
+      family: string
+      min_multiplier: number
+      max_multiplier: number
+      exact_multiplier?: number
+    }> = []
+    const premiumOptions: HubTokenRoutingOptions = {
+      ...options,
+      families: [
+        {
+          ...options.families[0],
+          min_multiplier: 5,
+          max_multiplier: 6,
+          slider_max_multiplier: 6,
+        },
+      ],
+    }
+
+    await act(async () =>
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <HubRoutingPolicyEditor
+            options={premiumOptions}
+            value={[]}
+            onChange={(value) => {
+              nextValue = value
+            }}
+          />
+        </I18nextProvider>
+      )
+    )
+
+    const addButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Add model family')
+    )
+    assert.ok(addButton)
+    await act(async () => addButton.click())
+
+    assert.equal(nextValue[0]?.min_multiplier, 5)
+    assert.equal(nextValue[0]?.max_multiplier, 5)
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
 })

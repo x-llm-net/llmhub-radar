@@ -48,6 +48,11 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 	groupRatioInfo := hosttypes.GroupRatioInfo{
 		GroupRatio:        1.0, // default ratio
 		GroupSpecialRatio: -1,
+		BaseGroupRatio:    1.0,
+		SupplyMultiplier:  1.0,
+	}
+	if _, exists := common.GetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy); exists {
+		return groupRatioInfo
 	}
 
 	// check auto group
@@ -69,7 +74,6 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
-	groupRatioInfo.SupplyMultiplier = 1
 
 	return groupRatioInfo
 }

@@ -54,3 +54,19 @@ func TestShouldRetryTreatsEndpointUnsupportedAsChannelScoped(t *testing.T) {
 
 	assert.True(t, shouldRetry(ctx, endpointErr, 1))
 }
+
+func TestRealtimeErrorsAreTerminalAfterClientUpgrade(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayErr := types.NewErrorWithStatusCode(
+		io.ErrUnexpectedEOF,
+		types.ErrorCodeBadResponse,
+		http.StatusBadGateway,
+	)
+
+	result := applyRelayFormatRetryPolicy(types.RelayFormatOpenAIRealtime, relayErr)
+
+	require.Same(t, relayErr, result)
+	require.True(t, types.IsSkipRetryError(result))
+	require.False(t, shouldRetry(ctx, result, 1))
+}

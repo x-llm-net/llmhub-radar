@@ -1,6 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import {
+  AlertCircle,
+  ChevronDown,
+  KeyRound,
+  RefreshCw,
+  Settings2,
+  WalletCards,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -154,18 +161,30 @@ export function ApiKeysMutateDrawer({
     apiKeyData?.data?.hub_routing_policy?.mode === 'provider'
       ? apiKeyData.data.hub_routing_policy.provider_id
       : undefined
-  const { data: routingOptionsData, isFetching: routingOptionsFetching } =
-    useQuery({
-      queryKey: [
-        'hub-token-routing-options',
-        window.location.hostname,
-        editingProviderId,
-      ],
-      queryFn: () => getHubTokenRoutingOptions(editingProviderId),
-      enabled: open && (!isUpdate || apiKeyFetched),
-      staleTime: 15_000,
-      retry: false,
-    })
+  const editingLegacyKey = !!(
+    isUpdate &&
+    apiKeyFetched &&
+    apiKeyData?.success === true &&
+    apiKeyData.data &&
+    !apiKeyData.data.hub_routing_policy
+  )
+  const requiresHubRouting = !isUpdate || (apiKeyFetched && !editingLegacyKey)
+  const {
+    data: routingOptionsData,
+    isFetching: routingOptionsFetching,
+    isError: routingOptionsError,
+    refetch: refetchRoutingOptions,
+  } = useQuery({
+    queryKey: [
+      'hub-token-routing-options',
+      window.location.hostname,
+      editingProviderId,
+    ],
+    queryFn: () => getHubTokenRoutingOptions(editingProviderId),
+    enabled: open && requiresHubRouting,
+    staleTime: 15_000,
+    retry: false,
+  })
 
   const {
     data: autoGroupsData,
@@ -240,7 +259,11 @@ export function ApiKeysMutateDrawer({
   const routingOptions = routingOptionsData?.success
     ? routingOptionsData.data
     : undefined
-  const hubRoutingEnabled = !!routingOptions
+  const hubRoutingEnabled = requiresHubRouting && !!routingOptions
+  const routingOptionsUnavailable =
+    requiresHubRouting &&
+    !routingOptionsFetching &&
+    (routingOptionsError || !routingOptions)
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
@@ -340,6 +363,14 @@ export function ApiKeysMutateDrawer({
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
     try {
+      if (requiresHubRouting && !routingOptions) {
+        toast.error(
+          t(
+            'Routing options are unavailable. Retry before saving this API key.'
+          )
+        )
+        return
+      }
       if (routingOptions && data.hub_selections.length === 0) {
         toast.error(t('Add at least one model family'))
         return
@@ -498,7 +529,7 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              {routingOptionsFetching && (
+              {requiresHubRouting && routingOptionsFetching && (
                 <div className='space-y-3 rounded-md border p-3'>
                   <Skeleton className='h-5 w-44' />
                   <Skeleton className='h-20 w-full' />
@@ -522,7 +553,34 @@ export function ApiKeysMutateDrawer({
                   )}
                 />
               )}
-              {!routingOptionsFetching && !hubRoutingEnabled && (
+              {routingOptionsUnavailable && (
+                <div
+                  role='alert'
+                  className='border-destructive/40 bg-destructive/5 flex items-start gap-3 rounded-md border p-3'
+                >
+                  <AlertCircle className='text-destructive mt-0.5 size-4 shrink-0' />
+                  <div className='min-w-0 flex-1 space-y-1'>
+                    <div className='text-sm font-medium'>
+                      {t('Failed to load')}
+                    </div>
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Routing options are unavailable. Retry before saving this API key.'
+                      )}
+                    </p>
+                  </div>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => void refetchRoutingOptions()}
+                  >
+                    <RefreshCw className='mr-1.5 size-3.5' />
+                    {t('Retry')}
+                  </Button>
+                </div>
+              )}
+              {editingLegacyKey && (
                 <FormField
                   control={form.control}
                   name='group'
@@ -566,7 +624,7 @@ export function ApiKeysMutateDrawer({
                 />
               )}
 
-              {!hubRoutingEnabled && selectedGroup === 'auto' && (
+              {editingLegacyKey && selectedGroup === 'auto' && (
                 <FormField
                   control={form.control}
                   name='auto_groups'
@@ -607,7 +665,7 @@ export function ApiKeysMutateDrawer({
                 />
               )}
 
-              {!hubRoutingEnabled && selectedGroup === 'auto' && (
+              {editingLegacyKey && selectedGroup === 'auto' && (
                 <FormField
                   control={form.control}
                   name='cross_group_retry'

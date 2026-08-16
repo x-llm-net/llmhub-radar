@@ -131,12 +131,12 @@ func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
 	assert.Equal(t, 5.5, options.Families[0].SliderMaxMultiplier)
 }
 
-func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultipliers(t *testing.T) {
+func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultiplier(t *testing.T) {
 	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
 		Mode: HubTokenRoutingModePublic,
 		Selections: []HubTokenRoutingSelection{{
 			Family:           "anthropic",
-			ExactMultipliers: []float64{0.2, 0.2004, 0.5},
+			ExactMultipliers: []float64{0.2, 0.2004},
 		}},
 	}, 7)
 
@@ -144,9 +144,21 @@ func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultipli
 	require.NotNil(t, policy)
 	assert.Equal(t, HubTokenRoutingModeProvider, policy.Mode)
 	assert.Equal(t, 7, policy.ProviderID)
-	assert.Equal(t, []float64{0.2, 0.5}, policy.Selections[0].ExactMultipliers)
+	assert.Equal(t, []float64{0.2}, policy.Selections[0].ExactMultipliers)
 	assert.True(t, policy.AllowsMultiplier("anthropic", 0.2))
 	assert.False(t, policy.AllowsMultiplier("anthropic", 0.3))
+}
+
+func TestNormalizeHubTokenRoutingPolicyRejectsMultipleProviderMultipliers(t *testing.T) {
+	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{
+			Family:           "anthropic",
+			ExactMultipliers: []float64{0.2, 0.5},
+		}},
+	}, 7)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires exactly one multiplier")
 }
 
 func TestNormalizeHubTokenRoutingPolicyRejectsDuplicateFamiliesAndInvalidRanges(t *testing.T) {

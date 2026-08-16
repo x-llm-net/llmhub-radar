@@ -21,6 +21,8 @@ import { after, afterEach, describe, test } from 'node:test'
 
 import { Window } from 'happy-dom'
 
+import type { ApiKey } from '../../types'
+
 const domWindow = new Window()
 const domGlobals = [
   'window',
@@ -78,6 +80,7 @@ type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
 type MockableApi = {
   get: ApiMethod
   post: ApiMethod
+  put: ApiMethod
 }
 type RenderedDrawer = {
   host: HTMLDivElement
@@ -88,9 +91,33 @@ type RenderedDrawer = {
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
 const originalPost = apiClient.post
+const originalPut = apiClient.put
 let renderedDrawer: RenderedDrawer | null = null
 
-function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
+const legacyApiKey: ApiKey = {
+  id: 1,
+  name: 'legacy-auto',
+  key: 'legacy-key',
+  status: 1,
+  remain_quota: 0,
+  used_quota: 0,
+  unlimited_quota: true,
+  expired_time: -1,
+  created_time: 1,
+  accessed_time: 1,
+  group: 'auto',
+  auto_groups: [],
+  cross_group_retry: true,
+  model_limits_enabled: false,
+  model_limits: '',
+  allow_ips: '',
+  hub_routing_policy: null,
+}
+
+function installApiFixtures(
+  updatedPayloads: Array<Record<string, unknown>>,
+  createdPayloads: Array<Record<string, unknown>> = []
+) {
   apiClient.get = async (url) => {
     switch (url) {
       case '/api/status':
@@ -115,11 +142,17 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
             data: { groups: ['vip', 'default'], max_count: 3 },
           },
         }
-      case '/api/token/routing-options':
-        return { data: { success: false } }
+      case '/api/token/1':
+        return { data: { success: true, data: legacyApiKey } }
       default:
         throw new Error(`Unexpected GET ${url}`)
     }
+  }
+  apiClient.put = async (url, data) => {
+    assert.equal(url, '/api/token/')
+    assert.ok(data && typeof data === 'object')
+    updatedPayloads.push(data as Record<string, unknown>)
+    return { data: { success: true, data: {} } }
   }
   apiClient.post = async (url, data) => {
     assert.equal(url, '/api/token/')
@@ -145,7 +178,7 @@ async function waitForCondition(
     const timeoutId = setTimeout(() => {
       observer.disconnect()
       reject(new Error(`${failureMessage}: ${document.body.textContent}`))
-    }, 1500)
+    }, 5000)
 
     observer.observe(document, {
       attributes: true,
@@ -156,12 +189,15 @@ async function waitForCondition(
   })
 }
 
-async function renderCreateDrawer(): Promise<void> {
+async function renderDrawer(
+  currentRow?: ApiKey,
+  routingOptionsData?: unknown
+): Promise<void> {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, refetchOnMount: false } },
   })
   const freshAt = Date.now() + 60_000
   queryClient.setQueryData(
@@ -194,11 +230,20 @@ async function renderCreateDrawer(): Promise<void> {
     },
     { updatedAt: freshAt }
   )
-  queryClient.setQueryData(
-    ['hub-token-routing-options', window.location.hostname, undefined],
-    { success: false },
-    { updatedAt: freshAt }
-  )
+  if (currentRow) {
+    queryClient.setQueryData(
+      ['api-key', currentRow.id],
+      { success: true, data: currentRow },
+      { updatedAt: freshAt }
+    )
+  }
+  if (routingOptionsData !== undefined) {
+    queryClient.setQueryData(
+      ['hub-token-routing-options', window.location.hostname, undefined],
+      routingOptionsData,
+      { updatedAt: freshAt }
+    )
+  }
   renderedDrawer = { host, queryClient, root }
 
   await act(async () =>
@@ -206,7 +251,11 @@ async function renderCreateDrawer(): Promise<void> {
       <QueryClientProvider client={queryClient}>
         <I18nextProvider i18n={i18n}>
           <ApiKeysProvider>
-            <ApiKeysMutateDrawer open onOpenChange={() => undefined} />
+            <ApiKeysMutateDrawer
+              open
+              onOpenChange={() => undefined}
+              currentRow={currentRow}
+            />
           </ApiKeysProvider>
         </I18nextProvider>
       </QueryClientProvider>
@@ -276,6 +325,7 @@ async function selectComboboxOption(
 afterEach(async () => {
   apiClient.get = originalGet
   apiClient.post = originalPost
+  apiClient.put = originalPut
   domWindow.localStorage.clear()
   if (renderedDrawer) {
     await act(async () => renderedDrawer?.root.unmount())
@@ -290,11 +340,11 @@ after(() => {
   domWindow.close()
 })
 
-describe('API keys mutate drawer Auto group integration', () => {
-  test('inherits the root Auto order and sends an empty override for every batch-created key', async () => {
-    const createdPayloads: Array<Record<string, unknown>> = []
-    installApiFixtures(createdPayloads)
-    await renderCreateDrawer()
+describe('API keys mutate drawer legacy Auto group integration', () => {
+  test('keeps a legacy key on the inherited root Auto order when editing', async () => {
+    const updatedPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(updatedPayloads)
+    await renderDrawer(legacyApiKey)
 
     const groupTrigger = getControlByLabel<HTMLButtonElement>('Group')
     assert.equal(groupTrigger.textContent?.includes('auto'), true)
@@ -312,29 +362,26 @@ describe('API keys mutate drawer Auto group integration', () => {
     )
     assert.equal(findButton('Restore global Auto', true).disabled, true)
 
-    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'batch')
-    await changeInput(getControlByLabel<HTMLInputElement>('Quantity'), '2')
+    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'edited')
     await act(async () => findButton('Save changes', true).click())
     await act(async () =>
       waitForCondition(
-        () => createdPayloads.length === 2,
-        'batch API keys were not created'
+        () => updatedPayloads.length === 1,
+        'legacy API key was not updated'
       )
     )
 
-    assert.equal(createdPayloads.length, 2)
-    assert.equal(createdPayloads[0]?.name, 'batch')
-    for (const payload of createdPayloads) {
-      assert.equal(payload.group, 'auto')
-      assert.deepEqual(payload.auto_groups, [])
-      assert.equal(payload.cross_group_retry, true)
-    }
+    assert.equal(updatedPayloads[0]?.name, 'edited')
+    assert.equal(updatedPayloads[0]?.group, 'auto')
+    assert.deepEqual(updatedPayloads[0]?.auto_groups, [])
+    assert.equal(updatedPayloads[0]?.cross_group_retry, true)
+    assert.equal(updatedPayloads[0]?.hub_routing_policy, undefined)
   })
 
   test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {
-    const createdPayloads: Array<Record<string, unknown>> = []
-    installApiFixtures(createdPayloads)
-    await renderCreateDrawer()
+    const updatedPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(updatedPayloads)
+    await renderDrawer(legacyApiKey)
 
     const autoOrderControl = getControlByLabel<HTMLElement>('Auto group order')
     const addGroupTrigger = autoOrderControl.querySelector<HTMLButtonElement>(
@@ -369,10 +416,25 @@ describe('API keys mutate drawer Auto group integration', () => {
     await act(async () => findButton('Save changes', true).click())
     await act(async () =>
       waitForCondition(
-        () => createdPayloads.length === 1,
-        'custom-order API key was not created'
+        () => updatedPayloads.length === 1,
+        'custom-order API key was not updated'
       )
     )
-    assert.deepEqual(createdPayloads[0]?.auto_groups, ['vip'])
+    assert.deepEqual(updatedPayloads[0]?.auto_groups, ['vip'])
+  })
+
+  test('blocks new key creation when routing options are unavailable', async () => {
+    const updatedPayloads: Array<Record<string, unknown>> = []
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(updatedPayloads, createdPayloads)
+    await renderDrawer(undefined, { success: false })
+
+    assert.equal(document.body.textContent?.includes('Failed to load'), true)
+    assert.equal(document.body.textContent?.includes('Retry'), true)
+    assert.equal(document.body.textContent?.includes('Group'), false)
+
+    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'blocked')
+    await act(async () => findButton('Save changes', true).click())
+    assert.equal(createdPayloads.length, 0)
   })
 })

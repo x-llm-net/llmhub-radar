@@ -147,6 +147,31 @@ func TestApplyHubSupplyPricingFromRequestFailsClosedOnIncompleteCapturedSnapshot
 	require.Contains(t, err.Error(), "pricing snapshot is missing")
 }
 
+func TestHandleGroupRatioIgnoresLegacyRatiosForHubRoutingPolicy(t *testing.T) {
+	originalGroupRatios := ratio_setting.GroupRatio2JSONString()
+	originalOverrides := ratio_setting.GroupGroupRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":2}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"default":3}}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatios))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(originalOverrides))
+	})
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	info := &relaycommon.RelayInfo{UserGroup: "vip", UsingGroup: "default"}
+
+	ratio := HandleGroupRatio(ctx, info)
+
+	require.Equal(t, 1.0, ratio.GroupRatio)
+	require.Equal(t, 1.0, ratio.BaseGroupRatio)
+	require.Equal(t, 1.0, ratio.SupplyMultiplier)
+	require.Equal(t, -1.0, ratio.GroupSpecialRatio)
+	require.False(t, ratio.HasSpecialRatio)
+}
+
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

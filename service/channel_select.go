@@ -145,6 +145,10 @@ func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.
 	providerID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyHubRequestedProviderId)
 	if policy.Mode == model.HubTokenRoutingModeProvider && policy.ProviderID > 0 {
 		providerID = policy.ProviderID
+		provider, ok := model.GetHubProviderRoutingByID(providerID)
+		if !ok || provider.Status != model.HubProviderStatusActive {
+			return nil, param.TokenGroup, errors.New("provider is unavailable")
+		}
 	}
 	retry := param.GetRetry()
 	isFallback := common.GetContextKeyBool(param.Ctx, constant.ContextKeyHubRoutingFallback)

@@ -289,6 +289,24 @@ func TestBuildChannelAffinityCacheKeySuffixServiceTierIncludesNormalizedModel(t 
 	require.Equal(t, legacyFirst, legacySecond)
 }
 
+func TestBuildChannelAffinityCacheKeySuffixScopesHubPoliciesByModelAndProvider(t *testing.T) {
+	rule := operation_setting.ChannelAffinityRule{
+		Name:              "hub-policy-scope",
+		IncludeRuleName:   true,
+		IncludeUsingGroup: true,
+		IncludeModelName:  false,
+	}
+
+	first := buildChannelAffinityCacheKeySuffix(rule, "gemini-2.5-pro-thinking-1024", "default", "session-1", "hub", "provider", "7")
+	sameModel := buildChannelAffinityCacheKeySuffix(rule, "gemini-2.5-pro-thinking-8192", "default", "session-1", "hub", "provider", "7")
+	otherModel := buildChannelAffinityCacheKeySuffix(rule, "gpt-5", "default", "session-1", "hub", "provider", "7")
+	otherProvider := buildChannelAffinityCacheKeySuffix(rule, "gemini-2.5-pro-thinking-1024", "default", "session-1", "hub", "provider", "8")
+
+	require.Equal(t, first, sameModel)
+	require.NotEqual(t, first, otherModel)
+	require.NotEqual(t, first, otherProvider)
+}
+
 func TestClearCurrentChannelAffinityCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

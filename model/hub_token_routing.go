@@ -143,6 +143,9 @@ func NormalizeHubTokenRoutingPolicy(input *HubTokenRoutingPolicy, providerID int
 				return nil, fmt.Errorf("provider selection %s requires a multiplier", selection.Family)
 			}
 			selection.ExactMultipliers = normalizeMultipliers(selection.ExactMultipliers)
+			if len(selection.ExactMultipliers) != 1 {
+				return nil, fmt.Errorf("provider selection %s requires exactly one multiplier", selection.Family)
+			}
 			for _, multiplier := range selection.ExactMultipliers {
 				if !validHubTokenMultiplier(multiplier) {
 					return nil, fmt.Errorf("invalid multiplier for %s", selection.Family)

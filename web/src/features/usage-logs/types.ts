@@ -226,6 +226,8 @@ export interface LogOtherData {
   frt?: number
   ttft?: number
   service_tier?: string
+  routing_policy_mode?: 'public_pool' | 'provider'
+  routing_phase?: 'preferred' | 'platform_fallback' | 'public_pool' | string
   supply_multiplier?: number
   billing_ratio?: number
   // Tiered (expression-based) billing fields, set by backend when

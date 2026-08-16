@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relay/channel/ai360"
@@ -255,8 +256,15 @@ func ListModels(c *gin.Context, modelType int) {
 		routingPolicy = value
 	}
 	for _, modelName := range models {
-		if routingPolicy != nil && !routingPolicy.AllowsModel(modelName) {
-			continue
+		if routingPolicy != nil {
+			available, err := model.IsModelAvailableForHubTokenPolicy(routingPolicy, modelName)
+			if err != nil {
+				logger.LogError(c, fmt.Sprintf("failed to validate routed model %s: %s", modelName, err.Error()))
+				continue
+			}
+			if !available {
+				continue
+			}
 		}
 		if modelLimitEnable {
 			matchingName := ratio_setting.FormatMatchingModelName(modelName)

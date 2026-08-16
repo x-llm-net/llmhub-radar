@@ -63,6 +63,9 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	if !exist {
 		return service.TaskErrorWrapperLocal(errors.New("task_origin_not_exist"), "task_not_exist", http.StatusBadRequest)
 	}
+	if taskErr := validateOriginTaskHubPolicy(c, originTask); taskErr != nil {
+		return taskErr
+	}
 
 	// 从原始任务推导模型名称
 	if info.OriginModelName == "" {
@@ -119,6 +122,23 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		}
 	}
 
+	return nil
+}
+
+func validateOriginTaskHubPolicy(c *gin.Context, originTask *model.Task) *dto.TaskError {
+	policy := service.GetHubTokenRoutingPolicy(c)
+	if policy == nil || policy.Mode != model.HubTokenRoutingModeProvider {
+		return nil
+	}
+	if originTask == nil || originTask.PrivateData.BillingContext == nil ||
+		originTask.PrivateData.BillingContext.RoutingPolicyMode != model.HubTokenRoutingModeProvider ||
+		originTask.PrivateData.BillingContext.OriginProviderId != policy.ProviderID {
+		return service.TaskErrorWrapperLocal(
+			errors.New("the origin task belongs to another provider route"),
+			"task_provider_mismatch",
+			http.StatusForbidden,
+		)
+	}
 	return nil
 }
 

@@ -29,6 +29,23 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 	return getHubPolicyChannelFromDB(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter)
 }
 
+// IsModelAvailableForHubTokenPolicy keeps model discovery aligned with the
+// same multiplier, provider-status and publication checks used by requests.
+func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string) (bool, error) {
+	if policy == nil || !policy.AllowsModel(modelName) {
+		return false, nil
+	}
+	channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
+		policy,
+		modelName,
+		0,
+		"",
+		nil,
+		ChannelProviderFilter{},
+	)
+	return channel != nil, err
+}
+
 func getHubPolicyChannelFromCache(
 	policy *HubTokenRoutingPolicy,
 	modelName string,

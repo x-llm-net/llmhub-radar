@@ -119,6 +119,7 @@ func InitChannelCache() {
 	hubSupplyPricingByChannel = pricingData.pricingByChannel
 	hubSupplyConfiguredIDs = pricingData.configuredIDs
 	hubProviderRoutingBySlug = pricingData.providerBySlug
+	hubProviderRoutingByID = pricingData.providerByID
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and

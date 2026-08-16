@@ -114,6 +114,7 @@ func Distribute() func(c *gin.Context) {
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
+					affinityPhase := ""
 					preferred, preferredPricingSnapshot, err := model.CacheGetChannelWithPricing(preferredChannelID)
 					routingPolicy := service.GetHubTokenRoutingPolicy(c)
 					providerAllowed := true
@@ -121,8 +122,23 @@ func Distribute() func(c *gin.Context) {
 					providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
 					if routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
 						providerID = routingPolicy.ProviderID
+						provider, ok := model.GetHubProviderRoutingByID(providerID)
+						providerAllowed = ok && provider.Status == model.HubProviderStatusActive
 					}
-					if providerID > 0 {
+					if providerAllowed && routingPolicy != nil && routingPolicy.Mode == model.HubTokenRoutingModeProvider {
+						if model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
+							ProviderID: providerID,
+							Mode:       model.ChannelProviderOnly,
+						}) {
+							affinityPhase = "preferred"
+						} else {
+							providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
+								ProviderID: providerID,
+								Mode:       model.ChannelProviderExclude,
+							})
+							affinityPhase = "platform_fallback"
+						}
+					} else if providerID > 0 {
 						providerAllowed = model.ChannelMatchesProviderFilter(preferredChannelID, model.ChannelProviderFilter{
 							ProviderID: providerID,
 							Mode:       model.ChannelProviderOnly,
@@ -143,7 +159,9 @@ func Distribute() func(c *gin.Context) {
 									break
 								}
 							}
-						} else if routingPolicy != nil && model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelRequest.Model, preferred.Id) {
+						} else if routingPolicy != nil && ((affinityPhase == "platform_fallback" &&
+							model.IsChannelEnabledForHubTokenPolicyFallback(routingPolicy, modelRequest.Model, c.Request.URL.Path, preferred.Id)) ||
+							(affinityPhase != "platform_fallback" && model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelRequest.Model, preferred.Id))) {
 							channel = preferred
 							selectGroup = usingGroup
 							affinityUsable = true
@@ -157,11 +175,14 @@ func Distribute() func(c *gin.Context) {
 					}
 					if affinityUsable {
 						common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, preferredPricingSnapshot)
-						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, affinityRoutingPhase(c))
-						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, false)
+						if affinityPhase == "" {
+							affinityPhase = affinityRoutingPhase(c)
+						}
+						common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, affinityPhase)
+						common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, affinityPhase == "platform_fallback")
 					}
 					if !affinityUsable && (service.IsHubServiceTierRequest(c) || !providerActive || !service.ShouldKeepChannelAffinityOnChannelDisabled()) {
-						if providerAllowed {
+						if providerAllowed || routingPolicy != nil {
 							service.ClearCurrentChannelAffinityCache(c)
 						}
 					}
@@ -217,8 +238,11 @@ func Distribute() func(c *gin.Context) {
 }
 
 func affinityRoutingPhase(c *gin.Context) string {
-	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
-		return "preferred"
+	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
+		if policy.Mode == model.HubTokenRoutingModeProvider {
+			return "preferred"
+		}
+		return "public_pool"
 	}
 	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) > 0 {
 		return "preferred"

@@ -393,6 +393,102 @@ func TestDistributeAffinityRejectsDisabledProvider(t *testing.T) {
 	require.Equal(t, platformChannel.Id, common.GetContextKeyInt(fallbackCtx, constant.ContextKeyChannelId))
 }
 
+func TestDistributeReusesProviderPolicyFallbackAffinity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	db := setupDistributorServiceTierTestDB(t)
+
+	const modelName = "gpt-provider-fallback-affinity"
+	originProvider := &model.HubProvider{
+		OwnerUserId: 73101,
+		Name:        "Affinity Origin",
+		Slug:        "affinity-origin",
+		Status:      model.HubProviderStatusActive,
+	}
+	fallbackProvider := &model.HubProvider{
+		OwnerUserId: 73102,
+		Name:        "Affinity Fallback",
+		Slug:        "affinity-fallback",
+		Status:      model.HubProviderStatusActive,
+	}
+	require.NoError(t, db.Create(originProvider).Error)
+	require.NoError(t, db.Create(fallbackProvider).Error)
+
+	priority := int64(0)
+	fallbackChannel := &model.Channel{
+		Name:     "provider-policy-fallback-affinity",
+		Type:     constant.ChannelTypeOpenAI,
+		Key:      "fallback-key",
+		Models:   modelName,
+		Group:    "default",
+		Status:   common.ChannelStatusEnabled,
+		Priority: &priority,
+	}
+	require.NoError(t, db.Create(fallbackChannel).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: model.HubTokenRoutingAbilityGroup, Model: modelName,
+		ChannelId: fallbackChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	fallbackGroup := &model.HubSupplyGroup{
+		ProviderId: fallbackProvider.Id, NewAPIChannelId: fallbackChannel.Id,
+		PriceMultiplier: 0.5, ConfigVersion: 1, Status: model.HubSupplyGroupStatusAvailable,
+	}
+	require.NoError(t, db.Create(fallbackGroup).Error)
+	require.NoError(t, db.Create(&model.HubSupplyGroupProbeTarget{
+		GroupId: fallbackGroup.Id, ConfigVersion: fallbackGroup.ConfigVersion,
+		ModelName: modelName, EndpointType: "openai", EndpointMode: "openai",
+		ProbeKind: model.HubSupplyProbeKindText, Status: model.HubSupplyProbeStatusAvailable,
+	}).Error)
+	model.InitChannelCache()
+	cachedOriginProvider, found := model.GetHubProviderRoutingByID(originProvider.Id)
+	require.True(t, found)
+	require.Equal(t, model.HubProviderStatusActive, cachedOriginProvider.Status)
+
+	affinitySetting := operation_setting.GetChannelAffinitySetting()
+	originalRules := affinitySetting.Rules
+	originalEnabled := affinitySetting.Enabled
+	affinitySetting.Enabled = true
+	affinitySetting.Rules = append([]operation_setting.ChannelAffinityRule{{
+		Name: "provider-policy-fallback-affinity", ModelRegex: []string{"^" + modelName + "$"},
+		PathRegex:  []string{"^/v1/chat/completions$"},
+		KeySources: []operation_setting.ChannelAffinityKeySource{{Type: "request_header", Key: "X-Test-Affinity"}},
+		TTLSeconds: 60, IncludeUsingGroup: true, IncludeRuleName: true,
+	}}, originalRules...)
+	t.Cleanup(func() {
+		affinitySetting.Rules = originalRules
+		affinitySetting.Enabled = originalEnabled
+	})
+
+	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Selections: []model.HubTokenRoutingSelection{{
+			Family: "openai", ExactMultipliers: []float64{0.5},
+		}},
+	}, originProvider.Id)
+	require.NoError(t, err)
+	newContext := func() (*gin.Context, *httptest.ResponseRecorder) {
+		ctx, recorder := newDistributorServiceTierContextForModel(originProvider.Id, modelName)
+		common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")
+		common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, policy)
+		ctx.Request.Header.Set("X-Test-Affinity", "provider-fallback-session")
+		return ctx, recorder
+	}
+
+	seedCtx, seedRecorder := newContext()
+	Distribute()(seedCtx)
+	require.False(t, seedCtx.IsAborted())
+	require.Equal(t, http.StatusOK, seedRecorder.Code)
+	require.Equal(t, fallbackChannel.Id, common.GetContextKeyInt(seedCtx, constant.ContextKeyChannelId))
+	require.Equal(t, "platform_fallback", common.GetContextKeyString(seedCtx, constant.ContextKeyHubRoutingPhase))
+
+	reusedCtx, reusedRecorder := newContext()
+	Distribute()(reusedCtx)
+	require.False(t, reusedCtx.IsAborted())
+	require.Equal(t, http.StatusOK, reusedRecorder.Code)
+	require.Equal(t, fallbackChannel.Id, common.GetContextKeyInt(reusedCtx, constant.ContextKeyChannelId))
+	require.Equal(t, "platform_fallback", common.GetContextKeyString(reusedCtx, constant.ContextKeyHubRoutingPhase))
+	require.True(t, common.GetContextKeyBool(reusedCtx, constant.ContextKeyHubRoutingFallback))
+}
+
 func TestDistributeServiceTierClearsDisabledChannelAffinity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, i18n.Init())

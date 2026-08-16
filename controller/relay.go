@@ -238,6 +238,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			newAPIError = relayHandler(c, relayInfo)
 		}
+		newAPIError = applyRelayFormatRetryPolicy(relayFormat, newAPIError)
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
@@ -273,6 +274,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
 	}
+}
+
+// A Realtime request has already upgraded the client connection before relay
+// starts. Retrying it on another channel would reuse a settled billing session
+// and cannot transparently replay the bidirectional conversation.
+func applyRelayFormatRetryPolicy(relayFormat types.RelayFormat, relayErr *types.NewAPIError) *types.NewAPIError {
+	if relayErr != nil && relayFormat == types.RelayFormatOpenAIRealtime {
+		types.ErrOptionWithSkipRetry()(relayErr)
+	}
+	return relayErr
 }
 
 var upgrader = websocket.Upgrader{
@@ -812,10 +823,18 @@ func RelayTask(c *gin.Context) {
 			SupplyOwnerUserId:         relayInfo.PriceData.GroupRatioInfo.SupplyOwnerUserId,
 			PlatformFeeBasisPoints:    relayInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints,
 			HasPlatformFeeBasisPoints: relayInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints,
+			OriginProviderId:          common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId),
+			RoutingPhase:              common.GetContextKeyString(c, constant.ContextKeyHubRoutingPhase),
 			ModelRatio:                relayInfo.PriceData.ModelRatio,
 			OtherRatios:               relayInfo.PriceData.OtherRatios(),
 			OriginModelName:           relayInfo.OriginModelName,
 			PerCallBilling:            common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+		}
+		if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
+			task.PrivateData.BillingContext.RoutingPolicyMode = policy.Mode
+			if policy.Mode == model.HubTokenRoutingModeProvider {
+				task.PrivateData.BillingContext.OriginProviderId = policy.ProviderID
+			}
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

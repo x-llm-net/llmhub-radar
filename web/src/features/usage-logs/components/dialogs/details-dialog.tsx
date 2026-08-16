@@ -79,6 +79,7 @@ import {
   getFirstResponseTimeColor,
   getLogFirstTokenMs,
   getResponseTimeColor,
+  getHubRoutingBillingDetails,
   getServiceTierBillingRatio,
   renderAuditContent,
 } from '../../lib/format'
@@ -423,6 +424,7 @@ function BillingBreakdown(props: {
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
+  const hubRoutingBilling = getHubRoutingBillingDetails(other)
 
   if (isTieredExpr) {
     rows.push({
@@ -473,7 +475,31 @@ function BillingBreakdown(props: {
   }
 
   const serviceTierBillingRatio = getServiceTierBillingRatio(log.group, other)
-  if (serviceTierBillingRatio != null) {
+  if (hubRoutingBilling) {
+    if (hubRoutingBilling.supplyMultiplier != null) {
+      rows.push({
+        label: t('Supply multiplier'),
+        value: `${formatRatio(hubRoutingBilling.supplyMultiplier)}x`,
+      })
+    }
+    if (hubRoutingBilling.billingRatio != null) {
+      rows.push({
+        label: t('Billing ratio'),
+        value: `${formatRatio(hubRoutingBilling.billingRatio)}x`,
+      })
+    }
+    if (hubRoutingBilling.routingPhase) {
+      const routingSource = {
+        preferred: t('Preferred provider'),
+        platform_fallback: t('Platform fallback'),
+        public_pool: t('Platform pool'),
+      }[hubRoutingBilling.routingPhase]
+      rows.push({
+        label: t('Routing source'),
+        value: routingSource || hubRoutingBilling.routingPhase,
+      })
+    }
+  } else if (serviceTierBillingRatio != null) {
     rows.push({
       label: t('Billing ratio'),
       value: `${formatRatio(serviceTierBillingRatio)}x`,

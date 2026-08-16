@@ -159,6 +159,59 @@ func TestProviderHostRoutingFallsBackImmediatelyWhenProviderHasNoModel(t *testin
 	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback))
 }
 
+func TestProviderPolicyDoesNotFallbackWhenOriginProviderIsDisabled(t *testing.T) {
+	const modelName = "gpt-disabled-origin-provider-policy"
+	originProvider := &model.HubProvider{OwnerUserId: 95011, Name: "Disabled Origin", Slug: "disabled-origin"}
+	fallbackProvider := &model.HubProvider{OwnerUserId: 95012, Name: "Disabled Origin Fallback", Slug: "disabled-origin-fallback"}
+	require.NoError(t, model.CreateHubProvider(originProvider))
+	require.NoError(t, model.CreateHubProvider(fallbackProvider))
+
+	priority := int64(0)
+	fallbackChannel := &model.Channel{
+		Name: "disabled-origin-fallback-channel", Type: constant.ChannelTypeOpenAI,
+		Key: "test-key", Models: modelName, Group: "default",
+		Status: common.ChannelStatusEnabled, Priority: &priority,
+	}
+	require.NoError(t, model.DB.Create(fallbackChannel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: model.HubTokenRoutingAbilityGroup, Model: modelName,
+		ChannelId: fallbackChannel.Id, Enabled: true, Priority: &priority,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.HubSupplyGroup{
+		ProviderId: fallbackProvider.Id, NewAPIChannelId: fallbackChannel.Id,
+		PriceMultiplier: 0.5, Status: model.HubSupplyGroupStatusAvailable,
+	}).Error)
+	_, err := model.UpdateHubProviderStatus(originProvider.Id, model.HubProviderStatusDisabled)
+	require.NoError(t, err)
+	model.InitChannelCache()
+	t.Cleanup(func() {
+		model.DB.Where("new_api_channel_id = ?", fallbackChannel.Id).Delete(&model.HubSupplyGroup{})
+		model.DB.Where("channel_id = ?", fallbackChannel.Id).Delete(&model.Ability{})
+		model.DB.Delete(&model.Channel{}, fallbackChannel.Id)
+		model.DB.Where("id IN ?", []int{originProvider.Id, fallbackProvider.Id}).Delete(&model.HubProvider{})
+		model.InitChannelCache()
+	})
+
+	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Selections: []model.HubTokenRoutingSelection{{
+			Family: "openai", ExactMultipliers: []float64{0.5},
+		}},
+	}, originProvider.Id)
+	require.NoError(t, err)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, policy)
+	param := &RetryParam{
+		Ctx: ctx, TokenGroup: "default", ModelName: modelName,
+		RequestPath: "/v1/chat/completions", Retry: common.GetPointer(0),
+	}
+
+	selected, _, err := CacheGetRandomSatisfiedChannel(param)
+
+	require.Error(t, err)
+	require.Nil(t, selected)
+	require.Contains(t, err.Error(), "provider is unavailable")
+}
+
 func TestProviderHostRoutingPreservesAutoGroupRetryState(t *testing.T) {
 	db := setupChannelSelectAutoGroupsTest(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubSupplyGroup{}))

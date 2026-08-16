@@ -71,7 +71,10 @@ function defaultSelection(option: HubTokenRoutingFamilyOption) {
   return {
     family: option.key,
     min_multiplier: option.min_multiplier,
-    max_multiplier: Math.min(1, option.max_multiplier),
+    max_multiplier: Math.min(
+      option.max_multiplier,
+      Math.max(option.min_multiplier, 1)
+    ),
     exact_multiplier: option.exact_multipliers?.[0],
   }
 }

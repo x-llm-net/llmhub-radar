@@ -15,7 +15,6 @@ import (
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -75,13 +74,13 @@ func createProbedHubMarketplaceSupply(
 	require.NoError(t, model.DB.Where(&model.Ability{
 		ChannelId: channel.Id,
 		Model:     hubMarketplaceFlowModel,
-		Group:     hub_routing_setting.ServiceTierMedium,
+		Group:     model.HubTokenRoutingAbilityGroup,
 		Enabled:   true,
 	}).First(&ability).Error)
 	return group, storedChannel
 }
 
-func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing.T) {
+func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProviderFee(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, model.DB.AutoMigrate(
 		&model.HubSupplyGroupRevision{},
@@ -92,7 +91,6 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	originalRetryTimes := common.RetryTimes
 	originalModelRatios := ratio_setting.ModelRatio2JSONString()
-	originalRoutingSetting := hub_routing_setting.Snapshot()
 	common.MemoryCacheEnabled = false
 	common.RetryTimes = 1
 	ratio_setting.InitRatioSettings()
@@ -101,7 +99,6 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
 		common.RetryTimes = originalRetryTimes
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
-		require.NoError(t, hub_routing_setting.Publish(originalRoutingSetting))
 		providerIDs := model.DB.Model(&model.HubProvider{}).
 			Select("id").
 			Where("owner_user_id IN ?", []int{96101, 96102})
@@ -131,15 +128,19 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	} {
 		require.NoError(t, model.DB.Create(&user).Error)
 	}
+	originFee := 0
+	fallbackFee := 2500
 	originProvider := &model.HubProvider{
-		OwnerUserId: 96101,
-		Name:        "Marketplace Origin",
-		Slug:        "marketplace-origin",
+		OwnerUserId:            96101,
+		Name:                   "Marketplace Origin",
+		Slug:                   "marketplace-origin",
+		PlatformFeeBasisPoints: &originFee,
 	}
 	fallbackProvider := &model.HubProvider{
-		OwnerUserId: 96102,
-		Name:        "Marketplace Fallback",
-		Slug:        "marketplace-fallback",
+		OwnerUserId:            96102,
+		Name:                   "Marketplace Fallback",
+		Slug:                   "marketplace-fallback",
+		PlatformFeeBasisPoints: &fallbackFee,
 	}
 	require.NoError(t, model.CreateHubProvider(originProvider))
 	require.NoError(t, model.CreateHubProvider(fallbackProvider))
@@ -154,7 +155,7 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 		t,
 		fallbackProvider.Id,
 		"marketplace-fallback",
-		0.6,
+		0.5,
 	)
 	model.InitChannelCache()
 
@@ -166,22 +167,31 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	token := &model.Token{
 		Id:          96103,
 		UserId:      96103,
-		Key:         "marketplace-service-tier-token",
-		Name:        "marketplace medium",
+		Key:         "marketplace-policy-token",
+		Name:        "marketplace exact multiplier",
 		Status:      common.TokenStatusEnabled,
 		RemainQuota: 10_000,
-		Group:       hub_routing_setting.ServiceTierMedium,
+		Group:       "default",
 	}
+	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
+		Selections: []model.HubTokenRoutingSelection{{
+			Family:           "openai",
+			ExactMultipliers: []float64{0.5},
+		}},
+	}, originProvider.Id)
+	require.NoError(t, err)
+	require.NoError(t, token.SetHubRoutingPolicy(policy))
 	require.NoError(t, model.DB.Create(token).Error)
 	assert.Equal(t, 1.0, ratio_setting.GetGroupRatio(token.Group))
 
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	require.NoError(t, middleware.SetupContextForToken(ctx, token))
-	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, token.Group)
 	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, resolution.Provider.Id)
 	common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderSlug, resolution.Provider.Slug)
+	require.NoError(t, middleware.SetupContextForToken(ctx, token))
+	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, token.Group)
 	common.SetContextKey(ctx, constant.ContextKeyHubRoutingFallback, false)
+	require.True(t, service.IsHubTokenRoutingRequest(ctx))
 
 	retry := &service.RetryParam{
 		Ctx:        ctx,
@@ -196,7 +206,8 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	assert.Equal(t, originChannel.Id, preferred.Id)
 	assert.Equal(t, "preferred", common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase))
 	require.Nil(t, middleware.SetupContextForSelectedChannel(ctx, preferred, hubMarketplaceFlowModel))
-	preferredPricing, err := relayhelper.ApplyHubSupplyPricing(
+	preferredPricing, err := relayhelper.ApplyHubSupplyPricingFromRequest(
+		ctx,
 		hosttypes.GroupRatioInfo{GroupRatio: ratio_setting.GetGroupRatio(token.Group)},
 		preferred.Id,
 	)
@@ -228,12 +239,13 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	assert.Equal(t, "platform_fallback", common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase))
 	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback))
 	require.Nil(t, middleware.SetupContextForSelectedChannel(ctx, fallback, hubMarketplaceFlowModel))
-	fallbackPricing, err := relayhelper.ApplyHubSupplyPricing(
+	fallbackPricing, err := relayhelper.ApplyHubSupplyPricingFromRequest(
+		ctx,
 		hosttypes.GroupRatioInfo{GroupRatio: ratio_setting.GetGroupRatio(token.Group)},
 		fallback.Id,
 	)
 	require.NoError(t, err)
-	assert.Equal(t, 0.6, fallbackPricing.GroupRatio)
+	assert.Equal(t, 0.5, fallbackPricing.GroupRatio)
 	assert.Equal(t, fallbackGroup.Id, fallbackPricing.SupplyGroupId)
 	assert.Equal(t, fallbackProvider.Id, fallbackPricing.SupplyProviderId)
 	successStartedAt := time.Now().Add(-30 * time.Millisecond)
@@ -280,9 +292,12 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	assert.Equal(t, fallbackGroup.Id, earning.SupplyGroupId)
 	assert.Equal(t, fallback.Id, earning.ChannelId)
 	assert.Equal(t, actualQuota, earning.GrossQuota)
-	assert.Equal(t, 60, earning.PlatformFeeQuota)
-	assert.Equal(t, 540, earning.ProviderIncomeQuota)
-	assert.Equal(t, 0.6, earning.SupplyMultiplier)
+	assert.Equal(t, fallbackFee, earning.PlatformFeeBasisPoints)
+	assert.Equal(t, 125, earning.PlatformFeeQuota)
+	assert.Equal(t, 375, earning.ProviderIncomeQuota)
+	assert.Equal(t, 0.5, earning.SupplyMultiplier)
+	assert.True(t, finalInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
+	assert.Equal(t, fallbackFee, finalInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
 	var originEarningCount int64
 	require.NoError(t, model.DB.Model(&model.HubProviderEarning{}).
 		Where("provider_id = ? AND request_id = ?", originProvider.Id, finalInfo.RequestId).
@@ -292,7 +307,8 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	finalInfo.FirstResponseTime = successStartedAt.Add(20 * time.Millisecond)
 	other := map[string]interface{}{}
 	service.AttachHubRelayLogInfo(ctx, finalInfo, other, true)
-	assert.Equal(t, token.Group, other["service_tier"])
+	assert.NotContains(t, other, "service_tier")
+	assert.Equal(t, model.HubTokenRoutingModeProvider, other["routing_policy_mode"])
 	assert.Equal(t, originProvider.Id, other["origin_provider_id"])
 	assert.Equal(t, fallbackProvider.Id, other["served_provider_id"])
 	attempts, ok := other["hub_attempts"].([]service.HubRelayAttempt)
@@ -303,9 +319,13 @@ func TestHubMarketplaceFlowFallsBackWithinTierAndSettlesFinalProvider(t *testing
 	assert.Equal(t, originProvider.Id, attempts[0].ProviderID)
 	assert.Equal(t, originGroup.Id, attempts[0].SupplyGroupID)
 	assert.Equal(t, originChannel.Id, attempts[0].ChannelID)
+	assert.Equal(t, model.HubTokenRoutingModeProvider, attempts[0].RoutingPolicyMode)
+	assert.Empty(t, attempts[0].ServiceTier)
 	assert.Equal(t, "success", attempts[1].Result)
 	assert.Equal(t, "platform_fallback", attempts[1].RoutingPhase)
 	assert.Equal(t, fallbackProvider.Id, attempts[1].ProviderID)
 	assert.Equal(t, fallbackGroup.Id, attempts[1].SupplyGroupID)
 	assert.Equal(t, fallbackChannel.Id, attempts[1].ChannelID)
+	assert.Equal(t, model.HubTokenRoutingModeProvider, attempts[1].RoutingPolicyMode)
+	assert.Empty(t, attempts[1].ServiceTier)
 }

@@ -49,7 +49,16 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.User{},
+		&model.Channel{},
+		&model.Ability{},
+		&model.Model{},
+		&model.Vendor{},
+		&model.HubProvider{},
+		&model.HubSupplyGroup{},
+	))
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -321,14 +330,39 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
-func TestListModelsFiltersModelsByHubTokenRoutingFamilies(t *testing.T) {
+func TestListModelsFiltersByHubTokenRoutingAvailability(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+	})
+	require.NoError(t, db.Create(&model.HubProvider{
+		Id:          1,
+		OwnerUserId: 1,
+		Name:        "Model List Provider",
+		Slug:        "model-list-provider",
+		Status:      model.HubProviderStatusActive,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Channel{
+		{Id: 1, Name: "baseline", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: "gpt-hub-policy-model", Group: "default"},
+		{Id: 2, Name: "premium", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: "gpt-premium-policy-model", Group: "default"},
+		{Id: 3, Name: "cheap", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: "gpt-cheap-policy-model", Group: "default"},
+		{Id: 4, Name: "claude-premium", Type: constant.ChannelTypeAnthropic, Status: common.ChannelStatusEnabled, Models: "claude-premium-policy-model", Group: "default"},
+	}).Error)
 	require.NoError(t, db.Create(&[]model.Ability{
 		{Group: "default", Model: "gpt-hub-policy-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "claude-hub-policy-model", ChannelId: 1, Enabled: true},
 		{Group: model.HubTokenRoutingAbilityGroup, Model: "gpt-premium-policy-model", ChannelId: 2, Enabled: true},
+		{Group: model.HubTokenRoutingAbilityGroup, Model: "gpt-cheap-policy-model", ChannelId: 3, Enabled: true},
+		{Group: model.HubTokenRoutingAbilityGroup, Model: "claude-premium-policy-model", ChannelId: 4, Enabled: true},
 	}).Error)
+	require.NoError(t, db.Create(&[]model.HubSupplyGroup{
+		{PublicId: "model-list-premium", ProviderId: 1, NewAPIChannelId: 2, PriceMultiplier: 5.5, Status: model.HubSupplyGroupStatusAvailable},
+		{PublicId: "model-list-cheap", ProviderId: 1, NewAPIChannelId: 3, PriceMultiplier: 0.2, Status: model.HubSupplyGroupStatusAvailable},
+		{PublicId: "model-list-claude", ProviderId: 1, NewAPIChannelId: 4, PriceMultiplier: 5.5, Status: model.HubSupplyGroupStatusAvailable},
+	}).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -337,17 +371,18 @@ func TestListModelsFiltersModelsByHubTokenRoutingFamilies(t *testing.T) {
 		Mode: model.HubTokenRoutingModePublic,
 		Selections: []model.HubTokenRoutingSelection{{
 			Family:        "openai",
-			MinMultiplier: 0.1,
-			MaxMultiplier: 0.2,
+			MinMultiplier: 5,
+			MaxMultiplier: 6,
 		}},
 	})
 
 	ListModels(ctx, constant.ChannelTypeOpenAI)
 
 	ids := decodeListModelsResponse(t, recorder)
-	assert.Contains(t, ids, "gpt-hub-policy-model")
 	assert.Contains(t, ids, "gpt-premium-policy-model")
-	assert.NotContains(t, ids, "claude-hub-policy-model")
+	assert.NotContains(t, ids, "gpt-hub-policy-model")
+	assert.NotContains(t, ids, "gpt-cheap-policy-model")
+	assert.NotContains(t, ids, "claude-premium-policy-model")
 }
 
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {

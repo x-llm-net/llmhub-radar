@@ -48,6 +48,23 @@ export function getServiceTierBillingRatio(
   return billingRatio
 }
 
+export function getHubRoutingBillingDetails(other: LogOtherData | null): {
+  supplyMultiplier?: number
+  billingRatio?: number
+  routingPhase?: string
+} | null {
+  if (!other?.routing_policy_mode) return null
+
+  const supplyMultiplier = isPositiveFiniteNumber(other.supply_multiplier)
+    ? other.supply_multiplier
+    : undefined
+  const billingRatio = isPositiveFiniteNumber(other.billing_ratio)
+    ? other.billing_ratio
+    : undefined
+  const routingPhase = other.routing_phase?.trim() || undefined
+  return { supplyMultiplier, billingRatio, routingPhase }
+}
+
 export function getLogFirstTokenMs(
   other: LogOtherData | null
 ): number | undefined {

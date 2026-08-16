@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getLogFirstTokenMs, getServiceTierBillingRatio } from '../format'
+import {
+  getHubRoutingBillingDetails,
+  getLogFirstTokenMs,
+  getServiceTierBillingRatio,
+} from '../format'
 
 describe('service tier usage log formatting', () => {
   test('uses the final billing ratio instead of the legacy group ratio', () => {
@@ -38,5 +42,20 @@ describe('service tier usage log formatting', () => {
     })
 
     assert.equal(firstTokenMs, 65000)
+  })
+
+  test('exposes safe final routing and billing details for multiplier keys', () => {
+    const details = getHubRoutingBillingDetails({
+      routing_policy_mode: 'provider',
+      routing_phase: 'platform_fallback',
+      supply_multiplier: 5.5,
+      billing_ratio: 5.5,
+    })
+
+    assert.deepEqual(details, {
+      supplyMultiplier: 5.5,
+      billingRatio: 5.5,
+      routingPhase: 'platform_fallback',
+    })
   })
 })

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/cachex"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -336,14 +337,14 @@ func extractChannelAffinityValue(c *gin.Context, src operation_setting.ChannelAf
 	}
 }
 
-func buildChannelAffinityCacheKeySuffix(rule operation_setting.ChannelAffinityRule, modelName string, usingGroup string, affinityValue string) string {
-	parts := make([]string, 0, 4)
+func buildChannelAffinityCacheKeySuffix(rule operation_setting.ChannelAffinityRule, modelName string, usingGroup string, affinityValue string, routingScope ...string) string {
+	parts := make([]string, 0, 4+len(routingScope))
 	if rule.IncludeRuleName && rule.Name != "" {
 		parts = append(parts, rule.Name)
 	}
 	includeModelName := rule.IncludeModelName
 	modelKey := modelName
-	if hub_routing_setting.IsServiceTier(usingGroup) {
+	if hub_routing_setting.IsServiceTier(usingGroup) || len(routingScope) > 0 {
 		includeModelName = true
 		modelKey = ratio_setting.FormatMatchingModelName(modelName)
 	}
@@ -353,6 +354,7 @@ func buildChannelAffinityCacheKeySuffix(rule operation_setting.ChannelAffinityRu
 	if rule.IncludeUsingGroup && usingGroup != "" {
 		parts = append(parts, usingGroup)
 	}
+	parts = append(parts, routingScope...)
 	parts = append(parts, affinityValue)
 	return strings.Join(parts, ":")
 }
@@ -599,7 +601,14 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		if ttlSeconds <= 0 {
 			ttlSeconds = setting.DefaultTTLSeconds
 		}
-		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue)
+		routingScope := []string(nil)
+		if policy := GetHubTokenRoutingPolicy(c); policy != nil {
+			routingScope = []string{"hub", policy.Mode}
+			if policy.Mode == model.HubTokenRoutingModeProvider {
+				routingScope = append(routingScope, strconv.Itoa(policy.ProviderID))
+			}
+		}
+		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue, routingScope...)
 		cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
 		setChannelAffinityContext(c, channelAffinityMeta{
 			CacheKey:       cacheKeyFull,

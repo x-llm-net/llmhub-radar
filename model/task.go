@@ -125,6 +125,9 @@ type TaskBillingContext struct {
 	SupplyOwnerUserId         int                `json:"supply_owner_user_id,omitempty"`
 	PlatformFeeBasisPoints    int                `json:"platform_fee_basis_points,omitempty"`
 	HasPlatformFeeBasisPoints bool               `json:"has_platform_fee_basis_points,omitempty"`
+	OriginProviderId          int                `json:"origin_provider_id,omitempty"`
+	RoutingPolicyMode         string             `json:"routing_policy_mode,omitempty"`
+	RoutingPhase              string             `json:"routing_phase,omitempty"`
 	ModelRatio                float64            `json:"model_ratio,omitempty"`       // 模型倍率
 	OtherRatios               map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
 	OriginModelName           string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
