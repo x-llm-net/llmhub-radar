@@ -24,10 +24,10 @@ import { useTranslation } from 'react-i18next'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { formatTimestamp } from '@/lib/format'
 
+import { ProviderLogoAvatar } from './provider-logo-avatar'
 import { ProviderRowActions } from './provider-row-actions'
 import type { HubProviderAdminItem } from './types'
 
@@ -55,12 +55,7 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
         const provider = row.original
         return (
           <div className='flex min-w-[200px] items-center gap-3'>
-            <Avatar className='size-9 rounded-md'>
-              <AvatarImage src={provider.logo_url || undefined} alt='' />
-              <AvatarFallback className='rounded-md text-xs'>
-                {provider.name.slice(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <ProviderLogoAvatar provider={provider} />
             <div className='min-w-0'>
               <LongText className='max-w-[220px] font-medium'>
                 <Link

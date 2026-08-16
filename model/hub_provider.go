@@ -72,6 +72,7 @@ type HubProvider struct {
 	WebsiteVerifiedAt            int64  `json:"website_verified_at" gorm:"bigint;not null;default:0"`
 	Description                  string `json:"description" gorm:"type:varchar(1000);not null"`
 	LogoURL                      string `json:"logo_url" gorm:"type:varchar(1024);not null"`
+	LogoAssetId                  int    `json:"logo_asset_id" gorm:"not null;default:0;index"`
 	ContactType                  string `json:"contact_type" gorm:"type:varchar(32);not null;default:''"`
 	ContactValue                 string `json:"contact_value" gorm:"type:varchar(256);not null;default:''"`
 	SupportType                  string `json:"support_type" gorm:"type:varchar(32);not null;default:''"`

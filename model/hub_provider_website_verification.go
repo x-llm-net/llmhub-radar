@@ -102,37 +102,75 @@ func CreateHubProviderWebsiteEvidenceAsset(ownerUserID int, contentType string, 
 }
 
 func CreateHubProviderWithManualWebsiteVerification(provider *HubProvider, contentType string, data []byte) error {
-	contentType = strings.TrimSpace(contentType)
-	if provider == nil || contentType == "" || len(data) == 0 {
+	return CreateHubProviderWithAssets(provider, "", nil, contentType, data)
+}
+
+func CreateHubProviderWithAssets(
+	provider *HubProvider,
+	logoContentType string,
+	logoData []byte,
+	evidenceContentType string,
+	evidenceData []byte,
+) error {
+	logoContentType = strings.TrimSpace(logoContentType)
+	evidenceContentType = strings.TrimSpace(evidenceContentType)
+	if provider == nil {
+		return ErrHubProviderLogoInvalid
+	}
+	if len(logoData) > 0 && logoContentType == "" {
+		return ErrHubProviderLogoInvalid
+	}
+	if len(evidenceData) > 0 && evidenceContentType == "" {
 		return ErrHubProviderWebsiteEvidenceInvalid
 	}
-	origin, _, err := NormalizeHubProviderOrigin(provider.Website)
-	if err != nil {
-		return ErrHubProviderWebsiteRequired
+	var origin string
+	var err error
+	if len(evidenceData) > 0 {
+		origin, _, err = NormalizeHubProviderOrigin(provider.Website)
+		if err != nil {
+			return ErrHubProviderWebsiteRequired
+		}
 	}
 	if err := prepareHubProviderForCreate(provider); err != nil {
 		return err
 	}
 
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		provider.WebsiteVerifiedOrigin = origin
-		provider.WebsiteVerificationStatus = HubProviderWebsiteVerificationStatusPending
-		provider.WebsiteVerificationMethod = HubProviderWebsiteVerificationMethodManual
+		if len(evidenceData) > 0 {
+			provider.WebsiteVerifiedOrigin = origin
+			provider.WebsiteVerificationStatus = HubProviderWebsiteVerificationStatusPending
+			provider.WebsiteVerificationMethod = HubProviderWebsiteVerificationMethodManual
+		}
 		if err := tx.Create(provider).Error; err != nil {
 			return err
 		}
-		asset := &HubProviderWebsiteEvidenceAsset{
-			ProviderId:  provider.Id,
-			ContentType: contentType,
-			Data:        data,
+		if len(logoData) > 0 {
+			asset, err := createHubProviderLogoAssetTx(tx, provider.Id, logoContentType, logoData)
+			if err != nil {
+				return err
+			}
+			provider.LogoAssetId = asset.Id
+			if err := tx.Model(&HubProvider{}).Where("id = ?", provider.Id).
+				Update("logo_asset_id", asset.Id).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Create(asset).Error; err != nil {
-			return err
+		if len(evidenceData) > 0 {
+			asset := &HubProviderWebsiteEvidenceAsset{
+				ProviderId:  provider.Id,
+				ContentType: evidenceContentType,
+				Data:        evidenceData,
+			}
+			if err := tx.Create(asset).Error; err != nil {
+				return err
+			}
+			provider.WebsiteEvidenceAssetId = asset.Id
+			if err := tx.Model(&HubProvider{}).Where("id = ?", provider.Id).
+				Update("website_evidence_asset_id", asset.Id).Error; err != nil {
+				return err
+			}
 		}
-		provider.WebsiteEvidenceAssetId = asset.Id
-		return tx.Model(&HubProvider{}).
-			Where("id = ?", provider.Id).
-			Update("website_evidence_asset_id", asset.Id).Error
+		return nil
 	})
 	if err != nil {
 		return mapHubProviderCreateError(provider, err)
@@ -149,13 +187,37 @@ func UpdateHubProviderProfileWithManualWebsiteVerification(
 	contentType string,
 	data []byte,
 ) (*HubProvider, error) {
-	contentType = strings.TrimSpace(contentType)
-	if contentType == "" || len(data) == 0 {
+	return UpdateHubProviderProfileWithAssets(
+		ownerUserID, name, website, description, logoURL,
+		contactType, contactValue, supportType, supportValue,
+		"", nil, contentType, data,
+	)
+}
+
+func UpdateHubProviderProfileWithAssets(
+	ownerUserID int,
+	name, website, description, logoURL string,
+	contactType, contactValue, supportType, supportValue string,
+	logoContentType string,
+	logoData []byte,
+	evidenceContentType string,
+	evidenceData []byte,
+) (*HubProvider, error) {
+	logoContentType = strings.TrimSpace(logoContentType)
+	evidenceContentType = strings.TrimSpace(evidenceContentType)
+	if len(logoData) > 0 && logoContentType == "" {
+		return nil, ErrHubProviderLogoInvalid
+	}
+	if len(evidenceData) > 0 && evidenceContentType == "" {
 		return nil, ErrHubProviderWebsiteEvidenceInvalid
 	}
-	origin, _, err := NormalizeHubProviderOrigin(website)
-	if err != nil {
-		return nil, ErrHubProviderWebsiteRequired
+	origin := ""
+	var err error
+	if len(evidenceData) > 0 {
+		origin, _, err = NormalizeHubProviderOrigin(website)
+		if err != nil {
+			return nil, ErrHubProviderWebsiteRequired
+		}
 	}
 
 	var updated *HubProvider
@@ -175,32 +237,51 @@ func UpdateHubProviderProfileWithManualWebsiteVerification(
 		if err != nil {
 			return err
 		}
-
-		asset := &HubProviderWebsiteEvidenceAsset{
-			ProviderId:  updated.Id,
-			ContentType: contentType,
-			Data:        data,
-		}
-		if err := tx.Create(asset).Error; err != nil {
-			return err
-		}
-		updates := map[string]any{
-			"website_verified_origin":         origin,
-			"website_verification_status":     HubProviderWebsiteVerificationStatusPending,
-			"website_verification_method":     HubProviderWebsiteVerificationMethodManual,
-			"website_verification_token":      "",
-			"website_evidence_asset_id":       asset.Id,
-			"website_verification_remark":     "",
-			"website_verification_last_error": "",
-			"website_verified_at":             0,
-			"updated_at":                      common.GetTimestamp(),
-		}
-		if err := tx.Model(&HubProvider{}).Where("id = ?", updated.Id).Updates(updates).Error; err != nil {
-			return err
-		}
-		if previous.WebsiteEvidenceAssetId > 0 && previous.WebsiteEvidenceAssetId != asset.Id {
-			if err := tx.Delete(&HubProviderWebsiteEvidenceAsset{}, previous.WebsiteEvidenceAssetId).Error; err != nil {
+		if len(logoData) > 0 {
+			asset, err := createHubProviderLogoAssetTx(tx, updated.Id, logoContentType, logoData)
+			if err != nil {
 				return err
+			}
+			if err := tx.Model(&HubProvider{}).Where("id = ?", updated.Id).Updates(map[string]any{
+				"logo_url":      "",
+				"logo_asset_id": asset.Id,
+				"updated_at":    common.GetTimestamp(),
+			}).Error; err != nil {
+				return err
+			}
+			if previous.LogoAssetId > 0 && previous.LogoAssetId != asset.Id {
+				if err := tx.Delete(&HubProviderLogoAsset{}, previous.LogoAssetId).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if len(evidenceData) > 0 {
+			asset := &HubProviderWebsiteEvidenceAsset{
+				ProviderId:  updated.Id,
+				ContentType: evidenceContentType,
+				Data:        evidenceData,
+			}
+			if err := tx.Create(asset).Error; err != nil {
+				return err
+			}
+			updates := map[string]any{
+				"website_verified_origin":         origin,
+				"website_verification_status":     HubProviderWebsiteVerificationStatusPending,
+				"website_verification_method":     HubProviderWebsiteVerificationMethodManual,
+				"website_verification_token":      "",
+				"website_evidence_asset_id":       asset.Id,
+				"website_verification_remark":     "",
+				"website_verification_last_error": "",
+				"website_verified_at":             0,
+				"updated_at":                      common.GetTimestamp(),
+			}
+			if err := tx.Model(&HubProvider{}).Where("id = ?", updated.Id).Updates(updates).Error; err != nil {
+				return err
+			}
+			if previous.WebsiteEvidenceAssetId > 0 && previous.WebsiteEvidenceAssetId != asset.Id {
+				if err := tx.Delete(&HubProviderWebsiteEvidenceAsset{}, previous.WebsiteEvidenceAssetId).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return tx.First(updated, updated.Id).Error

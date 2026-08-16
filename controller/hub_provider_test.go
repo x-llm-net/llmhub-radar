@@ -82,6 +82,32 @@ func newHubProviderMultipartContext(
 	return ctx, recorder
 }
 
+func newHubProviderLogoMultipartContext(
+	t *testing.T,
+	profile map[string]string,
+	logoData []byte,
+	userID int,
+) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	profileJSON, err := common.Marshal(profile)
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteField("profile", string(profileJSON)))
+	part, err := writer.CreateFormFile("logo", "logo.png")
+	require.NoError(t, err)
+	_, err = part.Write(logoData)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/hub/provider", &body)
+	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Set("id", userID)
+	return ctx, recorder
+}
+
 func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
@@ -114,6 +140,47 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, response.Data.Id, stored.Id)
+}
+
+func TestCreateHubProviderAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubProviderLogoAsset{}))
+	png, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	)
+	require.NoError(t, err)
+	ctx, recorder := newHubProviderLogoMultipartContext(t, map[string]string{
+		"name":          "Logo Provider",
+		"slug":          "logo-provider",
+		"website":       "",
+		"description":   "Provider with an uploaded logo",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+		"support_type":  "community",
+		"support_value": "https://example.com/community",
+	}, png, 42)
+
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	require.Positive(t, response.Data.LogoAssetId)
+	assert.Equal(t, "/api/hub/provider/logo", response.Data.LogoURL)
+
+	asset, err := model.GetHubProviderLogoAsset(response.Data.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", asset.ContentType)
+	assert.Equal(t, png, asset.Data)
+
+	require.NoError(t, db.Model(&model.HubProvider{}).Where("id = ?", response.Data.Id).
+		Update("status", model.HubProviderStatusActive).Error)
+	publicContext, publicRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/logo-provider/logo", nil, 42)
+	publicContext.Params = gin.Params{{Key: "slug", Value: response.Data.Slug}}
+	GetPublicHubProviderLogo(publicContext)
+	assert.Equal(t, http.StatusOK, publicRecorder.Code)
+	assert.Equal(t, "image/png", publicRecorder.Header().Get("Content-Type"))
+	assert.Equal(t, png, publicRecorder.Body.Bytes())
 }
 
 func TestCreateHubProviderCanSubmitManualWebsiteVerificationAtomically(t *testing.T) {

@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useProviderLogoURL } from '@/lib/provider-logo'
 
 import { getProviderApplicationState } from './application-state'
 import { ProviderEarningsSummary } from './provider-earnings-summary'
@@ -54,6 +55,7 @@ function getStatusIcon(status: HubProviderStatus) {
 export function ProviderApplicationState(props: ProviderApplicationStateProps) {
   const { t } = useTranslation()
   const [editorOpen, setEditorOpen] = useState(false)
+  const logoURL = useProviderLogoURL(props.provider.logo_url)
   const config = getProviderApplicationState(props.provider.status)
   const StatusIcon = getStatusIcon(props.provider.status)
 
@@ -101,7 +103,7 @@ export function ProviderApplicationState(props: ProviderApplicationStateProps) {
             <CardContent className='flex items-start gap-4'>
               <Avatar className='size-12 rounded-md'>
                 <AvatarImage
-                  src={props.provider.logo_url || undefined}
+                  src={logoURL || undefined}
                   alt=''
                 />
                 <AvatarFallback className='rounded-md'>

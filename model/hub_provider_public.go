@@ -20,6 +20,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -137,6 +138,11 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 		},
 		Models: make([]HubProviderPublicModel, 0),
 	}
+	HydrateHubProviderLogoURL(
+		&provider,
+		"/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId),
+	)
+	profile.Provider.LogoURL = provider.LogoURL
 	if len(groups) == 0 {
 		return profile, nil
 	}

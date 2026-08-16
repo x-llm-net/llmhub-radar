@@ -303,6 +303,7 @@ hub_provider.website_verification_invalid: "網站驗證狀態無效，請重新
 hub_provider.website_verification_failed: "未找到正確的驗證記錄，請檢查設定後重試"
 hub_provider.website_evidence_invalid: "驗證截圖無效，請上傳 PNG、JPEG 或 WebP 圖片"
 hub_provider.logo_url_invalid: "Logo 位址必須是有效的 HTTP 或 HTTPS 位址"
+hub_provider.logo_invalid: "Logo 必須是 512 KB 以內的 PNG、JPEG 或 WebP 圖片"
 hub_provider.description_too_long: "供應者簡介過長"
 hub_provider.contact_invalid: "請填寫有效的審核聯絡方式"
 hub_provider.support_invalid: "請填寫有效的公開服務入口"

@@ -302,6 +302,7 @@ hub_provider.website_verification_invalid: "Website verification is not ready; s
 hub_provider.website_verification_failed: "The expected verification record was not found; check it and retry"
 hub_provider.website_evidence_invalid: "Verification screenshot must be a PNG, JPEG, or WebP image"
 hub_provider.logo_url_invalid: "Logo URL must be a valid HTTP or HTTPS URL"
+hub_provider.logo_invalid: "Logo must be a PNG, JPEG, or WebP image no larger than 512 KB"
 hub_provider.description_too_long: "Provider description is too long"
 hub_provider.contact_invalid: "Enter a valid review contact method and value"
 hub_provider.support_invalid: "Enter a valid public support entry"

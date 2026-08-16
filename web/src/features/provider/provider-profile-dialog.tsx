@@ -28,6 +28,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getProviderRootDomain } from '@/lib/provider-domain'
+import { useProviderLogoURL } from '@/lib/provider-logo'
 
 import { updateProvider } from './api'
 import { ProviderContactFields } from './provider-contact-fields'
@@ -52,7 +53,9 @@ function valuesFromProvider(provider: HubProvider): ProviderFormValues {
     slug: provider.slug,
     website: provider.website,
     description: provider.description,
-    logo_url: provider.logo_url,
+    logo_url: provider.logo_url.startsWith('/api/hub/')
+      ? ''
+      : provider.logo_url,
     contact_type: provider.contact_type || 'qq',
     contact_value: provider.contact_value,
     support_type: provider.support_type || 'community',
@@ -73,6 +76,9 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
   const editingApplication = props.provider.status !== 'active'
   const [verifyWebsite, setVerifyWebsite] = useState(false)
   const [websiteEvidence, setWebsiteEvidence] = useState<File | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState('')
+  const existingLogoURL = useProviderLogoURL(props.provider.logo_url)
   const form = useForm<ProviderFormValues>({
     resolver: zodResolver(providerFormSchema),
     defaultValues: valuesFromProvider(props.provider),
@@ -96,7 +102,8 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
     mutationFn: (input: {
       values: ProviderFormValues
       websiteEvidence?: File
-    }) => updateProvider(input.values, input.websiteEvidence),
+      logoFile?: File
+    }) => updateProvider(input.values, input.websiteEvidence, input.logoFile),
     onSuccess: (response) => {
       if (!response.success || !response.data) {
         toast.error(response.message || t('Failed to update provider profile'))
@@ -120,8 +127,19 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       form.reset(valuesFromProvider(props.provider))
       setVerifyWebsite(false)
       setWebsiteEvidence(null)
+      setLogoFile(null)
     }
   }, [form, props.open, props.provider])
+
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreview(existingLogoURL)
+      return
+    }
+    const previewURL = URL.createObjectURL(logoFile)
+    setLogoPreview(previewURL)
+    return () => URL.revokeObjectURL(previewURL)
+  }, [existingLogoURL, logoFile])
 
   useEffect(() => {
     if (website) return
@@ -139,6 +157,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       websiteEvidence: verifyWebsite
         ? (websiteEvidence ?? undefined)
         : undefined,
+      logoFile: logoFile ?? undefined,
     })
   }
 
@@ -398,21 +417,35 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
             )}
           </div>
 
-          <div className='grid gap-2'>
-            <Label htmlFor='provider-profile-logo'>{t('Logo URL')}</Label>
-            <Input
-              id='provider-profile-logo'
-              placeholder='https://example.com/logo.png'
-              {...form.register('logo_url')}
-            />
-            {form.formState.errors.logo_url && (
-              <p className='text-destructive text-sm'>
+          <div className='grid gap-3'>
+            <div className='grid gap-1'>
+              <Label htmlFor='provider-profile-logo'>
+                {t('Provider logo')}
+              </Label>
+              <p className='text-muted-foreground text-xs'>
                 {t(
-                  form.formState.errors.logo_url.message ??
-                    'Logo URL must be a valid HTTP or HTTPS URL'
+                  'Upload a logo for your public provider page. This is the default option for providers without their own website.'
                 )}
               </p>
+            </div>
+            <Input
+              id='provider-profile-logo'
+              type='file'
+              accept='image/png,image/jpeg,image/webp'
+              onChange={(event) =>
+                setLogoFile(event.target.files?.item(0) ?? null)
+              }
+            />
+            {logoPreview && (
+              <img
+                src={logoPreview}
+                alt={t('Provider logo preview')}
+                className='size-20 rounded-lg border object-cover'
+              />
             )}
+            <p className='text-muted-foreground text-xs'>
+              {t('PNG, JPEG, or WebP, up to 512 KB. Optional.')}
+            </p>
           </div>
 
           <ProviderContactFields form={form} idPrefix='provider-profile' />

@@ -58,6 +58,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { useProviderLogoURL } from '@/lib/provider-logo'
 import {
   ChannelMutateDrawer,
   type ChannelEditorTransport,
@@ -161,6 +162,8 @@ export function ProviderOnboarding() {
   const queryClient = useQueryClient()
   const [verifyWebsite, setVerifyWebsite] = useState(false)
   const [websiteEvidence, setWebsiteEvidence] = useState<File | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState('')
   const providerQuery = useProvider()
   const form = useForm<ProviderFormValues>({
     resolver: zodResolver(providerFormSchema),
@@ -181,7 +184,8 @@ export function ProviderOnboarding() {
     mutationFn: (input: {
       values: ProviderFormValues
       websiteEvidence?: File
-    }) => createProvider(input.values, input.websiteEvidence),
+      logoFile?: File
+    }) => createProvider(input.values, input.websiteEvidence, input.logoFile),
     onSuccess: (response) => {
       if (!response.success || !response.data) {
         toast.error(response.message || t('Failed to create provider'))
@@ -215,6 +219,16 @@ export function ProviderOnboarding() {
     setWebsiteEvidence(null)
   }, [website])
 
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreview('')
+      return
+    }
+    const previewURL = URL.createObjectURL(logoFile)
+    setLogoPreview(previewURL)
+    return () => URL.revokeObjectURL(previewURL)
+  }, [logoFile])
+
   if (providerQuery.isError) {
     return <ProviderPageError onRetry={() => void providerQuery.refetch()} />
   }
@@ -233,6 +247,7 @@ export function ProviderOnboarding() {
       websiteEvidence: verifyWebsite
         ? (websiteEvidence ?? undefined)
         : undefined,
+      logoFile: logoFile ?? undefined,
     })
   }
   const nameField = form.register('name')
@@ -444,21 +459,33 @@ export function ProviderOnboarding() {
                     )}
                   </div>
 
-                  <div className='grid gap-2'>
-                    <Label htmlFor='provider-logo'>{t('Logo URL')}</Label>
-                    <Input
-                      id='provider-logo'
-                      placeholder='https://example.com/logo.png'
-                      {...form.register('logo_url')}
-                    />
-                    {form.formState.errors.logo_url && (
-                      <p className='text-destructive text-sm'>
+                  <div className='grid gap-3'>
+                    <div className='grid gap-1'>
+                      <Label htmlFor='provider-logo'>{t('Provider logo')}</Label>
+                      <p className='text-muted-foreground text-xs'>
                         {t(
-                          form.formState.errors.logo_url.message ??
-                            'Logo URL must be a valid HTTP or HTTPS URL'
+                          'Upload a logo for your public provider page. This is the default option for providers without their own website.'
                         )}
                       </p>
+                    </div>
+                    <Input
+                      id='provider-logo'
+                      type='file'
+                      accept='image/png,image/jpeg,image/webp'
+                      onChange={(event) =>
+                        setLogoFile(event.target.files?.item(0) ?? null)
+                      }
+                    />
+                    {logoPreview && (
+                      <img
+                        src={logoPreview}
+                        alt={t('Provider logo preview')}
+                        className='size-20 rounded-lg border object-cover'
+                      />
                     )}
+                    <p className='text-muted-foreground text-xs'>
+                      {t('PNG, JPEG, or WebP, up to 512 KB. Optional.')}
+                    </p>
                   </div>
 
                   <ProviderContactFields form={form} idPrefix='provider' />
@@ -496,6 +523,7 @@ export function ProviderWorkspace() {
   const [channelToDelete, setChannelToDelete] =
     useState<HubProviderChannel | null>(null)
   const providerQuery = useProvider()
+  const logoURL = useProviderLogoURL(providerQuery.provider?.logo_url)
   const deleteMutation = useMutation({
     mutationFn: async (channelId: number) => {
       const response = await deleteProviderChannel(channelId)
@@ -580,7 +608,7 @@ export function ProviderWorkspace() {
             <CardContent className='flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6'>
               <div className='flex min-w-0 items-center gap-4'>
                 <Avatar className='size-14 rounded-2xl'>
-                  <AvatarImage src={provider.logo_url || undefined} alt='' />
+                  <AvatarImage src={logoURL || undefined} alt='' />
                   <AvatarFallback className='bg-primary/10 text-primary rounded-2xl text-lg'>
                     {initials}
                   </AvatarFallback>

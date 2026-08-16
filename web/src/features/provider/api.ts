@@ -88,13 +88,17 @@ export async function getProviderSelf(): Promise<HubProviderResponse> {
 
 export async function createProvider(
   values: ProviderFormValues,
-  websiteEvidence?: File
+  websiteEvidence?: File,
+  logoFile?: File
 ): Promise<HubProviderResponse> {
-  if (websiteEvidence) {
+  if (websiteEvidence || logoFile) {
     const formData = new FormData()
     formData.append('profile', JSON.stringify(values))
-    formData.append('verify_website', 'true')
-    formData.append('file', websiteEvidence)
+    if (websiteEvidence) {
+      formData.append('verify_website', 'true')
+      formData.append('file', websiteEvidence)
+    }
+    if (logoFile) formData.append('logo', logoFile)
     const response = await api.post('/api/hub/provider', formData, {
       skipErrorHandler: true,
     })
@@ -108,13 +112,17 @@ export async function createProvider(
 
 export async function updateProvider(
   values: ProviderFormValues,
-  websiteEvidence?: File
+  websiteEvidence?: File,
+  logoFile?: File
 ): Promise<HubProviderResponse> {
-  if (websiteEvidence) {
+  if (websiteEvidence || logoFile) {
     const formData = new FormData()
     formData.append('profile', JSON.stringify(values))
-    formData.append('verify_website', 'true')
-    formData.append('file', websiteEvidence)
+    if (websiteEvidence) {
+      formData.append('verify_website', 'true')
+      formData.append('file', websiteEvidence)
+    }
+    if (logoFile) formData.append('logo', logoFile)
     const response = await api.put('/api/hub/provider', formData, {
       skipErrorHandler: true,
     })

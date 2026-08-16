@@ -54,6 +54,14 @@ type hubProviderProfileRequest struct {
 
 type hubProviderCreateRequest = hubProviderProfileRequest
 
+type hubProviderProfileAssets struct {
+	VerifyWebsite       bool
+	EvidenceContentType string
+	Evidence            []byte
+	LogoContentType     string
+	Logo                []byte
+}
+
 type hubProviderStatusUpdateRequest struct {
 	Status         string `json:"status"`
 	ReviewRemark   string `json:"review_remark"`
@@ -64,23 +72,38 @@ type hubProviderSettlementSettingsUpdateRequest struct {
 	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
 }
 
-func decodeHubProviderProfileRequest(c *gin.Context) (hubProviderProfileRequest, bool, string, []byte, error) {
+func decodeHubProviderProfileRequest(c *gin.Context) (hubProviderProfileRequest, hubProviderProfileAssets, error) {
 	var req hubProviderProfileRequest
+	var assets hubProviderProfileAssets
 	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
-		return req, false, "", nil, common.DecodeJson(c.Request.Body, &req)
+		return req, assets, common.DecodeJson(c.Request.Body, &req)
 	}
-	if c.Request.ContentLength > hubProviderWebsiteEvidenceMaxBytes+256*1024 {
-		return req, false, "", nil, model.ErrHubProviderWebsiteEvidenceInvalid
+	if c.Request.ContentLength > hubProviderWebsiteEvidenceMaxBytes+hubProviderLogoMaxBytes+256*1024 {
+		return req, assets, model.ErrHubProviderWebsiteEvidenceInvalid
 	}
 	if err := common.Unmarshal([]byte(c.PostForm("profile")), &req); err != nil {
-		return req, false, "", nil, err
+		return req, assets, err
 	}
-	verifyWebsite := strings.EqualFold(strings.TrimSpace(c.PostForm("verify_website")), "true")
-	if !verifyWebsite {
-		return req, false, "", nil, nil
+	assets.VerifyWebsite = strings.EqualFold(strings.TrimSpace(c.PostForm("verify_website")), "true")
+	if assets.VerifyWebsite {
+		contentType, evidence, err := readHubProviderWebsiteEvidence(c)
+		if err != nil {
+			return req, assets, err
+		}
+		assets.EvidenceContentType = contentType
+		assets.Evidence = evidence
 	}
-	contentType, evidence, err := readHubProviderWebsiteEvidence(c)
-	return req, true, contentType, evidence, err
+	if form, err := c.MultipartForm(); err == nil && form != nil {
+		if _, ok := form.File["logo"]; ok {
+			contentType, logo, err := readHubProviderLogo(c)
+			if err != nil {
+				return req, assets, err
+			}
+			assets.LogoContentType = contentType
+			assets.Logo = logo
+		}
+	}
+	return req, assets, nil
 }
 
 func GetHubProviderSelf(c *gin.Context) {
@@ -90,6 +113,7 @@ func GetHubProviderSelf(c *gin.Context) {
 		return
 	}
 	model.HydrateHubProviderVerificationFields(provider)
+	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	common.ApiSuccess(c, provider)
 }
 
@@ -121,8 +145,12 @@ func GetPublicHubHome(c *gin.Context) {
 }
 
 func CreateHubProvider(c *gin.Context) {
-	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderProfileRequest(c)
+	req, assets, err := decodeHubProviderProfileRequest(c)
 	if err != nil {
+		if errors.Is(err, model.ErrHubProviderLogoInvalid) {
+			hubProviderLogoError(c, err)
+			return
+		}
 		if errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
 			return
@@ -150,8 +178,12 @@ func CreateHubProvider(c *gin.Context) {
 		Status:             model.HubProviderStatusPending,
 		UseProvisionalSlug: true,
 	}
-	if verifyWebsite {
-		err = model.CreateHubProviderWithManualWebsiteVerification(provider, evidenceContentType, evidence)
+	if assets.VerifyWebsite || len(assets.Logo) > 0 {
+		err = model.CreateHubProviderWithAssets(
+			provider,
+			assets.LogoContentType, assets.Logo,
+			assets.EvidenceContentType, assets.Evidence,
+		)
 	} else {
 		err = model.CreateHubProvider(provider)
 	}
@@ -169,17 +201,26 @@ func CreateHubProvider(c *gin.Context) {
 			hubProviderWebsiteVerificationError(c, err)
 			return
 		}
+		if errors.Is(err, model.ErrHubProviderLogoInvalid) {
+			hubProviderLogoError(c, err)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
 
 	model.HydrateHubProviderVerificationFields(provider)
+	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	common.ApiSuccess(c, provider)
 }
 
 func UpdateHubProviderProfile(c *gin.Context) {
-	req, verifyWebsite, evidenceContentType, evidence, err := decodeHubProviderProfileRequest(c)
+	req, assets, err := decodeHubProviderProfileRequest(c)
 	if err != nil {
+		if errors.Is(err, model.ErrHubProviderLogoInvalid) {
+			hubProviderLogoError(c, err)
+			return
+		}
 		if errors.Is(err, model.ErrHubProviderWebsiteEvidenceInvalid) {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
 			return
@@ -193,11 +234,12 @@ func UpdateHubProviderProfile(c *gin.Context) {
 	}
 
 	var provider *model.HubProvider
-	if verifyWebsite {
-		provider, err = model.UpdateHubProviderProfileWithManualWebsiteVerification(
+	if assets.VerifyWebsite || len(assets.Logo) > 0 {
+		provider, err = model.UpdateHubProviderProfileWithAssets(
 			c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
 			req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
-			evidenceContentType, evidence,
+			assets.LogoContentType, assets.Logo,
+			assets.EvidenceContentType, assets.Evidence,
 		)
 	} else {
 		provider, err = model.UpdateHubProviderProfile(
@@ -219,10 +261,15 @@ func UpdateHubProviderProfile(c *gin.Context) {
 			hubProviderWebsiteVerificationError(c, err)
 			return
 		}
+		if errors.Is(err, model.ErrHubProviderLogoInvalid) {
+			hubProviderLogoError(c, err)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
 	model.HydrateHubProviderVerificationFields(provider)
+	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	common.ApiSuccess(c, provider)
 }
 
@@ -232,6 +279,9 @@ func validateHubProviderProfileRequest(req *hubProviderProfileRequest) string {
 	req.Website = strings.TrimSpace(req.Website)
 	req.Description = strings.TrimSpace(req.Description)
 	req.LogoURL = strings.TrimSpace(req.LogoURL)
+	if strings.HasPrefix(req.LogoURL, "/api/hub/") {
+		req.LogoURL = ""
+	}
 	req.ContactType = strings.ToLower(strings.TrimSpace(req.ContactType))
 	req.ContactValue = strings.TrimSpace(req.ContactValue)
 	req.SupportType = strings.ToLower(strings.TrimSpace(req.SupportType))
@@ -295,6 +345,11 @@ func AdminListHubProviders(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	for i := range providers {
+		if providers[i].LogoAssetId > 0 {
+			providers[i].LogoURL = "/api/hub/admin/providers/" + strconv.Itoa(providers[i].Id) + "/logo"
+		}
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(providers)

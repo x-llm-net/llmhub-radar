@@ -32,6 +32,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/hub/public/providers/:slug", controller.GetPublicHubProvider)
+		apiRouter.GET("/hub/public/providers/:slug/logo", controller.GetPublicHubProviderLogo)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
@@ -158,6 +159,7 @@ func SetApiRouter(router *gin.Engine) {
 		hubProviderRoute.Use(middleware.UserAuth())
 		{
 			hubProviderRoute.GET("/self", controller.GetHubProviderSelf)
+			hubProviderRoute.GET("/logo", controller.GetHubProviderLogo)
 			hubProviderRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProvider)
 			hubProviderRoute.PUT("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderProfile)
 			hubProviderRoute.POST("/website-verification/assets", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UploadHubProviderWebsiteEvidence)
@@ -201,6 +203,7 @@ func SetApiRouter(router *gin.Engine) {
 		hubProviderAdminRoute.Use(middleware.AdminAuth())
 		{
 			hubProviderAdminRoute.GET("", controller.AdminListHubProviders)
+			hubProviderAdminRoute.GET("/:id/logo", controller.GetAdminHubProviderLogo)
 			hubProviderAdminRoute.GET("/withdrawals", controller.AdminGetHubProviderWithdrawals)
 			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)
 			hubProviderAdminRoute.GET("/:id/earnings/summary", controller.AdminGetHubProviderEarningSummary)

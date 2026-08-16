@@ -368,6 +368,7 @@ const (
 	MsgHubProviderWebsiteVerificationFailed  = "hub_provider.website_verification_failed"
 	MsgHubProviderWebsiteEvidenceInvalid     = "hub_provider.website_evidence_invalid"
 	MsgHubProviderLogoURLInvalid             = "hub_provider.logo_url_invalid"
+	MsgHubProviderLogoInvalid                = "hub_provider.logo_invalid"
 	MsgHubProviderDescriptionLong            = "hub_provider.description_too_long"
 	MsgHubProviderContactInvalid             = "hub_provider.contact_invalid"
 	MsgHubProviderSupportInvalid             = "hub_provider.support_invalid"

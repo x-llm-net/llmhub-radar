@@ -303,6 +303,7 @@ hub_provider.website_verification_invalid: "官网验证状态无效，请重新
 hub_provider.website_verification_failed: "未找到正确的验证记录，请检查配置后重试"
 hub_provider.website_evidence_invalid: "验证截图无效，请上传 PNG、JPEG 或 WebP 图片"
 hub_provider.logo_url_invalid: "Logo 地址必须是有效的 HTTP 或 HTTPS 地址"
+hub_provider.logo_invalid: "Logo 必须是 512 KB 以内的 PNG、JPEG 或 WebP 图片"
 hub_provider.description_too_long: "渠道商简介过长"
 hub_provider.contact_invalid: "请填写有效的审核联系方式"
 hub_provider.support_invalid: "请填写有效的公开服务入口"
