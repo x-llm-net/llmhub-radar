@@ -33,6 +33,12 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// ErrSubscriptionQuotaInsufficient indicates that the subscription itself
+// cannot cover a positive post-consume delta. Callers may use the existing
+// wallet-overflow policy only for this case; database and state errors must
+// remain hard failures.
+var ErrSubscriptionQuotaInsufficient = errors.New("subscription quota insufficient")
+
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
@@ -870,12 +876,19 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 // after the user's subscription quota is exhausted. A single active subscription that
 // disallows wallet overflow (allow_wallet_overflow = false) blocks the fallback.
 func UserActiveSubscriptionsAllowWalletOverflow(userId int) (bool, error) {
+	return userActiveSubscriptionsAllowWalletOverflowTx(DB, userId)
+}
+
+func userActiveSubscriptionsAllowWalletOverflowTx(tx *gorm.DB, userId int) (bool, error) {
+	if tx == nil {
+		return false, errors.New("subscription database transaction is nil")
+	}
 	if userId <= 0 {
 		return false, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
 	var strictCount int64
-	if err := DB.Model(&UserSubscription{}).
+	if err := tx.Model(&UserSubscription{}).
 		Where("user_id = ? AND status = ? AND end_time > ? AND allow_wallet_overflow = ?",
 			userId, "active", now, false).
 		Count(&strictCount).Error; err != nil {
@@ -1535,7 +1548,7 @@ func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, del
 		newUsed = 0
 	}
 	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+		return fmt.Errorf("%w: used=%d total=%d", ErrSubscriptionQuotaInsufficient, newUsed, sub.AmountTotal)
 	}
 	sub.AmountUsed = newUsed
 	return tx.Save(&sub).Error

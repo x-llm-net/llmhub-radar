@@ -200,7 +200,25 @@ func ProcessBillingTaskSettlement(taskId int64) (*BillingTaskSettlement, error) 
 				}
 			case "subscription":
 				if err := postConsumeUserSubscriptionDeltaTx(tx, settlement.SubscriptionId, int64(delta)); err != nil {
-					return err
+					if delta < 0 || !errors.Is(err, ErrSubscriptionQuotaInsufficient) {
+						return err
+					}
+					allowOverflow, overflowErr := userActiveSubscriptionsAllowWalletOverflowTx(tx, settlement.UserId)
+					if overflowErr != nil {
+						return overflowErr
+					}
+					if !allowOverflow {
+						return err
+					}
+					result := tx.Model(&User{}).
+						Where("id = ?", settlement.UserId).
+						Update("quota", gorm.Expr("quota - ?", delta))
+					if result.Error != nil {
+						return result.Error
+					}
+					if result.RowsAffected == 0 {
+						return ErrBillingTaskSettlementUserNotFound
+					}
 				}
 			default:
 				return fmt.Errorf("unsupported billing task settlement funding source: %s", settlement.FundingSource)

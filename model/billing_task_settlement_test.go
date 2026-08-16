@@ -158,6 +158,58 @@ func TestBillingTaskSettlementSubscriptionRefund(t *testing.T) {
 	assert.Equal(t, 2000, getSettlementTaskQuota(t, task.ID))
 }
 
+func TestBillingTaskSettlementSubscriptionUsesWalletOverflow(t *testing.T) {
+	truncateTables(t)
+	const userID, tokenID, subscriptionID = 613, 614, 615
+	seedTaskSettlementUser(t, userID, 1000)
+	seedTaskSettlementToken(t, tokenID, userID, 5000)
+	require.NoError(t, DB.Create(&UserSubscription{
+		Id: subscriptionID, UserId: userID, AmountTotal: 1000, AmountUsed: 900,
+		Status: "active", EndTime: common.GetTimestamp() + 3600, AllowWalletOverflow: true,
+	}).Error)
+	task := seedTaskSettlementTask(t, userID, 800)
+
+	_, err := CreateBillingTaskSettlement(BillingTaskSettlementParams{
+		TaskId: task.ID, UserId: userID, TokenId: tokenID, FundingSource: "subscription",
+		SubscriptionId: subscriptionID, PreQuota: 800, ActualQuota: 1000, Reason: "subscription overflow",
+	})
+	require.NoError(t, err)
+	_, err = ProcessBillingTaskSettlement(task.ID)
+	require.NoError(t, err)
+	_, err = ProcessBillingTaskSettlement(task.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, 800, getSettlementUserQuota(t, userID))
+	assert.Equal(t, 4800, getSettlementTokenRemainQuota(t, tokenID))
+	assert.Equal(t, int64(900), getSettlementSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 1000, getSettlementTaskQuota(t, task.ID))
+}
+
+func TestBillingTaskSettlementSubscriptionRejectsDisabledWalletOverflow(t *testing.T) {
+	truncateTables(t)
+	const userID, tokenID, subscriptionID = 616, 617, 618
+	seedTaskSettlementUser(t, userID, 1000)
+	seedTaskSettlementToken(t, tokenID, userID, 5000)
+	require.NoError(t, DB.Create(&UserSubscription{
+		Id: subscriptionID, UserId: userID, AmountTotal: 1000, AmountUsed: 900,
+		Status: "active", EndTime: common.GetTimestamp() + 3600,
+	}).Error)
+	task := seedTaskSettlementTask(t, userID, 800)
+
+	_, err := CreateBillingTaskSettlement(BillingTaskSettlementParams{
+		TaskId: task.ID, UserId: userID, TokenId: tokenID, FundingSource: "subscription",
+		SubscriptionId: subscriptionID, PreQuota: 800, ActualQuota: 1000, Reason: "subscription overflow blocked",
+	})
+	require.NoError(t, err)
+	_, err = ProcessBillingTaskSettlement(task.ID)
+	require.ErrorIs(t, err, ErrSubscriptionQuotaInsufficient)
+
+	assert.Equal(t, 1000, getSettlementUserQuota(t, userID))
+	assert.Equal(t, 5000, getSettlementTokenRemainQuota(t, tokenID))
+	assert.Equal(t, int64(900), getSettlementSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 800, getSettlementTaskQuota(t, task.ID))
+}
+
 func TestBillingTaskSettlementFailureIsRecoverable(t *testing.T) {
 	truncateTables(t)
 	const userID, tokenID = 606, 607

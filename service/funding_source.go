@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
@@ -114,7 +115,7 @@ func (s *SubscriptionFunding) Settle(delta int) error {
 	if err := model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta)); err == nil {
 		s.settledSubscriptionDelta = int64(delta)
 		return nil
-	} else if delta < 0 {
+	} else if delta < 0 || !errors.Is(err, model.ErrSubscriptionQuotaInsufficient) {
 		return err
 	} else {
 		allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(s.userId)
