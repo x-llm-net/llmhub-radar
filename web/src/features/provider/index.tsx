@@ -609,16 +609,32 @@ export function ProviderWorkspace() {
                   )}
                 </div>
               </div>
-              <div className='flex flex-wrap items-center justify-end gap-2'>
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  onClick={() => setProfileEditorOpen(true)}
-                >
-                  <Pencil className='size-3.5' aria-hidden='true' />
-                  {t('Edit public profile')}
-                </Button>
+              <div className='flex w-full flex-col gap-3 sm:w-auto sm:items-end'>
+                <div className='grid w-full gap-2 sm:flex sm:w-auto'>
+                  <Button
+                    type='button'
+                    size='lg'
+                    render={
+                      <a
+                        href={getProviderPublicURL(provider.slug)}
+                        target='_blank'
+                        rel='noreferrer'
+                      />
+                    }
+                  >
+                    <ExternalLink className='size-4' aria-hidden='true' />
+                    {t('Preview public homepage')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='lg'
+                    onClick={() => setProfileEditorOpen(true)}
+                  >
+                    <Pencil className='size-4' aria-hidden='true' />
+                    {t('Edit public profile')}
+                  </Button>
+                </div>
                 <div className='text-muted-foreground flex items-center gap-2 text-sm'>
                   <Building2 className='size-4' aria-hidden='true' />
                   {t('Provider status')}: {t('Active')}
@@ -626,24 +642,6 @@ export function ProviderWorkspace() {
               </div>
             </CardContent>
           </Card>
-
-          <div className='-mt-3 flex justify-end'>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              render={
-                <a
-                  href={getProviderPublicURL(provider.slug)}
-                  target='_blank'
-                  rel='noreferrer'
-                />
-              }
-            >
-              <ExternalLink className='size-4' aria-hidden='true' />
-              {t('Preview public homepage')}
-            </Button>
-          </div>
 
           <ProviderEarningsSummary />
 
