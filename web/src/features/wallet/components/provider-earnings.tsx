@@ -381,11 +381,6 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
       icon: CircleDollarSign,
     },
     {
-      label: t('Transferred to balance'),
-      value: summaryData?.transferred_balance_quota ?? 0,
-      icon: ArrowRightLeft,
-    },
-    {
       label: t('Available earnings'),
       value: summaryData?.withdrawable_quota ?? 0,
       icon: BanknoteArrowDown,
@@ -398,6 +393,11 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
               ),
             })
           : undefined,
+    },
+    {
+      label: t('Transferred to balance'),
+      value: summaryData?.transferred_balance_quota ?? 0,
+      icon: ArrowRightLeft,
     },
     {
       label: t('Total withdrawn'),

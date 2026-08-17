@@ -34,11 +34,6 @@ export function ProviderEarningsSummary() {
       icon: CircleDollarSign,
     },
     {
-      label: t('Transferred to balance'),
-      value: data?.transferred_balance_quota ?? 0,
-      icon: ArrowRightLeft,
-    },
-    {
       label: t('Available earnings'),
       value: data?.withdrawable_quota ?? 0,
       icon: BanknoteArrowDown,
@@ -49,6 +44,11 @@ export function ProviderEarningsSummary() {
               amount: formatQuota(data?.reserved_withdrawal_quota ?? 0),
             })
           : undefined,
+    },
+    {
+      label: t('Transferred to balance'),
+      value: data?.transferred_balance_quota ?? 0,
+      icon: ArrowRightLeft,
     },
     {
       label: t('Total withdrawn'),
