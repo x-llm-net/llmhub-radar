@@ -673,6 +673,44 @@ func TestRequestImmediateHubSupplyGroupModelProbeOnlyQueuesSelectedModel(t *test
 	assert.True(t, hasDue)
 }
 
+func TestHasDueHubSupplyProbeTargetsIgnoresSupersededConfiguration(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{
+		ProviderId: 1, PriceMultiplier: 1,
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:stale-probe-target",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "hub_stale_probe_target",
+		Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+
+	now := common.GetTimestamp()
+	currentVersion := group.ConfigVersion + 1
+	require.NoError(t, DB.Model(&HubSupplyGroup{Id: group.Id}).Update("config_version", currentVersion).Error)
+	require.NoError(t, DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("group_id = ?", group.Id).
+		Updates(map[string]any{
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now - 1,
+		}).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroupProbeTarget{
+		GroupId: group.Id, ConfigVersion: currentVersion,
+		ModelName: "gpt-5", EndpointType: string(constant.EndpointTypeOpenAI),
+		EndpointMode: HubSupplyProbeEndpointModeAuto, ProbeKind: HubSupplyProbeKindText,
+		Status: HubSupplyProbeStatusAvailable, NextProbeAt: now + 600,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error)
+
+	dueJobs, err := GetDueHubSupplyProbeJobs(now, 10)
+	require.NoError(t, err)
+	assert.Empty(t, dueJobs)
+	hasDue, err := HasDueHubSupplyProbeTargets(now)
+	require.NoError(t, err)
+	assert.False(t, hasDue)
+}
+
 func TestUpdateHubSupplyGroupModelAutoProbeControlsTargetsAndRouting(t *testing.T) {
 	truncateTables(t)
 	baseURL := "https://upstream.example"

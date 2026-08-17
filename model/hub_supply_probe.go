@@ -464,7 +464,10 @@ func UpdateHubSupplyGroupModelProbeEndpoint(groupID int, modelName, endpointMode
 
 func HasDueHubSupplyProbeTargets(now int64) (bool, error) {
 	var count int64
-	err := DB.Model(&HubSupplyGroupProbeTarget{}).
+	// Keep the follow-up check aligned with GetDueHubSupplyProbeJobs. Targets
+	// from superseded group configurations remain for audit, but must not wake
+	// the scheduler because the runner cannot execute them.
+	err := hubSupplyProbeJobsQuery(DB).
 		Where("next_probe_at <= ?", now).
 		Limit(1).
 		Count(&count).Error
