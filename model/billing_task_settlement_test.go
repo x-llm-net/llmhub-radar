@@ -234,6 +234,53 @@ func TestBillingTaskSettlementFailureIsRecoverable(t *testing.T) {
 	assert.Equal(t, 3000, getSettlementTaskQuota(t, task.ID))
 }
 
+func TestBillingTaskSettlementWalletInsufficientIsAtomic(t *testing.T) {
+	truncateTables(t)
+	const userID, tokenID = 619, 620
+	seedTaskSettlementUser(t, userID, 100)
+	seedTaskSettlementToken(t, tokenID, userID, 1000)
+	task := seedTaskSettlementTask(t, userID, 500)
+	_, err := CreateBillingTaskSettlement(BillingTaskSettlementParams{
+		TaskId: task.ID, UserId: userID, TokenId: tokenID, FundingSource: "wallet",
+		PreQuota: 500, ActualQuota: 700, Reason: "wallet underflow",
+	})
+	require.NoError(t, err)
+
+	_, err = ProcessBillingTaskSettlement(task.ID)
+	require.ErrorIs(t, err, ErrBillingTaskSettlementUserQuotaInsufficient)
+	assert.Equal(t, 100, getSettlementUserQuota(t, userID))
+	assert.Equal(t, 1000, getSettlementTokenRemainQuota(t, tokenID))
+	assert.Equal(t, 500, getSettlementTaskQuota(t, task.ID))
+
+	var settlement BillingTaskSettlement
+	require.NoError(t, DB.Where("task_id = ?", task.ID).First(&settlement).Error)
+	assert.Equal(t, BillingTaskSettlementStatusPending, settlement.Status)
+}
+
+func TestBillingTaskSettlementSubscriptionWalletOverflowInsufficientIsAtomic(t *testing.T) {
+	truncateTables(t)
+	const userID, tokenID, subscriptionID = 621, 622, 623
+	seedTaskSettlementUser(t, userID, 100)
+	seedTaskSettlementToken(t, tokenID, userID, 1000)
+	require.NoError(t, DB.Create(&UserSubscription{
+		Id: subscriptionID, UserId: userID, AmountTotal: 1000, AmountUsed: 900,
+		Status: "active", EndTime: common.GetTimestamp() + 3600, AllowWalletOverflow: true,
+	}).Error)
+	task := seedTaskSettlementTask(t, userID, 500)
+	_, err := CreateBillingTaskSettlement(BillingTaskSettlementParams{
+		TaskId: task.ID, UserId: userID, TokenId: tokenID, FundingSource: "subscription",
+		SubscriptionId: subscriptionID, PreQuota: 500, ActualQuota: 700, Reason: "subscription wallet underflow",
+	})
+	require.NoError(t, err)
+
+	_, err = ProcessBillingTaskSettlement(task.ID)
+	require.ErrorIs(t, err, ErrBillingTaskSettlementUserQuotaInsufficient)
+	assert.Equal(t, 100, getSettlementUserQuota(t, userID))
+	assert.Equal(t, 1000, getSettlementTokenRemainQuota(t, tokenID))
+	assert.Equal(t, int64(900), getSettlementSubscriptionUsed(t, subscriptionID))
+	assert.Equal(t, 500, getSettlementTaskQuota(t, task.ID))
+}
+
 func seedTaskSettlementUser(t *testing.T, id, quota int) {
 	t.Helper()
 	require.NoError(t, DB.Create(&User{Id: id, Username: "settlement-user", Quota: quota, Status: common.UserStatusEnabled}).Error)

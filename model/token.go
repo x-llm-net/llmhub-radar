@@ -33,6 +33,11 @@ type Token struct {
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
+// ErrTokenQuotaInsufficient is returned when a finite token cannot cover an
+// atomic quota decrement. Unlimited tokens are allowed through the same path
+// but keep their remaining-quota display unchanged.
+var ErrTokenQuotaInsufficient = errors.New("token quota is insufficient")
+
 func (token *Token) GetAutoGroups() ([]string, error) {
 	if token.AutoGroups == "" {
 		return nil, nil
@@ -435,7 +440,7 @@ func increaseTokenQuotaWithMode(tokenId int, key string, quota int, direct bool)
 func increaseTokenQuota(id int, quota int) (err error) {
 	err = DB.Model(&Token{}).Where("id = ?", id).Updates(
 		map[string]interface{}{
-			"remain_quota":  gorm.Expr("remain_quota + ?", quota),
+			"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota + ? END", true, quota),
 			"used_quota":    gorm.Expr("used_quota - ?", quota),
 			"accessed_time": common.GetTimestamp(),
 		},
@@ -457,19 +462,64 @@ func decreaseTokenQuotaWithMode(id int, key string, quota int, direct bool) (err
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	if common.BatchUpdateEnabled && !direct {
+		if common.RedisEnabled {
+			gopool.Go(func() {
+				err := cacheDecrTokenQuota(key, int64(quota))
+				if err != nil {
+					common.SysLog("failed to decrease token quota: " + err.Error())
+				}
+			})
+		}
+		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
+		return nil
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return decreaseTokenQuotaTx(tx, id, quota)
+	}); err != nil {
+		return err
+	}
 	if common.RedisEnabled {
 		gopool.Go(func() {
-			err := cacheDecrTokenQuota(key, int64(quota))
-			if err != nil {
+			if err := cacheDecrTokenQuota(key, int64(quota)); err != nil {
 				common.SysLog("failed to decrease token quota: " + err.Error())
 			}
 		})
 	}
-	if common.BatchUpdateEnabled && !direct {
-		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
+	return nil
+}
+
+// decreaseTokenQuotaTx atomically checks and applies a token decrement. It is
+// shared by synchronous settlement, task settlement, and recovery so every
+// durable path observes the same non-negative finite-token invariant.
+func decreaseTokenQuotaTx(tx *gorm.DB, id, quota int) error {
+	if tx == nil {
+		return errors.New("token quota transaction is nil")
+	}
+	if id <= 0 || quota <= 0 {
+		if quota == 0 {
+			return nil
+		}
+		return errors.New("invalid token quota decrement")
+	}
+	result := tx.Unscoped().Model(&Token{}).
+		Where("id = ? AND (unlimited_quota = ? OR remain_quota >= ?)", id, true, quota).
+		Updates(map[string]any{
+			"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota - ? END", true, quota),
+			"used_quota":    gorm.Expr("used_quota + ?", quota),
+			"accessed_time": common.GetTimestamp(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
 		return nil
 	}
-	return decreaseTokenQuota(id, quota)
+	var token Token
+	if err := tx.Unscoped().Select("id").Where("id = ?", id).First(&token).Error; err != nil {
+		return err
+	}
+	return ErrTokenQuotaInsufficient
 }
 
 func decreaseTokenQuota(id int, quota int) (err error) {

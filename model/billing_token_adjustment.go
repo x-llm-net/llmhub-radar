@@ -99,16 +99,25 @@ func ProcessBillingTokenAdjustment(requestId string) (*BillingTokenAdjustment, e
 		}
 
 		now := common.GetTimestamp()
-		result := tx.Unscoped().Model(&Token{}).Where("id = ?", adjustment.TokenId).Updates(map[string]any{
-			"remain_quota":  gorm.Expr("remain_quota - ?", adjustment.DeltaQuota),
-			"used_quota":    gorm.Expr("used_quota + ?", adjustment.DeltaQuota),
-			"accessed_time": now,
-		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return ErrBillingTokenAdjustmentTokenNotFound
+		if adjustment.DeltaQuota > 0 {
+			if err := decreaseTokenQuotaTx(tx, adjustment.TokenId, adjustment.DeltaQuota); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrBillingTokenAdjustmentTokenNotFound
+				}
+				return err
+			}
+		} else {
+			result := tx.Unscoped().Model(&Token{}).Where("id = ?", adjustment.TokenId).Updates(map[string]any{
+				"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota - ? END", true, adjustment.DeltaQuota),
+				"used_quota":    gorm.Expr("used_quota + ?", adjustment.DeltaQuota),
+				"accessed_time": now,
+			})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return ErrBillingTokenAdjustmentTokenNotFound
+			}
 		}
 		if err := tx.Model(&BillingTokenAdjustment{}).
 			Where("id = ? AND status = ?", adjustment.Id, BillingTokenAdjustmentStatusPending).

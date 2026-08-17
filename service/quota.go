@@ -438,6 +438,9 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 	}
 	err = model.DecreaseTokenQuotaDirect(relayInfo.TokenId, relayInfo.TokenKey, quota)
 	if err != nil {
+		if errors.Is(err, model.ErrTokenQuotaInsufficient) {
+			return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota(token.RemainQuota), logger.FormatQuota(quota))
+		}
 		return err
 	}
 	return nil

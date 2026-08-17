@@ -77,6 +77,8 @@ func TestProviderEarningPreparationFailureStopsConsumerSettlement(t *testing.T) 
 
 func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	truncate(t)
+	seedUser(t, 10, 10_000)
+	seedToken(t, 20, 10, "settlement-token", 10_000)
 	ctx, _ := gin.CreateTestContext(nil)
 	info := &relaycommon.RelayInfo{
 		RequestId:             "req-service-settlement",
@@ -111,6 +113,8 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 
 func TestSettleBillingAndProviderEarningUsesProviderFeeOverrideSnapshot(t *testing.T) {
 	truncate(t)
+	seedUser(t, 10, 10_000)
+	seedToken(t, 20, 10, "fee-override-token", 10_000)
 	provider := &model.HubProvider{
 		OwnerUserId: 99010,
 		Name:        "Fee Override Provider",
@@ -154,6 +158,8 @@ func TestSettleBillingAndProviderEarningUsesProviderFeeOverrideSnapshot(t *testi
 
 func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 	truncate(t)
+	seedUser(t, 11, 10_000)
+	seedToken(t, 21, 11, "task-settlement-token", 10_000)
 	ctx, _ := gin.CreateTestContext(nil)
 	info := &relaycommon.RelayInfo{
 		RequestId:             "req-service-task",

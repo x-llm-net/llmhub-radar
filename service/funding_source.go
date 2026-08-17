@@ -54,7 +54,14 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, true)
+		reserved, err := model.TryDecreaseUserQuota(w.userId, delta)
+		if err != nil {
+			return err
+		}
+		if !reserved {
+			return errWalletQuotaInsufficient
+		}
+		return nil
 	}
 	return model.IncreaseUserQuota(w.userId, -delta, true)
 }
@@ -125,8 +132,12 @@ func (s *SubscriptionFunding) Settle(delta int) error {
 		if !allowOverflow {
 			return err
 		}
-		if walletErr := model.DecreaseUserQuota(s.userId, delta, true); walletErr != nil {
+		reserved, walletErr := model.TryDecreaseUserQuota(s.userId, delta)
+		if walletErr != nil {
 			return walletErr
+		}
+		if !reserved {
+			return errWalletQuotaInsufficient
 		}
 		s.settledWalletDelta = int64(delta)
 		return nil

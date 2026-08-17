@@ -16,10 +16,11 @@ const (
 )
 
 var (
-	ErrBillingTaskSettlementReferenceConflict = errors.New("billing task settlement reference conflict")
-	ErrBillingTaskSettlementTaskNotFound      = errors.New("billing task settlement task not found")
-	ErrBillingTaskSettlementUserNotFound      = errors.New("billing task settlement user not found")
-	ErrBillingTaskSettlementTokenNotFound     = errors.New("billing task settlement token not found")
+	ErrBillingTaskSettlementReferenceConflict     = errors.New("billing task settlement reference conflict")
+	ErrBillingTaskSettlementTaskNotFound          = errors.New("billing task settlement task not found")
+	ErrBillingTaskSettlementUserNotFound          = errors.New("billing task settlement user not found")
+	ErrBillingTaskSettlementUserQuotaInsufficient = errors.New("billing task settlement user quota insufficient")
+	ErrBillingTaskSettlementTokenNotFound         = errors.New("billing task settlement token not found")
 )
 
 // BillingTaskSettlement is the durable record for the final quota adjustment
@@ -190,13 +191,17 @@ func ProcessBillingTaskSettlement(taskId int64) (*BillingTaskSettlement, error) 
 			switch settlement.FundingSource {
 			case "wallet":
 				result := tx.Model(&User{}).
-					Where("id = ?", settlement.UserId).
+					Where("id = ? AND quota >= ?", settlement.UserId, delta).
 					Update("quota", gorm.Expr("quota - ?", delta))
 				if result.Error != nil {
 					return result.Error
 				}
 				if result.RowsAffected == 0 {
-					return ErrBillingTaskSettlementUserNotFound
+					var user User
+					if err := tx.Select("id").Where("id = ?", settlement.UserId).First(&user).Error; err != nil {
+						return ErrBillingTaskSettlementUserNotFound
+					}
+					return ErrBillingTaskSettlementUserQuotaInsufficient
 				}
 			case "subscription":
 				if err := postConsumeUserSubscriptionDeltaTx(tx, settlement.SubscriptionId, int64(delta)); err != nil {
@@ -211,13 +216,17 @@ func ProcessBillingTaskSettlement(taskId int64) (*BillingTaskSettlement, error) 
 						return err
 					}
 					result := tx.Model(&User{}).
-						Where("id = ?", settlement.UserId).
+						Where("id = ? AND quota >= ?", settlement.UserId, delta).
 						Update("quota", gorm.Expr("quota - ?", delta))
 					if result.Error != nil {
 						return result.Error
 					}
 					if result.RowsAffected == 0 {
-						return ErrBillingTaskSettlementUserNotFound
+						var user User
+						if err := tx.Select("id").Where("id = ?", settlement.UserId).First(&user).Error; err != nil {
+							return ErrBillingTaskSettlementUserNotFound
+						}
+						return ErrBillingTaskSettlementUserQuotaInsufficient
 					}
 				}
 			default:
@@ -225,18 +234,31 @@ func ProcessBillingTaskSettlement(taskId int64) (*BillingTaskSettlement, error) 
 			}
 
 			if settlement.TokenId > 0 {
-				result := tx.Unscoped().Model(&Token{}).
-					Where("id = ? AND user_id = ?", settlement.TokenId, settlement.UserId).
-					Updates(map[string]any{
-						"remain_quota":  gorm.Expr("remain_quota - ?", delta),
-						"used_quota":    gorm.Expr("used_quota + ?", delta),
-						"accessed_time": now,
-					})
-				if result.Error != nil {
-					return result.Error
-				}
-				if result.RowsAffected == 0 {
-					return ErrBillingTaskSettlementTokenNotFound
+				if delta > 0 {
+					var token Token
+					if err := lockForUpdate(tx.Unscoped()).Select("id", "user_id").Where("id = ? AND user_id = ?", settlement.TokenId, settlement.UserId).First(&token).Error; err != nil {
+						return ErrBillingTaskSettlementTokenNotFound
+					}
+					if err := decreaseTokenQuotaTx(tx, settlement.TokenId, delta); err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return ErrBillingTaskSettlementTokenNotFound
+						}
+						return err
+					}
+				} else {
+					result := tx.Unscoped().Model(&Token{}).
+						Where("id = ? AND user_id = ?", settlement.TokenId, settlement.UserId).
+						Updates(map[string]any{
+							"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota - ? END", true, delta),
+							"used_quota":    gorm.Expr("used_quota + ?", delta),
+							"accessed_time": now,
+						})
+					if result.Error != nil {
+						return result.Error
+					}
+					if result.RowsAffected == 0 {
+						return ErrBillingTaskSettlementTokenNotFound
+					}
 				}
 			}
 
