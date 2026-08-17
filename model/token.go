@@ -448,6 +448,30 @@ func increaseTokenQuota(id int, quota int) (err error) {
 	return err
 }
 
+func increaseTokenQuotaTx(tx *gorm.DB, id, quota int) error {
+	if tx == nil {
+		return errors.New("token quota transaction is nil")
+	}
+	if id <= 0 || quota <= 0 {
+		if quota == 0 {
+			return nil
+		}
+		return errors.New("invalid token quota increment")
+	}
+	result := tx.Unscoped().Model(&Token{}).Where("id = ?", id).Updates(map[string]any{
+		"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota + ? END", true, quota),
+		"used_quota":    gorm.Expr("used_quota - ?", quota),
+		"accessed_time": common.GetTimestamp(),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 	return decreaseTokenQuotaWithMode(id, key, quota, false)
 }

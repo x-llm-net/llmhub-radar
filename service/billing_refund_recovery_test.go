@@ -45,6 +45,61 @@ func TestProcessBillingRefundWalletIsIdempotent(t *testing.T) {
 	assert.NotZero(t, stored.CompletedAt)
 }
 
+func TestProcessBillingRefundKeepsUnlimitedTokenRemainingQuota(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID = 206, 206
+	seedUser(t, userID, 700)
+	seedToken(t, tokenID, userID, "sk-billing-refund-unlimited", 100)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Updates(map[string]any{
+		"unlimited_quota": true,
+		"used_quota":      300,
+	}).Error)
+	_, err := model.CreateBillingRefund(model.BillingRefundParams{
+		RequestId:     "refund-wallet-unlimited",
+		UserId:        userID,
+		TokenId:       tokenID,
+		FundingSource: BillingSourceWallet,
+		FundingQuota:  300,
+		TokenQuota:    300,
+	})
+	require.NoError(t, err)
+
+	_, err = model.ProcessBillingRefund("refund-wallet-unlimited")
+	require.NoError(t, err)
+
+	assert.Equal(t, 1000, getUserQuota(t, userID))
+	assert.Equal(t, 100, getTokenRemainQuota(t, tokenID))
+	assert.Zero(t, getTokenUsedQuota(t, tokenID))
+}
+
+func TestProcessBillingRefundRestoresSoftDeletedToken(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID = 207, 207
+	seedUser(t, userID, 700)
+	seedToken(t, tokenID, userID, "sk-billing-refund-deleted", 200)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Update("used_quota", 300).Error)
+	require.NoError(t, model.DB.Delete(&model.Token{}, tokenID).Error)
+	_, err := model.CreateBillingRefund(model.BillingRefundParams{
+		RequestId:     "refund-wallet-deleted-token",
+		UserId:        userID,
+		TokenId:       tokenID,
+		FundingSource: BillingSourceWallet,
+		FundingQuota:  300,
+		TokenQuota:    300,
+	})
+	require.NoError(t, err)
+
+	_, err = model.ProcessBillingRefund("refund-wallet-deleted-token")
+	require.NoError(t, err)
+
+	var token model.Token
+	require.NoError(t, model.DB.Unscoped().First(&token, tokenID).Error)
+	assert.Equal(t, 500, token.RemainQuota)
+	assert.Zero(t, token.UsedQuota)
+}
+
 func TestProcessBillingRefundRestoresSubscriptionBaseAndReserve(t *testing.T) {
 	truncate(t)
 

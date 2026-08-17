@@ -180,3 +180,22 @@ func TestBillingTokenAdjustmentRefundKeepsUnlimitedTokenRemainingQuota(t *testin
 	assert.Equal(t, 100, token.RemainQuota)
 	assert.Equal(t, 150, token.UsedQuota)
 }
+
+func TestPendingBillingTokenAdjustmentsPrioritizeNeverAttemptedRecords(t *testing.T) {
+	truncateTables(t)
+	const tokenID = 515
+	require.NoError(t, DB.Create(&Token{
+		Id: tokenID, UserId: 516, Key: "sk-token-adjustment-order",
+		Status: common.TokenStatusEnabled, RemainQuota: 100,
+	}).Error)
+	first, err := CreateBillingTokenAdjustment("req-token-adjustment-old-failure", tokenID, 101, nil)
+	require.NoError(t, err)
+	_, err = ProcessBillingTokenAdjustment(first.RequestId)
+	require.ErrorIs(t, err, ErrTokenQuotaInsufficient)
+	_, err = CreateBillingTokenAdjustment("req-token-adjustment-new", tokenID, -10, nil)
+	require.NoError(t, err)
+
+	requestIDs, err := ListPendingBillingTokenAdjustmentRequestIDs(1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"req-token-adjustment-new"}, requestIDs)
+}

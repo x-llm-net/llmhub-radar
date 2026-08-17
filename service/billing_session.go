@@ -31,6 +31,8 @@ type BillingSession struct {
 	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
 	trusted          bool // 是否命中信任额度旁路
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
+	retainedPreQuota bool // 最终结算失败后保留了成功请求的预扣额度
+	committedQuota   int  // 已实际提交或保留的最终计费额度
 	settled          bool // Settle 全部完成（资金 + 令牌）
 	refunded         bool // Refund 已调用
 	mu               sync.Mutex
@@ -49,15 +51,21 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	delta := actualQuota - s.preConsumedQuota
 	if delta == 0 {
+		s.committedQuota = actualQuota
 		s.settled = true
 		return nil
 	}
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
 	if !s.fundingSettled {
 		if err := s.funding.Settle(delta); err != nil {
+			if actualQuota > 0 && s.preConsumedQuota > 0 {
+				s.retainedPreQuota = true
+				s.committedQuota = s.preConsumedQuota
+			}
 			return err
 		}
 		s.fundingSettled = true
+		s.committedQuota = actualQuota
 	}
 	// 2) 调整令牌额度
 	var tokenErr error
@@ -194,12 +202,20 @@ func (s *BillingSession) FundingCommitted() bool {
 func (s *BillingSession) SettlementCommitted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.settled || s.fundingSettled
+	return s.settled || s.fundingSettled || s.retainedPreQuota
+}
+
+// CommittedQuota returns the amount that can be paid out without making the
+// platform fund a failed final adjustment.
+func (s *BillingSession) CommittedQuota() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.committedQuota
 }
 
 func (s *BillingSession) needsRefundLocked() bool {
-	if s.settled || s.refunded || s.fundingSettled {
-		// fundingSettled 时资金来源已提交结算，不能再退预扣费
+	if s.settled || s.refunded || s.fundingSettled || s.retainedPreQuota {
+		// 成功上游已有用量，或资金来源已经提交结算时，不能整笔退回预扣费。
 		return false
 	}
 	if s.tokenConsumed > 0 {

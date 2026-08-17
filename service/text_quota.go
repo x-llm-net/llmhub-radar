@@ -458,16 +458,19 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, summary.Quota)
 	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	accountedQuota := BillingAccountedQuota(relayInfo, summary.Quota, settlementErr)
 	if recordBillableUsage && billingCommitted {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, accountedQuota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, accountedQuota)
 	}
-	logQuota := summary.Quota
+	logQuota := accountedQuota
 	if settlementErr != nil {
 		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
 		if !billingCommitted {
 			logQuota = 0
 			extraContent = append(extraContent, "计费结算失败，本次未扣费")
+		} else if accountedQuota != summary.Quota {
+			extraContent = append(extraContent, fmt.Sprintf("最终补扣失败，按已预扣额度 %s 结算", logger.FormatQuota(accountedQuota)))
 		}
 	}
 

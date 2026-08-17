@@ -213,17 +213,20 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 
 	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, quota)
 	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	accountedQuota := BillingAccountedQuota(relayInfo, quota, settlementErr)
 	if recordBillableUsage && billingCommitted {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, accountedQuota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, accountedQuota)
 	}
 	if settlementErr != nil {
 		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
 	}
-	logQuota := quota
+	logQuota := accountedQuota
 	if settlementErr != nil && !billingCommitted {
 		logQuota = 0
 		logContent += "，计费结算失败，本次未扣费"
+	} else if settlementErr != nil && accountedQuota != quota {
+		logContent += fmt.Sprintf("，最终补扣失败，按已预扣额度 %s 结算", logger.FormatQuota(accountedQuota))
 	}
 
 	logModel := modelName
@@ -370,11 +373,12 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 
 	settlementErr := SettleBillingAndProviderEarning(ctx, relayInfo, quota)
 	billingCommitted := settlementErr == nil || BillingSettlementCommitted(relayInfo)
+	accountedQuota := BillingAccountedQuota(relayInfo, quota, settlementErr)
 	if recordBillableUsage && billingCommitted {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, accountedQuota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, accountedQuota)
 	}
-	logQuota := quota
+	logQuota := accountedQuota
 	if settlementErr != nil {
 		logger.LogError(ctx, "error settling billing: "+settlementErr.Error())
 		if !billingCommitted {
@@ -383,6 +387,11 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 				extraContent += ", "
 			}
 			extraContent += "计费结算失败，本次未扣费"
+		} else if accountedQuota != quota {
+			if extraContent != "" {
+				extraContent += ", "
+			}
+			extraContent += fmt.Sprintf("最终补扣失败，按已预扣额度 %s 结算", logger.FormatQuota(accountedQuota))
 		}
 	}
 
@@ -447,40 +456,24 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 }
 
 func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) (err error) {
-
-	// 1) Consume from wallet quota OR subscription item
-	if relayInfo != nil && relayInfo.BillingSource == BillingSourceSubscription {
-		if relayInfo.SubscriptionId == 0 {
-			return errors.New("subscription id is missing")
-		}
-		delta := int64(quota)
-		if delta != 0 {
-			if err := model.PostConsumeUserSubscriptionDelta(relayInfo.SubscriptionId, delta); err != nil {
-				return err
-			}
-			relayInfo.SubscriptionPostDelta += delta
-		}
-	} else {
-		// Wallet
-		if quota > 0 {
-			err = model.DecreaseUserQuota(relayInfo.UserId, quota, true)
-		} else {
-			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, true)
-		}
-		if err != nil {
-			return err
-		}
+	if relayInfo == nil {
+		return errors.New("relay info is nil")
 	}
-
-	if !relayInfo.IsPlayground {
-		if quota > 0 {
-			err = model.DecreaseTokenQuotaDirect(relayInfo.TokenId, relayInfo.TokenKey, quota)
-		} else {
-			err = model.IncreaseTokenQuotaDirect(relayInfo.TokenId, relayInfo.TokenKey, -quota)
+	if err := model.ApplyLegacyQuotaAdjustment(
+		relayInfo.UserId,
+		relayInfo.TokenId,
+		relayInfo.SubscriptionId,
+		relayInfo.BillingSource,
+		quota,
+		relayInfo.IsPlayground,
+	); err != nil {
+		if errors.Is(err, model.ErrLegacyBillingUserQuotaInsufficient) {
+			return errWalletQuotaInsufficient
 		}
-		if err != nil {
-			return err
-		}
+		return err
+	}
+	if relayInfo.BillingSource == BillingSourceSubscription {
+		relayInfo.SubscriptionPostDelta += int64(quota)
 	}
 
 	if sendEmail {

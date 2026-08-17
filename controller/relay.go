@@ -810,10 +810,14 @@ func RelayTask(c *gin.Context) {
 	}
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
+	settledTaskQuota := result.Quota
 	if taskErr == nil {
 		if settleErr := service.SettleTaskBillingAndPrepareProviderEarning(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
-			if !service.BillingSettlementCommitted(relayInfo) {
+			if service.BillingSettlementCommitted(relayInfo) {
+				settledTaskQuota = service.BillingCommittedQuota(relayInfo)
+				relayInfo.PriceData.Quota = settledTaskQuota
+			} else {
 				taskErr = service.TaskErrorWrapperLocal(
 					fmt.Errorf("billing settlement failed: %w", settleErr),
 					"billing_settlement_failed",
@@ -856,7 +860,7 @@ func RelayTask(c *gin.Context) {
 				task.PrivateData.BillingContext.OriginProviderId = policy.ProviderID
 			}
 		}
-		task.Quota = result.Quota
+		task.Quota = settledTaskQuota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
 		if insertErr := task.Insert(); insertErr != nil {

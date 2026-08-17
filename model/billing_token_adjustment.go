@@ -176,7 +176,7 @@ func ListPendingBillingTokenAdjustmentRequestIDs(limit int) ([]string, error) {
 	requestIds := make([]string, 0, limit)
 	err := DB.Model(&BillingTokenAdjustment{}).
 		Where("status = ?", BillingTokenAdjustmentStatusPending).
-		Order("id asc").Limit(limit).
+		Order("last_attempt_at asc, id asc").Limit(limit).
 		Pluck("request_id", &requestIds).Error
 	return requestIds, err
 }

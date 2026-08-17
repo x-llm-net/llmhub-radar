@@ -208,7 +208,7 @@ func ProcessBillingTaskSettlement(taskId int64) (*BillingTaskSettlement, error) 
 					if delta < 0 || !errors.Is(err, ErrSubscriptionQuotaInsufficient) {
 						return err
 					}
-					allowOverflow, overflowErr := userActiveSubscriptionsAllowWalletOverflowTx(tx, settlement.UserId)
+					allowOverflow, overflowErr := userSubscriptionAllowsWalletOverflowTx(tx, settlement.SubscriptionId, settlement.UserId)
 					if overflowErr != nil {
 						return overflowErr
 					}

@@ -111,6 +111,51 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	assert.Equal(t, 900, entries[0].ProviderIncomeQuota)
 }
 
+func TestSettleBillingAndProviderEarningUsesRetainedPreConsumeOnFinalShortfall(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 12, 22
+	seedUser(t, userID, 200)
+	seedToken(t, tokenID, userID, "retained-settlement-token", 200)
+	ctx, _ := gin.CreateTestContext(nil)
+	info := &relaycommon.RelayInfo{
+		RequestId:       "req-retained-provider-settlement",
+		UserId:          userID,
+		TokenId:         tokenID,
+		TokenKey:        "retained-settlement-token",
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 32},
+		OriginModelName: "gpt-5",
+		BillingSource:   BillingSourceWallet,
+		PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{
+			GroupRatio:        1,
+			BaseGroupRatio:    1,
+			SupplyMultiplier:  1,
+			HasSupplyPricing:  true,
+			SupplyGroupId:     42,
+			SupplyProviderId:  52,
+			SupplyOwnerUserId: 62,
+		}},
+	}
+	info.Billing = &BillingSession{
+		relayInfo: info,
+		funding: &WalletFunding{
+			userId: userID, consumed: 800,
+		},
+		preConsumedQuota: 800,
+		tokenConsumed:    800,
+	}
+
+	require.ErrorIs(t, SettleBillingAndProviderEarning(ctx, info, 1100), errWalletQuotaInsufficient)
+	assert.Equal(t, 800, BillingCommittedQuota(info))
+	assert.Equal(t, 200, getUserQuota(t, userID))
+	assert.Equal(t, 200, getTokenRemainQuota(t, tokenID))
+
+	var earning model.HubProviderEarning
+	require.NoError(t, model.DB.Where("request_id = ?", info.RequestId).First(&earning).Error)
+	assert.Equal(t, model.HubProviderEarningStatusSettled, earning.Status)
+	assert.Equal(t, 800, earning.GrossQuota)
+	assert.Equal(t, earning.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota)
+}
+
 func TestSettleBillingAndProviderEarningUsesProviderFeeOverrideSnapshot(t *testing.T) {
 	truncate(t)
 	seedUser(t, 10, 10_000)

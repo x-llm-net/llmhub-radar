@@ -897,6 +897,29 @@ func userActiveSubscriptionsAllowWalletOverflowTx(tx *gorm.DB, userId int) (bool
 	return strictCount == 0, nil
 }
 
+// UserSubscriptionAllowsWalletOverflow reads the policy snapshot from the
+// subscription that funded the request. Its status may change while an async
+// task is running, but that must not change the original wallet-fallback rule.
+func UserSubscriptionAllowsWalletOverflow(userSubscriptionId, userId int) (bool, error) {
+	return userSubscriptionAllowsWalletOverflowTx(DB, userSubscriptionId, userId)
+}
+
+func userSubscriptionAllowsWalletOverflowTx(tx *gorm.DB, userSubscriptionId, userId int) (bool, error) {
+	if tx == nil {
+		return false, errors.New("subscription database transaction is nil")
+	}
+	if userSubscriptionId <= 0 || userId <= 0 {
+		return false, errors.New("invalid subscription identity")
+	}
+	var sub UserSubscription
+	if err := tx.Select("id", "allow_wallet_overflow").
+		Where("id = ? AND user_id = ?", userSubscriptionId, userId).
+		First(&sub).Error; err != nil {
+		return false, err
+	}
+	return sub.AllowWalletOverflow, nil
+}
+
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.
 func GetAllUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	if userId <= 0 {

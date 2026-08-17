@@ -19,6 +19,7 @@ const (
 var (
 	ErrBillingRefundReferenceConflict = errors.New("billing refund reference conflict")
 	ErrBillingRefundUserNotFound      = errors.New("billing refund user not found")
+	ErrBillingRefundTokenNotFound     = errors.New("billing refund token not found")
 )
 
 // BillingRefund is the durable, request-scoped recovery record for a failed
@@ -206,15 +207,18 @@ func ProcessBillingRefund(requestId string) (*BillingRefund, error) {
 		}
 
 		if refund.TokenQuota > 0 && refund.TokenId > 0 {
-			result := tx.Model(&Token{}).
-				Where("id = ?", refund.TokenId).
+			result := tx.Unscoped().Model(&Token{}).
+				Where("id = ? AND user_id = ?", refund.TokenId, refund.UserId).
 				Updates(map[string]any{
-					"remain_quota":  gorm.Expr("remain_quota + ?", refund.TokenQuota),
+					"remain_quota":  gorm.Expr("CASE WHEN unlimited_quota = ? THEN remain_quota ELSE remain_quota + ? END", true, refund.TokenQuota),
 					"used_quota":    gorm.Expr("used_quota - ?", refund.TokenQuota),
 					"accessed_time": now,
 				})
 			if result.Error != nil {
 				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return ErrBillingRefundTokenNotFound
 			}
 		}
 		if refund.TaskId > 0 {
@@ -343,7 +347,7 @@ func invalidateBillingRefundCaches(userId int, tokenId int) {
 			return
 		}
 		var token Token
-		if err := DB.Select("key").Where("id = ?", tokenId).First(&token).Error; err != nil {
+		if err := DB.Unscoped().Select("key").Where("id = ?", tokenId).First(&token).Error; err != nil {
 			return
 		}
 		if err := cacheDeleteToken(token.Key); err != nil {

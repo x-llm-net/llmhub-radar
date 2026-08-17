@@ -176,3 +176,16 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	}
 	return nil
 }
+
+// BillingAccountedQuota returns the durable amount used for logs and usage
+// counters. A failed final adjustment may retain only the original precharge.
+func BillingAccountedQuota(relayInfo *relaycommon.RelayInfo, actualQuota int, settlementErr error) int {
+	if settlementErr == nil || !BillingSettlementCommitted(relayInfo) {
+		return actualQuota
+	}
+	committedQuota := BillingCommittedQuota(relayInfo)
+	if committedQuota < 0 {
+		return 0
+	}
+	return committedQuota
+}

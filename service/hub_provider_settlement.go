@@ -98,7 +98,12 @@ func SettleBillingAndProviderEarning(ctx *gin.Context, relayInfo *relaycommon.Re
 	if err := SettleBilling(ctx, relayInfo, actualQuota); err != nil {
 		if requestId != "" {
 			if BillingSettlementCommitted(relayInfo) {
-				if releaseErr := settlePreparedHubProviderEarning(ctx, requestId, actualQuota); releaseErr != nil {
+				committedQuota := BillingCommittedQuota(relayInfo)
+				if committedQuota <= 0 {
+					if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
+						logger.LogError(ctx, "cancel zero-quota provider earning after billing failure: "+cancelErr.Error())
+					}
+				} else if releaseErr := settlePreparedHubProviderEarning(ctx, requestId, committedQuota); releaseErr != nil {
 					logger.LogError(ctx, "release hub provider earning after committed billing failure: "+releaseErr.Error())
 				}
 			} else if cancelErr := model.CancelHubProviderEarning(requestId); cancelErr != nil {
@@ -165,6 +170,17 @@ func BillingSettlementCommitted(relayInfo *relaycommon.RelayInfo) bool {
 	}
 	committed, ok := relayInfo.Billing.(interface{ SettlementCommitted() bool })
 	return ok && committed.SettlementCommitted()
+}
+
+func BillingCommittedQuota(relayInfo *relaycommon.RelayInfo) int {
+	if relayInfo == nil || relayInfo.Billing == nil {
+		return 0
+	}
+	committed, ok := relayInfo.Billing.(interface{ CommittedQuota() int })
+	if !ok {
+		return 0
+	}
+	return committed.CommittedQuota()
 }
 
 func settlePreparedHubProviderEarning(ctx *gin.Context, requestId string, actualQuota int) error {

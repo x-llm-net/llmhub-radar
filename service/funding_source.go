@@ -125,7 +125,7 @@ func (s *SubscriptionFunding) Settle(delta int) error {
 	} else if delta < 0 || !errors.Is(err, model.ErrSubscriptionQuotaInsufficient) {
 		return err
 	} else {
-		allowOverflow, overflowErr := model.UserActiveSubscriptionsAllowWalletOverflow(s.userId)
+		allowOverflow, overflowErr := model.UserSubscriptionAllowsWalletOverflow(s.subscriptionId, s.userId)
 		if overflowErr != nil {
 			return overflowErr
 		}
