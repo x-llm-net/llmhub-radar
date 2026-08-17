@@ -54,8 +54,18 @@ function Invoke-Git {
 function Invoke-Ssh {
   param([Parameter(Mandatory)][string]$Command)
 
-  $output = & ssh $target.sshTarget $Command 2>&1
-  if ($LASTEXITCODE -ne 0) {
+  # Docker writes normal build progress to stderr. Treat the ssh exit code as
+  # authoritative so PowerShell does not stop on a successful remote build.
+  $previousErrorActionPreference = $ErrorActionPreference
+  $exitCode = 0
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = & ssh $target.sshTarget $Command 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) {
     throw "Remote command failed on the LLM-Hub target:`n$($output -join "`n")"
   }
   return [string]($output -join "`n")
