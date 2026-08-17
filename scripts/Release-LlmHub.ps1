@@ -138,7 +138,7 @@ function Test-PublicStatus {
   }
 
   foreach ($path in @('/', '/provider/onboarding', '/providers')) {
-    $response = Invoke-WebRequest -Uri "$($target.publicBaseUrl)$path" -Method Get -TimeoutSec 30 -MaximumRedirection 5
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "$($target.publicBaseUrl)$path" -Method Get -TimeoutSec 30 -MaximumRedirection 5
     if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
       throw "Public page '$path' returned HTTP $($response.StatusCode)."
     }
