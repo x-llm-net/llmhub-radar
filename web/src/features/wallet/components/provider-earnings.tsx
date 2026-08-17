@@ -13,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Clock3,
   Loader2,
   ReceiptText,
 } from 'lucide-react'
@@ -382,14 +381,23 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
       icon: CircleDollarSign,
     },
     {
-      label: t('Pending settlement'),
-      value: summaryData?.reserved_withdrawal_quota ?? 0,
-      icon: Clock3,
+      label: t('Transferred to balance'),
+      value: summaryData?.transferred_balance_quota ?? 0,
+      icon: ArrowRightLeft,
     },
     {
-      label: t('Available to withdraw'),
+      label: t('Available earnings'),
       value: summaryData?.withdrawable_quota ?? 0,
       icon: BanknoteArrowDown,
+      description: t('Transfer to balance or request withdrawal'),
+      detail:
+        (summaryData?.reserved_withdrawal_quota ?? 0) > 0
+          ? t('Withdrawal in progress: {{amount}}', {
+              amount: formatQuota(
+                summaryData?.reserved_withdrawal_quota ?? 0
+              ),
+            })
+          : undefined,
     },
     {
       label: t('Total withdrawn'),
@@ -448,13 +456,25 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
               </CardTitle>
               <stat.icon className='text-muted-foreground size-4' />
             </CardHeader>
-            <CardContent>
+            <CardContent className='space-y-1'>
               {summary.isLoading ? (
                 <Skeleton className='h-7 w-28' />
               ) : (
-                <p className='text-xl font-semibold tabular-nums'>
-                  {formatQuota(stat.value)}
-                </p>
+                <>
+                  <p className='text-xl font-semibold tabular-nums'>
+                    {formatQuota(stat.value)}
+                  </p>
+                  {stat.description && (
+                    <p className='text-muted-foreground text-xs'>
+                      {stat.description}
+                    </p>
+                  )}
+                  {stat.detail && (
+                    <p className='text-muted-foreground text-xs'>
+                      {stat.detail}
+                    </p>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

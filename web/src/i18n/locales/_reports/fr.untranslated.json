@@ -66,6 +66,8 @@
   "Failed to update listing status": "Failed to update listing status",
   "Too many listing updates. Please retry shortly.": "Too many listing updates. Please retry shortly.",
   "Failed to submit withdrawal": "Failed to submit withdrawal",
+  "Transferred to balance": "Transferred to balance",
+  "Transfer to balance or request withdrawal": "Transfer to balance or request withdrawal",
   "Available to withdraw": "Available to withdraw",
   "Successful user charges are split automatically: 90% to the provider and 10% as the platform fee.": "Successful user charges are split automatically: 90% to the provider and 10% as the platform fee.",
   "Transfer to balance": "Transfer to balance",

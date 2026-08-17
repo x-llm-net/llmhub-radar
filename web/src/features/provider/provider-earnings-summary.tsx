@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
+  ArrowRightLeft,
   BanknoteArrowDown,
   CircleDollarSign,
-  Clock3,
   ReceiptText,
   RefreshCw,
 } from 'lucide-react'
@@ -34,14 +34,21 @@ export function ProviderEarningsSummary() {
       icon: CircleDollarSign,
     },
     {
-      label: t('Pending settlement'),
-      value: data?.reserved_withdrawal_quota ?? 0,
-      icon: Clock3,
+      label: t('Transferred to balance'),
+      value: data?.transferred_balance_quota ?? 0,
+      icon: ArrowRightLeft,
     },
     {
-      label: t('Available to withdraw'),
+      label: t('Available earnings'),
       value: data?.withdrawable_quota ?? 0,
       icon: BanknoteArrowDown,
+      description: t('Transfer to balance or request withdrawal'),
+      detail:
+        (data?.reserved_withdrawal_quota ?? 0) > 0
+          ? t('Withdrawal in progress: {{amount}}', {
+              amount: formatQuota(data?.reserved_withdrawal_quota ?? 0),
+            })
+          : undefined,
     },
     {
       label: t('Total withdrawn'),
@@ -98,13 +105,25 @@ export function ProviderEarningsSummary() {
                 </CardTitle>
                 <stat.icon className='text-muted-foreground size-4' />
               </CardHeader>
-              <CardContent>
+              <CardContent className='space-y-1'>
                 {summary.isLoading ? (
                   <Skeleton className='h-7 w-28' />
                 ) : (
-                  <p className='text-xl font-semibold tabular-nums'>
-                    {formatQuota(stat.value)}
-                  </p>
+                  <>
+                    <p className='text-xl font-semibold tabular-nums'>
+                      {formatQuota(stat.value)}
+                    </p>
+                    {stat.description && (
+                      <p className='text-muted-foreground text-xs'>
+                        {stat.description}
+                      </p>
+                    )}
+                    {stat.detail && (
+                      <p className='text-muted-foreground text-xs'>
+                        {stat.detail}
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
