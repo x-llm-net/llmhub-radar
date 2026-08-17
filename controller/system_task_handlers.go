@@ -25,14 +25,21 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(hubSupplyProbeHandler{})
 }
 
-// hubSupplyProbeHandler scans once per minute for targets whose provider-owned
-// interval is due. The scan cadence is not the probe cadence: each target stores
-// its own next run (10/30 minutes by default).
+// hubSupplyProbeHandler is scheduled only while a provider-owned target is due.
+// Each target stores its own next run (10/30 minutes by default), so idle
+// periods do not create empty system task rows.
 type hubSupplyProbeHandler struct{}
 
 func (hubSupplyProbeHandler) Type() string { return model.SystemTaskTypeHubSupplyProbe }
 
-func (hubSupplyProbeHandler) Enabled() bool { return model.HasHubSupplyGroups() }
+func (hubSupplyProbeHandler) Enabled() bool {
+	hasDue, err := model.HasDueHubSupplyProbeTargets(common.GetTimestamp())
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to check due hub supply probes: %v", err))
+		return false
+	}
+	return hasDue
+}
 
 func (hubSupplyProbeHandler) Interval() time.Duration { return time.Minute }
 
