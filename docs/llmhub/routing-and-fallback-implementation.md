@@ -351,7 +351,7 @@ M4-D 在 M4-B 的短窗口桶上增加可切换请求口径：成功请求始终
 
 本轮标准档真实请求分别记录到约 `15.2s` 和 `65.0s` 的 TTFT，而渠道商内部日志约 `3-4s` 收到首字。LLM-Hub 在收到首个上游事件后约 `150ms` 即识别有效首字并写出，因此该差值不是简单的页面展示误差：用户很可能真实等待了 `15-65s`，主要延迟位于渠道商应用向 LLM-Hub 输出首个 SSE 之前。后续在 LLM-Hub 生产服务器直连同一 X-LLM 上游的 A/B 验证表明，全局强制 `identity` 反而会触发该 Cloudflare 链路聚合未压缩的小 SSE 数据块；恢复标准 gzip 协商才是正确方向。
 
-首轮修复不改变路由、Affinity、探测任务或账务：
+本轮传输修复不改变路由、Affinity、探测任务或账务：
 
 - 流式上游请求使用 New API/Go 标准压缩协商：未显式设置时由传输层请求并透明解压 gzip；渠道 Header Override 仍具有最高优先级，确有需要的特殊上游可单独指定 `Accept-Encoding: identity`。
 - `hub_attempts` 增加 `response_headers_ms`、`first_body_byte_ms`、`upstream_protocol`、`content_encoding`、`transfer_encoding` 和 `upstream_uncompressed`，并继续保留 `first_event_ms` 与 `first_token_ms`。
