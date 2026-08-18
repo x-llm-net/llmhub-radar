@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func getChannelAbilityModels(t *testing.T, channelID int) []string {
@@ -446,10 +447,23 @@ func TestMigrateHubSupplyProbeFailureCountsKeepsLegacyErrorsQuarantined(t *testi
 		LastProbeAt: now, LastSuccessAt: now - 600, CreatedAt: now, UpdatedAt: now,
 	}
 	require.NoError(t, DB.Create(target).Error)
+	suspendedTarget := &HubSupplyGroupProbeTarget{
+		GroupId: 2, ConfigVersion: 1, ModelName: "gpt-legacy-suspended",
+		EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+		ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusError,
+		ConsecutiveFailures: HubSupplyProbeFailureSuspendLimit + 5,
+		NextProbeAt:         now, LastProbeAt: now, CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, DB.Create(suspendedTarget).Error)
 	require.NoError(t, migrateHubSupplyProbeFailureCounts())
 	require.NoError(t, DB.First(target, target.Id).Error)
 	assert.Equal(t, HubSupplyProbeFailureThreshold, target.ConsecutiveFailures)
 	assert.False(t, hubSupplyProbeTargetRoutable(*target))
+	require.NoError(t, DB.First(suspendedTarget, suspendedTarget.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusSuspended, suspendedTarget.Status)
+	assert.Zero(t, suspendedTarget.NextProbeAt)
+	assert.NotZero(t, suspendedTarget.SuspendedAt)
+	assert.Equal(t, HubSupplyProbeSuspensionReasonFailureLimit, suspendedTarget.SuspensionReason)
 }
 
 func TestReconcileHubSupplyGroupPreservesManualDisableAfterHealthyProbe(t *testing.T) {
@@ -680,6 +694,10 @@ func TestRequestImmediateHubSupplyGroupProbeEnforcesCooldown(t *testing.T) {
 
 func TestRequestImmediateHubSupplyGroupModelProbeOnlyQueuesSelectedModel(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.Create(&HubProvider{
+		Id: 1, OwnerUserId: 1, Slot: 1, Name: "active provider", Slug: "active-provider",
+		Status: HubProviderStatusActive,
+	}).Error)
 	baseURL := "https://upstream.example"
 	group := &HubSupplyGroup{
 		ProviderId: 1, PriceMultiplier: 1,
@@ -688,7 +706,7 @@ func TestRequestImmediateHubSupplyGroupModelProbeOnlyQueuesSelectedModel(t *test
 	channel := &Channel{
 		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:targeted",
 		BaseURL: &baseURL, Models: "gpt-5,gpt-5-mini", Group: "hub_targeted",
-		Status: common.ChannelStatusManuallyDisabled,
+		Status: common.ChannelStatusAutoDisabled,
 	}
 	require.NoError(t, CreateHubSupplyGroup(group, channel))
 	now := common.GetTimestamp()
@@ -724,6 +742,356 @@ func TestRequestImmediateHubSupplyGroupModelProbeOnlyQueuesSelectedModel(t *test
 	hasDue, err := HasDueHubSupplyProbeTargets(common.GetTimestamp())
 	require.NoError(t, err)
 	assert.True(t, hasDue)
+}
+
+func TestHubSupplyProbeNextProbeAtUsesFailureBackoff(t *testing.T) {
+	now := common.GetTimestamp()
+	group := &HubSupplyGroup{TextProbeMinutes: 60, ImageProbeMinutes: 120}
+	textTarget := &HubSupplyGroupProbeTarget{ProbeKind: HubSupplyProbeKindText}
+	imageTarget := &HubSupplyGroupProbeTarget{ProbeKind: HubSupplyProbeKindImage}
+
+	assert.Equal(t, now+5*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 1))
+	assert.Equal(t, now+5*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 9))
+	assert.Equal(t, now+15*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 10))
+	assert.Equal(t, now+15*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 29))
+	assert.Equal(t, now+60*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 30))
+	assert.Equal(t, now+60*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 99))
+	assert.Zero(t, hubSupplyProbeNextProbeAt(group, textTarget, now, HubSupplyProbeFailureSuspendLimit))
+	assert.Equal(t, now+5*60, hubSupplyProbeNextProbeAt(group, imageTarget, now, 1))
+	group.TextProbeMinutes = 3
+	assert.Equal(t, now+3*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 30))
+}
+
+func TestRecordHubSupplyProbeResultSuspendsAtFailureLimitAndManualProbeResets(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{ProviderId: 1, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:suspended",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	now := common.GetTimestamp()
+	var target HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).First(&target).Error)
+	require.NoError(t, DB.Model(&target).Updates(map[string]any{
+		"status": HubSupplyProbeStatusError, "last_success_at": now - 600,
+		"last_probe_at": now - 1, "consecutive_failures": HubSupplyProbeFailureSuspendLimit - 1,
+	}).Error)
+
+	_, current, err := RecordHubSupplyProbeResult(target.Id, false, 1000, "upstream down", "503", "")
+	require.NoError(t, err)
+	assert.True(t, current)
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusSuspended, target.Status)
+	assert.Equal(t, HubSupplyProbeFailureSuspendLimit, target.ConsecutiveFailures)
+	assert.Zero(t, target.NextProbeAt)
+	assert.Equal(t, HubSupplyProbeSuspensionReasonFailureLimit, target.SuspensionReason)
+	assert.False(t, hubSupplyProbeTargetRoutable(target))
+	due, dueErr := GetDueHubSupplyProbeJobs(common.GetTimestamp(), 10)
+	require.NoError(t, dueErr)
+	assert.Empty(t, due)
+	hasDue, dueErr := HasDueHubSupplyProbeTargets(common.GetTimestamp())
+	require.NoError(t, dueErr)
+	assert.False(t, hasDue)
+
+	_, err = RequestImmediateHubSupplyGroupModelProbe(group.Id, "gpt-5")
+	require.NoError(t, err)
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusPending, target.Status)
+	assert.Zero(t, target.ConsecutiveFailures)
+	assert.Zero(t, target.SuspendedAt)
+	assert.Empty(t, target.SuspensionReason)
+	assert.LessOrEqual(t, target.NextProbeAt, common.GetTimestamp())
+}
+
+func TestHubSupplyProbeLeaseRejectsStaleResult(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{ProviderId: 1, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:lease",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	var target HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).First(&target).Error)
+
+	firstLease, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+	unusedLease, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+	assert.NotEqual(t, firstLease, unusedLease)
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, firstLease, target.ProbeLeaseToken)
+	require.NoError(t, ResetHubSupplyProbeTargetsForManualProbe([]int{target.Id}))
+	secondLease, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+	assert.NotEqual(t, firstLease, secondLease)
+	require.NoError(t, RequeueHubSupplyProbeTargetsWithLease([]int{target.Id}, firstLease))
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusTesting, target.Status)
+	assert.Equal(t, secondLease, target.ProbeLeaseToken)
+
+	_, _, err = RecordHubSupplyProbeResultWithLease(target.Id, firstLease, false, 1000, nil, "stale", "503", "")
+	require.ErrorIs(t, err, ErrHubSupplyProbeLeaseLost)
+	var staleSamples int64
+	require.NoError(t, DB.Model(&HubSupplyGroupProbeSample{}).Count(&staleSamples).Error)
+	assert.Zero(t, staleSamples)
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusTesting, target.Status)
+	assert.Zero(t, target.ConsecutiveFailures)
+	assert.Equal(t, secondLease, target.ProbeLeaseToken)
+
+	_, _, err = RecordHubSupplyProbeResultWithLease(target.Id, secondLease, true, 500, nil, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, DB.First(&target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusAvailable, target.Status)
+	assert.Empty(t, target.ProbeLeaseToken)
+	assert.False(t, target.ManualProbeRequested)
+}
+
+func TestClaimHubSupplyProbeTargetsTestingRejectsStaleDueList(t *testing.T) {
+	truncateTables(t)
+	now := common.GetTimestamp()
+	target := &HubSupplyGroupProbeTarget{
+		GroupId: 1, ConfigVersion: 1, ModelName: "gpt-future",
+		EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+		ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusAvailable,
+		NextProbeAt: now + 600, LastProbeAt: now, LastSuccessAt: now,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, DB.Create(target).Error)
+	_, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+	var stored HubSupplyGroupProbeTarget
+	require.NoError(t, DB.First(&stored, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusAvailable, stored.Status)
+	assert.Empty(t, stored.ProbeLeaseToken)
+	assert.Equal(t, now+600, stored.NextProbeAt)
+}
+
+func TestRecordHubSupplyProbeResultAtomicallyReconcilesGroupAndChannel(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{OwnerUserId: 17, Slot: 1, Name: "atomic provider", Slug: "atomic-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(provider).Error)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{
+		ProviderId: provider.Id, PriceMultiplier: 1, PublishedModels: "gpt-atomic",
+		TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:atomic",
+		BaseURL: &baseURL, Models: "gpt-atomic", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	var target HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).First(&target).Error)
+	lease, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+	_, current, err := RecordHubSupplyProbeResultWithLease(target.Id, lease, true, 400, nil, "", "", "")
+	require.NoError(t, err)
+	assert.True(t, current)
+	var storedGroup HubSupplyGroup
+	require.NoError(t, DB.First(&storedGroup, group.Id).Error)
+	assert.Equal(t, HubSupplyGroupStatusAvailable, storedGroup.Status)
+	var storedChannel Channel
+	require.NoError(t, DB.First(&storedChannel, channel.Id).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, storedChannel.Status)
+}
+
+func TestRecordHubSupplyProbeResultRollsBackWhenFinalLeaseCASLoses(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{ProviderId: 1, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:final-lease-cas",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	var target HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).First(&target).Error)
+	lease, err := ClaimHubSupplyProbeTargetsTesting([]int{target.Id})
+	require.NoError(t, err)
+
+	callbackName := "test_hub_supply_probe_final_lease_cas"
+	forced := false
+	require.NoError(t, DB.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if forced || tx.Statement.Schema == nil || tx.Statement.Schema.Table != "hub_supply_group_probe_targets" {
+			return
+		}
+		updates, ok := tx.Statement.Dest.(map[string]any)
+		if !ok {
+			return
+		}
+		if _, isProbeResult := updates["last_probe_at"]; !isProbeResult {
+			return
+		}
+		forced = true
+		tx.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "1 = 0"}}})
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.Callback().Update().Remove(callbackName))
+	})
+
+	_, _, err = RecordHubSupplyProbeResultWithLease(target.Id, lease, true, 500, nil, "", "", "")
+	require.ErrorIs(t, err, ErrHubSupplyProbeLeaseLost)
+	assert.True(t, forced)
+	var stored HubSupplyGroupProbeTarget
+	require.NoError(t, DB.First(&stored, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusTesting, stored.Status)
+	assert.Equal(t, lease, stored.ProbeLeaseToken)
+	assert.Zero(t, stored.LastProbeAt)
+	var samples int64
+	require.NoError(t, DB.Model(&HubSupplyGroupProbeSample{}).Count(&samples).Error)
+	assert.Zero(t, samples)
+}
+
+func TestReleaseSkippedHubSupplyProbeTargetRestoresPriorState(t *testing.T) {
+	truncateTables(t)
+	now := common.GetTimestamp()
+	tests := []struct {
+		name                string
+		lastSuccessAt       int64
+		consecutiveFailures int
+		expectedStatus      string
+	}{
+		{name: "available", lastSuccessAt: now - 60, expectedStatus: HubSupplyProbeStatusAvailable},
+		{name: "error", lastSuccessAt: now - 60, consecutiveFailures: 1, expectedStatus: HubSupplyProbeStatusError},
+		{name: "pending", expectedStatus: HubSupplyProbeStatusPending},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := &HubSupplyGroupProbeTarget{
+				GroupId: index + 1, ConfigVersion: 1, ModelName: "gpt-5",
+				EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+				ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusTesting,
+				LastSuccessAt: test.lastSuccessAt, ConsecutiveFailures: test.consecutiveFailures,
+				NextProbeAt: now + 300, ProbeLeaseToken: "current-lease", CreatedAt: now, UpdatedAt: now,
+			}
+			require.NoError(t, DB.Create(target).Error)
+			require.NoError(t, ReleaseSkippedHubSupplyProbeTargetWithLease(target.Id, "current-lease"))
+			var stored HubSupplyGroupProbeTarget
+			require.NoError(t, DB.First(&stored, target.Id).Error)
+			assert.Equal(t, test.expectedStatus, stored.Status)
+			assert.Empty(t, stored.ProbeLeaseToken)
+			assert.Greater(t, stored.NextProbeAt, int64(0))
+		})
+	}
+}
+
+func TestReleaseSkippedHubSupplyProbeTargetRejectsStaleLease(t *testing.T) {
+	truncateTables(t)
+	now := common.GetTimestamp()
+	target := &HubSupplyGroupProbeTarget{
+		GroupId: 1, ConfigVersion: 1, ModelName: "gpt-5",
+		EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+		ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusTesting,
+		NextProbeAt: now + 300, ProbeLeaseToken: "new-lease", CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, DB.Create(target).Error)
+	require.NoError(t, ReleaseSkippedHubSupplyProbeTargetWithLease(target.Id, "old-lease"))
+	var stored HubSupplyGroupProbeTarget
+	require.NoError(t, DB.First(&stored, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeStatusTesting, stored.Status)
+	assert.Equal(t, "new-lease", stored.ProbeLeaseToken)
+	assert.Equal(t, now+300, stored.NextProbeAt)
+}
+
+func TestMigrateHubSupplyProbeFailureCountsPreservesExistingSuspensionTimestamp(t *testing.T) {
+	truncateTables(t)
+	now := common.GetTimestamp()
+	target := &HubSupplyGroupProbeTarget{
+		GroupId: 1, ConfigVersion: 1, ModelName: "gpt-suspended",
+		EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+		ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusSuspended,
+		ConsecutiveFailures: HubSupplyProbeFailureSuspendLimit, SuspendedAt: now - 600,
+		SuspensionReason: HubSupplyProbeSuspensionReasonFailureLimit,
+		CreatedAt:        now, UpdatedAt: now,
+	}
+	require.NoError(t, DB.Create(target).Error)
+	require.NoError(t, migrateHubSupplyProbeFailureCounts())
+	require.NoError(t, migrateHubSupplyProbeFailureCounts())
+	var stored HubSupplyGroupProbeTarget
+	require.NoError(t, DB.First(&stored, target.Id).Error)
+	assert.Equal(t, now-600, stored.SuspendedAt)
+}
+
+func TestManualProbeCanRunWithoutReenablingManuallyDisabledChannel(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{OwnerUserId: 7, Slot: 1, Name: "manual provider", Slug: "manual-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(provider).Error)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{ProviderId: provider.Id, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:manual-probe",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default", Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	_, err := RequestImmediateHubSupplyGroupProbe(group.Id)
+	require.NoError(t, err)
+	jobs, err := GetDueHubSupplyProbeJobs(common.GetTimestamp(), 10)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.True(t, jobs[0].ManualProbeRequested)
+
+	lease, err := ClaimHubSupplyProbeTargetsTesting([]int{jobs[0].TargetId})
+	require.NoError(t, err)
+	jobs[0].ProbeLeaseToken = lease
+	assert.True(t, IsHubSupplyProbeJobExecutable(jobs[0]))
+	_, _, err = RecordHubSupplyProbeResultWithLease(jobs[0].TargetId, lease, true, 500, nil, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	stored, err := GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+}
+
+func TestAutomaticProbeRechecksChannelStatusAfterClaim(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{OwnerUserId: 8, Slot: 1, Name: "race provider", Slug: "race-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(provider).Error)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{ProviderId: provider.Id, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "hub:race-probe",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "default", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+	jobs, err := GetDueHubSupplyProbeJobs(common.GetTimestamp(), 10)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	lease, err := ClaimHubSupplyProbeTargetsTesting([]int{jobs[0].TargetId})
+	require.NoError(t, err)
+	jobs[0].ProbeLeaseToken = lease
+	assert.True(t, IsHubSupplyProbeJobExecutable(jobs[0]))
+
+	require.NoError(t, DB.Model(&Channel{Id: channel.Id}).Update("status", common.ChannelStatusManuallyDisabled).Error)
+	assert.False(t, IsHubSupplyProbeJobExecutable(jobs[0]))
+}
+
+func TestGetDueHubSupplyProbeJobsSkipsManualChannelsAndDisabledProviders(t *testing.T) {
+	truncateTables(t)
+	baseURL := "https://upstream.example"
+	manualGroup := &HubSupplyGroup{ProviderId: 1, PriceMultiplier: 1}
+	manualChannel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "manual", Name: "hub:manual",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "manual", Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(manualGroup, manualChannel))
+
+	provider := &HubProvider{OwnerUserId: 99, Slot: 1, Name: "disabled provider", Slug: "disabled-provider", Status: HubProviderStatusDisabled}
+	require.NoError(t, DB.Create(provider).Error)
+	disabledGroup := &HubSupplyGroup{ProviderId: provider.Id, PriceMultiplier: 1}
+	disabledChannel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "disabled", Name: "hub:disabled-provider",
+		BaseURL: &baseURL, Models: "gpt-5", Group: "disabled", Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(disabledGroup, disabledChannel))
+
+	due, err := GetDueHubSupplyProbeJobs(common.GetTimestamp(), 20)
+	require.NoError(t, err)
+	assert.Empty(t, due)
 }
 
 func TestHasDueHubSupplyProbeTargetsIgnoresSupersededConfiguration(t *testing.T) {
@@ -788,9 +1156,10 @@ func TestUpdateHubSupplyGroupModelAutoProbeControlsTargetsAndRouting(t *testing.
 		Where("group_id = ? AND model_name = ?", group.Id, "gpt-5").Count(&skippedTargets).Error)
 	assert.Zero(t, skippedTargets)
 	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id))
-	availability, err := loadHubSupplyChannelProbeKinds(DB, []int{channel.Id})
+	availability, _, err := loadHubSupplyChannelProbeKinds(DB, []int{channel.Id})
 	require.NoError(t, err)
 	assert.True(t, hubSupplyChannelSupportsRequest(availability, channel.Id, "gpt-5", "/v1/responses"))
+	assert.False(t, hubSupplyChannelSupportsRequest(availability, channel.Id, "gpt-5", "/v1/images/generations"))
 
 	require.NoError(t, UpdateHubSupplyGroupModelAutoProbe(group.Id, "gpt-5", true))
 	storedGroup, err = GetHubSupplyGroupByChannelID(channel.Id)

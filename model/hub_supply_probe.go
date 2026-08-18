@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 package model
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -41,17 +42,22 @@ const (
 	HubSupplyProbeStatusWaiting   = "waiting"
 	HubSupplyProbeStatusAvailable = "available"
 	HubSupplyProbeStatusError     = "error"
+	HubSupplyProbeStatusSuspended = "suspended"
 	HubSupplyProbeStatusSkipped   = "skipped"
 
 	HubSupplyProbeManualCooldownSeconds = int64(5 * 60)
 	HubSupplyProbeTestingLeaseSeconds   = int64(5 * 60)
 	HubSupplyProbeFailureThreshold      = 2
+	HubSupplyProbeFailureSuspendLimit   = 100
+
+	HubSupplyProbeSuspensionReasonFailureLimit = "automatic_probe_failure_limit"
 )
 
 var ErrHubSupplyProbeCooldown = errors.New("hub supply probe cooldown")
 var ErrHubSupplyProbeModelNotFound = errors.New("hub supply probe model not found")
 var ErrHubSupplyProbeEndpointInvalid = errors.New("hub supply probe endpoint type is invalid")
 var ErrHubSupplyProbeTargetTesting = errors.New("hub supply probe target is testing")
+var ErrHubSupplyProbeLeaseLost = errors.New("hub supply probe lease lost")
 
 type HubSupplyGroupRevision struct {
 	Id             int    `json:"id" gorm:"primaryKey"`
@@ -81,6 +87,10 @@ type HubSupplyGroupProbeTarget struct {
 	LastError            string `json:"last_error" gorm:"type:text;not null"`
 	LastErrorCode        string `json:"last_error_code" gorm:"type:varchar(64);not null;default:''"`
 	ConsecutiveFailures  int    `json:"consecutive_failures" gorm:"not null;default:0"`
+	SuspendedAt          int64  `json:"suspended_at" gorm:"bigint;not null;default:0"`
+	SuspensionReason     string `json:"suspension_reason" gorm:"type:varchar(64);not null;default:''"`
+	ManualProbeRequested bool   `json:"manual_probe_requested" gorm:"not null;default:false"`
+	ProbeLeaseToken      string `json:"-" gorm:"type:varchar(64);not null;default:''"`
 	CreatedAt            int64  `json:"created_at" gorm:"bigint;not null"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"bigint;not null"`
 }
@@ -111,6 +121,8 @@ type HubSupplyProbeJob struct {
 	ProbeKind            string
 	NewAPIChannelId      int
 	ConfiguredModels     string
+	ManualProbeRequested bool
+	ProbeLeaseToken      string
 }
 
 func hubSupplyKeyFingerprint(key string) string {
@@ -268,17 +280,17 @@ func rescheduleHubSupplyGroupProbeTargetsTx(tx *gorm.DB, group *HubSupplyGroup, 
 	}
 	for _, target := range targets {
 		nextProbeAt := target.NextProbeAt
-		if nextProbeAt <= 0 {
-			nextProbeAt = now
-		}
-		if target.LastProbeAt > 0 &&
+		if target.Status == HubSupplyProbeStatusSuspended || target.ConsecutiveFailures >= HubSupplyProbeFailureSuspendLimit {
+			nextProbeAt = 0
+		} else if target.LastProbeAt > 0 &&
 			target.Status != HubSupplyProbeStatusPending &&
 			target.Status != HubSupplyProbeStatusTesting {
-			minutes := group.TextProbeMinutes
-			if target.ProbeKind == HubSupplyProbeKindImage {
-				minutes = group.ImageProbeMinutes
+			nextProbeAt = hubSupplyProbeNextProbeAt(group, &target, target.LastProbeAt, target.ConsecutiveFailures)
+		}
+		if nextProbeAt <= 0 {
+			if target.Status != HubSupplyProbeStatusSuspended && target.ConsecutiveFailures < HubSupplyProbeFailureSuspendLimit {
+				nextProbeAt = now
 			}
-			nextProbeAt = target.LastProbeAt + int64(minutes*60)
 		}
 		if err := tx.Model(&HubSupplyGroupProbeTarget{Id: target.Id}).Update("next_probe_at", nextProbeAt).Error; err != nil {
 			return err
@@ -345,9 +357,10 @@ func GetAllHubSupplyGroupsWithChannels() ([]HubSupplyGroupWithChannel, error) {
 
 func hubSupplyProbeJobsQuery(db *gorm.DB) *gorm.DB {
 	return db.Table("hub_supply_group_probe_targets AS targets").
-		Select("targets.id AS target_id, targets.group_id, targets.config_version, targets.model_name, targets.endpoint_type, targets.endpoint_mode, targets.resolved_endpoint_type, targets.probe_kind, supply_groups.new_api_channel_id, channels.models AS configured_models").
+		Select("targets.id AS target_id, targets.group_id, targets.config_version, targets.model_name, targets.endpoint_type, targets.endpoint_mode, targets.resolved_endpoint_type, targets.probe_kind, targets.manual_probe_requested, targets.probe_lease_token, supply_groups.new_api_channel_id, channels.models AS configured_models").
 		Joins("JOIN hub_supply_groups AS supply_groups ON supply_groups.id = targets.group_id AND supply_groups.config_version = targets.config_version").
-		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id")
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Joins("LEFT JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id")
 }
 
 func GetDueHubSupplyProbeJobs(now int64, limit int) ([]HubSupplyProbeJob, error) {
@@ -356,6 +369,11 @@ func GetDueHubSupplyProbeJobs(now int64, limit int) ([]HubSupplyProbeJob, error)
 	}
 	jobs := make([]HubSupplyProbeJob, 0)
 	err := hubSupplyProbeJobsQuery(DB).
+		Where("(channels.status IN ? OR (channels.status = ? AND targets.manual_probe_requested = ?))",
+			[]int{common.ChannelStatusEnabled, common.ChannelStatusAutoDisabled}, common.ChannelStatusManuallyDisabled, true).
+		Where("providers.id IS NOT NULL AND providers.status = ?", HubProviderStatusActive).
+		Where("targets.status <> ?", HubSupplyProbeStatusSuspended).
+		Where("targets.next_probe_at > 0").
 		Where("targets.next_probe_at <= ?", now).
 		Order("targets.next_probe_at ASC, targets.id ASC").Limit(limit).Scan(&jobs).Error
 	return jobs, err
@@ -368,6 +386,37 @@ func GetHubSupplyGroupModelProbeJobs(groupID int, modelName string) ([]HubSupply
 		Order("targets.id ASC").
 		Scan(&jobs).Error
 	return jobs, err
+}
+
+func IsHubSupplyProbeJobExecutable(job HubSupplyProbeJob) bool {
+	executable, _ := CheckHubSupplyProbeJobExecutable(job)
+	return executable
+}
+
+func CheckHubSupplyProbeJobExecutable(job HubSupplyProbeJob) (bool, error) {
+	if job.TargetId <= 0 || job.NewAPIChannelId <= 0 {
+		return false, nil
+	}
+	query := hubSupplyProbeJobsQuery(DB).
+		Where("targets.id = ? AND targets.status = ?", job.TargetId, HubSupplyProbeStatusTesting).
+		Where("providers.id IS NOT NULL AND providers.status = ?", HubProviderStatusActive)
+	if strings.TrimSpace(job.ProbeLeaseToken) != "" {
+		query = query.Where("targets.probe_lease_token = ?", strings.TrimSpace(job.ProbeLeaseToken))
+	}
+	if job.ManualProbeRequested {
+		query = query.Where("channels.status IN ?", []int{
+			common.ChannelStatusEnabled,
+			common.ChannelStatusManuallyDisabled,
+			common.ChannelStatusAutoDisabled,
+		})
+	} else {
+		query = query.Where("channels.status IN ?", []int{common.ChannelStatusEnabled, common.ChannelStatusAutoDisabled})
+	}
+	var count int64
+	if err := query.Limit(1).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func UpdateHubSupplyGroupModelProbeEndpoint(groupID int, modelName, endpointMode string) error {
@@ -470,7 +519,11 @@ func HasDueHubSupplyProbeTargets(now int64) (bool, error) {
 	// from superseded group configurations remain for audit, but must not wake
 	// the scheduler because the runner cannot execute them.
 	err := hubSupplyProbeJobsQuery(DB).
-		Where("next_probe_at <= ?", now).
+		Where("(channels.status IN ? OR (channels.status = ? AND targets.manual_probe_requested = ?))",
+			[]int{common.ChannelStatusEnabled, common.ChannelStatusAutoDisabled}, common.ChannelStatusManuallyDisabled, true).
+		Where("providers.id IS NOT NULL AND providers.status = ?", HubProviderStatusActive).
+		Where("targets.status <> ?", HubSupplyProbeStatusSuspended).
+		Where("targets.next_probe_at > 0 AND targets.next_probe_at <= ?", now).
 		Limit(1).
 		Count(&count).Error
 	return count > 0, err
@@ -480,31 +533,92 @@ func RequeueExpiredHubSupplyProbeTargets(now int64) error {
 	return DB.Model(&HubSupplyGroupProbeTarget{}).
 		Where("status = ? AND next_probe_at <= ?", HubSupplyProbeStatusTesting, now).
 		Updates(map[string]any{
-			"status": HubSupplyProbeStatusPending, "next_probe_at": now, "updated_at": now,
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now,
+			"probe_lease_token": "", "updated_at": now,
 		}).Error
 }
 
 func RequeueHubSupplyProbeTargets(targetIDs []int) error {
+	return RequeueHubSupplyProbeTargetsWithLease(targetIDs, "")
+}
+
+func RequeueHubSupplyProbeTargetsWithLease(targetIDs []int, leaseToken string) error {
 	if len(targetIDs) == 0 {
 		return nil
 	}
 	now := common.GetTimestamp()
-	return DB.Model(&HubSupplyGroupProbeTarget{}).
-		Where("id IN ? AND status = ?", targetIDs, HubSupplyProbeStatusTesting).
+	query := DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("id IN ? AND status = ?", targetIDs, HubSupplyProbeStatusTesting)
+	if strings.TrimSpace(leaseToken) != "" {
+		query = query.Where("probe_lease_token = ?", strings.TrimSpace(leaseToken))
+	}
+	return query.
 		Updates(map[string]any{
-			"status": HubSupplyProbeStatusPending, "next_probe_at": now, "updated_at": now,
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now,
+			"probe_lease_token": "", "updated_at": now,
+		}).Error
+}
+
+func ReleaseSkippedHubSupplyProbeTargetWithLease(targetID int, leaseToken string) error {
+	if targetID <= 0 || strings.TrimSpace(leaseToken) == "" {
+		return nil
+	}
+	now := common.GetTimestamp()
+	return DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("id = ? AND status = ? AND probe_lease_token = ?", targetID, HubSupplyProbeStatusTesting, strings.TrimSpace(leaseToken)).
+		Updates(map[string]any{
+			"status": gorm.Expr(
+				"CASE WHEN consecutive_failures >= ? THEN ? WHEN consecutive_failures > 0 THEN ? WHEN last_success_at > 0 THEN ? ELSE ? END",
+				HubSupplyProbeFailureSuspendLimit, HubSupplyProbeStatusSuspended,
+				HubSupplyProbeStatusError, HubSupplyProbeStatusAvailable, HubSupplyProbeStatusPending,
+			),
+			"next_probe_at": gorm.Expr(
+				"CASE WHEN consecutive_failures >= ? THEN 0 ELSE ? END",
+				HubSupplyProbeFailureSuspendLimit, now,
+			),
+			"manual_probe_requested": false,
+			"probe_lease_token":      "",
+			"updated_at":             now,
 		}).Error
 }
 
 func MarkHubSupplyProbeTargetsTesting(targetIDs []int) error {
+	_, err := ClaimHubSupplyProbeTargetsTesting(targetIDs)
+	return err
+}
+
+func ClaimHubSupplyProbeTargetsTesting(targetIDs []int) (string, error) {
+	if len(targetIDs) == 0 {
+		return "", nil
+	}
+	now := common.GetTimestamp()
+	tokenBytes := make([]byte, 24)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(tokenBytes)
+	err := DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("id IN ? AND status NOT IN ?", targetIDs, []string{HubSupplyProbeStatusSuspended, HubSupplyProbeStatusTesting}).
+		Where("next_probe_at > 0 AND next_probe_at <= ?", now).
+		Updates(map[string]any{
+			"status":            HubSupplyProbeStatusTesting,
+			"next_probe_at":     now + HubSupplyProbeTestingLeaseSeconds,
+			"probe_lease_token": token,
+			"updated_at":        now,
+		}).Error
+	return token, err
+}
+
+func ResetHubSupplyProbeTargetsForManualProbe(targetIDs []int) error {
 	if len(targetIDs) == 0 {
 		return nil
 	}
 	now := common.GetTimestamp()
 	return DB.Model(&HubSupplyGroupProbeTarget{}).Where("id IN ?", targetIDs).Updates(map[string]any{
-		"status":        HubSupplyProbeStatusTesting,
-		"next_probe_at": now + HubSupplyProbeTestingLeaseSeconds,
-		"updated_at":    now,
+		"status": HubSupplyProbeStatusPending, "next_probe_at": now,
+		"consecutive_failures": 0, "suspended_at": 0, "suspension_reason": "",
+		"manual_probe_requested": true, "probe_lease_token": "",
+		"updated_at": now,
 	}).Error
 }
 
@@ -526,14 +640,22 @@ func GetHubSupplyGroupProbeTargets(groupID int, configVersion int) ([]HubSupplyG
 }
 
 func RecordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, errorMessage, errorCode, resolvedEndpointType string) (int, bool, error) {
-	return recordHubSupplyProbeResult(targetID, success, latencyMs, nil, errorMessage, errorCode, resolvedEndpointType)
+	return recordHubSupplyProbeResultWithLease(targetID, "", success, latencyMs, nil, errorMessage, errorCode, resolvedEndpointType)
 }
 
 func RecordHubSupplyProbeResultWithTTFT(targetID int, success bool, latencyMs int64, firstTokenMs *int64, errorMessage, errorCode, resolvedEndpointType string) (int, bool, error) {
-	return recordHubSupplyProbeResult(targetID, success, latencyMs, firstTokenMs, errorMessage, errorCode, resolvedEndpointType)
+	return recordHubSupplyProbeResultWithLease(targetID, "", success, latencyMs, firstTokenMs, errorMessage, errorCode, resolvedEndpointType)
 }
 
 func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, firstTokenMs *int64, errorMessage, errorCode, resolvedEndpointType string) (int, bool, error) {
+	return recordHubSupplyProbeResultWithLease(targetID, "", success, latencyMs, firstTokenMs, errorMessage, errorCode, resolvedEndpointType)
+}
+
+func RecordHubSupplyProbeResultWithLease(targetID int, leaseToken string, success bool, latencyMs int64, firstTokenMs *int64, errorMessage, errorCode, resolvedEndpointType string) (int, bool, error) {
+	return recordHubSupplyProbeResultWithLease(targetID, leaseToken, success, latencyMs, firstTokenMs, errorMessage, errorCode, resolvedEndpointType)
+}
+
+func recordHubSupplyProbeResultWithLease(targetID int, leaseToken string, success bool, latencyMs int64, firstTokenMs *int64, errorMessage, errorCode, resolvedEndpointType string) (int, bool, error) {
 	now := common.GetTimestamp()
 	if firstTokenMs != nil && *firstTokenMs < 0 {
 		firstTokenMs = nil
@@ -548,7 +670,14 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 	isCurrent := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var target HubSupplyGroupProbeTarget
-		if err := tx.First(&target, targetID).Error; err != nil {
+		targetQuery := tx.Where("id = ?", targetID)
+		if strings.TrimSpace(leaseToken) != "" {
+			targetQuery = targetQuery.Where("status = ? AND probe_lease_token = ?", HubSupplyProbeStatusTesting, strings.TrimSpace(leaseToken))
+		}
+		if err := targetQuery.First(&target).Error; err != nil {
+			if strings.TrimSpace(leaseToken) != "" && errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrHubSupplyProbeLeaseLost
+			}
 			return err
 		}
 		var group HubSupplyGroup
@@ -560,26 +689,32 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 		status := HubSupplyProbeStatusError
 		lastSuccessAt := target.LastSuccessAt
 		consecutiveFailures := target.ConsecutiveFailures + 1
+		suspendedAt := int64(0)
+		suspensionReason := ""
 		if success {
 			status = HubSupplyProbeStatusAvailable
 			lastSuccessAt = now
 			consecutiveFailures = 0
 			errorMessage = ""
 			errorCode = ""
+		} else if consecutiveFailures >= HubSupplyProbeFailureSuspendLimit {
+			consecutiveFailures = HubSupplyProbeFailureSuspendLimit
+			status = HubSupplyProbeStatusSuspended
+			suspendedAt = now
+			suspensionReason = HubSupplyProbeSuspensionReasonFailureLimit
 		}
 		nextProbeAt := int64(0)
-		if isCurrent {
-			minutes := group.TextProbeMinutes
-			if target.ProbeKind == HubSupplyProbeKindImage {
-				minutes = group.ImageProbeMinutes
-			}
-			nextProbeAt = now + int64(minutes*60)
+		if isCurrent && status != HubSupplyProbeStatusSuspended {
+			nextProbeAt = hubSupplyProbeNextProbeAt(&group, &target, now, consecutiveFailures)
 		}
 		updates := map[string]any{
 			"status": status, "last_probe_at": now, "last_success_at": lastSuccessAt,
 			"next_probe_at": nextProbeAt, "last_latency_ms": latencyMs,
 			"last_error": errorMessage, "last_error_code": errorCode,
-			"consecutive_failures": consecutiveFailures, "updated_at": now,
+			"consecutive_failures": consecutiveFailures,
+			"suspended_at":         suspendedAt, "suspension_reason": suspensionReason,
+			"manual_probe_requested": false, "probe_lease_token": "",
+			"updated_at": now,
 		}
 		if success {
 			updates["last_first_token_ms"] = firstTokenMs
@@ -587,8 +722,16 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 		if success && strings.TrimSpace(resolvedEndpointType) != "" {
 			updates["resolved_endpoint_type"] = strings.TrimSpace(resolvedEndpointType)
 		}
-		if err := tx.Model(&HubSupplyGroupProbeTarget{Id: target.Id}).Updates(updates).Error; err != nil {
-			return err
+		updateQuery := tx.Model(&HubSupplyGroupProbeTarget{}).Where("id = ?", target.Id)
+		if strings.TrimSpace(leaseToken) != "" {
+			updateQuery = updateQuery.Where("status = ? AND probe_lease_token = ?", HubSupplyProbeStatusTesting, strings.TrimSpace(leaseToken))
+		}
+		updateResult := updateQuery.Updates(updates)
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if strings.TrimSpace(leaseToken) != "" && updateResult.RowsAffected != 1 {
+			return ErrHubSupplyProbeLeaseLost
 		}
 		sampleEndpointType := target.EndpointType
 		if strings.TrimSpace(resolvedEndpointType) != "" {
@@ -601,9 +744,49 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 			FirstTokenMs: firstTokenMs,
 			ErrorMessage: errorMessage, ErrorCode: errorCode, ProbedAt: now,
 		}
-		return tx.Create(&sample).Error
+		if err := tx.Create(&sample).Error; err != nil {
+			return err
+		}
+		if isCurrent {
+			return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
+		}
+		return nil
 	})
 	return groupID, isCurrent, err
+}
+
+func hubSupplyProbeNextProbeAt(group *HubSupplyGroup, target *HubSupplyGroupProbeTarget, probedAt int64, consecutiveFailures int) int64 {
+	if consecutiveFailures >= HubSupplyProbeFailureSuspendLimit {
+		return 0
+	}
+	minutes := HubSupplyGroupDefaultTextProbeMinutes
+	if group != nil {
+		minutes = group.TextProbeMinutes
+	}
+	if target != nil && target.ProbeKind == HubSupplyProbeKindImage {
+		minutes = HubSupplyGroupDefaultImageProbeMinutes
+		if group != nil {
+			minutes = group.ImageProbeMinutes
+		}
+	}
+	if minutes <= 0 {
+		minutes = HubSupplyGroupDefaultTextProbeMinutes
+		if target != nil && target.ProbeKind == HubSupplyProbeKindImage {
+			minutes = HubSupplyGroupDefaultImageProbeMinutes
+		}
+	}
+	if consecutiveFailures > 0 {
+		capMinutes := 5
+		if consecutiveFailures >= 30 {
+			capMinutes = 60
+		} else if consecutiveFailures >= 10 {
+			capMinutes = 15
+		}
+		if minutes > capMinutes {
+			minutes = capMinutes
+		}
+	}
+	return probedAt + int64(minutes*60)
 }
 
 func ReconcileHubSupplyGroupRouteState(groupID int) error {
@@ -714,7 +897,7 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 	routableModelCount := 0
 	for modelName := range publishedModels {
 		_, probeDisabled := autoProbeDisabled[modelName]
-		if probeDisabled || hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
+		if probeDisabled || hubSupplyModelHasAvailableProbeKindForChannel(channel.Id, probeKinds, modelName) {
 			routableModelCount++
 		}
 	}
@@ -741,9 +924,20 @@ func migrateHubSupplyProbeFailureCounts() error {
 	}
 	// Rows written before consecutive failure tracking have a zero value even
 	// when they are already in error. Keep those legacy failures quarantined.
-	return DB.Model(&HubSupplyGroupProbeTarget{}).
+	if err := DB.Model(&HubSupplyGroupProbeTarget{}).
 		Where("status = ? AND consecutive_failures = 0", HubSupplyProbeStatusError).
-		Update("consecutive_failures", HubSupplyProbeFailureThreshold).Error
+		Update("consecutive_failures", HubSupplyProbeFailureThreshold).Error; err != nil {
+		return err
+	}
+	now := common.GetTimestamp()
+	return DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("consecutive_failures >= ? AND (status <> ? OR suspended_at = 0 OR suspension_reason = '')",
+			HubSupplyProbeFailureSuspendLimit, HubSupplyProbeStatusSuspended).
+		Updates(map[string]any{
+			"status": HubSupplyProbeStatusSuspended, "next_probe_at": 0,
+			"suspended_at": now, "suspension_reason": HubSupplyProbeSuspensionReasonFailureLimit,
+			"manual_probe_requested": false, "probe_lease_token": "",
+		}).Error
 }
 
 func reconcileHubSupplyChannelRouteStateTx(tx *gorm.DB, channelID int, status int) error {
@@ -810,7 +1004,10 @@ func requestImmediateHubSupplyGroupProbe(groupID int, modelName string) (int64, 
 			nextAllowedAt = now + HubSupplyProbeManualCooldownSeconds
 		}
 		if err := targets.Updates(map[string]any{
-			"status": HubSupplyProbeStatusPending, "next_probe_at": now, "updated_at": now,
+			"status": HubSupplyProbeStatusPending, "next_probe_at": now,
+			"consecutive_failures": 0, "suspended_at": 0, "suspension_reason": "",
+			"manual_probe_requested": true, "probe_lease_token": "",
+			"updated_at": now,
 		}).Error; err != nil {
 			return err
 		}

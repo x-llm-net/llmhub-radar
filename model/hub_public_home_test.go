@@ -20,6 +20,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -29,6 +30,7 @@ import (
 
 func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.T) {
 	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
 	now := int64(1_800_000_000)
 
 	primaryProvider := &HubProvider{OwnerUserId: 71, Name: "Alpha Relay"}
@@ -104,6 +106,40 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 			assert.NotEqual(t, "gpt-private", model.ModelName)
 		}
 	}
+}
+
+func TestHubSupplyPublicModelRoutableAllowsAutoProbeDisabledModel(t *testing.T) {
+	resetHubRoutingSnapshotsForTest(t)
+	kinds := hubSupplyAutoProbeDisabledModelKinds(constant.ChannelTypeOpenAI, "gpt-internal", nil)
+	assert.Equal(t, map[string]bool{HubSupplyProbeKindText: true}, kinds)
+	assert.True(t, hubSupplyPublicModelRoutable(11, "gpt-internal", kinds, nil))
+}
+
+func TestHubSupplyPublicModelRoutableDoesNotUseFakeImageFallback(t *testing.T) {
+	resetHubRoutingSnapshotsForTest(t)
+	PublishHubRoutingRuntimeSignals(time.Now().Unix(), []HubRoutingRuntimeSignal{
+		{
+			ChannelID: 13, ModelName: "gpt-internal", ProbeKind: HubSupplyProbeKindText,
+			RealHealthState: HubRoutingRealHealthQuarantined,
+		},
+	})
+	kinds := hubSupplyAutoProbeDisabledModelKinds(constant.ChannelTypeOpenAI, "gpt-internal", nil)
+	assert.False(t, hubSupplyPublicModelRoutable(13, "gpt-internal", kinds, nil))
+}
+
+func TestHubSupplyPublicModelRoutableRejectsRuntimeQuarantine(t *testing.T) {
+	resetHubRoutingSnapshotsForTest(t)
+	PublishHubRoutingRuntimeSignals(time.Now().Unix(), []HubRoutingRuntimeSignal{
+		{
+			ChannelID: 12, ModelName: "gpt-quarantined", ProbeKind: HubSupplyProbeKindText,
+			RealHealthState: HubRoutingRealHealthQuarantined,
+		},
+	})
+	targets := []HubSupplyGroupProbeTarget{{
+		ModelName: "gpt-quarantined", ProbeKind: HubSupplyProbeKindText,
+		Status: HubSupplyProbeStatusAvailable,
+	}}
+	assert.False(t, hubSupplyPublicModelRoutable(12, "gpt-quarantined", nil, targets))
 }
 
 func TestClassifyHubPublicHomeModel(t *testing.T) {

@@ -185,12 +185,21 @@ export type HubSupplyProbeEndpoint = {
   endpoint_type: string
   resolved_endpoint_type: string
   probe_kind: 'text' | 'image'
-  status: 'pending' | 'testing' | 'waiting' | 'available' | 'error'
+  status:
+    | 'pending'
+    | 'testing'
+    | 'waiting'
+    | 'available'
+    | 'error'
+    | 'suspended'
   last_probe_at: number
   last_latency_ms: number
   last_first_token_ms: number | null
   last_error: string
   last_error_code: string
+  consecutive_failures: number
+  suspended_at: number
+  suspension_reason: string
 }
 
 export type HubSupplyProbeEndpointMode =
@@ -202,7 +211,14 @@ export type HubSupplyProbeEndpointMode =
 export type HubSupplyModelProbe = {
   model_name: string
   endpoint_mode: HubSupplyProbeEndpointMode
-  status: 'pending' | 'testing' | 'waiting' | 'available' | 'error' | 'skipped'
+  status:
+    | 'pending'
+    | 'testing'
+    | 'waiting'
+    | 'available'
+    | 'error'
+    | 'suspended'
+    | 'skipped'
   auto_probe_enabled: boolean
   published: boolean
   online: boolean

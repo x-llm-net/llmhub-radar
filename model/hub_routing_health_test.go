@@ -134,6 +134,38 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	assert.Equal(t, platformChannel.Id, filtered[0].ChannelID)
 }
 
+func TestListHubRoutingHealthShowsAutoProbeDisabledModelAsRoutable(t *testing.T) {
+	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
+	now := common.GetTimestamp()
+	provider := &HubProvider{OwnerUserId: 502, Name: "Unmonitored Relay", Slug: "unmonitored-relay"}
+	require.NoError(t, CreateHubProvider(provider))
+	baseURL := "https://unmonitored.example"
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "Unmonitored supply",
+		BaseURL: &baseURL, Models: "gpt-unmonitored", Group: "default", Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	group := &HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id, PriceMultiplier: 0.08,
+		PublishedModels: "gpt-unmonitored", AutoProbeDisabledModels: "gpt-unmonitored",
+		ConfigVersion: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30, Status: HubSupplyGroupStatusAvailable,
+	}
+	require.NoError(t, DB.Create(group).Error)
+	priority := int64(0)
+	require.NoError(t, DB.Create(&Ability{
+		Group: hub_routing_setting.ServiceTierSpecial, Model: "gpt-unmonitored", ChannelId: channel.Id,
+		Enabled: true, Priority: &priority, Weight: 10,
+	}).Error)
+
+	rows, _, err := ListHubRoutingHealth(HubRoutingHealthListOptions{ProviderID: &provider.Id, Limit: 20}, now)
+	require.NoError(t, err)
+	row := findHubRoutingHealthRow(t, rows, channel.Id, "gpt-unmonitored")
+	assert.Equal(t, HubSupplyProbeStatusSkipped, row.ProbeStatus)
+	assert.True(t, row.ServiceTierRoutable)
+	assert.NotContains(t, row.SkipReasonCodes, HubRoutingHealthReasonProbeUnmonitored)
+}
+
 func findHubRoutingHealthRow(t *testing.T, rows []HubRoutingHealthRow, channelID int, modelName string) HubRoutingHealthRow {
 	t.Helper()
 	for _, row := range rows {

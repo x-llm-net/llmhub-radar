@@ -59,8 +59,28 @@ func hubSupplyModelHasAvailableProbeKind(kinds hubSupplyModelProbeKinds, modelNa
 	return false
 }
 
+func hubSupplyModelHasAvailableProbeKindForChannel(channelID int, kinds hubSupplyModelProbeKinds, modelName string) bool {
+	modelKinds := hubSupplyModelProbeKindsForModel(kinds, modelName)
+	for probeKind, available := range modelKinds {
+		if available || HubRoutingRuntimeHealthy(channelID, modelName, probeKind) {
+			return true
+		}
+	}
+	return false
+}
+
 func hubSupplyProbeKindAvailable(kinds hubSupplyModelProbeKinds, modelName, probeKind string) bool {
 	return hubSupplyModelProbeKindsForModel(kinds, modelName)[probeKind]
+}
+
+func hubSupplyAutoProbeDisabledModelKinds(channelType int, modelName string, overrides map[string]string) map[string]bool {
+	kinds := make(map[string]bool)
+	for _, definition := range hubSupplyProbeDefinitionsWithOverrides(channelType, []string{modelName}, overrides) {
+		if strings.TrimSpace(definition.ProbeKind) != "" {
+			kinds[definition.ProbeKind] = true
+		}
+	}
+	return kinds
 }
 
 func hubSupplyModelProbeKindsForModel(kinds hubSupplyModelProbeKinds, modelName string) map[string]bool {
@@ -81,68 +101,122 @@ func hubSupplyChannelSupportsRequest(
 	requestPath string,
 ) bool {
 	modelKinds, isSupplyChannel := availability[channelID]
+	decision := GetHubRoutingDecision(channelID, modelName, requestPath)
+	if decision.HardUnavailable {
+		return false
+	}
 	if !isSupplyChannel {
 		return true
 	}
-	return hubSupplyProbeKindAvailable(
+	probeKind := hubSupplyProbeKindForRequestPath(requestPath)
+	if hubSupplyProbeKindAvailable(
 		modelKinds,
 		modelName,
-		hubSupplyProbeKindForRequestPath(requestPath),
-	)
+		probeKind,
+	) {
+		return true
+	}
+	return decision.HasRuntimeSignal && decision.RuntimeSignal.RealHealthState == HubRoutingRealHealthHealthy
 }
 
-func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupplyChannelProbeKinds, error) {
+func hubSupplyPublicModelRoutable(
+	channelID int,
+	modelName string,
+	autoProbeDisabledKinds map[string]bool,
+	targets []HubSupplyGroupProbeTarget,
+) bool {
+	modelKinds := buildHubSupplyModelProbeKinds(targets)
+	if len(autoProbeDisabledKinds) > 0 {
+		modelKinds[modelName] = autoProbeDisabledKinds
+	}
+	for probeKind, probeRoutable := range hubSupplyModelProbeKindsForModel(modelKinds, modelName) {
+		requestPath := "/v1/chat/completions"
+		if probeKind == HubSupplyProbeKindImage {
+			requestPath = "/v1/images/generations"
+		}
+		runtimeSignal, hasRuntimeSignal := GetHubRoutingRuntimeSignal(channelID, modelName, requestPath)
+		if hasRuntimeSignal && runtimeSignal.RealHealthState == HubRoutingRealHealthQuarantined {
+			continue
+		}
+		if probeRoutable || (hasRuntimeSignal && runtimeSignal.RealHealthState == HubRoutingRealHealthHealthy) {
+			return true
+		}
+	}
+	return false
+}
+
+func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupplyChannelProbeKinds, []HubRoutingProbeSignal, error) {
 	result := make(hubSupplyChannelProbeKinds)
 	if query == nil || !query.Migrator().HasTable(&HubSupplyGroup{}) ||
 		!query.Migrator().HasTable(&HubSupplyGroupProbeTarget{}) {
-		return result, nil
+		return result, nil, nil
 	}
 
 	groups := make([]HubSupplyGroup, 0)
-	groupQuery := query.Select("id", "new_api_channel_id", "config_version", "auto_probe_disabled_models")
+	groupQuery := query.Select("id", "new_api_channel_id", "config_version", "auto_probe_disabled_models", "probe_endpoint_overrides")
 	if len(channelIDs) > 0 {
 		groupQuery = groupQuery.Where("new_api_channel_id IN ?", channelIDs)
 	}
 	if err := groupQuery.Find(&groups).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(groups) == 0 {
-		return result, nil
+		return result, nil, nil
 	}
 
 	groupByID := make(map[int]HubSupplyGroup, len(groups))
 	groupIDs := make([]int, 0, len(groups))
+	groupChannelIDs := make([]int, 0, len(groups))
 	for _, group := range groups {
 		groupByID[group.Id] = group
 		groupIDs = append(groupIDs, group.Id)
+		groupChannelIDs = append(groupChannelIDs, group.NewAPIChannelId)
 		result[group.NewAPIChannelId] = make(hubSupplyModelProbeKinds)
+	}
+	channels := make([]Channel, 0, len(groups))
+	if err := query.Select("id", "type", "models").Where("id IN ?", groupChannelIDs).Find(&channels).Error; err != nil {
+		return nil, nil, err
+	}
+	channelsByID := make(map[int]Channel, len(channels))
+	for _, channel := range channels {
+		channelsByID[channel.Id] = channel
 	}
 
 	targets := make([]HubSupplyGroupProbeTarget, 0)
 	if err := query.Where("group_id IN ?", groupIDs).Find(&targets).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	targetsByChannel := make(map[int][]HubSupplyGroupProbeTarget)
+	probeSignals := make([]HubRoutingProbeSignal, 0, len(targets))
 	for _, target := range targets {
 		group, ok := groupByID[target.GroupId]
 		if !ok || target.ConfigVersion != group.ConfigVersion {
 			continue
 		}
 		targetsByChannel[group.NewAPIChannelId] = append(targetsByChannel[group.NewAPIChannelId], target)
+		probeSignals = append(probeSignals, HubRoutingProbeSignal{
+			ChannelID: group.NewAPIChannelId, ModelName: target.ModelName, ProbeKind: target.ProbeKind,
+			Routable: hubSupplyProbeTargetRoutable(target), ConsecutiveFailures: target.ConsecutiveFailures,
+			LastFirstTokenMs: target.LastFirstTokenMs,
+		})
 	}
 	for channelID, channelTargets := range targetsByChannel {
 		result[channelID] = buildHubSupplyModelProbeKinds(channelTargets)
 	}
 	for _, group := range groups {
 		modelKinds := result[group.NewAPIChannelId]
+		channel := channelsByID[group.NewAPIChannelId]
+		overrides := group.GetProbeEndpointOverrides(channel.Models)
 		for _, modelName := range normalizeHubSupplyModelNames(group.AutoProbeDisabledModels) {
-			modelKinds[modelName] = map[string]bool{
-				HubSupplyProbeKindText:  true,
-				HubSupplyProbeKindImage: true,
+			modelKinds[modelName] = hubSupplyAutoProbeDisabledModelKinds(channel.Type, modelName, overrides)
+			for probeKind := range modelKinds[modelName] {
+				probeSignals = append(probeSignals, HubRoutingProbeSignal{
+					ChannelID: group.NewAPIChannelId, ModelName: modelName, ProbeKind: probeKind, Routable: true,
+				})
 			}
 		}
 	}
-	return result, nil
+	return result, probeSignals, nil
 }
 
 func IsHubSupplyChannelRoutableForRequest(channelID int, modelName, requestPath string) bool {
@@ -154,6 +228,6 @@ func IsHubSupplyChannelRoutableForRequest(channelID int, modelName, requestPath 
 		defer channelSyncLock.RUnlock()
 		return hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath)
 	}
-	availability, err := loadHubSupplyChannelProbeKinds(DB, []int{channelID})
+	availability, _, err := loadHubSupplyChannelProbeKinds(DB, []int{channelID})
 	return err == nil && hubSupplyChannelSupportsRequest(availability, channelID, modelName, requestPath)
 }

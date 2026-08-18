@@ -46,6 +46,9 @@ type hubProviderChannelProbeEndpointResponse struct {
 	LastFirstTokenMs     *int64 `json:"last_first_token_ms"`
 	LastError            string `json:"last_error"`
 	LastErrorCode        string `json:"last_error_code"`
+	ConsecutiveFailures  int    `json:"consecutive_failures"`
+	SuspendedAt          int64  `json:"suspended_at"`
+	SuspensionReason     string `json:"suspension_reason"`
 }
 
 type hubProviderChannelModelProbeResponse struct {
@@ -204,6 +207,7 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 		hasPending := len(modelTargets) == 0
 		hasTesting := false
 		hasWaiting := false
+		hasSuspended := false
 		for _, target := range modelTargets {
 			item.Endpoints = append(item.Endpoints, hubProviderChannelProbeEndpointResponse{
 				EndpointType: target.EndpointType, ResolvedEndpointType: target.ResolvedEndpointType,
@@ -211,6 +215,8 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 				LastProbeAt: target.LastProbeAt, LastLatencyMs: target.LastLatencyMs,
 				LastFirstTokenMs: target.LastFirstTokenMs,
 				LastError:        target.LastError, LastErrorCode: target.LastErrorCode,
+				ConsecutiveFailures: target.ConsecutiveFailures,
+				SuspendedAt:         target.SuspendedAt, SuspensionReason: target.SuspensionReason,
 			})
 			if target.LastProbeAt > item.LastProbeAt {
 				item.LastProbeAt = target.LastProbeAt
@@ -227,6 +233,9 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 			if target.Status == model.HubSupplyProbeStatusWaiting {
 				hasWaiting = true
 			}
+			if target.Status == model.HubSupplyProbeStatusSuspended {
+				hasSuspended = true
+			}
 		}
 		switch {
 		case !autoProbeEnabled:
@@ -241,6 +250,8 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 			item.Status = model.HubSupplyProbeStatusWaiting
 		case allAvailable:
 			item.Status = model.HubSupplyProbeStatusAvailable
+		case hasSuspended:
+			item.Status = model.HubSupplyProbeStatusSuspended
 		default:
 			item.Status = model.HubSupplyProbeStatusError
 		}

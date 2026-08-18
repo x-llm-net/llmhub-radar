@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -49,6 +50,7 @@ type hubSupplyProbeResult struct {
 	err                  error
 	errorCode            string
 	resolvedEndpointType string
+	skipped              bool
 }
 
 type hubSupplyProbeSummary struct {
@@ -60,19 +62,20 @@ type hubSupplyProbeSummary struct {
 }
 
 var (
-	hubSupplyProbePersistenceMu     sync.Mutex
+	hubSupplyProbeStateMu           sync.Mutex
 	immediateHubSupplyProbeExecutor = executeHubSupplyProbe
 )
 
 func persistHubSupplyProbeResult(result hubSupplyProbeResult) (int, bool, error) {
-	hubSupplyProbePersistenceMu.Lock()
-	defer hubSupplyProbePersistenceMu.Unlock()
+	hubSupplyProbeStateMu.Lock()
+	defer hubSupplyProbeStateMu.Unlock()
 	errorMessage := ""
 	if result.err != nil {
 		errorMessage = result.err.Error()
 	}
-	return model.RecordHubSupplyProbeResultWithTTFT(
+	groupID, current, err := model.RecordHubSupplyProbeResultWithLease(
 		result.job.TargetId,
+		result.job.ProbeLeaseToken,
 		result.success,
 		result.latencyMs,
 		result.firstTokenMs,
@@ -80,12 +83,28 @@ func persistHubSupplyProbeResult(result hubSupplyProbeResult) (int, bool, error)
 		result.errorCode,
 		result.resolvedEndpointType,
 	)
+	if errors.Is(err, model.ErrHubSupplyProbeLeaseLost) {
+		return 0, false, nil
+	}
+	return groupID, current, err
 }
 
 func reconcileHubSupplyGroupRouteState(groupID int) error {
-	hubSupplyProbePersistenceMu.Lock()
-	defer hubSupplyProbePersistenceMu.Unlock()
+	hubSupplyProbeStateMu.Lock()
+	defer hubSupplyProbeStateMu.Unlock()
 	return model.ReconcileHubSupplyGroupRouteState(groupID)
+}
+
+func requeueHubSupplyProbeTargets(targetIDs []int, leaseToken string) error {
+	hubSupplyProbeStateMu.Lock()
+	defer hubSupplyProbeStateMu.Unlock()
+	return model.RequeueHubSupplyProbeTargetsWithLease(targetIDs, leaseToken)
+}
+
+func releaseSkippedHubSupplyProbeTarget(targetID int, leaseToken string) error {
+	hubSupplyProbeStateMu.Lock()
+	defer hubSupplyProbeStateMu.Unlock()
+	return model.ReleaseSkippedHubSupplyProbeTargetWithLease(targetID, leaseToken)
 }
 
 func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int)) (hubSupplyProbeSummary, error) {
@@ -118,18 +137,31 @@ func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int
 		groupIDSet[job.GroupId] = struct{}{}
 		remainingByGroup[job.GroupId]++
 	}
-	if err := model.MarkHubSupplyProbeTargetsTesting(targetIDs); err != nil {
+	leaseToken, err := model.ClaimHubSupplyProbeTargetsTesting(targetIDs)
+	if err != nil {
 		return summary, err
 	}
-	defer func() {
-		if err := model.RequeueHubSupplyProbeTargets(targetIDs); err != nil {
-			common.SysLog(fmt.Sprintf("failed to requeue unfinished hub supply probes: %v", err))
-		}
-	}()
+	for index := range jobs {
+		jobs[index].ProbeLeaseToken = leaseToken
+	}
 	groupIDsToMark := make([]int, 0, len(groupIDSet))
 	for groupID := range groupIDSet {
 		groupIDsToMark = append(groupIDsToMark, groupID)
 	}
+	taskCompleted := false
+	defer func() {
+		if err := requeueHubSupplyProbeTargets(targetIDs, leaseToken); err != nil {
+			common.SysLog(fmt.Sprintf("failed to requeue unfinished hub supply probes: %v", err))
+		}
+		if taskCompleted {
+			return
+		}
+		for _, groupID := range groupIDsToMark {
+			if err := reconcileHubSupplyGroupRouteState(groupID); err != nil {
+				common.SysLog(fmt.Sprintf("failed to reconcile unfinished hub supply group %d: %v", groupID, err))
+			}
+		}
+	}()
 	if err := model.MarkHubSupplyGroupsTesting(groupIDsToMark); err != nil {
 		return summary, err
 	}
@@ -176,6 +208,26 @@ func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int
 		if ctx != nil && ctx.Err() != nil {
 			return summary, ctx.Err()
 		}
+		if result.skipped {
+			if result.err != nil {
+				return summary, result.err
+			}
+			if err := releaseSkippedHubSupplyProbeTarget(result.job.TargetId, result.job.ProbeLeaseToken); err != nil {
+				return summary, err
+			}
+			affectedGroups[result.job.GroupId] = struct{}{}
+			remainingByGroup[result.job.GroupId]--
+			if remainingByGroup[result.job.GroupId] == 0 {
+				if err := reconcileHubSupplyGroupRouteState(result.job.GroupId); err != nil {
+					return summary, err
+				}
+				reconciledGroups[result.job.GroupId] = struct{}{}
+			}
+			if report != nil {
+				report(summary.Tested, len(jobs))
+			}
+			continue
+		}
 		groupID, isCurrent, recordErr := persistHubSupplyProbeResult(result)
 		if recordErr != nil {
 			return summary, recordErr
@@ -214,8 +266,10 @@ func runHubSupplyProbeTask(ctx context.Context, report func(processed, total int
 		if err := reconcileHubSupplyGroupRouteState(groupID); err != nil {
 			return summary, err
 		}
+		reconciledGroups[groupID] = struct{}{}
 	}
 	summary.Groups = len(reconciledGroups)
+	taskCompleted = true
 	return summary, nil
 }
 
@@ -235,12 +289,26 @@ func runImmediateHubSupplyModelProbe(ctx context.Context, groupID int, modelName
 	for _, job := range jobs {
 		targetIDs = append(targetIDs, job.TargetId)
 	}
-	if err := model.MarkHubSupplyProbeTargetsTesting(targetIDs); err != nil {
+	if err := model.ResetHubSupplyProbeTargetsForManualProbe(targetIDs); err != nil {
 		return false, err
 	}
+	leaseToken, err := model.ClaimHubSupplyProbeTargetsTesting(targetIDs)
+	if err != nil {
+		return false, err
+	}
+	for index := range jobs {
+		jobs[index].ManualProbeRequested = true
+		jobs[index].ProbeLeaseToken = leaseToken
+	}
+	taskCompleted := false
 	defer func() {
-		if err := model.RequeueHubSupplyProbeTargets(targetIDs); err != nil {
+		if err := requeueHubSupplyProbeTargets(targetIDs, leaseToken); err != nil {
 			common.SysLog(fmt.Sprintf("failed to requeue unfinished immediate hub supply probes: %v", err))
+		}
+		if !taskCompleted {
+			if err := reconcileHubSupplyGroupRouteState(groupID); err != nil {
+				common.SysLog(fmt.Sprintf("failed to reconcile unfinished immediate hub supply group %d: %v", groupID, err))
+			}
 		}
 	}()
 	if err := model.MarkHubSupplyGroupsTesting([]int{groupID}); err != nil {
@@ -272,6 +340,17 @@ func runImmediateHubSupplyModelProbe(ctx context.Context, groupID int, modelName
 	allSucceeded := true
 	shouldReconcile := false
 	for result := range results {
+		if result.skipped {
+			if result.err != nil {
+				return false, result.err
+			}
+			if err := releaseSkippedHubSupplyProbeTarget(result.job.TargetId, result.job.ProbeLeaseToken); err != nil {
+				return false, err
+			}
+			allSucceeded = false
+			shouldReconcile = true
+			continue
+		}
 		_, isCurrent, recordErr := persistHubSupplyProbeResult(result)
 		if recordErr != nil {
 			return false, recordErr
@@ -284,15 +363,27 @@ func runImmediateHubSupplyModelProbe(ctx context.Context, groupID int, modelName
 			return false, err
 		}
 	}
+	taskCompleted = true
 	return allSucceeded, nil
 }
 
 func preflightHubSupplyProbePricing(ctx context.Context, job model.HubSupplyProbeJob, testUserID int) (hubSupplyProbeResult, bool) {
 	result := hubSupplyProbeResult{job: job}
+	executable, err := model.CheckHubSupplyProbeJobExecutable(job)
+	if err != nil {
+		result.err = err
+		result.skipped = true
+		return result, true
+	}
+	if !executable {
+		result.skipped = true
+		return result, true
+	}
 	channel, err := model.GetChannelById(job.NewAPIChannelId, true)
 	if err != nil {
 		result.err = err
 		result.errorCode = hubSupplyProbeObserverErrorCode
+		result.skipped = true
 		return result, true
 	}
 	channel.Models = job.ConfiguredModels
@@ -374,10 +465,21 @@ func shouldStreamHubSupplyProbe(job model.HubSupplyProbeJob, endpointType string
 
 func executeHubSupplyProbe(ctx context.Context, job model.HubSupplyProbeJob, testUserID int, timeout time.Duration) hubSupplyProbeResult {
 	result := hubSupplyProbeResult{job: job}
+	executable, err := model.CheckHubSupplyProbeJobExecutable(job)
+	if err != nil {
+		result.err = err
+		result.skipped = true
+		return result
+	}
+	if !executable {
+		result.skipped = true
+		return result
+	}
 	channel, err := model.GetChannelById(job.NewAPIChannelId, true)
 	if err != nil {
 		result.err = err
 		result.errorCode = hubSupplyProbeObserverErrorCode
+		result.skipped = true
 		return result
 	}
 	channel.Models = job.ConfiguredModels

@@ -38,6 +38,7 @@ const (
 	HubRoutingHealthReasonModelUnpublished      = "model_unpublished"
 	HubRoutingHealthReasonProbeUnavailable      = "probe_unavailable"
 	HubRoutingHealthReasonProbeUnmonitored      = "probe_unmonitored"
+	HubRoutingHealthReasonRuntimeQuarantined    = "runtime_health_quarantined"
 	HubRoutingHealthReasonNoRoutableAbility     = "no_routable_ability"
 )
 
@@ -54,48 +55,68 @@ type HubRoutingHealthListOptions struct {
 }
 
 type HubRoutingHealthRow struct {
-	ChannelID            int      `json:"channel_id"`
-	ChannelName          string   `json:"channel_name"`
-	ChannelType          int      `json:"channel_type"`
-	ChannelStatus        int      `json:"channel_status"`
-	ChannelStatusReason  string   `json:"channel_status_reason"`
-	ProviderID           int      `json:"provider_id"`
-	ProviderName         string   `json:"provider_name"`
-	ProviderStatus       string   `json:"provider_status"`
-	SupplyGroupID        int      `json:"supply_group_id"`
-	SupplyStatus         string   `json:"supply_status"`
-	PriceMultiplier      *float64 `json:"price_multiplier"`
-	ModelName            string   `json:"model_name"`
-	ModelFamily          string   `json:"model_family"`
-	EndpointType         string   `json:"endpoint_type"`
-	EndpointMode         string   `json:"endpoint_mode"`
-	ResolvedEndpointType string   `json:"resolved_endpoint_type"`
-	ProbeKind            string   `json:"probe_kind"`
-	Published            bool     `json:"published"`
-	EligibleServiceTiers []string `json:"eligible_service_tiers"`
-	RoutableServiceTiers []string `json:"routable_service_tiers"`
-	ProbeStatus          string   `json:"probe_status"`
-	LastProbeAt          int64    `json:"last_probe_at"`
-	LastSuccessAt        int64    `json:"last_success_at"`
-	LastLatencyMs        int64    `json:"last_latency_ms"`
-	LastFirstTokenMs     *int64   `json:"last_first_token_ms"`
-	LastError            string   `json:"last_error"`
-	LastErrorCode        string   `json:"last_error_code"`
-	ConsecutiveFailures  int      `json:"consecutive_failures"`
-	ProbeRoutable        bool     `json:"probe_routable"`
-	SampleCount7d        int      `json:"sample_count_7d"`
-	SuccessRate7d        *float64 `json:"success_rate_7d"`
-	LatencyP50Ms         *int64   `json:"latency_p50_ms"`
-	LatencyP95Ms         *int64   `json:"latency_p95_ms"`
-	FirstTokenP50Ms      *int64   `json:"first_token_p50_ms"`
-	FirstTokenP95Ms      *int64   `json:"first_token_p95_ms"`
-	ConfidenceBps        *int     `json:"confidence_bps"`
-	RankingScoreBps      *int     `json:"ranking_score_bps"`
-	SkipReasonCodes      []string `json:"skip_reason_codes"`
-	ServiceTierRoutable  bool     `json:"service_tier_routable"`
-	probeTargetCreatedAt int64
-	probeIntervalMinutes int
-	supplyConfigVersion  int
+	ChannelID                   int      `json:"channel_id"`
+	ChannelName                 string   `json:"channel_name"`
+	ChannelType                 int      `json:"channel_type"`
+	ChannelStatus               int      `json:"channel_status"`
+	ChannelStatusReason         string   `json:"channel_status_reason"`
+	ProviderID                  int      `json:"provider_id"`
+	ProviderName                string   `json:"provider_name"`
+	ProviderStatus              string   `json:"provider_status"`
+	SupplyGroupID               int      `json:"supply_group_id"`
+	SupplyStatus                string   `json:"supply_status"`
+	PriceMultiplier             *float64 `json:"price_multiplier"`
+	ModelName                   string   `json:"model_name"`
+	ModelFamily                 string   `json:"model_family"`
+	EndpointType                string   `json:"endpoint_type"`
+	EndpointMode                string   `json:"endpoint_mode"`
+	ResolvedEndpointType        string   `json:"resolved_endpoint_type"`
+	ProbeKind                   string   `json:"probe_kind"`
+	Published                   bool     `json:"published"`
+	EligibleServiceTiers        []string `json:"eligible_service_tiers"`
+	RoutableServiceTiers        []string `json:"routable_service_tiers"`
+	ProbeStatus                 string   `json:"probe_status"`
+	LastProbeAt                 int64    `json:"last_probe_at"`
+	LastSuccessAt               int64    `json:"last_success_at"`
+	LastLatencyMs               int64    `json:"last_latency_ms"`
+	LastFirstTokenMs            *int64   `json:"last_first_token_ms"`
+	LastError                   string   `json:"last_error"`
+	LastErrorCode               string   `json:"last_error_code"`
+	ConsecutiveFailures         int      `json:"consecutive_failures"`
+	ProbeRoutable               bool     `json:"probe_routable"`
+	ProbeHealthState            string   `json:"probe_health_state"`
+	SuspendedAt                 int64    `json:"suspended_at"`
+	SuspensionReason            string   `json:"suspension_reason"`
+	RealHealthState             string   `json:"real_health_state"`
+	RealWindowStartedAt         int64    `json:"real_window_started_at"`
+	RealSampleCount             int64    `json:"real_sample_count"`
+	RealSuccessRateBps          int      `json:"real_success_rate_bps"`
+	ConsecutiveUnhealthyWindows int      `json:"consecutive_unhealthy_windows"`
+	RealFirstTokenSampleCount   int64    `json:"real_first_token_sample_count"`
+	RealFirstTokenP50Ms         *int64   `json:"real_first_token_p50_ms"`
+	RealFirstTokenP95Ms         *int64   `json:"real_first_token_p95_ms"`
+	ProbeAvailabilityFactorBps  int      `json:"probe_availability_factor_bps"`
+	RealAvailabilityFactorBps   int      `json:"real_availability_factor_bps"`
+	AvailabilityFactorBps       int      `json:"availability_factor_bps"`
+	ProbeLatencyScoreBps        int      `json:"probe_latency_score_bps"`
+	RealLatencyScoreBps         int      `json:"real_latency_score_bps"`
+	LatencyFactorBps            int      `json:"latency_factor_bps"`
+	StaticWeight                int      `json:"static_weight"`
+	EffectiveWeight             int      `json:"effective_weight"`
+	RoutingHardUnavailable      bool     `json:"routing_hard_unavailable"`
+	SampleCount7d               int      `json:"sample_count_7d"`
+	SuccessRate7d               *float64 `json:"success_rate_7d"`
+	LatencyP50Ms                *int64   `json:"latency_p50_ms"`
+	LatencyP95Ms                *int64   `json:"latency_p95_ms"`
+	FirstTokenP50Ms             *int64   `json:"first_token_p50_ms"`
+	FirstTokenP95Ms             *int64   `json:"first_token_p95_ms"`
+	ConfidenceBps               *int     `json:"confidence_bps"`
+	RankingScoreBps             *int     `json:"ranking_score_bps"`
+	SkipReasonCodes             []string `json:"skip_reason_codes"`
+	ServiceTierRoutable         bool     `json:"service_tier_routable"`
+	probeTargetCreatedAt        int64
+	probeIntervalMinutes        int
+	supplyConfigVersion         int
 }
 
 type hubRoutingHealthSampleKey struct {
@@ -122,7 +143,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 	}
 
 	channels := make([]Channel, 0)
-	if err := DB.Select("id", "type", "status", "name", "models", "other_info").Order("id ASC").Find(&channels).Error; err != nil {
+	if err := DB.Select("id", "type", "status", "name", "models", "other_info", "weight").Order("id ASC").Find(&channels).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -181,6 +202,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 		}
 		for _, modelName := range channel.GetModels() {
 			targets := []HubSupplyGroupProbeTarget(nil)
+			autoProbeDisabled := providerOwned && group.IsAutoProbeDisabled(modelName, channel.Models)
 			if providerOwned {
 				targets = targetsByGroupModel[hubRoutingHealthGroupModelKey{groupID: group.Id, modelName: modelName}]
 			}
@@ -191,7 +213,11 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 				}
 				targets = hubSupplyProbeDefinitionsWithOverrides(channel.Type, []string{modelName}, overrides)
 				for index := range targets {
-					targets[index].Status = HubRoutingHealthProbeStatusUnmonitored
+					if autoProbeDisabled {
+						targets[index].Status = HubSupplyProbeStatusSkipped
+					} else {
+						targets[index].Status = HubRoutingHealthProbeStatusUnmonitored
+					}
 				}
 			}
 			for _, target := range targets {
@@ -217,6 +243,11 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 					LastErrorCode:        target.LastErrorCode,
 					ConsecutiveFailures:  target.ConsecutiveFailures,
 					ProbeRoutable:        hubSupplyProbeTargetRoutable(target),
+					ProbeHealthState:     hubRoutingProbeHealthState(target),
+					SuspendedAt:          target.SuspendedAt,
+					SuspensionReason:     target.SuspensionReason,
+					RealHealthState:      HubRoutingRealHealthUnknown,
+					StaticWeight:         channel.GetWeight(),
 					EligibleServiceTiers: make([]string, 0),
 					RoutableServiceTiers: make([]string, 0),
 					SkipReasonCodes:      make([]string, 0),
@@ -285,9 +316,57 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 		return nil, 0, err
 	}
 	for index := range rows {
+		populateHubRoutingRuntimeHealth(&rows[index])
 		finalizeHubRoutingHealthReasons(&rows[index])
 	}
 	return rows, total, nil
+}
+
+func populateHubRoutingRuntimeHealth(row *HubRoutingHealthRow) {
+	if row == nil {
+		return
+	}
+	requestPath := "/v1/chat/completions"
+	if row.ProbeKind == HubSupplyProbeKindImage {
+		requestPath = "/v1/images/generations"
+	}
+	decision := GetHubRoutingDecision(row.ChannelID, row.ModelName, requestPath)
+	row.ProbeAvailabilityFactorBps = decision.ProbeAvailabilityFactorBps
+	row.AvailabilityFactorBps = decision.AvailabilityFactorBps
+	row.ProbeLatencyScoreBps = decision.ProbeLatencyScoreBps
+	row.RealLatencyScoreBps = decision.RealLatencyScoreBps
+	row.LatencyFactorBps = decision.LatencyFactorBps
+	row.RoutingHardUnavailable = decision.HardUnavailable
+	row.EffectiveWeight = CalculateHubRoutingEffectiveWeight(row.StaticWeight, row.AvailabilityFactorBps, row.LatencyFactorBps)
+	if !decision.HasRuntimeSignal {
+		return
+	}
+	signal := decision.RuntimeSignal
+	row.RealHealthState = signal.RealHealthState
+	row.RealWindowStartedAt = signal.RealWindowStartedAt
+	row.RealSampleCount = signal.RealSampleCount
+	row.RealSuccessRateBps = signal.RealSuccessRateBps
+	row.ConsecutiveUnhealthyWindows = signal.ConsecutiveUnhealthyWindows
+	row.RealFirstTokenSampleCount = signal.RealFirstTokenSampleCount
+	row.RealFirstTokenP50Ms = signal.RealFirstTokenP50Ms
+	row.RealFirstTokenP95Ms = signal.RealFirstTokenP95Ms
+	row.RealAvailabilityFactorBps = signal.RealAvailabilityFactorBps
+}
+
+func hubRoutingProbeHealthState(target HubSupplyGroupProbeTarget) string {
+	if target.Status == HubSupplyProbeStatusSuspended || target.ConsecutiveFailures >= HubSupplyProbeFailureSuspendLimit {
+		return HubSupplyProbeStatusSuspended
+	}
+	if target.ConsecutiveFailures >= HubSupplyProbeFailureThreshold {
+		return "quarantined"
+	}
+	if target.ConsecutiveFailures == 1 {
+		return "degraded"
+	}
+	if target.Status == HubSupplyProbeStatusAvailable {
+		return HubRoutingRealHealthHealthy
+	}
+	return target.Status
 }
 
 func hubRoutingHealthMatchesFilters(row HubRoutingHealthRow, options HubRoutingHealthListOptions) bool {
@@ -493,8 +572,12 @@ func finalizeHubRoutingHealthReasons(row *HubRoutingHealthRow) {
 	if row.ProbeStatus == HubRoutingHealthProbeStatusUnmonitored {
 		row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonProbeUnmonitored)
 		blocked = blocked || row.ProviderID > 0
-	} else if !row.ProbeRoutable {
-		row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonProbeUnavailable)
+	} else if row.RoutingHardUnavailable {
+		if row.RealHealthState == HubRoutingRealHealthQuarantined {
+			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonRuntimeQuarantined)
+		} else {
+			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonProbeUnavailable)
+		}
 		blocked = blocked || row.ProviderID > 0
 	}
 	if blocked {

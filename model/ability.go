@@ -153,12 +153,13 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 			if ability.Priority != nil {
 				priority = *ability.Priority
 			}
-			candidates = append(candidates, hubTierChannelCandidate{
+			candidate := hubTierChannelCandidate{
 				ChannelID: ability.ChannelId,
 				Priority:  priority,
 				Weight:    int(ability.Weight),
 				Provider:  providerID,
-			})
+			}
+			candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath))
 		}
 		channelID := selectHubTierChannel(candidates, excludedChannelIDs)
 		if channelID == 0 {
@@ -281,7 +282,7 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 		// On error, fall back to unfiltered candidates to avoid blocking selection
 		return abilities
 	}
-	supplyAvailability, err := loadHubSupplyChannelProbeKinds(DB, channelIds)
+	supplyAvailability, _, err := loadHubSupplyChannelProbeKinds(DB, channelIds)
 	if err != nil {
 		return abilities
 	}

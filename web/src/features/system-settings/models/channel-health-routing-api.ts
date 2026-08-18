@@ -46,6 +46,28 @@ export type HubRoutingHealthRow = {
   last_first_token_ms: number | null
   last_error: string
   last_error_code: string
+  consecutive_failures: number
+  probe_routable: boolean
+  probe_health_state: string
+  suspended_at: number
+  suspension_reason: string
+  real_health_state: string
+  real_window_started_at: number
+  real_sample_count: number
+  real_success_rate_bps: number
+  consecutive_unhealthy_windows: number
+  real_first_token_sample_count: number
+  real_first_token_p50_ms: number | null
+  real_first_token_p95_ms: number | null
+  probe_availability_factor_bps: number
+  real_availability_factor_bps: number
+  availability_factor_bps: number
+  probe_latency_score_bps: number
+  real_latency_score_bps: number
+  latency_factor_bps: number
+  static_weight: number
+  effective_weight: number
+  routing_hard_unavailable: boolean
   sample_count_7d: number
   success_rate_7d: number | null
   latency_p50_ms: number | null

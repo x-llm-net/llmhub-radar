@@ -31,6 +31,9 @@ func TestClassifyHubAttemptFailure(t *testing.T) {
 		want string
 	}{
 		{name: "upstream timeout", err: types.NewErrorWithStatusCode(errors.New("timeout"), types.ErrorCodeBadResponseStatusCode, 504), want: HubFailureClassUpstream},
+		{name: "upstream unauthorized", err: types.NewErrorWithStatusCode(errors.New("unauthorized"), types.ErrorCodeBadResponseStatusCode, http.StatusUnauthorized), want: HubFailureClassConfiguration},
+		{name: "upstream forbidden", err: types.NewErrorWithStatusCode(errors.New("forbidden"), types.ErrorCodeBadResponseStatusCode, http.StatusForbidden), want: HubFailureClassConfiguration},
+		{name: "upstream not found", err: types.NewErrorWithStatusCode(errors.New("not found"), types.ErrorCodeBadResponseStatusCode, http.StatusNotFound), want: HubFailureClassConfiguration},
 		{name: "channel configuration", err: types.NewError(errors.New("bad key"), types.ErrorCodeChannelInvalidKey), want: HubFailureClassConfiguration},
 		{name: "client request", err: types.NewErrorWithStatusCode(errors.New("bad request"), types.ErrorCodeInvalidRequest, http.StatusBadRequest), want: HubFailureClassClient},
 		{name: "prompt blocked", err: types.NewErrorWithStatusCode(errors.New("blocked"), types.ErrorCodePromptBlocked, http.StatusBadRequest), want: HubFailureClassClient},
@@ -53,7 +56,7 @@ func TestClassifyHubAttemptFailure(t *testing.T) {
 
 func TestIsHubFailureHealthEligible(t *testing.T) {
 	assert.True(t, IsHubFailureHealthEligible(HubFailureClassUpstream))
-	assert.True(t, IsHubFailureHealthEligible(HubFailureClassConfiguration))
+	assert.False(t, IsHubFailureHealthEligible(HubFailureClassConfiguration))
 	assert.True(t, IsHubFailureHealthEligible(HubFailureClassResponseStarted))
 	assert.True(t, IsHubFailureHealthEligible(HubFailureClassUnknown))
 	assert.False(t, IsHubFailureHealthEligible(HubFailureClassClient))

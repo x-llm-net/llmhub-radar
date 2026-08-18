@@ -8,10 +8,13 @@ import (
 )
 
 type hubTierChannelCandidate struct {
-	ChannelID int
-	Priority  int64
-	Weight    int
-	Provider  int
+	ChannelID             int
+	Priority              int64
+	Weight                int
+	Provider              int
+	AvailabilityFactorBps int
+	LatencyFactorBps      int
+	HardUnavailable       bool
 }
 
 // hubTierCandidateBuckets is published with the channel cache. It keeps the
@@ -29,6 +32,9 @@ func selectHubTierChannel(candidates []hubTierChannelCandidate, excludedChannelI
 	providers := make(map[int][]hubTierChannelCandidate)
 	for _, candidate := range candidates {
 		if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
+			continue
+		}
+		if candidate.HardUnavailable {
 			continue
 		}
 		providers[candidate.Provider] = append(providers[candidate.Provider], candidate)
@@ -53,12 +59,14 @@ func selectHubTierChannelFromBuckets(
 	excludedChannelIDs map[int]struct{},
 	providerFilter ChannelProviderFilter,
 	isEligible func(hubTierChannelCandidate) bool,
+	decorate func(hubTierChannelCandidate) hubTierChannelCandidate,
 ) int {
 	if buckets == nil {
 		return 0
 	}
 
 	providerIDs := make([]int, 0, len(buckets.providerIDs))
+	eligibleByProvider := make(map[int][]hubTierChannelCandidate, len(buckets.providerIDs))
 	for _, providerID := range buckets.providerIDs {
 		if !hubTierBucketProviderMatchesFilter(providerID, providerFilter) {
 			continue
@@ -67,10 +75,19 @@ func selectHubTierChannelFromBuckets(
 			if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
 				continue
 			}
-			if isEligible == nil || isEligible(candidate) {
-				providerIDs = append(providerIDs, providerID)
-				break
+			if isEligible != nil && !isEligible(candidate) {
+				continue
 			}
+			if decorate != nil {
+				candidate = decorate(candidate)
+			}
+			if candidate.HardUnavailable {
+				continue
+			}
+			eligibleByProvider[providerID] = append(eligibleByProvider[providerID], candidate)
+		}
+		if len(eligibleByProvider[providerID]) > 0 {
+			providerIDs = append(providerIDs, providerID)
 		}
 	}
 	if len(providerIDs) == 0 {
@@ -78,16 +95,7 @@ func selectHubTierChannelFromBuckets(
 	}
 
 	providerID := providerIDs[common.GetRandomInt(len(providerIDs))]
-	candidates := make([]hubTierChannelCandidate, 0, len(buckets.candidatesBySource[providerID]))
-	for _, candidate := range buckets.candidatesBySource[providerID] {
-		if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
-			continue
-		}
-		if isEligible == nil || isEligible(candidate) {
-			candidates = append(candidates, candidate)
-		}
-	}
-	return selectHubTierProviderChannel(candidates)
+	return selectHubTierProviderChannel(eligibleByProvider[providerID])
 }
 
 func hubTierBucketProviderMatchesFilter(providerID int, filter ChannelProviderFilter) bool {
@@ -108,23 +116,57 @@ func selectHubTierProviderChannel(candidates []hubTierChannelCandidate) int {
 	if len(candidates) == 0 {
 		return 0
 	}
-	highestPriority := candidates[0].Priority
-	for _, candidate := range candidates[1:] {
-		if candidate.Priority > highestPriority {
+	highestPriority := int64(0)
+	foundPriority := false
+	for _, candidate := range candidates {
+		if candidate.HardUnavailable {
+			continue
+		}
+		if !foundPriority || candidate.Priority > highestPriority {
 			highestPriority = candidate.Priority
+			foundPriority = true
 		}
 	}
+	if !foundPriority {
+		return 0
+	}
 	targets := make([]hubTierChannelCandidate, 0, len(candidates))
-	sumWeight := 0
 	for _, candidate := range candidates {
-		if candidate.Priority != highestPriority {
+		if candidate.HardUnavailable || candidate.Priority != highestPriority {
 			continue
 		}
 		targets = append(targets, candidate)
-		sumWeight += candidate.Weight
+	}
+	if len(targets) == 0 {
+		return 0
 	}
 	if len(targets) == 1 {
 		return targets[0].ChannelID
+	}
+	allStaticWeightsZero := true
+	for _, candidate := range targets {
+		if candidate.Weight > 0 {
+			allStaticWeightsZero = false
+			break
+		}
+	}
+	sumWeight := 0
+	for index := range targets {
+		baseWeight := targets[index].Weight
+		if allStaticWeightsZero {
+			baseWeight = 100
+		}
+		availability := targets[index].AvailabilityFactorBps
+		if availability <= 0 {
+			availability = HubRoutingFactorNeutralBps
+		}
+		latency := targets[index].LatencyFactorBps
+		if latency <= 0 {
+			latency = HubRoutingFactorNeutralBps
+		}
+		effectiveWeight := CalculateHubRoutingEffectiveWeight(baseWeight, availability, latency)
+		targets[index].Weight = effectiveWeight
+		sumWeight += effectiveWeight
 	}
 	smoothingFactor := 1
 	smoothingAdjustment := 0
@@ -142,6 +184,14 @@ func selectHubTierProviderChannel(candidates []hubTierChannelCandidate) int {
 		}
 	}
 	return targets[len(targets)-1].ChannelID
+}
+
+func decorateHubTierCandidateWithRuntimeHealth(candidate hubTierChannelCandidate, modelName, requestPath string) hubTierChannelCandidate {
+	decision := GetHubRoutingDecision(candidate.ChannelID, modelName, requestPath)
+	candidate.AvailabilityFactorBps = decision.AvailabilityFactorBps
+	candidate.LatencyFactorBps = decision.LatencyFactorBps
+	candidate.HardUnavailable = decision.HardUnavailable
+	return candidate
 }
 
 func hubTierProviderForChannel(channelID int, filter ChannelProviderFilter) (int, bool) {

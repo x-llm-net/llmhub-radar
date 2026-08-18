@@ -302,8 +302,12 @@ func appendHubRoutingWindowRedis(ctx context.Context, pipe redis.Pipeliner, key 
 }
 
 func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingWindowCounters, params HubRoutingMetricQueryParams, startTs, endTs int64) {
+	_ = mergeHubRoutingWindowRedisChecked(merged, params, startTs, endTs)
+}
+
+func mergeHubRoutingWindowRedisChecked(merged map[hubRoutingWindowBucketKey]hubRoutingWindowCounters, params HubRoutingMetricQueryParams, startTs, endTs int64) error {
 	if !common.RedisEnabled || common.RDB == nil {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -311,7 +315,7 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 	for {
 		keys, next, err := common.RDB.Scan(ctx, cursor, "hub-routing-window:*", 100).Result()
 		if err != nil {
-			return
+			return err
 		}
 		for _, rawKey := range keys {
 			key, ok := parseHubRoutingWindowRedisBucketKey(rawKey)
@@ -320,7 +324,7 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 			}
 			values, err := common.RDB.HGetAll(ctx, rawKey).Result()
 			if err != nil {
-				continue
+				return err
 			}
 			counters := hubRoutingWindowCounters{
 				requestCount:           parseRedisInt(values["req"]),
@@ -341,7 +345,7 @@ func mergeHubRoutingWindowRedis(merged map[hubRoutingWindowBucketKey]hubRoutingW
 		}
 		cursor = next
 		if cursor == 0 {
-			return
+			return nil
 		}
 	}
 }

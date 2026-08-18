@@ -340,7 +340,7 @@ func getHubSupplyChannelAbilityModels(tx *gorm.DB, channel *Channel) ([]string, 
 	routableModels := make([]string, 0)
 	for _, modelName := range group.GetPublishedModels(channel.Models) {
 		_, probeDisabled := autoProbeDisabled[modelName]
-		if probeDisabled || hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
+		if probeDisabled || hubSupplyModelHasAvailableProbeKindForChannel(channel.Id, probeKinds, modelName) {
 			routableModels = append(routableModels, modelName)
 		}
 	}

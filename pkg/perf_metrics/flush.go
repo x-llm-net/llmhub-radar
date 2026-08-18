@@ -15,10 +15,9 @@ func flushLoop() {
 		interval := perf_metrics_setting.GetFlushIntervalMinutes()
 		time.Sleep(time.Duration(interval) * time.Minute)
 		setting := perf_metrics_setting.GetSetting()
-		if !setting.Enabled {
-			continue
+		if setting.Enabled {
+			flushCompletedBuckets()
 		}
-		flushCompletedBuckets()
 		flushHubRoutingBuckets()
 		cleanupExpiredMetrics(setting.RetentionDays)
 	}

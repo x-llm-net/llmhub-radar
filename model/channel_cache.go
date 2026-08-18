@@ -36,8 +36,14 @@ func InitChannelCache() {
 		common.SysError("failed to refresh hub supply pricing cache: " + err.Error())
 		return
 	}
+	newChannel2HubSupplyProbeKinds, probeSignals, err := loadHubSupplyChannelProbeKinds(DB, nil)
+	if err != nil {
+		common.SysError("failed to refresh hub supply route availability: " + err.Error())
+		return
+	}
 	if !common.MemoryCacheEnabled {
 		publishHubSupplyPricingCache(pricingData)
+		PublishHubRoutingProbeSignals(probeSignals)
 		InvalidatePricingCache()
 		return
 	}
@@ -59,11 +65,6 @@ func InitChannelCache() {
 	var abilities []*Ability
 	if err := DB.Where("enabled = ?", true).Find(&abilities).Error; err != nil {
 		common.SysError("failed to refresh ability cache: " + err.Error())
-		return
-	}
-	newChannel2HubSupplyProbeKinds, err := loadHubSupplyChannelProbeKinds(DB, nil)
-	if err != nil {
-		common.SysError("failed to refresh hub supply route availability: " + err.Error())
 		return
 	}
 	newGroup2model2channels := make(map[string]map[string][]int)
@@ -120,6 +121,7 @@ func InitChannelCache() {
 	hubSupplyConfiguredIDs = pricingData.configuredIDs
 	hubProviderRoutingBySlug = pricingData.providerBySlug
 	hubProviderRoutingByID = pricingData.providerByID
+	PublishHubRoutingProbeSignals(probeSignals)
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
@@ -226,6 +228,8 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 			}
 			providerID, eligible := hubTierProviderForChannel(candidate.ChannelID, providerFilter)
 			return eligible && providerID == candidate.Provider
+		}, func(candidate hubTierChannelCandidate) hubTierChannelCandidate {
+			return decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath)
 		})
 		if channelID == 0 {
 			return nil, HubSupplyPricingSnapshot{}, nil

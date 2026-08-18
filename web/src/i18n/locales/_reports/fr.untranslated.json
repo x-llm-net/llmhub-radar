@@ -131,6 +131,7 @@
   "Only approved providers can enter the high-quality tier": "Only approved providers can enter the high-quality tier",
   "Search provider, channel, or model": "Search provider, channel, or model",
   "Failed to load channel health data": "Failed to load channel health data",
+  "Probe health, real request health, and TTFT affect live routing within the same model and endpoint kind.": "Probe health, real request health, and TTFT affect live routing within the same model and endpoint kind.",
   "Group link, support account, channel, or email": "Group link, support account, channel, or email",
   "Review contact is private. The public support entry is shown to users on your provider homepage.": "Review contact is private. The public support entry is shown to users on your provider homepage.",
   "Used only for application review and operations": "Used only for application review and operations",

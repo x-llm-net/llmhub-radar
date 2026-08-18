@@ -110,11 +110,35 @@ func TestBuildHubTierCandidateBucketsPreservesProviderFirstSelection(t *testing.
 	assert.Len(t, bucket.candidatesBySource[0], 1)
 
 	providerOnly := ChannelProviderFilter{ProviderID: 10, Mode: ChannelProviderOnly}
-	assert.Equal(t, 101, selectHubTierChannelFromBuckets(bucket, nil, providerOnly, nil))
-	assert.Equal(t, 102, selectHubTierChannelFromBuckets(bucket, map[int]struct{}{101: {}}, providerOnly, nil))
+	assert.Equal(t, 101, selectHubTierChannelFromBuckets(bucket, nil, providerOnly, nil, nil))
+	assert.Equal(t, 102, selectHubTierChannelFromBuckets(bucket, map[int]struct{}{101: {}}, providerOnly, nil, nil))
 
 	providerUnavailable := ChannelProviderFilter{ProviderID: 20, Mode: ChannelProviderOnly}
 	assert.Zero(t, selectHubTierChannelFromBuckets(bucket, nil, providerUnavailable, func(candidate hubTierChannelCandidate) bool {
 		return candidate.ChannelID != 201
-	}))
+	}, nil))
+}
+
+func TestSelectHubTierChannelFromBucketsDecoratesEachCandidateOnce(t *testing.T) {
+	bucket := &hubTierCandidateBuckets{
+		providerIDs: []int{10, 20},
+		candidatesBySource: map[int][]hubTierChannelCandidate{
+			10: {{ChannelID: 101, Provider: 10, Weight: 100}},
+			20: {{ChannelID: 201, Provider: 20, Weight: 100}},
+		},
+	}
+	calls := make(map[int]int)
+	selected := selectHubTierChannelFromBuckets(
+		bucket,
+		nil,
+		ChannelProviderFilter{Mode: ChannelProviderAny},
+		nil,
+		func(candidate hubTierChannelCandidate) hubTierChannelCandidate {
+			calls[candidate.ChannelID]++
+			return candidate
+		},
+	)
+
+	assert.Contains(t, []int{101, 201}, selected)
+	assert.Equal(t, map[int]int{101: 1, 201: 1}, calls)
 }

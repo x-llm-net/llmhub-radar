@@ -106,12 +106,13 @@ func getHubPolicyChannelFromCache(
 					continue
 				}
 				seen[channelID] = struct{}{}
-				candidates = append(candidates, hubTierChannelCandidate{
+				candidate := hubTierChannelCandidate{
 					ChannelID: channelID,
 					Priority:  channel.GetPriority(),
 					Weight:    channel.GetWeight(),
 					Provider:  providerID,
-				})
+				}
+				candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath))
 			}
 		}
 	}
@@ -203,12 +204,13 @@ func getHubPolicyChannelFromDB(
 				weight = int(ability.Weight)
 			}
 		}
-		candidates = append(candidates, hubTierChannelCandidate{
+		candidate := hubTierChannelCandidate{
 			ChannelID: channelID,
 			Priority:  priority,
 			Weight:    weight,
 			Provider:  providerID,
-		})
+		}
+		candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath))
 	}
 	selectedID := selectHubTierChannel(candidates, excludedChannelIDs)
 	if selectedID == 0 {

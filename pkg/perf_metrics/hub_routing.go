@@ -13,7 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 )
 
 // HubRoutingAttempt is the minimal real-request sample used by the routing
@@ -153,7 +153,7 @@ func (a *hubRoutingAtomicBucket) addCounters(c hubRoutingCounters) {
 var hubRoutingBuckets sync.Map
 
 func RecordHubRoutingAttempts(attempts []HubRoutingAttempt) {
-	if !perf_metrics_setting.GetSetting().Enabled {
+	if !hub_routing_setting.Snapshot().Enabled {
 		return
 	}
 	now := time.Now().Unix()

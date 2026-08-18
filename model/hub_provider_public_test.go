@@ -56,6 +56,7 @@ func TestHubProviderSlugValidationAndUniqueness(t *testing.T) {
 
 func TestHubProviderPublicProfileAggregatesCurrentPublishedSupply(t *testing.T) {
 	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
 	provider := &HubProvider{OwnerUserId: 51, Name: "Acme AI", Description: "Reliable supply"}
 	require.NoError(t, CreateHubProvider(provider))
 

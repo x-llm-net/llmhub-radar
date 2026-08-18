@@ -225,7 +225,7 @@ func hasUsableHubStreamOutput(relayInfo *relaycommon.RelayInfo, usage *dto.Usage
 // another channel. It does not decide whether the request will retry.
 func IsHubFailureHealthEligible(failureClass string) bool {
 	switch failureClass {
-	case HubFailureClassClient, HubFailureClassLoop:
+	case HubFailureClassClient, HubFailureClassConfiguration, HubFailureClassLoop:
 		return false
 	default:
 		return true
@@ -246,8 +246,13 @@ func ClassifyHubAttemptFailure(ctx *gin.Context, err *types.NewAPIError) string 
 		return HubFailureClassResponseStarted
 	}
 	code := err.GetErrorCode()
-	if code == types.ErrorCodeBadResponseStatusCode && err.GetOriginalStatusCode() == http.StatusBadRequest {
-		return HubFailureClassClient
+	if code == types.ErrorCodeBadResponseStatusCode {
+		switch err.GetOriginalStatusCode() {
+		case http.StatusBadRequest:
+			return HubFailureClassClient
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+			return HubFailureClassConfiguration
+		}
 	}
 	switch code {
 	case types.ErrorCodeRequestLoopDetected:

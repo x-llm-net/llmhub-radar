@@ -311,6 +311,12 @@ function EndpointResult(props: {
     statusContent = (
       <span className='text-muted-foreground'>{t('Waiting for test')}</span>
     )
+  } else if (endpoint.status === 'suspended') {
+    statusContent = (
+      <span className='text-destructive'>
+        {t('Automatic probes suspended')}
+      </span>
+    )
   } else {
     statusContent = <span className='text-destructive'>{t('Failed')}</span>
   }
@@ -351,53 +357,56 @@ function EndpointResult(props: {
         </DropdownMenu>
         {statusContent}
       </div>
-      {endpoint.status === 'error' && endpoint.last_error && (
-        <div className='flex max-w-full min-w-0 items-center gap-2'>
-          <Popover>
-            <PopoverTrigger
-              render={
-                <button
-                  type='button'
-                  className='border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10 flex h-8 max-w-full min-w-0 items-center gap-2 rounded-md border px-2.5 text-left text-xs transition-colors'
+      {(endpoint.status === 'error' || endpoint.status === 'suspended') &&
+        endpoint.last_error && (
+          <div className='flex max-w-full min-w-0 items-center gap-2'>
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <button
+                    type='button'
+                    className='border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10 flex h-8 max-w-full min-w-0 items-center gap-2 rounded-md border px-2.5 text-left text-xs transition-colors'
+                  />
+                }
+              >
+                <CircleX className='size-3.5 shrink-0' aria-hidden='true' />
+                <span className='truncate'>
+                  {summarizeProbeError(displayError)}
+                </span>
+                <ChevronDown
+                  className='size-3.5 shrink-0 opacity-60'
+                  aria-hidden='true'
                 />
-              }
-            >
-              <CircleX className='size-3.5 shrink-0' aria-hidden='true' />
-              <span className='truncate'>
-                {summarizeProbeError(displayError)}
-              </span>
-              <ChevronDown
-                className='size-3.5 shrink-0 opacity-60'
-                aria-hidden='true'
-              />
-            </PopoverTrigger>
-            <PopoverContent
-              align='start'
-              className='w-[28rem] max-w-[calc(100vw-2rem)] gap-3 p-3'
-            >
-              <div className='text-destructive flex items-center gap-2 font-medium'>
-                <CircleX className='size-4' aria-hidden='true' />
-                {t('Error details')}
-              </div>
-              <div className='bg-muted max-h-64 overflow-auto rounded-md p-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap'>
-                {displayError}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {isModelPriceError && (
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              className='h-7 shrink-0 px-2 text-xs'
-              onClick={() => window.open(MODEL_PRICING_SETTINGS_PATH, '_blank')}
-            >
-              <Settings className='size-3.5' aria-hidden='true' />
-              {t('Go to Settings')}
-            </Button>
-          )}
-        </div>
-      )}
+              </PopoverTrigger>
+              <PopoverContent
+                align='start'
+                className='w-[28rem] max-w-[calc(100vw-2rem)] gap-3 p-3'
+              >
+                <div className='text-destructive flex items-center gap-2 font-medium'>
+                  <CircleX className='size-4' aria-hidden='true' />
+                  {t('Error details')}
+                </div>
+                <div className='bg-muted max-h-64 overflow-auto rounded-md p-3 font-mono text-xs leading-5 break-all whitespace-pre-wrap'>
+                  {displayError}
+                </div>
+              </PopoverContent>
+            </Popover>
+            {isModelPriceError && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='h-7 shrink-0 px-2 text-xs'
+                onClick={() =>
+                  window.open(MODEL_PRICING_SETTINGS_PATH, '_blank')
+                }
+              >
+                <Settings className='size-3.5' aria-hidden='true' />
+                {t('Go to Settings')}
+              </Button>
+            )}
+          </div>
+        )}
     </div>
   )
 }

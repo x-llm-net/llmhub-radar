@@ -79,6 +79,7 @@ const REASON_LABELS: Record<string, string> = {
   model_unpublished: 'Model not listed',
   probe_unavailable: 'Probe unavailable',
   probe_unmonitored: 'No Hub probe data',
+  runtime_health_quarantined: 'Real traffic health quarantined',
   no_routable_ability: 'No routable service tier ability',
 }
 
@@ -94,11 +95,29 @@ function probeStatusMeta(status: string): {
 } {
   if (status === 'available') return { label: 'Available', variant: 'success' }
   if (status === 'error') return { label: 'Error', variant: 'danger' }
+  if (status === 'suspended') return { label: 'Suspended', variant: 'danger' }
   if (status === 'testing') return { label: 'Testing', variant: 'info' }
+  if (status === 'skipped') {
+    return { label: 'Automatic testing skipped', variant: 'neutral' }
+  }
   if (status === 'pending' || status === 'waiting') {
     return { label: 'Waiting', variant: 'warning' }
   }
   return { label: 'Unmonitored', variant: 'neutral' }
+}
+
+function healthStateMeta(status: string): {
+  label: string
+  variant: StatusVariant
+} {
+  if (status === 'healthy') return { label: 'Healthy', variant: 'success' }
+  if (status === 'degraded') return { label: 'Degraded', variant: 'warning' }
+  if (status === 'unhealthy') return { label: 'Unhealthy', variant: 'danger' }
+  if (status === 'quarantined') {
+    return { label: 'Quarantined', variant: 'danger' }
+  }
+  if (status === 'suspended') return { label: 'Suspended', variant: 'danger' }
+  return { label: 'Insufficient data', variant: 'neutral' }
 }
 
 function supplyStatusMeta(status: string): {
@@ -148,6 +167,8 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
     ] ?? CHANNEL_STATUS_CONFIG[CHANNEL_STATUS.UNKNOWN]
   const probeStatus = probeStatusMeta(row.probe_status)
   const supplyStatus = supplyStatusMeta(row.supply_status)
+  const probeHealth = healthStateMeta(row.probe_health_state)
+  const realHealth = healthStateMeta(row.real_health_state)
   const endpoint = row.resolved_endpoint_type || row.endpoint_type
   return (
     <TableRow>
@@ -194,6 +215,11 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
             variant={probeStatus.variant}
             copyable={false}
           />
+          <StatusBadge
+            label={t(probeHealth.label)}
+            variant={probeHealth.variant}
+            copyable={false}
+          />
           {row.supply_group_id > 0 && (
             <StatusBadge
               label={t(row.published ? 'Listed' : 'Not listed')}
@@ -230,6 +256,14 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
           {t('Latency')} {formatLatency(row.last_latency_ms)} · {t('TTFT')}{' '}
           {formatLatency(row.last_first_token_ms)}
         </div>
+        <div className='text-muted-foreground text-xs'>
+          {t('Consecutive failures')}: {row.consecutive_failures}
+        </div>
+        {row.suspended_at > 0 && (
+          <div className='text-destructive text-xs'>
+            {t('Automatic probes suspended')}
+          </div>
+        )}
       </TableCell>
       <TableCell className='min-w-60 align-top tabular-nums'>
         <div className='text-xs'>
@@ -248,18 +282,49 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
           {t('TTFT P50/P95')}: {formatLatency(row.first_token_p50_ms)} /{' '}
           {formatLatency(row.first_token_p95_ms)}
         </div>
-      </TableCell>
-      <TableCell className='min-w-36 align-top tabular-nums'>
-        <div className='text-xs font-medium'>
+        <div className='text-muted-foreground text-xs'>
+          {t('Ranking score')}:{' '}
           {row.ranking_score_bps == null
             ? '-'
-            : (row.ranking_score_bps / 100).toFixed(1)}
-        </div>
-        <div className='text-muted-foreground mt-1 text-xs'>
-          {t('Confidence')}:{' '}
+            : (row.ranking_score_bps / 100).toFixed(1)}{' '}
+          · {t('Confidence')}:{' '}
           {row.confidence_bps == null
             ? '-'
             : `${(row.confidence_bps / 100).toFixed(1)}%`}
+        </div>
+      </TableCell>
+      <TableCell className='min-w-56 align-top tabular-nums'>
+        <div className='flex items-center gap-1'>
+          <StatusBadge
+            label={t(realHealth.label)}
+            variant={realHealth.variant}
+            copyable={false}
+          />
+          <span className='text-muted-foreground text-xs'>
+            {row.real_sample_count} {t('samples')}
+          </span>
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('Success rate')}:{' '}
+          {row.real_sample_count > 0
+            ? `${(row.real_success_rate_bps / 100).toFixed(1)}%`
+            : '-'}
+        </div>
+        <div className='text-muted-foreground text-xs'>
+          {t('Real TTFT P50/P95')}: {formatLatency(row.real_first_token_p50_ms)}{' '}
+          / {formatLatency(row.real_first_token_p95_ms)}
+        </div>
+      </TableCell>
+      <TableCell className='min-w-48 align-top tabular-nums'>
+        <div className='text-xs font-medium'>
+          {row.static_weight} -&gt; {row.effective_weight}
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('Availability factor')}:{' '}
+          {(row.availability_factor_bps / 100).toFixed(1)}%
+        </div>
+        <div className='text-muted-foreground text-xs'>
+          {t('Latency factor')}: {(row.latency_factor_bps / 100).toFixed(1)}%
         </div>
       </TableCell>
       <TableCell className='min-w-64 align-top'>
@@ -343,10 +408,10 @@ export function ChannelHealthRoutingSection() {
           aria-hidden='true'
         />
         <div className='min-w-0'>
-          <p className='text-sm font-medium'>{t('Observation only')}</p>
+          <p className='text-sm font-medium'>{t('Live routing signals')}</p>
           <p className='text-muted-foreground text-xs'>
             {t(
-              'These metrics are for review only and do not affect live routing yet.'
+              'Probe health, real request health, and TTFT affect live routing within the same model and endpoint kind.'
             )}
           </p>
         </div>
@@ -440,6 +505,9 @@ export function ChannelHealthRoutingSection() {
             {t('Available')}
           </NativeSelectOption>
           <NativeSelectOption value='error'>{t('Error')}</NativeSelectOption>
+          <NativeSelectOption value='suspended'>
+            {t('Suspended')}
+          </NativeSelectOption>
           <NativeSelectOption value='testing'>
             {t('Testing')}
           </NativeSelectOption>
@@ -451,6 +519,9 @@ export function ChannelHealthRoutingSection() {
           </NativeSelectOption>
           <NativeSelectOption value='unmonitored'>
             {t('Unmonitored')}
+          </NativeSelectOption>
+          <NativeSelectOption value='skipped'>
+            {t('Automatic testing skipped')}
           </NativeSelectOption>
         </NativeSelect>
         <NativeSelect
@@ -492,7 +563,7 @@ export function ChannelHealthRoutingSection() {
 
       <div className='overflow-hidden rounded-md border'>
         <div className='overflow-x-auto'>
-          <Table className='min-w-[1720px]'>
+          <Table className='min-w-[1940px]'>
             <TableHeader>
               <TableRow>
                 <TableHead>{t('Channel')}</TableHead>
@@ -501,14 +572,15 @@ export function ChannelHealthRoutingSection() {
                 <TableHead>{t('Service tiers')}</TableHead>
                 <TableHead>{t('Latest probe')}</TableHead>
                 <TableHead>{t('7-day probe metrics')}</TableHead>
-                <TableHead>{t('Ranking score')}</TableHead>
+                <TableHead>{t('Real request window')}</TableHead>
+                <TableHead>{t('Routing weight')}</TableHead>
                 <TableHead>{t('Routing limits')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {health.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={8} className='h-40 text-center'>
+                  <TableCell colSpan={9} className='h-40 text-center'>
                     <Loader2 className='mx-auto animate-spin' />
                   </TableCell>
                 </TableRow>
@@ -516,7 +588,7 @@ export function ChannelHealthRoutingSection() {
               {health.isError && (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className='text-destructive h-40 text-center'
                   >
                     {t('Failed to load channel health data')}
@@ -526,7 +598,7 @@ export function ChannelHealthRoutingSection() {
               {!health.isLoading && !health.isError && items.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className='text-muted-foreground h-40 text-center'
                   >
                     {t('No channel health records found')}

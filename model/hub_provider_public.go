@@ -206,13 +206,21 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 		for modelName := range publishedByGroup[group.Id] {
 			item := models[modelName]
 			modelTargets := targetsByGroupModel[hubProviderPublicGroupModelKey{groupID: group.Id, modelName: modelName}]
-			online := group.ChannelStatus == common.ChannelStatusEnabled && len(modelTargets) > 0
+			autoProbeDisabledKinds := map[string]bool(nil)
+			if group.IsAutoProbeDisabled(modelName, group.ChannelModels) {
+				autoProbeDisabledKinds = hubSupplyAutoProbeDisabledModelKinds(
+					group.ChannelType, modelName, group.GetProbeEndpointOverrides(group.ChannelModels),
+				)
+			}
+			online := group.ChannelStatus == common.ChannelStatusEnabled && hubSupplyPublicModelRoutable(
+				group.NewAPIChannelId,
+				modelName,
+				autoProbeDisabledKinds,
+				modelTargets,
+			)
 			for _, target := range modelTargets {
 				if target.LastProbeAt > item.model.LastProbeAt {
 					item.model.LastProbeAt = target.LastProbeAt
-				}
-				if target.Status != HubSupplyProbeStatusAvailable {
-					online = false
 				}
 			}
 			if online {
