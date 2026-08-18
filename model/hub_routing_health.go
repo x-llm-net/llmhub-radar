@@ -81,6 +81,8 @@ type HubRoutingHealthRow struct {
 	LastFirstTokenMs     *int64   `json:"last_first_token_ms"`
 	LastError            string   `json:"last_error"`
 	LastErrorCode        string   `json:"last_error_code"`
+	ConsecutiveFailures  int      `json:"consecutive_failures"`
+	ProbeRoutable        bool     `json:"probe_routable"`
 	SampleCount7d        int      `json:"sample_count_7d"`
 	SuccessRate7d        *float64 `json:"success_rate_7d"`
 	LatencyP50Ms         *int64   `json:"latency_p50_ms"`
@@ -213,6 +215,8 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 					LastFirstTokenMs:     target.LastFirstTokenMs,
 					LastError:            target.LastError,
 					LastErrorCode:        target.LastErrorCode,
+					ConsecutiveFailures:  target.ConsecutiveFailures,
+					ProbeRoutable:        hubSupplyProbeTargetRoutable(target),
 					EligibleServiceTiers: make([]string, 0),
 					RoutableServiceTiers: make([]string, 0),
 					SkipReasonCodes:      make([]string, 0),
@@ -489,7 +493,7 @@ func finalizeHubRoutingHealthReasons(row *HubRoutingHealthRow) {
 	if row.ProbeStatus == HubRoutingHealthProbeStatusUnmonitored {
 		row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonProbeUnmonitored)
 		blocked = blocked || row.ProviderID > 0
-	} else if row.ProbeStatus != HubSupplyProbeStatusAvailable {
+	} else if !row.ProbeRoutable {
 		row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonProbeUnavailable)
 		blocked = blocked || row.ProviderID > 0
 	}

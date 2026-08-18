@@ -99,6 +99,7 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	assert.Equal(t, int64(300), *health.FirstTokenP95Ms)
 	assert.NotNil(t, health.ConfidenceBps)
 	assert.NotNil(t, health.RankingScoreBps)
+	assert.True(t, health.ProbeRoutable)
 	assert.Empty(t, health.SkipReasonCodes)
 
 	hidden := findHubRoutingHealthRow(t, rows, channel.Id, "gpt-hidden")

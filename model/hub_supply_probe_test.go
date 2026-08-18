@@ -172,21 +172,50 @@ func TestHubSupplyRoutingIsolatesTextAndImageProbeKinds(t *testing.T) {
 	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
 	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/generations", false)
 
+	require.NoError(t, MarkHubSupplyProbeTargetsTesting([]int{textTarget.Id}))
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
+
 	_, _, err = RecordHubSupplyProbeResult(textTarget.Id, false, 650, "text failed", "upstream_error", "")
 	require.NoError(t, err)
 	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, true, 600, "", "", "")
 	require.NoError(t, err)
 	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
-	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", false)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
 	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/edits", true)
+	require.NoError(t, DB.First(&textTarget, textTarget.Id).Error)
+	assert.Equal(t, 1, textTarget.ConsecutiveFailures)
 
 	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, false, 800, "image failed again", "upstream_error", "")
 	require.NoError(t, err)
 	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/edits", true)
+	storedChannel, err = GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusEnabled, storedChannel.Status)
+
+	_, _, err = RecordHubSupplyProbeResult(textTarget.Id, false, 900, "text failed twice", "upstream_error", "")
+	require.NoError(t, err)
+	_, _, err = RecordHubSupplyProbeResult(imageTarget.Id, false, 950, "image failed twice", "upstream_error", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", false)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/edits", false)
 	storedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, storedChannel.Status)
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
+
+	_, _, err = RecordHubSupplyProbeResult(textTarget.Id, true, 500, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	require.NoError(t, DB.First(&textTarget, textTarget.Id).Error)
+	assert.Zero(t, textTarget.ConsecutiveFailures)
+	storedChannel, err = GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusEnabled, storedChannel.Status)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/chat/completions", true)
+	assertHubSupplyProbeKindSelection(t, ability.Group, channel.Id, "/v1/images/edits", false)
 }
 
 func TestInitChannelCacheReplacesConfiguredSupplyChannelSet(t *testing.T) {
@@ -376,9 +405,17 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
 	updatedChannel, err = GetChannelById(channel.Id, true)
 	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusEnabled, updatedChannel.Status)
+	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id), "the first transient failure must only degrade routing")
+
+	_, _, err = RecordHubSupplyProbeResult(target.Id, false, 1300, "upstream failed again", "upstream_error", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	updatedChannel, err = GetChannelById(channel.Id, true)
+	require.NoError(t, err)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, updatedChannel.Status)
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedChannel.GetModels())
-	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "a published model must leave routing while unhealthy")
+	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "a published model must leave routing after repeated failures")
 
 	_, _, err = RecordHubSupplyProbeResult(target.Id, true, 900, "", "", "")
 	require.NoError(t, err)
@@ -397,6 +434,22 @@ func TestReconcileHubSupplyGroupRequiresPublicationAndAvailability(t *testing.T)
 	_, _, err = FixAbility()
 	require.NoError(t, err)
 	assert.Empty(t, getChannelAbilityModels(t, channel.Id), "ability repair must preserve supply publication rules")
+}
+
+func TestMigrateHubSupplyProbeFailureCountsKeepsLegacyErrorsQuarantined(t *testing.T) {
+	truncateTables(t)
+	now := common.GetTimestamp()
+	target := &HubSupplyGroupProbeTarget{
+		GroupId: 1, ConfigVersion: 1, ModelName: "gpt-legacy-error",
+		EndpointType: string(constant.EndpointTypeOpenAI), EndpointMode: HubSupplyProbeEndpointModeAuto,
+		ProbeKind: HubSupplyProbeKindText, Status: HubSupplyProbeStatusError,
+		LastProbeAt: now, LastSuccessAt: now - 600, CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, DB.Create(target).Error)
+	require.NoError(t, migrateHubSupplyProbeFailureCounts())
+	require.NoError(t, DB.First(target, target.Id).Error)
+	assert.Equal(t, HubSupplyProbeFailureThreshold, target.ConsecutiveFailures)
+	assert.False(t, hubSupplyProbeTargetRoutable(*target))
 }
 
 func TestReconcileHubSupplyGroupPreservesManualDisableAfterHealthyProbe(t *testing.T) {

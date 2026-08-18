@@ -33,9 +33,21 @@ func buildHubSupplyModelProbeKinds(targets []HubSupplyGroupProbeTarget) hubSuppl
 			seen[target.ModelName][target.ProbeKind] = true
 		}
 		result[target.ModelName][target.ProbeKind] =
-			result[target.ModelName][target.ProbeKind] && target.Status == HubSupplyProbeStatusAvailable
+			result[target.ModelName][target.ProbeKind] && hubSupplyProbeTargetRoutable(target)
 	}
 	return result
+}
+
+func hubSupplyProbeTargetRoutable(target HubSupplyGroupProbeTarget) bool {
+	if target.Status == HubSupplyProbeStatusAvailable {
+		return true
+	}
+	switch target.Status {
+	case HubSupplyProbeStatusPending, HubSupplyProbeStatusTesting, HubSupplyProbeStatusError:
+		return target.LastSuccessAt > 0 && target.ConsecutiveFailures < HubSupplyProbeFailureThreshold
+	default:
+		return false
+	}
 }
 
 func hubSupplyModelHasAvailableProbeKind(kinds hubSupplyModelProbeKinds, modelName string) bool {

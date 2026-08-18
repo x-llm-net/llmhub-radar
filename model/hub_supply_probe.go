@@ -45,6 +45,7 @@ const (
 
 	HubSupplyProbeManualCooldownSeconds = int64(5 * 60)
 	HubSupplyProbeTestingLeaseSeconds   = int64(5 * 60)
+	HubSupplyProbeFailureThreshold      = 2
 )
 
 var ErrHubSupplyProbeCooldown = errors.New("hub supply probe cooldown")
@@ -79,6 +80,7 @@ type HubSupplyGroupProbeTarget struct {
 	LastFirstTokenMs     *int64 `json:"last_first_token_ms" gorm:"bigint"`
 	LastError            string `json:"last_error" gorm:"type:text;not null"`
 	LastErrorCode        string `json:"last_error_code" gorm:"type:varchar(64);not null;default:''"`
+	ConsecutiveFailures  int    `json:"consecutive_failures" gorm:"not null;default:0"`
 	CreatedAt            int64  `json:"created_at" gorm:"bigint;not null"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"bigint;not null"`
 }
@@ -557,9 +559,11 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 		isCurrent = group.ConfigVersion == target.ConfigVersion
 		status := HubSupplyProbeStatusError
 		lastSuccessAt := target.LastSuccessAt
+		consecutiveFailures := target.ConsecutiveFailures + 1
 		if success {
 			status = HubSupplyProbeStatusAvailable
 			lastSuccessAt = now
+			consecutiveFailures = 0
 			errorMessage = ""
 			errorCode = ""
 		}
@@ -574,7 +578,8 @@ func recordHubSupplyProbeResult(targetID int, success bool, latencyMs int64, fir
 		updates := map[string]any{
 			"status": status, "last_probe_at": now, "last_success_at": lastSuccessAt,
 			"next_probe_at": nextProbeAt, "last_latency_ms": latencyMs,
-			"last_error": errorMessage, "last_error_code": errorCode, "updated_at": now,
+			"last_error": errorMessage, "last_error_code": errorCode,
+			"consecutive_failures": consecutiveFailures, "updated_at": now,
 		}
 		if success {
 			updates["last_first_token_ms"] = firstTokenMs
@@ -716,6 +721,9 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 	if providerStatus == HubProviderStatusActive && routableModelCount > 0 {
 		channelStatus = common.ChannelStatusEnabled
 	}
+	if routableModelCount > 0 && status != HubSupplyGroupStatusAvailable {
+		status = HubSupplyGroupStatusPartial
+	}
 
 	if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
 		"status": status, "available_model_count": availableCount,
@@ -725,6 +733,17 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 		return err
 	}
 	return reconcileHubSupplyChannelRouteStateTx(tx, channel.Id, channelStatus)
+}
+
+func migrateHubSupplyProbeFailureCounts() error {
+	if !DB.Migrator().HasTable(&HubSupplyGroupProbeTarget{}) {
+		return nil
+	}
+	// Rows written before consecutive failure tracking have a zero value even
+	// when they are already in error. Keep those legacy failures quarantined.
+	return DB.Model(&HubSupplyGroupProbeTarget{}).
+		Where("status = ? AND consecutive_failures = 0", HubSupplyProbeStatusError).
+		Update("consecutive_failures", HubSupplyProbeFailureThreshold).Error
 }
 
 func reconcileHubSupplyChannelRouteStateTx(tx *gorm.DB, channelID int, status int) error {
