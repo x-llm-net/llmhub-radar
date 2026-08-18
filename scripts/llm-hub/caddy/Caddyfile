@@ -8,7 +8,21 @@ llm-hub.store, app.llm-hub.store {
 			roll_keep 7
 			roll_keep_for 168h
 		}
-		format json
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Proxy-Authorization delete
+			request>headers>X-Api-Key delete
+			request>headers>X-Goog-Api-Key delete
+			request>headers>X-Auth-Token delete
+			request>uri query {
+				delete access_token
+				delete api_key
+				delete key
+				delete token
+			}
+		}
 	}
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3100
@@ -21,7 +35,21 @@ llm-hub.store, app.llm-hub.store {
 			roll_keep 7
 			roll_keep_for 168h
 		}
-		format json
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Proxy-Authorization delete
+			request>headers>X-Api-Key delete
+			request>headers>X-Goog-Api-Key delete
+			request>headers>X-Auth-Token delete
+			request>uri query {
+				delete access_token
+				delete api_key
+				delete key
+				delete token
+			}
+		}
 	}
 	encode zstd gzip
 	tls /etc/caddy/certs/llm-hub.store.pem /etc/caddy/certs/llm-hub.store.key
