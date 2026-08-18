@@ -498,6 +498,15 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 	return nil
 }
 
+func ensureStreamingIdentityEncoding(req *http.Request, info *common.RelayInfo) {
+	if req == nil || info == nil || !info.IsStream || req.Header.Get("Accept-Encoding") != "" {
+		return
+	}
+	// Compressed SSE is commonly buffered until enough data accumulates.
+	// Explicit channel overrides still take priority over this stream default.
+	req.Header.Set("Accept-Encoding", "identity")
+}
+
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
@@ -539,6 +548,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	// The platform marker is applied after adaptor headers and channel overrides,
 	// so upstream configuration cannot forge, delete, or reset the hop count.
+	ensureStreamingIdentityEncoding(req, info)
 	applyRequestHopHeader(req, c)
 	info.SetOutboundRequestReadyTime()
 	trace := &httptrace.ClientTrace{

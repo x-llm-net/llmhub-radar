@@ -2,8 +2,6 @@ package channel
 
 import (
 	"bytes"
-	"compress/gzip"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -207,40 +205,7 @@ func TestApplyInitialRequestHopHeaderStartsAtOne(t *testing.T) {
 	require.Equal(t, 1, hop)
 }
 
-func TestDoRequestUsesStandardCompressionNegotiation(t *testing.T) {
-	service.InitHttpClient()
-	receivedEncoding := make(chan string, 1)
-	serverErr := make(chan error, 1)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedEncoding <- r.Header.Get("Accept-Encoding")
-		w.Header().Set("Content-Encoding", "gzip")
-		writer := gzip.NewWriter(w)
-		_, writeErr := writer.Write([]byte("data: streamed\n\n"))
-		serverErr <- errors.Join(writeErr, writer.Close())
-	}))
-	t.Cleanup(server.Close)
-
-	gin.SetMode(gin.TestMode)
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	req, err := http.NewRequest(http.MethodPost, server.URL, http.NoBody)
-	require.NoError(t, err)
-	info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{}}
-
-	resp, err := doRequest(ctx, req, info)
-	require.NoError(t, err)
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.NoError(t, resp.Body.Close())
-	require.Equal(t, "gzip", <-receivedEncoding)
-	require.NoError(t, <-serverErr)
-	require.True(t, resp.Uncompressed)
-	require.Empty(t, resp.Header.Get("Content-Encoding"))
-	require.Equal(t, "data: streamed\n\n", string(body))
-}
-
-func TestDoRequestPreservesExplicitIdentityEncoding(t *testing.T) {
+func TestDoRequestDefaultsStreamingToIdentityEncoding(t *testing.T) {
 	service.InitHttpClient()
 	receivedEncoding := make(chan string, 1)
 	serverErr := make(chan error, 1)
@@ -257,7 +222,6 @@ func TestDoRequestPreservesExplicitIdentityEncoding(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	req, err := http.NewRequest(http.MethodPost, server.URL, http.NoBody)
 	require.NoError(t, err)
-	req.Header.Set("Accept-Encoding", "identity")
 	info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{}}
 
 	resp, err := doRequest(ctx, req, info)
@@ -269,6 +233,60 @@ func TestDoRequestPreservesExplicitIdentityEncoding(t *testing.T) {
 	require.NoError(t, <-serverErr)
 	require.False(t, resp.Uncompressed)
 	require.Equal(t, "data: streamed\n\n", string(body))
+}
+
+func TestDoRequestPreservesExplicitStreamingEncodingOverride(t *testing.T) {
+	service.InitHttpClient()
+	receivedEncoding := make(chan string, 1)
+	serverErr := make(chan error, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedEncoding <- r.Header.Get("Accept-Encoding")
+		_, err := io.WriteString(w, "data: streamed\n\n")
+		serverErr <- err
+	}))
+	t.Cleanup(server.Close)
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req, err := http.NewRequest(http.MethodPost, server.URL, http.NoBody)
+	require.NoError(t, err)
+	req.Header.Set("Accept-Encoding", "gzip")
+	info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	resp, err := doRequest(ctx, req, info)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "gzip", <-receivedEncoding)
+	require.NoError(t, <-serverErr)
+	require.False(t, resp.Uncompressed)
+	require.Equal(t, "data: streamed\n\n", string(body))
+}
+
+func TestDoRequestKeepsNonStreamingCompressionNegotiation(t *testing.T) {
+	service.InitHttpClient()
+	receivedEncoding := make(chan string, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedEncoding <- r.Header.Get("Accept-Encoding")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req, err := http.NewRequest(http.MethodPost, server.URL, http.NoBody)
+	require.NoError(t, err)
+	info := &relaycommon.RelayInfo{IsStream: false, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	resp, err := doRequest(ctx, req, info)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, "gzip", <-receivedEncoding)
 }
 
 func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.T) {
