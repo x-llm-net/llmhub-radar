@@ -157,9 +157,115 @@ func createFixedChannelServiceTierFixture(t *testing.T, db *gorm.DB, modelName s
 func assertServiceTierUnavailable(t *testing.T, recorder *httptest.ResponseRecorder) {
 	t.Helper()
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	assert.Equal(t, "30", recorder.Header().Get("Retry-After"))
 	var response distributorErrorResponse
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "service_tier_unavailable", response.Error.Code)
+}
+
+func TestDistributeHubPolicyDistinguishesUnconfiguredFromUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+
+	newContext := func(modelName string, multiplier float64) (*gin.Context, *httptest.ResponseRecorder) {
+		ctx, recorder := newDistributorServiceTierContextForModel(0, modelName)
+		common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")
+		common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+			Mode: model.HubTokenRoutingModePublic,
+			Selections: []model.HubTokenRoutingSelection{{
+				Family:        "openai",
+				MinMultiplier: multiplier,
+				MaxMultiplier: multiplier,
+			}},
+		})
+		return ctx, recorder
+	}
+
+	t.Run("never configured model is not retryable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		ctx, recorder := newContext("gpt-5.6-luna", 0.2)
+		ctx.Set("id", 74000)
+		ctx.Set("username", "unsupported-model-user")
+		ctx.Set("token_id", 40)
+		ctx.Set("token_name", "unsupported-model-key")
+		ctx.Set("group", "default")
+
+		Distribute()(ctx)
+
+		require.True(t, ctx.IsAborted())
+		require.Equal(t, http.StatusNotFound, recorder.Code)
+		assert.Empty(t, recorder.Header().Get("Retry-After"))
+		var response distributorErrorResponse
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		assert.Equal(t, "model_not_found", response.Error.Code)
+		assert.Contains(t, response.Error.Message, "gpt-5.6-luna")
+
+		var logs []model.Log
+		require.NoError(t, db.Where("request_id = ?", "service-tier-request-id").Find(&logs).Error)
+		require.Len(t, logs, 1)
+		var other map[string]interface{}
+		require.NoError(t, common.Unmarshal([]byte(logs[0].Other), &other))
+		assert.Equal(t, "model_not_found", other["error_code"])
+		assert.Equal(t, float64(http.StatusNotFound), other["status_code"])
+	})
+
+	t.Run("published supply with disabled provider remains temporarily unavailable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		const modelName = "gpt-configured-disabled-provider"
+		provider := &model.HubProvider{
+			OwnerUserId: 74001,
+			Name:        "Configured Disabled Provider",
+			Slug:        "configured-disabled-provider",
+			Status:      model.HubProviderStatusDisabled,
+		}
+		require.NoError(t, db.Create(provider).Error)
+		channel := &model.Channel{
+			Name:   "configured-disabled-provider-channel",
+			Type:   constant.ChannelTypeOpenAI,
+			Models: modelName,
+			Group:  "default",
+			Status: common.ChannelStatusManuallyDisabled,
+		}
+		require.NoError(t, db.Create(channel).Error)
+		require.NoError(t, db.Create(&model.HubSupplyGroup{
+			PublicId:        "configured-disabled-provider-supply",
+			ProviderId:      provider.Id,
+			NewAPIChannelId: channel.Id,
+			PriceMultiplier: 0.2,
+			PublishedModels: modelName,
+			Status:          model.HubSupplyGroupStatusError,
+		}).Error)
+		model.InitChannelCache()
+		ctx, recorder := newContext(modelName, 0.2)
+
+		Distribute()(ctx)
+
+		require.True(t, ctx.IsAborted())
+		assertServiceTierUnavailable(t, recorder)
+	})
+
+	t.Run("disabled platform channel remains temporarily unavailable", func(t *testing.T) {
+		db := setupDistributorServiceTierTestDB(t)
+		const modelName = "gpt-configured-platform-disabled"
+		channel := &model.Channel{
+			Name:   "configured-platform-disabled-channel",
+			Type:   constant.ChannelTypeOpenAI,
+			Models: modelName,
+			Group:  "default",
+			Status: common.ChannelStatusManuallyDisabled,
+		}
+		require.NoError(t, db.Create(channel).Error)
+		require.NoError(t, db.Create(&model.Ability{
+			Group: "default", Model: modelName, ChannelId: channel.Id, Enabled: false,
+		}).Error)
+		model.InitChannelCache()
+		ctx, recorder := newContext(modelName, 1)
+
+		Distribute()(ctx)
+
+		require.True(t, ctx.IsAborted())
+		assertServiceTierUnavailable(t, recorder)
+	})
 }
 
 func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T) {

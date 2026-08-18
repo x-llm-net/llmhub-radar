@@ -334,6 +334,7 @@ const (
 	MsgDistributorGroupAccessDenied       = "distributor.group_access_denied"
 	MsgDistributorGetChannelFailed        = "distributor.get_channel_failed"
 	MsgDistributorNoAvailableChannel      = "distributor.no_available_channel"
+	MsgDistributorModelNotConfigured     = "distributor.model_not_configured"
 	MsgDistributorServiceTierUnavailable  = "distributor.service_tier_unavailable"
 	MsgDistributorMultiplierUnavailable   = "distributor.multiplier_unavailable"
 	MsgDistributorInvalidMidjourney       = "distributor.invalid_midjourney_request"

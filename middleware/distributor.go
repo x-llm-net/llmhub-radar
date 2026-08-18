@@ -215,7 +215,7 @@ func Distribute() func(c *gin.Context) {
 						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
 						//	message = "数据库一致性已被破坏，请联系管理员"
 						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, unavailableChannelErrorCode(c))
+						abortChannelSelectionFailure(c, showGroup, modelRequest.Model, message)
 						return
 					}
 					if channel == nil {
@@ -223,7 +223,7 @@ func Distribute() func(c *gin.Context) {
 						if service.IsHubServiceTierRequest(c) {
 							message = ServiceTierUnavailableMessage(c, usingGroup, modelRequest.Model)
 						}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, unavailableChannelErrorCode(c))
+						abortChannelSelectionFailure(c, usingGroup, modelRequest.Model, message)
 						return
 					}
 				}
@@ -322,6 +322,28 @@ func unavailableChannelErrorCode(c *gin.Context) types.ErrorCode {
 		return types.ErrorCodeServiceTierUnavailable
 	}
 	return types.ErrorCodeModelNotFound
+}
+
+func abortChannelSelectionFailure(c *gin.Context, group, modelName, fallbackMessage string) {
+	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
+		configured, err := model.HasConfiguredSupplyForHubTokenPolicy(policy, modelName)
+		if err != nil {
+			logger.LogError(c, fmt.Sprintf("failed to check configured supply for model %s: %s", modelName, err.Error()))
+		} else if !configured {
+			abortWithOpenAiMessage(
+				c,
+				http.StatusNotFound,
+				i18n.T(c, i18n.MsgDistributorModelNotConfigured, map[string]any{"Model": modelName}),
+				types.ErrorCodeModelNotFound,
+			)
+			return
+		}
+	}
+
+	if service.IsHubServiceTierRequest(c) {
+		fallbackMessage = ServiceTierUnavailableMessage(c, group, modelName)
+	}
+	abortWithOpenAiMessage(c, http.StatusServiceUnavailable, fallbackMessage, unavailableChannelErrorCode(c))
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.

@@ -71,7 +71,11 @@ Key 字符串保持普通格式。策略只保存在 `hub_routing_policy`，内�
 
 禁用全部 `0.500x` 候选，只保留其他倍率。
 
-预期：`provider-exact` 和 `root-range` 均返回 HTTP `503`、`error.code=service_tier_unavailable` 并包含 `request_id`；用户和 Key 的最终扣费为零，所有 Provider 收益不变。恢复任一合规供给后，同一 Key 无需重建即可恢复。
+预期：`provider-exact` 和 `root-range` 均返回 HTTP `503`、`error.code=service_tier_unavailable`、`Retry-After: 30` 并包含 `request_id`；用户和 Key 的最终扣费为零，所有 Provider 收益不变。恢复任一合规供给后，同一 Key 无需重建即可恢复。
+
+再请求一个从未在 `0.500x` 配置过供给的模型。
+
+预期：返回非重试型 HTTP `404`、`error.code=model_not_found`，不带 `Retry-After`，不进入上游、扣费或 Provider 收益链路。后续若增加合规供给，仍可继续使用原 Key。
 
 ### 6. 高倍率范围
 

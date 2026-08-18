@@ -18,6 +18,9 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 	if len(code) > 0 {
 		codeStr = string(code[0])
 	}
+	if len(code) > 0 && code[0] == types.ErrorCodeServiceTierUnavailable {
+		c.Header("Retry-After", "30")
+	}
 	userId := c.GetInt("id")
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
@@ -26,20 +29,21 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 			"code":    codeStr,
 		},
 	})
-	if len(code) > 0 && code[0] == types.ErrorCodeServiceTierUnavailable {
-		recordHubServiceTierErrorLog(c, statusCode, message)
+	if len(code) > 0 && service.IsHubServiceTierRequest(c) &&
+		(code[0] == types.ErrorCodeServiceTierUnavailable || code[0] == types.ErrorCodeModelNotFound) {
+		recordHubRoutingErrorLog(c, statusCode, message, code[0])
 	}
 	c.Abort()
 	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
 }
 
-func recordHubServiceTierErrorLog(c *gin.Context, statusCode int, message string) {
-	if c == nil || !service.IsHubServiceTierRequest(c) {
+func recordHubRoutingErrorLog(c *gin.Context, statusCode int, message string, errorCode types.ErrorCode) {
+	if c == nil {
 		return
 	}
 	other := map[string]interface{}{
 		"error_type":  "new_api_error",
-		"error_code":  string(types.ErrorCodeServiceTierUnavailable),
+		"error_code":  string(errorCode),
 		"status_code": statusCode,
 	}
 	if c.Request != nil && c.Request.URL != nil {

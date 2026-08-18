@@ -52,6 +52,87 @@ func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 	return channel != nil, err
 }
 
+// HasConfiguredSupplyForHubTokenPolicy distinguishes a permanently unsupported
+// model from supply that is only temporarily unroutable. It intentionally
+// ignores probe health, Channel status, and Provider status.
+func HasConfiguredSupplyForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string) (bool, error) {
+	if policy == nil || !policy.AllowsModel(modelName) || DB == nil {
+		return false, nil
+	}
+
+	modelNames := []string{modelName}
+	normalized := ratio_setting.FormatMatchingModelName(modelName)
+	if normalized != "" && normalized != modelName {
+		modelNames = append(modelNames, normalized)
+	}
+	modelSet := make(map[string]struct{}, len(modelNames))
+	for _, candidate := range modelNames {
+		modelSet[candidate] = struct{}{}
+	}
+
+	type configuredSupplyRow struct {
+		ChannelID       int     `gorm:"column:channel_id"`
+		PriceMultiplier float64 `gorm:"column:price_multiplier"`
+		PublishedModels string  `gorm:"column:published_models"`
+		ChannelModels   string  `gorm:"column:channel_models"`
+	}
+	var supplyRows []configuredSupplyRow
+	if err := DB.Table("hub_supply_groups AS supply_groups").
+		Select("supply_groups.new_api_channel_id AS channel_id, supply_groups.price_multiplier, supply_groups.published_models, channels.models AS channel_models").
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Scan(&supplyRows).Error; err != nil {
+		return false, err
+	}
+
+	configuredSupplyChannels := make(map[int]struct{}, len(supplyRows))
+	family := ClassifyHubPublicModelFamily(modelName)
+	for _, row := range supplyRows {
+		configuredSupplyChannels[row.ChannelID] = struct{}{}
+		if !policy.AllowsMultiplier(family, row.PriceMultiplier) {
+			continue
+		}
+		group := HubSupplyGroup{PublishedModels: row.PublishedModels}
+		for _, publishedModel := range group.GetPublishedModels(row.ChannelModels) {
+			if _, ok := modelSet[publishedModel]; ok {
+				return true, nil
+			}
+		}
+	}
+
+	// Channels without a Hub supply record are platform-owned and use the
+	// baseline multiplier. Disabled Ability rows still represent configured
+	// supply, which is exactly what this temporary/permanent distinction needs.
+	if !policy.AllowsMultiplier(family, 1) {
+		return false, nil
+	}
+	var abilities []Ability
+	if err := DB.Where("model IN ?", modelNames).Find(&abilities).Error; err != nil {
+		return false, err
+	}
+	platformChannelIDs := make([]int, 0, len(abilities))
+	seenPlatformChannels := make(map[int]struct{}, len(abilities))
+	for _, ability := range abilities {
+		if !isHubTokenRoutingCandidateAbilityGroup(ability.Group) {
+			continue
+		}
+		if _, isSupply := configuredSupplyChannels[ability.ChannelId]; isSupply {
+			continue
+		}
+		if _, seen := seenPlatformChannels[ability.ChannelId]; !seen {
+			seenPlatformChannels[ability.ChannelId] = struct{}{}
+			platformChannelIDs = append(platformChannelIDs, ability.ChannelId)
+		}
+	}
+	if len(platformChannelIDs) == 0 {
+		return false, nil
+	}
+	var count int64
+	if err := DB.Model(&Channel{}).Where("id IN ?", platformChannelIDs).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func getHubPolicyChannelFromCache(
 	policy *HubTokenRoutingPolicy,
 	modelName string,
