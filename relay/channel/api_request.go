@@ -323,16 +323,6 @@ func ApplyInitialRequestHopHeader(req *http.Request) {
 	req.Header.Set(common2.RequestHopHeader, common2.NextRequestHop(""))
 }
 
-func ensureStreamingIdentityEncoding(req *http.Request, info *common.RelayInfo) {
-	if req == nil || info == nil || !info.IsStream || req.Header.Get("Accept-Encoding") != "" {
-		return
-	}
-	// Compression middleware and reverse proxies commonly buffer small SSE
-	// chunks. Prefer uncompressed transfer so upstream events can be forwarded
-	// as soon as they are produced. Explicit channel overrides still win.
-	req.Header.Set("Accept-Encoding", "identity")
-}
-
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
@@ -549,7 +539,6 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	// The platform marker is applied after adaptor headers and channel overrides,
 	// so upstream configuration cannot forge, delete, or reset the hop count.
-	ensureStreamingIdentityEncoding(req, info)
 	applyRequestHopHeader(req, c)
 	info.SetOutboundRequestReadyTime()
 	trace := &httptrace.ClientTrace{
