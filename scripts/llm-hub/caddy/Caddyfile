@@ -1,0 +1,29 @@
+# LLM-Hub production reverse proxy.
+# Access logs are intentionally metadata-only: no request body or credentials.
+
+llm-hub.store, app.llm-hub.store {
+	log {
+		output file /var/log/caddy/llm-hub-access.json {
+			roll_size 100MiB
+			roll_keep 7
+			roll_keep_for 168h
+		}
+		format json
+	}
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3100
+}
+
+*.llm-hub.store {
+	log {
+		output file /var/log/caddy/llm-hub-access.json {
+			roll_size 100MiB
+			roll_keep 7
+			roll_keep_for 168h
+		}
+		format json
+	}
+	encode zstd gzip
+	tls /etc/caddy/certs/llm-hub.store.pem /etc/caddy/certs/llm-hub.store.key
+	reverse_proxy 127.0.0.1:3100
+}

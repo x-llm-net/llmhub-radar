@@ -74,6 +74,24 @@
 
 回滚默认只恢复上一镜像，不还原数据库。只有确认迁移造成数据损坏时才考虑恢复 MySQL 备份。
 
+## 入口访问日志
+
+生产 Caddy 配置由 `scripts/llm-hub/caddy/Caddyfile` 管理。根域名和渠道商通配域名都写入 JSON 访问日志：
+
+```text
+/var/log/caddy/llm-hub-access.json
+```
+
+日志只包含请求元数据、Cloudflare 请求头、HTTP 状态码、Caddy 到应用的耗时和应用返回的 `X-Oneapi-Request-Id`，不记录请求体、Authorization 或上游密钥。文件按 100 MiB 轮转，保留 7 个文件或 7 天。
+
+排查入口 522 时，先按截图时间查询该文件：
+
+```bash
+sudo grep 'x-llm.llm-hub.store' /var/log/caddy/llm-hub-access.json
+```
+
+如果 Cloudflare 显示 522 但 Caddy 没有对应记录，说明请求没有到达源站；如果有记录，则结合 `status`、`duration` 和 `X-Oneapi-Request-Id` 查询容器日志及后台请求日志。
+
 ## 事故记录
 
 2026-08-15 曾在核验实际生产目标前推送 `xllm-*` Git 标签，误触发上游 Docker Hub 和通用二进制 Release 工作流。该流程没有替换生产容器，但暴露出发布目标依赖对话记忆的问题。本文件、目标清单、发布脚本和工作流排除规则共同作为后续防线。
