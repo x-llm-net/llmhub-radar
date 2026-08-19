@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -479,13 +480,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			if err != nil {
 				return service.MidjourneyErrorWrapper(constant.MjRequestError, "get_channel_info_failed")
 			}
-			if channel.Status != common.ChannelStatusEnabled {
-				return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
+			if mjErr := bindMidjourneyOriginChannel(c, relayInfo, channel); mjErr != nil {
+				return mjErr
 			}
-			c.Set("base_url", channel.GetBaseURL())
-			c.Set("channel_id", originTask.ChannelId)
-			c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", channel.Key))
-			logger.LogDebug(c, "Midjourney action uses origin channel: id=%s, base_url=%s", strconv.Itoa(originTask.ChannelId), channel.GetBaseURL())
 		}
 		midjRequest.Prompt = originTask.Prompt
 
@@ -671,6 +668,25 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			Description: "close_response_body_failed",
 		}
 	}
+	return nil
+}
+
+// bindMidjourneyOriginChannel restores the original task's full channel
+// context before a continuation action. A partial switch can send the request
+// to one channel while logging and settling it against another.
+func bindMidjourneyOriginChannel(c *gin.Context, relayInfo *relaycommon.RelayInfo, channel *model.Channel) *dto.MidjourneyResponse {
+	if channel == nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "get_channel_info_failed")
+	}
+	if channel.Status != common.ChannelStatusEnabled {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
+	}
+	if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
+		logger.LogError(c, fmt.Sprintf("Midjourney action cannot restore origin channel #%d: %s", channel.Id, setupErr.Error()))
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道当前不可用")
+	}
+	relayInfo.InitChannelMeta(c)
+	logger.LogDebug(c, "Midjourney action uses origin channel: id=%s, base_url=%s", strconv.Itoa(channel.Id), channel.GetBaseURL())
 	return nil
 }
 
