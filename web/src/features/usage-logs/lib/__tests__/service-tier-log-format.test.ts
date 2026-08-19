@@ -22,6 +22,7 @@ import { describe, test } from 'node:test'
 import {
   getHubRoutingBillingDetails,
   getLogFirstTokenMs,
+  getLogTtftMs,
   getServiceTierBillingRatio,
 } from '../format'
 
@@ -50,6 +51,10 @@ describe('service tier usage log formatting', () => {
     })
 
     assert.equal(firstTokenMs, 65000)
+  })
+
+  test('keeps TTFT separate from the list first-event display', () => {
+    assert.equal(getLogTtftMs({ frt: 3000, ttft: 65000 }), 65000)
   })
 
   test('exposes safe final routing and billing details for multiplier keys', () => {

@@ -77,6 +77,11 @@ export function getLogFirstTokenMs(
   return ttft != null && Number.isFinite(ttft) && ttft > 0 ? ttft : undefined
 }
 
+export function getLogTtftMs(other: LogOtherData | null): number | undefined {
+  const ttft = other?.ttft
+  return ttft != null && Number.isFinite(ttft) && ttft > 0 ? ttft : undefined
+}
+
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {
   set: 'Set',
   delete: 'Delete',

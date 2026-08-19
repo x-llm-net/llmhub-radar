@@ -77,7 +77,7 @@ import {
   hasAnyCacheTokens,
   isViolationFeeLog,
   getFirstResponseTimeColor,
-  getLogFirstTokenMs,
+  getLogTtftMs,
   getResponseTimeColor,
   getHubRoutingBillingDetails,
   getServiceTierBillingRatio,
@@ -708,7 +708,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const group = props.log.group || other?.service_tier || other?.group || ''
-  const firstTokenMs = getLogFirstTokenMs(other)
+  const ttftMs = getLogTtftMs(other)
   const hubAttempts =
     props.isAdmin && Array.isArray(other?.hub_attempts)
       ? other.hub_attempts
@@ -979,7 +979,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               />
             )}
 
-          {showTiming && props.log.is_stream && firstTokenMs != null && (
+          {showTiming && props.log.is_stream && ttftMs != null && (
             <DetailRow
               label={t('TTFT')}
               value={
@@ -987,11 +987,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   className={cn(
                     'font-medium',
                     timingTextColorClass(
-                      getFirstResponseTimeColor(firstTokenMs / 1000)
+                      getFirstResponseTimeColor(ttftMs / 1000)
                     )
                   )}
                 >
-                  {formatLatency(firstTokenMs)}
+                  {formatLatency(ttftMs)}
                 </span>
               }
             />
