@@ -35,9 +35,17 @@ describe('service tier usage log formatting', () => {
     assert.equal(ratio, 0.4)
   })
 
-  test('does not treat the first SSE event as the first text token', () => {
+  test('uses the new-api first response time for the first-token display', () => {
     const firstTokenMs = getLogFirstTokenMs({
       frt: 3000,
+      ttft: 65000,
+    })
+
+    assert.equal(firstTokenMs, 3000)
+  })
+
+  test('falls back to text token time for legacy logs without frt', () => {
+    const firstTokenMs = getLogFirstTokenMs({
       ttft: 65000,
     })
 

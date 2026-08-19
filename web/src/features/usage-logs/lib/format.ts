@@ -68,6 +68,11 @@ export function getHubRoutingBillingDetails(other: LogOtherData | null): {
 export function getLogFirstTokenMs(
   other: LogOtherData | null
 ): number | undefined {
+  const frt = other?.frt
+  if (frt != null && Number.isFinite(frt) && frt > 0) {
+    return frt
+  }
+
   const ttft = other?.ttft
   return ttft != null && Number.isFinite(ttft) && ttft > 0 ? ttft : undefined
 }
