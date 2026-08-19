@@ -245,6 +245,82 @@ func TestSettleTestQuotaUsesTieredBilling(t *testing.T) {
 	require.Equal(t, "stream", result.MatchedTier)
 }
 
+func TestSettleTestQuotaAppliesSupplyMultiplier(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+	}
+
+	tests := []struct {
+		name      string
+		priceData types.PriceData
+		wantQuota int
+	}{
+		{
+			name: "token pricing at discounted supply multiplier",
+			priceData: types.PriceData{
+				ModelRatio:      2,
+				CompletionRatio: 1.5,
+				GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 0.2},
+			},
+			wantQuota: 460,
+		},
+		{
+			name: "token pricing at platform multiplier",
+			priceData: types.PriceData{
+				ModelRatio:      2,
+				CompletionRatio: 1.5,
+				GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+			},
+			wantQuota: 2300,
+		},
+		{
+			name: "token pricing at premium supply multiplier",
+			priceData: types.PriceData{
+				ModelRatio:      2,
+				CompletionRatio: 1.5,
+				GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 5.5},
+			},
+			wantQuota: 12650,
+		},
+		{
+			name: "fixed pricing at discounted supply multiplier",
+			priceData: types.PriceData{
+				UsePrice:       true,
+				ModelPrice:     0.002,
+				GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.2},
+			},
+			wantQuota: 200,
+		},
+		{
+			name: "fixed pricing at premium supply multiplier",
+			priceData: types.PriceData{
+				UsePrice:       true,
+				ModelPrice:     0.002,
+				GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 5.5},
+			},
+			wantQuota: 5500,
+		},
+		{
+			name: "free group remains free",
+			priceData: types.PriceData{
+				ModelRatio:      2,
+				CompletionRatio: 1.5,
+				GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 0},
+			},
+			wantQuota: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quota, result := settleTestQuota(nil, tt.priceData, usage)
+			assert.Equal(t, tt.wantQuota, quota)
+			assert.Nil(t, result)
+		})
+	}
+}
+
 func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
