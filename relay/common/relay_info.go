@@ -96,7 +96,7 @@ type RelayInfo struct {
 	UpstreamRequestWrittenTime  time.Time
 	ResponseHeadersTime         time.Time
 	FirstBodyByteTime           time.Time
-	// FirstTokenTime is the first meaningful text or reasoning increment.
+	// FirstTokenTime is the first meaningful text, reasoning, or tool-call increment.
 	// FirstResponseTime intentionally remains the first upstream event for
 	// transport diagnostics and backwards-compatible request logs.
 	FirstTokenTime           time.Time

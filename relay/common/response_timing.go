@@ -62,9 +62,17 @@ func isMeaningfulStreamData(data string) bool {
 			"delta.content",
 			"delta.reasoning_content",
 			"delta.reasoning",
+			"delta.function_call.name",
+			"delta.function_call.arguments",
 			"text",
 		} {
 			if hasMeaningfulValue(choice.Get(path)) {
+				return true
+			}
+		}
+		for _, toolCall := range choice.Get("delta.tool_calls").Array() {
+			if hasMeaningfulValue(toolCall.Get("function.name")) ||
+				hasMeaningfulValue(toolCall.Get("function.arguments")) {
 				return true
 			}
 		}
@@ -72,7 +80,9 @@ func isMeaningfulStreamData(data string) bool {
 
 	for _, candidate := range payload.Get("candidates").Array() {
 		for _, part := range candidate.Get("content.parts").Array() {
-			if hasMeaningfulValue(part.Get("text")) {
+			if hasMeaningfulValue(part.Get("text")) ||
+				hasMeaningfulValue(part.Get("functionCall.name")) ||
+				hasMeaningfulValue(part.Get("functionCall.args")) {
 				return true
 			}
 		}
@@ -82,8 +92,11 @@ func isMeaningfulStreamData(data string) bool {
 	switch eventType {
 	case "content_block_delta":
 		return hasMeaningfulValue(payload.Get("delta.text")) ||
-			hasMeaningfulValue(payload.Get("delta.thinking"))
+			hasMeaningfulValue(payload.Get("delta.thinking")) ||
+			hasMeaningfulValue(payload.Get("delta.partial_json"))
 	case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		return hasMeaningfulValue(payload.Get("delta"))
+	case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
 		return hasMeaningfulValue(payload.Get("delta"))
 	}
 
