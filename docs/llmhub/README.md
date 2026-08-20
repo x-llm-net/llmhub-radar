@@ -8,6 +8,7 @@
 - [服务档位路由加固清单](service-tier-routing-hardening.md)：核心代码审查发现、已确认修复决策、分批实施顺序和验收条件。
 - [渠道商入驻与审核](provider-onboarding-and-verification.md)：申请审核状态、供给操作权限边界、验收流程和后续认证模块。
 - [渠道商通知](provider-notifications.md)：站内、浏览器、多个邮箱和多个企业微信 Webhook 通知的配置、权限和触发边界。
+- [渠道排名与 Affinity 恢复切换](ranking-and-affinity-recovery-plan.md)：渠道商/Channel 排名、服务档位候选权重、平台兜底后的原渠道恢复和亲和切回拆分方案。
 - [LLM-Hub 生产发布](production-release.md)：唯一生产目标、发布入口、强制身份校验、备份与回滚约束。
 
 ## 基座
