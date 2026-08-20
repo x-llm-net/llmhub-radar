@@ -423,7 +423,7 @@ healthy -> degraded -> open -> half_open -> healthy
 渠道商可能把 LLM-Hub 配置为上游兜底，平台也可能在入口渠道商失败后再次选中该渠道商。必须同时使用三层保护：
 
 1. **候选隔离**：进入平台公共池后排除入口渠道商的全部 Channel；本次已失败 Channel 在剩余尝试中排除。
-2. **受控 hop**：平台对 `X-LLM-Hub-Hop` 签名并在最终上游请求层递增；认证后、Channel 分配前达到第 3 跳即返回 HTTP 508 `request_loop_detected`。渠道 Header Override 和客户端伪造值不能覆盖平台标记。
+2. **受控 hop**：平台对 `X-LLM-Hub-Hop` 签名并在最终上游请求层递增；认证后、Channel 分配前达到第 3 跳即返回 HTTP `400` 和 `request_loop_detected`。`400` 是兼容性约定，用于阻止旧版 New API 把循环错误作为 5xx 自动重试；渠道 Header Override 和客户端伪造值不能覆盖平台标记。
 3. **请求指纹**：非空 `POST` 在认证后、Channel 分配前记录请求指纹，同一指纹超过并发阈值时返回相同错误。JSON 规范化计算，非 JSON 使用原始请求体。
 
 hop 和请求指纹都不是绝对的递归证明。第三方网关可能删除 Header，multipart 边界、协议转换和外部网关改写也可能改变指纹，因此：

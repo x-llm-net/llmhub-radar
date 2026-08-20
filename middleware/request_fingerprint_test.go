@@ -129,7 +129,7 @@ func TestRequestFingerprintGuardRejectsTerminalHopBeforeFingerprinting(t *testin
 
 	router.ServeHTTP(recorder, request)
 
-	assert.Equal(t, http.StatusLoopDetected, recorder.Code)
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "request_loop_detected")
 	assert.Zero(t, downstreamCalls.Load())
 }
@@ -199,7 +199,7 @@ func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing
 	blockedRequest := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(body))
 	blockedRequest.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(blockedRecorder, blockedRequest)
-	assert.Equal(t, http.StatusLoopDetected, blockedRecorder.Code)
+	assert.Equal(t, http.StatusBadRequest, blockedRecorder.Code)
 	assert.Contains(t, blockedRecorder.Body.String(), "request_loop_detected")
 	assert.Equal(t, int32(requestFingerprintMaxActive), downstreamCalls.Load())
 

@@ -39,7 +39,7 @@
 - 系统设置首次加载失败时不再渲染带前端默认值的配置表单，而是显示可重试错误；后端业务失败或非法配置响应也进入相同错误态，避免管理员误把默认值保存回真实配置。
 - 高品质渠道商审批列表使用服务端搜索和分页，每页 20 条，已选渠道商 ID 不因翻页或搜索而丢失；列表接口失败时可单独重试。
 - 模型家族首版按已维护的模型标识覆盖常见 OpenAI/Google 文本、图片、音频、Embedding 和 Moderation 模型；未知模型不会默认进入服务档位，管理员可通过 `allow_other_family` 临时放行。
-- 循环保护使用平台签名的 `X-LLM-Hub-Hop` 和并发请求指纹：标准 HTTP、multipart/form、任务提交、Midjourney 与 Realtime WebSocket 入口达到第 3 跳时固定返回 `508 request_loop_detected`；非空非 JSON `POST` 也进入原始请求体指纹保护。该错误不重试、不扣费、不结算，也不自动禁用 Channel。
+- 循环保护使用平台签名的 `X-LLM-Hub-Hop` 和并发请求指纹：标准 HTTP、multipart/form、任务提交、Midjourney 与 Realtime WebSocket 入口达到第 3 跳时固定返回 HTTP `400` 和 `request_loop_detected`；非空非 JSON `POST` 也进入原始请求体指纹保护。这里使用 `400` 是为了阻止旧版 New API 和通用客户端把 `508` 当作可重试的 5xx 错误放大循环；准确语义由错误码表达。该错误不重试、不扣费、不结算，也不自动禁用 Channel。
 - 流式上游请求在渠道没有显式覆盖时默认发送 `Accept-Encoding: identity`，由 LLM-Hub 自己规避 gzip 对小 SSE 事件的缓冲，不要求渠道商修改 DNS 或反向代理；非流式请求保持 New API/Go 标准压缩协商，渠道显式 Header Override 仍优先。管理员日志详情可按响应头、首响应体字节、首事件和有效首字四个阶段定位用户可见 TTFT，Responses 下游写入失败会进入现有流失败处理。
 - 2026-08-19 在 LLM-Hub 生产服务器对灰云直连地址进行相同请求 A/B：`identity` 约 `1.6-2.6s` 收到首事件且连续输出，gzip 约 `5.5-6.1s` 才收到首事件且事件成批到达。此前经 Cloudflare 的非同条件样本结论作废，以直连 A/B 为准恢复流式默认 `identity`。
 

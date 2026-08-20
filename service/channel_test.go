@@ -29,7 +29,7 @@ func TestShouldDisableChannelExcludesPlatformGeneratedFailures(t *testing.T) {
 	loopErr := types.NewErrorWithStatusCode(
 		errors.New("platform loop"),
 		types.ErrorCodeRequestLoopDetected,
-		http.StatusLoopDetected,
+		http.StatusBadRequest,
 	)
 	mappedErr := types.NewError(
 		errors.New("model mapping failed"),

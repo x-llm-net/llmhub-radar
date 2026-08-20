@@ -43,8 +43,8 @@
 
 ## 批次 B：循环保护与路由安全
 
-- [x] `request_loop_detected` 具有终止语义，不进入普通状态码重试、计费或结算；第三方普通 `508` 仍保留现有可配置重试语义。
-- [x] `request_loop_detected` 固定排除 Channel 自动禁用；即使管理员显式把 `508` 加入自动禁用状态码范围，平台生成的循环错误也不会关闭渠道。
+- [x] `request_loop_detected` 具有终止语义，不进入普通状态码重试、计费或结算；对外使用 HTTP `400` 阻止旧版 New API 重试，第三方普通 `508` 仍保留现有可配置重试语义。
+- [x] `request_loop_detected` 固定排除 Channel 自动禁用；即使管理员调整自动禁用状态码范围，平台生成的循环错误也不会关闭渠道。
 - [x] `channel:model_mapped_error` 只记录模型/端点级失败，不触发 Channel 级自动禁用，避免一个模型映射错误误伤同渠道其他模型。
 - [x] `channel:endpoint_unsupported` 用于端点不匹配或适配器明确不支持的请求；该错误只影响本次 `Channel + Model + Endpoint` 尝试，允许同档重试且不触发 Channel 级自动禁用。上游 `model_not_found` 同样不触发整条 Channel 自动禁用。
 - [x] 多端点模型按现有探测 `ProbeKind` 隔离文本与图片资格；一类探测失败不会删除另一类健康端点的模型 Ability。缓存、数据库直查和 Affinity 命中均按当前请求类型复查，全部探测类型失败后才让该模型退出路由。

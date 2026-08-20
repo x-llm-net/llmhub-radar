@@ -19,7 +19,7 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	loopResponse := &http.Response{
-		StatusCode: http.StatusLoopDetected,
+		StatusCode: http.StatusBadRequest,
 		Body: io.NopCloser(strings.NewReader(
 			`{"error":{"message":"recursive route detected","type":"new_api_error","code":"request_loop_detected"}}`,
 		)),
@@ -28,6 +28,7 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	loopErr := service.RelayErrorHandler(context.Background(), loopResponse, false)
 	require.NotNil(t, loopErr)
 	assert.Equal(t, types.ErrorCodeRequestLoopDetected, loopErr.GetErrorCode())
+	assert.Equal(t, http.StatusBadRequest, loopErr.StatusCode)
 	assert.False(t, shouldRetry(ctx, loopErr, 3))
 
 	ordinaryResponse := &http.Response{

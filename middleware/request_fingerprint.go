@@ -26,6 +26,8 @@ const (
 	requestFingerprintLeaseTTL          = 10 * time.Minute
 	requestFingerprintCanonicalMaxBytes = int64(8 << 20)
 	requestFingerprintContextKey        = "request_fingerprint"
+	// 400 prevents legacy New API gateways from retrying this terminal error.
+	requestLoopDetectedHTTPStatus = http.StatusBadRequest
 )
 
 const requestFingerprintAcquireScript = `
@@ -75,7 +77,7 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 			))
 			abortWithOpenAiMessage(
 				c,
-				http.StatusLoopDetected,
+				requestLoopDetectedHTTPStatus,
 				i18n.T(c, i18n.MsgRequestLoopDetected),
 				types.ErrorCodeRequestLoopDetected,
 			)
@@ -104,7 +106,7 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 			))
 			abortWithOpenAiMessage(
 				c,
-				http.StatusLoopDetected,
+				requestLoopDetectedHTTPStatus,
 				i18n.T(c, i18n.MsgRequestLoopDetected),
 				types.ErrorCodeRequestLoopDetected,
 			)

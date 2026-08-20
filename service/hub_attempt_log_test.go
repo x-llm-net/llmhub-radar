@@ -38,7 +38,7 @@ func TestClassifyHubAttemptFailure(t *testing.T) {
 		{name: "client request", err: types.NewErrorWithStatusCode(errors.New("bad request"), types.ErrorCodeInvalidRequest, http.StatusBadRequest), want: HubFailureClassClient},
 		{name: "prompt blocked", err: types.NewErrorWithStatusCode(errors.New("blocked"), types.ErrorCodePromptBlocked, http.StatusBadRequest), want: HubFailureClassClient},
 		{name: "mapped bad request", err: mappedBadRequest, want: HubFailureClassClient},
-		{name: "loop protection", err: types.NewErrorWithStatusCode(errors.New("loop"), types.ErrorCodeRequestLoopDetected, http.StatusLoopDetected), want: HubFailureClassLoop},
+		{name: "loop protection", err: types.NewErrorWithStatusCode(errors.New("loop"), types.ErrorCodeRequestLoopDetected, http.StatusBadRequest), want: HubFailureClassLoop},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

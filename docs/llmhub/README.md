@@ -92,11 +92,11 @@ LLM-Hub 的供给可能来自其他聚合网关，而渠道商也可能把 LLM-H
 
 当前采用受控 hop 标记和请求指纹两层强制保护：
 
-- 所有已接入的用户 relay 入口都在令牌认证后、Channel 分配前校验平台签名的 `X-LLM-Hub-Hop`。标准 HTTP、multipart/form、任务提交、Midjourney 和 Realtime WebSocket 发往上游时由平台覆盖并递增该 Header；达到第 3 跳后返回 HTTP `508` 和 `request_loop_detected`。
+- 所有已接入的用户 relay 入口都在令牌认证后、Channel 分配前校验平台签名的 `X-LLM-Hub-Hop`。标准 HTTP、multipart/form、任务提交、Midjourney 和 Realtime WebSocket 发往上游时由平台覆盖并递增该 Header；达到第 3 跳后返回 HTTP `400` 和 `request_loop_detected`。使用 `400` 是为了兼容不会识别该错误码、但会自动重试 `508` 的通用 New API 中转。
 - hop 签名使用运行实例的 `CRYPTO_SECRET`；多实例必须使用相同密钥。客户端伪造、渠道通配透传或 Header Override 不能制造有效标记，也不能覆盖平台最终写入的值。
 - 指纹覆盖已接入入口的非空 `POST` 请求。JSON 在 8 MiB 内按规范化结构计算，字段顺序不影响结果，顶层 `group` 和 `stream_options` 不参与计算；multipart、表单和其他非 JSON 请求按原始请求体计算。
 - 指纹包含规范化路径、非认证查询参数和请求体；Gemini `key`、`api_key`、`access_token` 不参与计算，避免同一递归请求换用不同令牌后绕过检测。
-- 同一指纹最多允许 3 个请求同时执行；第 4 个请求返回 `508 request_loop_detected`。请求完成后立即释放占位；Redis 可用时在多实例间共享，租约为 10 分钟，异常时回退到当前进程内保护。
+- 同一指纹最多允许 3 个请求同时执行；第 4 个请求返回 HTTP `400` 和 `request_loop_detected`。请求完成后立即释放占位；Redis 可用时在多实例间共享，租约为 10 分钟，异常时回退到当前进程内保护。
 
 hop Header 不能成为唯一依据。LLM-Hub 会主动把它写入自己的上游请求，但第三方 New API 默认重新构建请求，通常不会继续透传任意 Header；外部网关也可能删除它。反过来，请求指纹也不是绝对递归证明：multipart 边界、跨协议转换或外部网关改写请求体都可能改变指纹，合法的完全相同并发请求也可能相似。两层保护共同使用，不能通过单纯增加重试次数代替。
 
