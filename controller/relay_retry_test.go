@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -15,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
+func TestShouldRetryScopesRequestLoopRecoveryToServiceTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	loopResponse := &http.Response{
@@ -30,6 +33,20 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	assert.Equal(t, types.ErrorCodeRequestLoopDetected, loopErr.GetErrorCode())
 	assert.Equal(t, http.StatusBadRequest, loopErr.StatusCode)
 	assert.False(t, shouldRetry(ctx, loopErr, 3))
+
+	serviceTierCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(serviceTierCtx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	assert.True(t, shouldRetry(serviceTierCtx, loopErr, 3))
+	assert.False(t, shouldRetry(serviceTierCtx, loopErr, 0))
+
+	fixedChannelCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(fixedChannelCtx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	fixedChannelCtx.Set("specific_channel_id", 7)
+	assert.False(t, shouldRetry(fixedChannelCtx, loopErr, 3))
 
 	ordinaryResponse := &http.Response{
 		StatusCode: http.StatusLoopDetected,

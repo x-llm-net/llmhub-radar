@@ -43,7 +43,7 @@
 
 ## 批次 B：循环保护与路由安全
 
-- [x] `request_loop_detected` 具有终止语义，不进入普通状态码重试、计费或结算；对外使用 HTTP `400` 阻止旧版 New API 重试，第三方普通 `508` 仍保留现有可配置重试语义。
+- [x] `request_loop_detected` 对普通请求具有终止语义，不进入普通状态码重试、计费或结算；服务档位请求可在既有重试预算内排除当前 Channel 后切换候选。对外仍使用 HTTP `400` 阻止旧版 New API 重试，第三方普通 `508` 保留现有可配置重试语义。
 - [x] `request_loop_detected` 固定排除 Channel 自动禁用；即使管理员调整自动禁用状态码范围，平台生成的循环错误也不会关闭渠道。
 - [x] `channel:model_mapped_error` 只记录模型/端点级失败，不触发 Channel 级自动禁用，避免一个模型映射错误误伤同渠道其他模型。
 - [x] `channel:endpoint_unsupported` 用于端点不匹配或适配器明确不支持的请求；该错误只影响本次 `Channel + Model + Endpoint` 尝试，允许同档重试且不触发 Channel 级自动禁用。上游 `model_not_found` 同样不触发整条 Channel 自动禁用。

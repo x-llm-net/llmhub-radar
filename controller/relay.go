@@ -446,6 +446,11 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
+	// A service-tier channel can report the hub's loop guard while the request
+	// itself is recoverable through another candidate in the same request.
+	if service.IsHubServiceTierRequest(c) && openaiErr.GetErrorCode() == types.ErrorCodeRequestLoopDetected {
+		return true
+	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
 		return false
