@@ -108,6 +108,12 @@ func TestBuildRequestFingerprintExcludesAuthenticationQuery(t *testing.T) {
 	assert.Equal(t, firstFingerprint, secondFingerprint)
 }
 
+func TestRequestFingerprintMaxActiveIsHigherForCodexResponses(t *testing.T) {
+	assert.Equal(t, requestFingerprintResponsesMaxActive, requestFingerprintMaxActiveForPath("/v1/responses"))
+	assert.Equal(t, requestFingerprintResponsesMaxActive, requestFingerprintMaxActiveForPath("/v1/responses/compact"))
+	assert.Equal(t, requestFingerprintMaxActive, requestFingerprintMaxActiveForPath("/v1/chat/completions"))
+}
+
 func TestRequestFingerprintGuardRejectsTerminalHopBeforeFingerprinting(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, appI18n.Init())
@@ -216,6 +222,60 @@ func TestRequestFingerprintGuardRejectsFourthActiveRequestAndReleases(t *testing
 	router.ServeHTTP(afterReleaseRecorder, afterReleaseRequest)
 	assert.Equal(t, http.StatusNoContent, afterReleaseRecorder.Code)
 	assert.Equal(t, int32(requestFingerprintMaxActive+1), downstreamCalls.Load())
+}
+
+func TestRequestFingerprintGuardAllowsMoreConcurrentCodexResponses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, appI18n.Init())
+	resetInMemoryRequestFingerprints(t)
+	previousRedisEnabled := common.RedisEnabled
+	previousRedisClient := common.RDB
+	common.RedisEnabled = false
+	common.RDB = nil
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+		common.RDB = previousRedisClient
+	})
+
+	entered := make(chan struct{}, requestFingerprintResponsesMaxActive)
+	release := make(chan struct{})
+	var downstreamCalls atomic.Int32
+	router := gin.New()
+	router.Use(BodyStorageCleanup())
+	router.POST("/v1/responses", RequestFingerprintGuard(), func(c *gin.Context) {
+		downstreamCalls.Add(1)
+		entered <- struct{}{}
+		<-release
+		c.Status(http.StatusNoContent)
+	})
+
+	body := `{"model":"gpt-5.6-sol","input":[{"role":"user","content":"same request"}]}`
+	var requests sync.WaitGroup
+	for range requestFingerprintResponsesMaxActive {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewBufferString(body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(recorder, request)
+			assert.Equal(t, http.StatusNoContent, recorder.Code)
+		}()
+	}
+	for range requestFingerprintResponsesMaxActive {
+		<-entered
+	}
+
+	blockedRecorder := httptest.NewRecorder()
+	blockedRequest := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewBufferString(body))
+	blockedRequest.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(blockedRecorder, blockedRequest)
+	assert.Equal(t, http.StatusBadRequest, blockedRecorder.Code)
+	assert.Contains(t, blockedRecorder.Body.String(), "request_loop_detected")
+	assert.Equal(t, int32(requestFingerprintResponsesMaxActive), downstreamCalls.Load())
+
+	close(release)
+	requests.Wait()
 }
 
 func TestRedisRequestFingerprintLeaseLimitAndRelease(t *testing.T) {

@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	requestFingerprintNamespace         = "requestFingerprint:v1"
-	requestFingerprintMaxActive         = 3
-	requestFingerprintLeaseTTL          = 10 * time.Minute
-	requestFingerprintCanonicalMaxBytes = int64(8 << 20)
-	requestFingerprintContextKey        = "request_fingerprint"
+	requestFingerprintNamespace          = "requestFingerprint:v1"
+	requestFingerprintMaxActive          = 3
+	requestFingerprintResponsesMaxActive = 8
+	requestFingerprintLeaseTTL           = 10 * time.Minute
+	requestFingerprintCanonicalMaxBytes  = int64(8 << 20)
+	requestFingerprintContextKey         = "request_fingerprint"
 	// 400 prevents legacy New API gateways from retrying this terminal error.
 	requestLoopDetectedHTTPStatus = http.StatusBadRequest
 )
@@ -95,7 +96,8 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 			return
 		}
 
-		lease, activeCount, allowed, fallbackErr := acquireRequestFingerprint(c.Request.Context(), fingerprint)
+		maxActive := requestFingerprintMaxActiveForPath(c.Request.URL.Path)
+		lease, activeCount, allowed, fallbackErr := acquireRequestFingerprintWithLimit(c.Request.Context(), fingerprint, maxActive)
 		if fallbackErr != nil {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("request fingerprint Redis unavailable, using in-memory guard: %v", fallbackErr))
 		}
@@ -123,6 +125,15 @@ func RequestFingerprintGuard() gin.HandlerFunc {
 			}
 		}()
 		c.Next()
+	}
+}
+
+func requestFingerprintMaxActiveForPath(path string) int {
+	switch strings.TrimRight(path, "/") {
+	case "/v1/responses", "/v1/responses/compact":
+		return requestFingerprintResponsesMaxActive
+	default:
+		return requestFingerprintMaxActive
 	}
 }
 
@@ -193,6 +204,13 @@ func requestFingerprintRedisKey(fingerprint string) string {
 }
 
 func acquireRequestFingerprint(ctx context.Context, fingerprint string) (*requestFingerprintLease, int64, bool, error) {
+	return acquireRequestFingerprintWithLimit(ctx, fingerprint, requestFingerprintMaxActive)
+}
+
+func acquireRequestFingerprintWithLimit(ctx context.Context, fingerprint string, maxActive int) (*requestFingerprintLease, int64, bool, error) {
+	if maxActive <= 0 {
+		maxActive = requestFingerprintMaxActive
+	}
 	member := uuid.NewString()
 	key := requestFingerprintRedisKey(fingerprint)
 	now := time.Now()
@@ -206,7 +224,7 @@ func acquireRequestFingerprint(ctx context.Context, fingerprint string) (*reques
 			now.UnixMilli(),
 			expiresAt.UnixMilli(),
 			member,
-			requestFingerprintMaxActive,
+			maxActive,
 			int64(requestFingerprintLeaseTTL/time.Second),
 		).Slice()
 		if err == nil {
@@ -225,15 +243,15 @@ func acquireRequestFingerprint(ctx context.Context, fingerprint string) (*reques
 			}
 		}
 
-		lease, count, allowed := acquireInMemoryRequestFingerprint(key, member, now, expiresAt)
+		lease, count, allowed := acquireInMemoryRequestFingerprint(key, member, now, expiresAt, maxActive)
 		return lease, count, allowed, err
 	}
 
-	lease, count, allowed := acquireInMemoryRequestFingerprint(key, member, now, expiresAt)
+	lease, count, allowed := acquireInMemoryRequestFingerprint(key, member, now, expiresAt, maxActive)
 	return lease, count, allowed, nil
 }
 
-func acquireInMemoryRequestFingerprint(key string, member string, now time.Time, expiresAt time.Time) (*requestFingerprintLease, int64, bool) {
+func acquireInMemoryRequestFingerprint(key string, member string, now time.Time, expiresAt time.Time, maxActive int) (*requestFingerprintLease, int64, bool) {
 	activeRequestFingerprints.Lock()
 	defer activeRequestFingerprints.Unlock()
 
@@ -247,7 +265,7 @@ func acquireInMemoryRequestFingerprint(key string, member string, now time.Time,
 			delete(entries, existingMember)
 		}
 	}
-	if len(entries) >= requestFingerprintMaxActive {
+	if len(entries) >= maxActive {
 		return nil, int64(len(entries)), false
 	}
 	entries[member] = expiresAt
