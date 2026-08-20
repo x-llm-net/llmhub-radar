@@ -142,3 +142,109 @@ func TestSelectHubTierChannelFromBucketsDecoratesEachCandidateOnce(t *testing.T)
 	assert.Contains(t, []int{101, 201}, selected)
 	assert.Equal(t, map[int]int{101: 1, 201: 1}, calls)
 }
+
+func TestHubTierQualityBandRunsBeforePriorityAndFallsBackAfterExclusion(t *testing.T) {
+	candidates := []hubTierChannelCandidate{
+		qualityCandidate(101, 10, 0, 9_950, 1_000),
+		qualityCandidate(201, 20, 100, 9_950, 1_301),
+	}
+
+	assert.Equal(t, 101, selectHubTierChannel(candidates, nil))
+	assert.Equal(t, 201, selectHubTierChannel(candidates, map[int]struct{}{101: {}}))
+}
+
+func TestHubTierQualityBandAppliesSuccessBoundary(t *testing.T) {
+	candidates := []hubTierChannelCandidate{
+		qualityCandidate(101, 10, 0, 9_900, 1_000),
+		qualityCandidate(201, 20, 0, 9_800, 1_000),
+		qualityCandidate(301, 30, 0, 9_799, 1_000),
+	}
+
+	filtered := filterHubTierCandidatesByQualityBand(candidates)
+	assert.ElementsMatch(t, []int{101, 201}, hubTierCandidateIDs(filtered))
+}
+
+func TestHubTierQualityBandAppliesRelativeAndAbsoluteTTFTBoundary(t *testing.T) {
+	candidates := []hubTierChannelCandidate{
+		qualityCandidate(101, 10, 0, 9_900, 2_000),
+		qualityCandidate(201, 20, 0, 9_900, 2_400),
+		qualityCandidate(301, 30, 0, 9_900, 2_401),
+	}
+
+	filtered := filterHubTierCandidatesByQualityBand(candidates)
+	assert.ElementsMatch(t, []int{101, 201}, hubTierCandidateIDs(filtered))
+}
+
+func TestHubTierQualityBandKeepsColdCandidatesOnlyWithoutMatureCandidates(t *testing.T) {
+	cold := qualityCandidate(101, 10, 0, 10_000, 500)
+	cold.RealSampleCount = hubRoutingQualityMinRealSamples - 1
+	cold.RealFirstTokenSamples = hubRoutingQualityMinRealSamples - 1
+	mature := qualityCandidate(201, 20, 0, 9_900, 1_000)
+
+	assert.Equal(t, []int{101}, hubTierCandidateIDs(filterHubTierCandidatesByQualityBand([]hubTierChannelCandidate{cold})))
+	assert.Equal(t, []int{201}, hubTierCandidateIDs(filterHubTierCandidatesByQualityBand([]hubTierChannelCandidate{cold, mature})))
+}
+
+func TestHubTierQualityBandDoesNotLetUnhealthyMatureCandidateSuppressColdCandidate(t *testing.T) {
+	cold := qualityCandidate(101, 10, 0, 10_000, 500)
+	cold.RealSampleCount = hubRoutingQualityMinRealSamples - 1
+	cold.RealFirstTokenSamples = hubRoutingQualityMinRealSamples - 1
+	unhealthy := qualityCandidate(201, 20, 0, 0, 1_000)
+
+	filtered := filterHubTierCandidatesByQualityBand([]hubTierChannelCandidate{cold, unhealthy})
+	assert.ElementsMatch(t, []int{101, 201}, hubTierCandidateIDs(filtered))
+}
+
+func TestHubTierQualityBandUsesStabilityOnlyWithoutComparableTTFT(t *testing.T) {
+	stable := qualityCandidate(101, 10, 0, 9_900, 1_000)
+	stable.RealFirstTokenSamples = 0
+	stable.HasRealFirstTokenP95 = false
+	boundary := qualityCandidate(201, 20, 0, 9_800, 5_000)
+	boundary.RealFirstTokenSamples = 0
+	boundary.HasRealFirstTokenP95 = false
+	unstable := qualityCandidate(301, 30, 0, 9_799, 500)
+	unstable.RealFirstTokenSamples = 0
+	unstable.HasRealFirstTokenP95 = false
+
+	filtered := filterHubTierCandidatesByQualityBand([]hubTierChannelCandidate{stable, boundary, unstable})
+	assert.ElementsMatch(t, []int{101, 201}, hubTierCandidateIDs(filtered))
+}
+
+func TestHubTierQualityBandPreservesProviderNormalization(t *testing.T) {
+	candidates := make([]hubTierChannelCandidate, 0, 11)
+	for channelID := 1; channelID <= 10; channelID++ {
+		candidates = append(candidates, qualityCandidate(channelID, 10, 0, 9_900, 1_000))
+	}
+	candidates = append(candidates, qualityCandidate(101, 20, 0, 9_900, 1_000))
+
+	provider10Selections := 0
+	const iterations = 10_000
+	for iteration := 0; iteration < iterations; iteration++ {
+		if selectHubTierChannel(candidates, nil) <= 10 {
+			provider10Selections++
+		}
+	}
+	assert.InDelta(t, iterations/2, provider10Selections, iterations*0.04)
+}
+
+func qualityCandidate(channelID, providerID int, priority int64, successRateBps int, ttftP95Ms int64) hubTierChannelCandidate {
+	return hubTierChannelCandidate{
+		ChannelID:             channelID,
+		Provider:              providerID,
+		Priority:              priority,
+		Weight:                100,
+		RealSampleCount:       hubRoutingQualityMinRealSamples,
+		RealSuccessRateBps:    successRateBps,
+		RealFirstTokenSamples: hubRoutingQualityMinRealSamples,
+		RealFirstTokenP95Ms:   ttftP95Ms,
+		HasRealFirstTokenP95:  true,
+	}
+}
+
+func hubTierCandidateIDs(candidates []hubTierChannelCandidate) []int {
+	ids := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.ChannelID)
+	}
+	return ids
+}

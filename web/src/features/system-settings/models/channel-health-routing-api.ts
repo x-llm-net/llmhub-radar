@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 export type HubRoutingHealthRow = {
+  global_rank: number
   channel_id: number
   channel_name: string
   channel_type: number
@@ -77,6 +78,7 @@ export type HubRoutingHealthRow = {
   confidence_bps: number | null
   ranking_score_bps: number | null
   skip_reason_codes: string[]
+  routing_routable: boolean
   service_tier_routable: boolean
 }
 
