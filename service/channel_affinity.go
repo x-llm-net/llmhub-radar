@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/cachex"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -30,12 +31,20 @@ const (
 	ginKeyChannelAffinitySkipRetry  = "channel_affinity_skip_retry_on_failure"
 
 	channelAffinityCacheNamespace           = "new-api:channel_affinity:v1"
+	channelAffinityFallbackNamespace        = "new-api:channel_affinity:fallback:v1"
 	channelAffinityUsageCacheStatsNamespace = "new-api:channel_affinity_usage_cache_stats:v1"
+
+	channelAffinityRolePreferred = "preferred"
+	channelAffinityRoleFallback  = "fallback"
+	channelAffinityRoleRecovery  = "recovery"
 )
 
 var (
 	channelAffinityCacheOnce sync.Once
 	channelAffinityCache     *cachex.HybridCache[int]
+
+	channelAffinityFallbackCacheOnce sync.Once
+	channelAffinityFallbackCache     *cachex.HybridCache[channelAffinityFallbackState]
 
 	channelAffinityUsageCacheStatsOnce  sync.Once
 	channelAffinityUsageCacheStatsCache *cachex.HybridCache[ChannelAffinityUsageCacheCounters]
@@ -45,6 +54,7 @@ var (
 
 type channelAffinityMeta struct {
 	CacheKey       string
+	CacheKeySuffix string
 	TTLSeconds     int
 	RuleName       string
 	SkipRetry      bool
@@ -57,6 +67,15 @@ type channelAffinityMeta struct {
 	UsingGroup     string
 	ModelName      string
 	RequestPath    string
+	Role           string
+	PreferredID    int
+	FallbackID     int
+}
+
+type channelAffinityFallbackState struct {
+	ChannelID        int   `json:"channel_id"`
+	NextRecoveryAt   int64 `json:"next_recovery_at"`
+	RecoveryFailures int   `json:"recovery_failures"`
 }
 
 type ChannelAffinityStatsContext struct {
@@ -109,6 +128,37 @@ func getChannelAffinityCache() *cachex.HybridCache[int] {
 		})
 	})
 	return channelAffinityCache
+}
+
+func getChannelAffinityFallbackCache() *cachex.HybridCache[channelAffinityFallbackState] {
+	channelAffinityFallbackCacheOnce.Do(func() {
+		setting := operation_setting.GetChannelAffinitySetting()
+		capacity := 100_000
+		defaultTTLSeconds := 3600
+		if setting != nil {
+			if setting.MaxEntries > 0 {
+				capacity = setting.MaxEntries
+			}
+			if setting.DefaultTTLSeconds > 0 {
+				defaultTTLSeconds = setting.DefaultTTLSeconds
+			}
+		}
+		channelAffinityFallbackCache = cachex.NewHybridCache[channelAffinityFallbackState](cachex.HybridCacheConfig[channelAffinityFallbackState]{
+			Namespace: cachex.Namespace(channelAffinityFallbackNamespace),
+			Redis:     common.RDB,
+			RedisEnabled: func() bool {
+				return common.RedisEnabled && common.RDB != nil
+			},
+			RedisCodec: cachex.JSONCodec[channelAffinityFallbackState]{},
+			Memory: func() *hot.HotCache[string, channelAffinityFallbackState] {
+				return hot.NewHotCache[string, channelAffinityFallbackState](hot.LRU, capacity).
+					WithTTL(time.Duration(defaultTTLSeconds) * time.Second).
+					WithJanitor().
+					Build()
+			},
+		})
+	})
+	return channelAffinityFallbackCache
 }
 
 func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
@@ -210,7 +260,19 @@ func ClearChannelAffinityCacheAll() int {
 			common.SysError(fmt.Sprintf("channel affinity cache delete many failed: err=%v", err))
 		}
 	}
-	return len(keys)
+	deleted := len(keys)
+	fallbackCache := getChannelAffinityFallbackCache()
+	fallbackKeys, err := fallbackCache.Keys()
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity fallback cache list keys failed: err=%v", err))
+		fallbackKeys = nil
+	}
+	if len(fallbackKeys) > 0 {
+		if _, err := fallbackCache.DeleteMany(fallbackKeys); err != nil {
+			common.SysError(fmt.Sprintf("channel affinity fallback cache delete many failed: err=%v", err))
+		}
+	}
+	return deleted + len(fallbackKeys)
 }
 
 func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
@@ -245,7 +307,11 @@ func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return deleted, nil
+	fallbackDeleted, err := getChannelAffinityFallbackCache().DeleteByPrefix(ruleName)
+	if err != nil {
+		return deleted, err
+	}
+	return deleted + fallbackDeleted, nil
 }
 
 func matchAnyRegexCached(patterns []string, s string) bool {
@@ -392,6 +458,96 @@ func getChannelAffinityMeta(c *gin.Context) (channelAffinityMeta, bool) {
 		return channelAffinityMeta{}, false
 	}
 	return meta, true
+}
+
+func setChannelAffinityRouteMeta(c *gin.Context, role string, preferredID, fallbackID int) {
+	if c == nil {
+		return
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok {
+		return
+	}
+	meta.Role = role
+	meta.PreferredID = preferredID
+	meta.FallbackID = fallbackID
+	c.Set(ginKeyChannelAffinityMeta, meta)
+}
+
+func getChannelAffinityFallbackState(cacheKeySuffix string) (channelAffinityFallbackState, bool) {
+	cacheKeySuffix = strings.TrimSpace(cacheKeySuffix)
+	if cacheKeySuffix == "" {
+		return channelAffinityFallbackState{}, false
+	}
+	state, found, err := getChannelAffinityFallbackCache().Get(cacheKeySuffix)
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity fallback cache get failed: key=%s, err=%v", cacheKeySuffix, err))
+		return channelAffinityFallbackState{}, false
+	}
+	if !found || state.ChannelID <= 0 {
+		return channelAffinityFallbackState{}, false
+	}
+	return state, true
+}
+
+func deleteChannelAffinityFallbackState(cacheKeySuffix string) bool {
+	cacheKeySuffix = strings.TrimSpace(cacheKeySuffix)
+	if cacheKeySuffix == "" {
+		return false
+	}
+	deleted, err := getChannelAffinityFallbackCache().DeleteMany([]string{cacheKeySuffix})
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity fallback cache delete failed: key=%s, err=%v", cacheKeySuffix, err))
+		return false
+	}
+	for _, ok := range deleted {
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
+func putChannelAffinityFallbackState(c *gin.Context, channelID int, recoveryFailures int) {
+	if c == nil || channelID <= 0 {
+		return
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok || meta.CacheKeySuffix == "" {
+		return
+	}
+	if recoveryFailures <= 0 {
+		recoveryFailures = 1
+	}
+	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForRequestPath(meta.RequestPath, recoveryFailures)
+	ttlSeconds := meta.TTLSeconds
+	if ttlSeconds <= 0 {
+		ttlSeconds = operation_setting.GetChannelAffinitySetting().DefaultTTLSeconds
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = 3600
+	}
+	if int64(ttlSeconds) <= recoveryDelaySeconds {
+		ttlSeconds = int(recoveryDelaySeconds + 60)
+	}
+	state := channelAffinityFallbackState{
+		ChannelID:        channelID,
+		NextRecoveryAt:   time.Now().Unix() + recoveryDelaySeconds,
+		RecoveryFailures: recoveryFailures,
+	}
+	if err := getChannelAffinityFallbackCache().SetWithTTL(meta.CacheKeySuffix, state, time.Duration(ttlSeconds)*time.Second); err != nil {
+		common.SysError(fmt.Sprintf("channel affinity fallback cache set failed: key=%s, err=%v", meta.CacheKeySuffix, err))
+	}
+}
+
+func clearChannelAffinityFallbackState(c *gin.Context) {
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok {
+		return
+	}
+	if IsHubServiceTierRequest(c) {
+		deleteChannelAffinityFallbackState(meta.CacheKeySuffix)
+	}
 }
 
 func GetChannelAffinityStatsContext(c *gin.Context) (ChannelAffinityStatsContext, bool) {
@@ -612,6 +768,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
 		setChannelAffinityContext(c, channelAffinityMeta{
 			CacheKey:       cacheKeyFull,
+			CacheKeySuffix: cacheKeySuffix,
 			TTLSeconds:     ttlSeconds,
 			RuleName:       rule.Name,
 			SkipRetry:      rule.SkipRetryOnFailure,
@@ -632,7 +789,37 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			common.SysError(fmt.Sprintf("channel affinity cache get failed: key=%s, err=%v", cacheKeyFull, err))
 			return 0, false
 		}
-		if found {
+
+		isHubRequest := IsHubServiceTierRequest(c)
+		preferredRoutable := found
+		if isHubRequest && found {
+			preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path)
+		}
+		fallbackState := channelAffinityFallbackState{}
+		fallbackFound := false
+		fallbackRoutable := false
+		if isHubRequest {
+			fallbackState, fallbackFound = getChannelAffinityFallbackState(cacheKeySuffix)
+			fallbackRoutable = fallbackFound
+		}
+		if isHubRequest && fallbackFound {
+			fallbackRoutable = model.IsHubSupplyChannelRoutableForRequest(fallbackState.ChannelID, modelName, path)
+			if !fallbackRoutable {
+				deleteChannelAffinityFallbackState(cacheKeySuffix)
+				fallbackFound = false
+			}
+		}
+
+		if isHubRequest && fallbackFound && fallbackRoutable {
+			if preferredRoutable && found && fallbackState.NextRecoveryAt <= time.Now().Unix() {
+				setChannelAffinityRouteMeta(c, channelAffinityRoleRecovery, channelID, fallbackState.ChannelID)
+				return channelID, true
+			}
+			setChannelAffinityRouteMeta(c, channelAffinityRoleFallback, channelID, fallbackState.ChannelID)
+			return fallbackState.ChannelID, true
+		}
+		if found && preferredRoutable {
+			setChannelAffinityRouteMeta(c, channelAffinityRolePreferred, channelID, 0)
 			return channelID, true
 		}
 		return 0, false
@@ -665,6 +852,24 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 	if c == nil {
 		return false
 	}
+	meta, _ := getChannelAffinityMeta(c)
+	if IsHubServiceTierRequest(c) {
+		switch meta.Role {
+		case channelAffinityRoleFallback:
+			deleted := deleteChannelAffinityFallbackState(meta.CacheKeySuffix)
+			c.Set(ginKeyChannelAffinitySkipRetry, false)
+			return deleted
+		case channelAffinityRoleRecovery:
+			// The preferred Channel is temporarily not usable (for example it
+			// was manually disabled), but the fallback must retain the original
+			// relationship for a later recovery attempt.
+			if state, found := getChannelAffinityFallbackState(meta.CacheKeySuffix); found {
+				putChannelAffinityFallbackState(c, state.ChannelID, state.RecoveryFailures+1)
+			}
+			c.Set(ginKeyChannelAffinitySkipRetry, false)
+			return false
+		}
+	}
 	cacheKey, _, ok := getChannelAffinityContext(c)
 	if !ok || cacheKey == "" {
 		return false
@@ -676,6 +881,9 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 		common.SysError(fmt.Sprintf("channel affinity cache delete current failed: err=%v", err))
 		return false
 	}
+	if IsHubServiceTierRequest(c) {
+		deleteChannelAffinityFallbackState(meta.CacheKeySuffix)
+	}
 	c.Set(ginKeyChannelAffinitySkipRetry, false)
 	for _, ok := range deleted {
 		if ok {
@@ -683,6 +891,38 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 		}
 	}
 	return false
+}
+
+// ClearCurrentChannelAffinityCacheForRetry handles an actual upstream failure.
+// Hub requests keep the original preferred Channel so a later request can
+// recover it; the temporary fallback entry is the only state that changes.
+func ClearCurrentChannelAffinityCacheForRetry(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok || meta.CacheKeySuffix == "" || !IsHubServiceTierRequest(c) {
+		return ClearCurrentChannelAffinityCache(c)
+	}
+
+	switch meta.Role {
+	case channelAffinityRolePreferred:
+		c.Set(ginKeyChannelAffinitySkipRetry, false)
+		return false
+	case channelAffinityRoleRecovery:
+		state, found := getChannelAffinityFallbackState(meta.CacheKeySuffix)
+		if found {
+			putChannelAffinityFallbackState(c, state.ChannelID, state.RecoveryFailures+1)
+		}
+		c.Set(ginKeyChannelAffinitySkipRetry, false)
+		return found
+	case channelAffinityRoleFallback:
+		deleted := deleteChannelAffinityFallbackState(meta.CacheKeySuffix)
+		c.Set(ginKeyChannelAffinitySkipRetry, false)
+		return deleted
+	default:
+		return ClearCurrentChannelAffinityCache(c)
+	}
 }
 
 func ShouldKeepChannelAffinityOnChannelDisabled() bool {
@@ -715,6 +955,7 @@ func MarkChannelAffinityUsed(c *gin.Context, selectedGroup string, channelID int
 		"key_path":       meta.KeySourcePath,
 		"key_hint":       meta.KeyHint,
 		"key_fp":         meta.KeyFingerprint,
+		"affinity_role":  meta.Role,
 	}
 	c.Set(ginKeyChannelAffinityLogInfo, info)
 }
@@ -743,6 +984,7 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 			channelID = successChannelID
 		}
 	}
+	meta, hasMeta := getChannelAffinityMeta(c)
 	cacheKey, ttlSeconds, ok := getChannelAffinityContext(c)
 	if !ok {
 		return
@@ -753,9 +995,23 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 	if ttlSeconds <= 0 {
 		ttlSeconds = 3600
 	}
+	if hasMeta && IsHubServiceTierRequest(c) &&
+		(common.GetContextKeyBool(c, constant.ContextKeyHubRoutingFallback) || meta.Role == channelAffinityRoleFallback) {
+		state, found := getChannelAffinityFallbackState(meta.CacheKeySuffix)
+		recoveryFailures := 1
+		if found && state.RecoveryFailures > 0 {
+			recoveryFailures = state.RecoveryFailures
+		}
+		putChannelAffinityFallbackState(c, channelID, recoveryFailures)
+		return
+	}
+
 	cache := getChannelAffinityCache()
 	if err := cache.SetWithTTL(cacheKey, channelID, time.Duration(ttlSeconds)*time.Second); err != nil {
 		common.SysError(fmt.Sprintf("channel affinity cache set failed: key=%s, err=%v", cacheKey, err))
+	}
+	if hasMeta && IsHubServiceTierRequest(c) && meta.Role == channelAffinityRoleRecovery {
+		clearChannelAffinityFallbackState(c)
 	}
 }
 

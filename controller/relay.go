@@ -257,7 +257,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		if service.IsHubServiceTierRequest(c) {
-			service.ClearCurrentChannelAffinityCache(c)
+			service.ClearCurrentChannelAffinityCacheForRetry(c)
 		}
 		retryParam.ExcludeChannel(channel.Id)
 	}
@@ -796,7 +796,7 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 		if service.IsHubServiceTierRequest(c) {
-			service.ClearCurrentChannelAffinityCache(c)
+			service.ClearCurrentChannelAffinityCacheForRetry(c)
 		}
 		retryParam.ExcludeChannel(channel.Id)
 	}

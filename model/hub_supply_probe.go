@@ -775,18 +775,48 @@ func hubSupplyProbeNextProbeAt(group *HubSupplyGroup, target *HubSupplyGroupProb
 			minutes = HubSupplyGroupDefaultImageProbeMinutes
 		}
 	}
-	if consecutiveFailures > 0 {
-		capMinutes := 5
-		if consecutiveFailures >= 30 {
-			capMinutes = 60
-		} else if consecutiveFailures >= 10 {
-			capMinutes = 15
-		}
-		if minutes > capMinutes {
-			minutes = capMinutes
-		}
-	}
+	minutes = HubSupplyProbeRetryDelayMinutes(minutes, consecutiveFailures)
 	return probedAt + int64(minutes*60)
+}
+
+// HubSupplyProbeRetryDelayMinutes is shared by scheduled probes and the
+// temporary affinity recovery gate. Keeping the backoff here prevents those
+// two paths from slowly acquiring different retry semantics.
+func HubSupplyProbeRetryDelayMinutes(baseMinutes, consecutiveFailures int) int {
+	if baseMinutes <= 0 {
+		baseMinutes = HubSupplyGroupDefaultTextProbeMinutes
+	}
+	if consecutiveFailures <= 0 {
+		return baseMinutes
+	}
+	capMinutes := 5
+	if consecutiveFailures >= 30 {
+		capMinutes = 60
+	} else if consecutiveFailures >= 10 {
+		capMinutes = 15
+	}
+	if baseMinutes > capMinutes {
+		return capMinutes
+	}
+	return baseMinutes
+}
+
+// HubSupplyProbeRecoveryDelaySeconds uses the text-probe schedule as the
+// default for a request-path recovery attempt. It is not a second probe: it
+// only controls how long a fallback affinity remains preferred.
+func HubSupplyProbeRecoveryDelaySeconds(consecutiveFailures int) int64 {
+	return HubSupplyProbeRecoveryDelaySecondsForRequestPath("", consecutiveFailures)
+}
+
+// HubSupplyProbeRecoveryDelaySecondsForRequestPath follows the same endpoint
+// defaults as scheduled probes: text uses 10 minutes and image uses 30
+// minutes before the shared failure backoff is applied.
+func HubSupplyProbeRecoveryDelaySecondsForRequestPath(requestPath string, consecutiveFailures int) int64 {
+	baseMinutes := HubSupplyGroupDefaultTextProbeMinutes
+	if hubSupplyProbeKindForRequestPath(requestPath) == HubSupplyProbeKindImage {
+		baseMinutes = HubSupplyGroupDefaultImageProbeMinutes
+	}
+	return int64(HubSupplyProbeRetryDelayMinutes(baseMinutes, consecutiveFailures) * 60)
 }
 
 func ReconcileHubSupplyGroupRouteState(groupID int) error {

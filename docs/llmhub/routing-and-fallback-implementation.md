@@ -160,7 +160,7 @@ Channel + Model + EndpointType + ProbeKind
 
 ## 4. M2：Affinity 的最小兼容修复
 
-Affinity 继续复用 `service/channel_affinity.go`，不新建 Hub 专属缓存系统。
+Affinity 继续复用 `service/channel_affinity.go`，不新建数据库表或独立路由系统；F4 只增加一个与现有主缓存并列的轻量 fallback 状态缓存。
 
 实现状态：已完成最小兼容修复。服务档位缓存键强制包含规范化模型；命中后仍复用现有 Provider、Channel、Ability、请求路径和档位资格检查；失效命中或可重试的上游失败会清除旧映射并进入现有同档重试。普通 New API 分组继续遵守原有 Affinity 配置。
 
@@ -204,7 +204,17 @@ Affinity 是保留上游缓存和会话收益的软粘性，不是永久绑定�
 - 同一模型存在文本和图片探测目标时，模型任一 `ProbeKind` 健康即可保留模型级 Ability；实际候选和 Affinity 再按请求路径选择 text/image 资格。供给组此时显示 `partial`，只有所有已上架模型的所有探测类型都不可用时，Channel 才自动退出路由。
 - 未知转换错误仍保留原有客户端错误和跳过重试语义，不能通过匹配错误文案自动升级为渠道故障。
 
-该边界不改变 RetryTimes、服务档位资格、扣费或收益。缓存开启、数据库直查和 Affinity 命中使用同一 `ProbeKind` 判断。本轮不引入独立熔断表、探索流量或容量调度；动态状态保存在内存快照中，数据库探测目标仍是基础路由资格的权威来源。
+该边界不改变 RetryTimes、服务档位资格、扣费或收益。缓存开启、数据库直查和 Affinity 命中使用同一 `ProbeKind` 判断。本轮不引入独立熔断表、探索流量或容量调度；动态健康状态仍保存在内存快照中，Affinity 的临时 fallback 记录使用现有 HybridCache，数据库探测目标仍是基础路由资格的权威来源。
+
+### 4.4 F4/F5：平台兜底后的亲和恢复
+
+平台兜底不能覆盖原来的亲和渠道。旧的 `new-api:channel_affinity:v1` 整数缓存继续保存 `preferred`，新增的 `new-api:channel_affinity:fallback:v1` 只保存临时兜底渠道、下一次恢复时间和小型失败计数，因此旧缓存不需要迁移。
+
+- 真实请求失败时，服务档位重试使用 `ClearCurrentChannelAffinityCacheForRetry`：preferred 保留，fallback 失败只清理 fallback，恢复尝试失败则增加恢复失败次数。
+- 兜底请求成功时只写 fallback；冷却期间不再撞击 preferred。冷却到期后，只有现有 `Channel + Model + ProbeKind` 资格可路由时才尝试 preferred。
+- preferred 恢复成功后删除 fallback 并正常刷新 preferred TTL。手工禁用或渠道商禁用不会被恢复逻辑重新启用；fallback 被禁用时只清理 fallback，不删除原 preferred。
+- 恢复等待复用 `HubSupplyProbeRetryDelayMinutes`：按请求端点沿用文本/图片探测周期和 5/15/60 分钟上限退避，连续失败达到 100 次仍进入 `suspended`，Affinity 不会额外发起探测或绕过暂停。
+- 普通 New API 分组不读取或写入 fallback 缓存，原有 Affinity 语义不变。
 
 ## 5. M3：真实请求健康评分与动态权重
 
@@ -401,6 +411,7 @@ M4-D 在 M4-B 的短窗口桶上增加可切换请求口径：成功请求始终
 - 服务档位使用严格排除，普通 New API 保留原有兼容语义。
 - Affinity 命中仍通过模型、路径、Channel、Provider 和档位检查。
 - Affinity 轻微变慢保留，硬故障清理并兜底。
+- 平台兜底不覆盖 preferred，冷却后按现有探测资格恢复切回；旧 Affinity 缓存兼容。
 - 手动禁用不会被探测结果重新启用，包括测试期间发生状态变化的竞态。
 - 文本和图片探测结果的端点、解析端点和耗时展示不互相冒充。
 - 管理员排行能展示暂无样本、手动禁用、自动禁用和未上架渠道。
