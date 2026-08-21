@@ -101,6 +101,7 @@ export type HubProviderSettlementSummary = {
   withdrawable_quota: number
   platform_fee_basis_points: number
   minimum_withdrawal_quota: number
+  referral_income_quota: number
 }
 
 export type HubProviderEarning = {
@@ -115,6 +116,10 @@ export type HubProviderEarning = {
   gross_quota: number
   platform_fee_quota: number
   provider_income_quota: number
+  referral_provider_id: number
+  referral_basis_points: number
+  referral_income_quota: number
+  earning_role?: 'service' | 'referral'
   supply_multiplier: number
   billing_ratio: number
   remark: string

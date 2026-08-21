@@ -203,6 +203,14 @@ const BILLING_SECTIONS = [
             settings[
               'hub_provider_settlement_setting.minimum_withdrawal_quota'
             ],
+          fallbackReferralEnabled:
+            settings[
+              'hub_provider_settlement_setting.fallback_referral_enabled'
+            ],
+          fallbackReferralBasisPoints:
+            settings[
+              'hub_provider_settlement_setting.fallback_referral_basis_points'
+            ],
         }}
       />
     ),

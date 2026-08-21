@@ -174,7 +174,7 @@ func AdminGetHubProviderEarnings(c *gin.Context) {
 		return
 	}
 	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.ListHubProviderEarnings(
+	items, total, err := model.ListHubProviderEarningsForAdmin(
 		providerId,
 		pageInfo.GetStartIdx(),
 		pageInfo.GetPageSize(),

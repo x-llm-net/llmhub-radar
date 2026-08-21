@@ -85,6 +85,10 @@ type HubProviderEarning struct {
 	PlatformFeeBasisPoints int     `json:"platform_fee_basis_points" gorm:"not null;default:0"`
 	PlatformFeeQuota       int     `json:"platform_fee_quota" gorm:"not null;default:0"`
 	ProviderIncomeQuota    int     `json:"provider_income_quota" gorm:"not null;default:0"`
+	ReferralProviderId     int     `json:"referral_provider_id" gorm:"not null;default:0;index"`
+	ReferralOwnerUserId    int     `json:"-" gorm:"not null;default:0;index"`
+	ReferralBasisPoints    int     `json:"referral_basis_points" gorm:"not null;default:0"`
+	ReferralIncomeQuota    int     `json:"referral_income_quota" gorm:"not null;default:0"`
 	BaseGroupRatio         float64 `json:"base_group_ratio" gorm:"type:real;not null;default:0"`
 	SupplyMultiplier       float64 `json:"supply_multiplier" gorm:"type:real;not null;default:0"`
 	BillingRatio           float64 `json:"billing_ratio" gorm:"type:real;not null;default:0"`
@@ -94,6 +98,7 @@ type HubProviderEarning struct {
 	CancelledAt            int64   `json:"cancelled_at" gorm:"bigint;not null;default:0"`
 	CreatedAt              int64   `json:"created_at" gorm:"bigint;not null"`
 	UpdatedAt              int64   `json:"updated_at" gorm:"bigint;not null"`
+	EarningRole            string  `json:"earning_role,omitempty" gorm:"-"`
 }
 
 func (HubProviderEarning) TableName() string {
@@ -197,6 +202,8 @@ type HubProviderEarningParams struct {
 	BillingRatio              float64
 	PlatformFeeBasisPoints    int
 	HasPlatformFeeBasisPoints bool
+	ReferralProviderId        int
+	ReferralBasisPoints       int
 	SettlementDeferred        *bool
 }
 
@@ -212,6 +219,7 @@ type HubProviderSettlementSummary struct {
 	WithdrawableQuota       int `json:"withdrawable_quota"`
 	PlatformFeeBasisPoints  int `json:"platform_fee_basis_points"`
 	MinimumWithdrawalQuota  int `json:"minimum_withdrawal_quota"`
+	ReferralIncomeQuota     int `json:"referral_income_quota"`
 }
 
 type HubProviderWithdrawalAdminItem struct {
@@ -233,6 +241,44 @@ func CalculateHubProviderRevenueSplit(grossQuota int, feeBasisPoints int) (int, 
 	}
 	platformFee := int((int64(grossQuota)*int64(feeBasisPoints) + 5000) / 10000)
 	return platformFee, grossQuota - platformFee
+}
+
+func CalculateHubProviderRevenueSplitWithReferral(grossQuota, feeBasisPoints, referralBasisPoints int) (int, int, int) {
+	platformFee, providerIncome := CalculateHubProviderRevenueSplit(grossQuota, feeBasisPoints)
+	if providerIncome <= 0 || referralBasisPoints <= 0 {
+		return platformFee, providerIncome, 0
+	}
+	if referralBasisPoints > 10000 {
+		referralBasisPoints = 10000
+	}
+	referralIncome := int((int64(grossQuota)*int64(referralBasisPoints) + 5000) / 10000)
+	if referralIncome > providerIncome {
+		referralIncome = providerIncome
+	}
+	return platformFee, providerIncome - referralIncome, referralIncome
+}
+
+func calculateHubProviderEarningRevenueSplit(tx *gorm.DB, earning HubProviderEarning, grossQuota int) (int, int, int, error) {
+	referralBasisPoints := earning.ReferralBasisPoints
+	if referralBasisPoints > 0 && earning.ReferralProviderId > 0 {
+		var referralProvider HubProvider
+		err := lockForUpdate(tx).
+			Select("id", "owner_user_id", "status").
+			First(&referralProvider, earning.ReferralProviderId).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, 0, 0, err
+		}
+		if err != nil || referralProvider.Status != HubProviderStatusActive ||
+			referralProvider.OwnerUserId != earning.ReferralOwnerUserId {
+			referralBasisPoints = 0
+		}
+	}
+	platformFee, providerIncome, referralIncome := CalculateHubProviderRevenueSplitWithReferral(
+		grossQuota,
+		earning.PlatformFeeBasisPoints,
+		referralBasisPoints,
+	)
+	return platformFee, providerIncome, referralIncome, nil
 }
 
 func ResolveHubProviderPlatformFeeBasisPoints(providerId int) (int, error) {
@@ -274,7 +320,29 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 	} else if feeBasisPoints < 0 || feeBasisPoints > 10000 {
 		return nil, errors.New("invalid hub provider platform fee snapshot")
 	}
-	platformFee, providerIncome := CalculateHubProviderRevenueSplit(params.GrossQuota, feeBasisPoints)
+	referralProviderId := 0
+	referralOwnerUserId := 0
+	referralBasisPoints := 0
+	if params.ReferralProviderId > 0 && params.ReferralProviderId != params.ProviderId && params.ReferralBasisPoints > 0 {
+		if params.ReferralBasisPoints > 10000 {
+			return nil, errors.New("invalid fallback referral commission snapshot")
+		}
+		var referralProvider HubProvider
+		err := DB.Select("id", "owner_user_id", "status").First(&referralProvider, params.ReferralProviderId).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		if err == nil && referralProvider.Status == HubProviderStatusActive && referralProvider.OwnerUserId > 0 {
+			referralProviderId = referralProvider.Id
+			referralOwnerUserId = referralProvider.OwnerUserId
+			referralBasisPoints = params.ReferralBasisPoints
+		}
+	}
+	platformFee, providerIncome, referralIncome := CalculateHubProviderRevenueSplitWithReferral(
+		params.GrossQuota,
+		feeBasisPoints,
+		referralBasisPoints,
+	)
 	earning := &HubProviderEarning{
 		RequestId:              params.RequestId,
 		EntryType:              HubProviderEarningTypeUsage,
@@ -292,6 +360,10 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		PlatformFeeBasisPoints: feeBasisPoints,
 		PlatformFeeQuota:       platformFee,
 		ProviderIncomeQuota:    providerIncome,
+		ReferralProviderId:     referralProviderId,
+		ReferralOwnerUserId:    referralOwnerUserId,
+		ReferralBasisPoints:    referralBasisPoints,
+		ReferralIncomeQuota:    referralIncome,
 		BaseGroupRatio:         params.BaseGroupRatio,
 		SupplyMultiplier:       params.SupplyMultiplier,
 		BillingRatio:           params.BillingRatio,
@@ -323,6 +395,10 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 				"platform_fee_basis_points": feeBasisPoints,
 				"platform_fee_quota":        platformFee,
 				"provider_income_quota":     providerIncome,
+				"referral_provider_id":      referralProviderId,
+				"referral_owner_user_id":    referralOwnerUserId,
+				"referral_basis_points":     referralBasisPoints,
+				"referral_income_quota":     referralIncome,
 				"base_group_ratio":          params.BaseGroupRatio,
 				"supply_multiplier":         params.SupplyMultiplier,
 				"billing_ratio":             params.BillingRatio,
@@ -356,16 +432,18 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 		if earning.SettlementDeferred != nil && *earning.SettlementDeferred {
 			return ErrHubProviderEarningSettlementDeferred
 		}
-		platformFee, providerIncome := CalculateHubProviderRevenueSplit(
-			grossQuota,
-			earning.PlatformFeeBasisPoints,
-		)
 		if earning.Status == HubProviderEarningStatusSettled {
-			if earning.GrossQuota != grossQuota || earning.PlatformFeeQuota != platformFee ||
-				earning.ProviderIncomeQuota != providerIncome {
+			expectedPlatformFee, _ := CalculateHubProviderRevenueSplit(grossQuota, earning.PlatformFeeBasisPoints)
+			if earning.GrossQuota != grossQuota || earning.PlatformFeeQuota != expectedPlatformFee ||
+				earning.ProviderIncomeQuota < 0 || earning.ReferralIncomeQuota < 0 ||
+				earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota != grossQuota {
 				return ErrHubProviderEarningReferenceConflict
 			}
 			return nil
+		}
+		platformFee, providerIncome, referralIncome, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+		if err != nil {
+			return err
 		}
 		now := common.GetTimestamp()
 		return tx.Model(&HubProviderEarning{}).Where("id = ?", earning.Id).Updates(map[string]any{
@@ -373,6 +451,7 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 			"gross_quota":           grossQuota,
 			"platform_fee_quota":    platformFee,
 			"provider_income_quota": providerIncome,
+			"referral_income_quota": referralIncome,
 			"settled_at":            now,
 			"updated_at":            now,
 		}).Error
@@ -400,7 +479,10 @@ func MarkHubProviderEarningReady(requestId string, grossQuota int) error {
 		case HubProviderEarningStatusCancelled:
 			return ErrHubProviderEarningCancelled
 		}
-		platformFee, providerIncome := CalculateHubProviderRevenueSplit(grossQuota, earning.PlatformFeeBasisPoints)
+		platformFee, providerIncome, referralIncome, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+		if err != nil {
+			return err
+		}
 		falseValue := false
 		result := tx.Model(&HubProviderEarning{}).
 			Where("id = ? AND status = ?", earning.Id, HubProviderEarningStatusPending).
@@ -409,6 +491,7 @@ func MarkHubProviderEarningReady(requestId string, grossQuota int) error {
 				"gross_quota":           grossQuota,
 				"platform_fee_quota":    platformFee,
 				"provider_income_quota": providerIncome,
+				"referral_income_quota": referralIncome,
 				"updated_at":            common.GetTimestamp(),
 			})
 		if result.Error != nil {
@@ -545,8 +628,13 @@ func CreateHubProviderBalanceTransfer(ownerUserId, amountQuota int, idempotencyK
 		}
 		var earned quotaSum
 		if err := tx.Model(&HubProviderEarning{}).
-			Select("COALESCE(SUM(provider_income_quota), 0) AS value").
-			Where("provider_id = ? AND status = ?", provider.Id, HubProviderEarningStatusSettled).
+			Select(
+				"COALESCE(SUM(CASE WHEN provider_id = ? THEN provider_income_quota ELSE 0 END + "+
+					"CASE WHEN referral_provider_id = ? THEN referral_income_quota ELSE 0 END), 0) AS value",
+				provider.Id,
+				provider.Id,
+			).
+			Where("status = ? AND (provider_id = ? OR referral_provider_id = ?)", HubProviderEarningStatusSettled, provider.Id, provider.Id).
 			Scan(&earned).Error; err != nil {
 			return err
 		}
@@ -600,8 +688,9 @@ func CreateHubProviderBalanceTransfer(ownerUserId, amountQuota int, idempotencyK
 	return &transfer, nil
 }
 
-func ListHubProviderEarnings(providerId, offset, limit int) ([]HubProviderEarning, int64, error) {
-	query := DB.Model(&HubProviderEarning{}).Where("provider_id = ?", providerId)
+func listHubProviderEarnings(providerId, offset, limit int, sanitize bool) ([]HubProviderEarning, int64, error) {
+	query := DB.Model(&HubProviderEarning{}).
+		Where("provider_id = ? OR (referral_provider_id = ? AND referral_income_quota > 0)", providerId, providerId)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -614,7 +703,44 @@ func ListHubProviderEarnings(providerId, offset, limit int) ([]HubProviderEarnin
 	if err := listQuery.Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
+	for index := range items {
+		items[index].EarningRole = "service"
+		if items[index].ProviderId != providerId && items[index].ReferralProviderId == providerId {
+			items[index].EarningRole = "referral"
+			if !sanitize {
+				continue
+			}
+			items[index].ProviderId = providerId
+			items[index].OwnerUserId = items[index].ReferralOwnerUserId
+			items[index].ConsumerUserId = 0
+			items[index].TokenId = 0
+			items[index].SupplyGroupId = 0
+			items[index].ChannelId = 0
+			items[index].BillingSource = ""
+			items[index].PlatformFeeBasisPoints = 0
+			items[index].PlatformFeeQuota = 0
+			items[index].ProviderIncomeQuota = items[index].ReferralIncomeQuota
+			items[index].BaseGroupRatio = 0
+			items[index].SupplyMultiplier = 0
+			items[index].BillingRatio = 0
+		}
+		if sanitize {
+			items[index].ReferralProviderId = 0
+		}
+	}
 	return items, total, nil
+}
+
+// ListHubProviderEarnings returns the provider-facing ledger projection. It
+// hides the other provider's channel and ownership details on referral rows.
+func ListHubProviderEarnings(providerId, offset, limit int) ([]HubProviderEarning, int64, error) {
+	return listHubProviderEarnings(providerId, offset, limit, true)
+}
+
+// ListHubProviderEarningsForAdmin preserves the original settlement snapshot
+// so administrators can audit both sides of a fallback referral split.
+func ListHubProviderEarningsForAdmin(providerId, offset, limit int) ([]HubProviderEarning, int64, error) {
+	return listHubProviderEarnings(providerId, offset, limit, false)
 }
 
 func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSummary, error) {
@@ -636,25 +762,38 @@ func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSumma
 		SettledIncomeQuota      int `gorm:"column:settled_income_quota"`
 		PendingIncomeQuota      int `gorm:"column:pending_income_quota"`
 		TransferredBalanceQuota int `gorm:"column:transferred_balance_quota"`
+		ReferralIncomeQuota     int `gorm:"column:referral_income_quota"`
 	}
 	var earnings earningSums
 	if err := DB.Model(&HubProviderEarning{}).
 		Select(
-			"COALESCE(SUM(CASE WHEN status = ? THEN gross_quota ELSE 0 END), 0) AS gross_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? THEN platform_fee_quota ELSE 0 END), 0) AS platform_fee_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN provider_income_quota ELSE 0 END), 0) AS settled_income_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN provider_income_quota ELSE 0 END), 0) AS pending_income_quota, "+
-				"COALESCE(SUM(CASE WHEN status = ? AND entry_type = ? THEN -provider_income_quota ELSE 0 END), 0) AS transferred_balance_quota",
+			"COALESCE(SUM(CASE WHEN provider_id = ? AND status = ? THEN gross_quota ELSE 0 END), 0) AS gross_quota, "+
+				"COALESCE(SUM(CASE WHEN provider_id = ? AND status = ? THEN platform_fee_quota ELSE 0 END), 0) AS platform_fee_quota, "+
+				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN "+
+				"(CASE WHEN provider_id = ? THEN provider_income_quota ELSE 0 END + CASE WHEN referral_provider_id = ? THEN referral_income_quota ELSE 0 END) ELSE 0 END), 0) AS settled_income_quota, "+
+				"COALESCE(SUM(CASE WHEN status = ? AND entry_type <> ? THEN "+
+				"(CASE WHEN provider_id = ? THEN provider_income_quota ELSE 0 END + CASE WHEN referral_provider_id = ? THEN referral_income_quota ELSE 0 END) ELSE 0 END), 0) AS pending_income_quota, "+
+				"COALESCE(SUM(CASE WHEN provider_id = ? AND status = ? AND entry_type = ? THEN -provider_income_quota ELSE 0 END), 0) AS transferred_balance_quota, "+
+				"COALESCE(SUM(CASE WHEN referral_provider_id = ? AND status = ? THEN referral_income_quota ELSE 0 END), 0) AS referral_income_quota",
+			providerId,
 			HubProviderEarningStatusSettled,
+			providerId,
 			HubProviderEarningStatusSettled,
 			HubProviderEarningStatusSettled,
 			HubProviderEarningTypeBalanceTransfer,
+			providerId,
+			providerId,
 			HubProviderEarningStatusPending,
 			HubProviderEarningTypeBalanceTransfer,
+			providerId,
+			providerId,
+			providerId,
 			HubProviderEarningStatusSettled,
 			HubProviderEarningTypeBalanceTransfer,
+			providerId,
+			HubProviderEarningStatusSettled,
 		).
-		Where("provider_id = ?", providerId).
+		Where("provider_id = ? OR referral_provider_id = ?", providerId, providerId).
 		Scan(&earnings).Error; err != nil {
 		return summary, err
 	}
@@ -683,6 +822,7 @@ func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSumma
 	summary.ReservedWithdrawalQuota = withdrawals.ReservedQuota
 	summary.PaidWithdrawalQuota = withdrawals.PaidQuota
 	summary.TransferredBalanceQuota = earnings.TransferredBalanceQuota
+	summary.ReferralIncomeQuota = earnings.ReferralIncomeQuota
 	summary.WithdrawableQuota = earnings.SettledIncomeQuota - withdrawals.ReservedQuota - withdrawals.PaidQuota - earnings.TransferredBalanceQuota
 	if summary.WithdrawableQuota < 0 {
 		summary.WithdrawableQuota = 0
@@ -720,8 +860,13 @@ func CreateHubProviderWithdrawal(ownerUserId, amountQuota, payoutAccountId int) 
 		}
 		var earned quotaSum
 		if err := tx.Model(&HubProviderEarning{}).
-			Select("COALESCE(SUM(provider_income_quota), 0) AS value").
-			Where("provider_id = ? AND status = ?", provider.Id, HubProviderEarningStatusSettled).
+			Select(
+				"COALESCE(SUM(CASE WHEN provider_id = ? THEN provider_income_quota ELSE 0 END + "+
+					"CASE WHEN referral_provider_id = ? THEN referral_income_quota ELSE 0 END), 0) AS value",
+				provider.Id,
+				provider.Id,
+			).
+			Where("status = ? AND (provider_id = ? OR referral_provider_id = ?)", HubProviderEarningStatusSettled, provider.Id, provider.Id).
 			Scan(&earned).Error; err != nil {
 			return err
 		}

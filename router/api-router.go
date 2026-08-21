@@ -267,6 +267,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/hub-routing", controller.UpdateHubRoutingSetting)
+			optionRoute.PUT("/hub-provider-settlement", controller.UpdateHubProviderSettlementSetting)
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)

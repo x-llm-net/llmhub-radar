@@ -24,14 +24,16 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.RelayInfo, actualQuota int, settlementDeferred *bool) (string, error) {
+func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int, settlementDeferred *bool) (string, error) {
 	if relayInfo == nil || actualQuota <= 0 {
 		return "", nil
 	}
@@ -47,6 +49,22 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 	if requestId == "" {
 		requestId = common.NewRequestId()
 		relayInfo.RequestId = requestId
+	}
+	referralProviderId := 0
+	referralBasisPoints := 0
+	fallbackReferralEnabled, configuredReferralBasisPoints := hub_provider_settlement_setting.FallbackReferralPolicy()
+	if fallbackReferralEnabled &&
+		common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback) {
+		requestedProviderId := common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId)
+		if requestedProviderId <= 0 {
+			if policy := GetHubTokenRoutingPolicy(ctx); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
+				requestedProviderId = policy.ProviderID
+			}
+		}
+		if requestedProviderId > 0 && requestedProviderId != pricing.SupplyProviderId {
+			referralProviderId = requestedProviderId
+			referralBasisPoints = configuredReferralBasisPoints
+		}
 	}
 	var earning *model.HubProviderEarning
 	err := billingOperationWithRetry(func() error {
@@ -67,6 +85,8 @@ func prepareHubProviderEarning(ctx context.Context, relayInfo *relaycommon.Relay
 			BillingRatio:              pricing.GroupRatio,
 			PlatformFeeBasisPoints:    pricing.PlatformFeeBasisPoints,
 			HasPlatformFeeBasisPoints: pricing.HasPlatformFeeBasisPoints,
+			ReferralProviderId:        referralProviderId,
+			ReferralBasisPoints:       referralBasisPoints,
 			SettlementDeferred:        settlementDeferred,
 		})
 		return err

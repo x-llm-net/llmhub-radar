@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -130,6 +131,40 @@ type HubRoutingSettingUpdateRequest struct {
 	AllowOtherFamily       bool                                              `json:"allow_other_family"`
 	FamilyTierCeilings     map[string]hub_routing_setting.FamilyTierCeilings `json:"family_tier_ceilings"`
 	HighQualityProviderIDs []int                                             `json:"high_quality_provider_ids"`
+}
+
+type HubProviderSettlementSettingUpdateRequest struct {
+	PlatformFeeBasisPoints      int  `json:"platform_fee_basis_points"`
+	MinimumWithdrawalQuota      int  `json:"minimum_withdrawal_quota"`
+	FallbackReferralEnabled     bool `json:"fallback_referral_enabled"`
+	FallbackReferralBasisPoints int  `json:"fallback_referral_basis_points"`
+}
+
+func UpdateHubProviderSettlementSetting(c *gin.Context) {
+	var request HubProviderSettlementSettingUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid provider settlement settings"})
+		return
+	}
+	values := map[string]string{
+		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:      strconv.Itoa(request.PlatformFeeBasisPoints),
+		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:      strconv.Itoa(request.MinimumWithdrawalQuota),
+		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:     strconv.FormatBool(request.FallbackReferralEnabled),
+		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints: strconv.Itoa(request.FallbackReferralBasisPoints),
+	}
+	if err := model.UpdateOptionsBulk(values); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.hub_provider_settlement.update", map[string]interface{}{
+		"keys": []string{
+			hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints,
+			hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota,
+			hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled,
+			hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
 func UpdateHubRoutingSetting(c *gin.Context) {

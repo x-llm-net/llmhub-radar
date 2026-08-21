@@ -22,8 +22,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -109,6 +112,60 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	assert.Equal(t, model.HubProviderEarningStatusSettled, entries[0].Status)
 	assert.Equal(t, 100, entries[0].PlatformFeeQuota)
 	assert.Equal(t, 900, entries[0].ProviderIncomeQuota)
+}
+
+func TestFallbackReferralSettingControlsEarningPreparation(t *testing.T) {
+	truncate(t)
+	settings := hub_provider_settlement_setting.Get()
+	original := *settings
+	t.Cleanup(func() { *settings = original })
+	settings.FallbackReferralBasisPoints = 100
+
+	serviceProvider := model.HubProvider{OwnerUserId: 61, Slot: 1, Name: "Service Provider", Slug: "service-provider", Status: model.HubProviderStatusActive}
+	originProvider := model.HubProvider{OwnerUserId: 62, Slot: 1, Name: "Origin Provider", Slug: "origin-provider", Status: model.HubProviderStatusActive}
+	require.NoError(t, model.DB.Create(&serviceProvider).Error)
+	require.NoError(t, model.DB.Create(&originProvider).Error)
+
+	newRelayInfo := func(requestID string) *relaycommon.RelayInfo {
+		return &relaycommon.RelayInfo{
+			RequestId: requestID, UserId: 10, TokenId: 20,
+			ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 30},
+			OriginModelName: "gpt-5", BillingSource: BillingSourceWallet,
+			PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{
+				GroupRatio: 1, BaseGroupRatio: 1, SupplyMultiplier: 1,
+				HasSupplyPricing: true, SupplyGroupId: 40,
+				SupplyProviderId: serviceProvider.Id, SupplyOwnerUserId: serviceProvider.OwnerUserId,
+			}},
+		}
+	}
+
+	for _, test := range []struct {
+		name         string
+		enabled      bool
+		fallback     bool
+		wantReferral int
+	}{
+		{name: "fallback enabled", enabled: true, fallback: true, wantReferral: 10},
+		{name: "setting disabled", enabled: false, fallback: true},
+		{name: "preferred request", enabled: true, fallback: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			settings.FallbackReferralEnabled = test.enabled
+			ctx, _ := gin.CreateTestContext(nil)
+			common.SetContextKey(ctx, constant.ContextKeyHubRequestedProviderId, originProvider.Id)
+			common.SetContextKey(ctx, constant.ContextKeyHubRoutingFallback, test.fallback)
+			requestID, err := prepareHubProviderEarning(ctx, newRelayInfo("req-referral-setting-"+test.name), 1000, nil)
+			require.NoError(t, err)
+			var earning model.HubProviderEarning
+			require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&earning).Error)
+			assert.Equal(t, test.wantReferral, earning.ReferralIncomeQuota)
+			if test.wantReferral == 0 {
+				assert.Zero(t, earning.ReferralProviderId)
+			} else {
+				assert.Equal(t, originProvider.Id, earning.ReferralProviderId)
+			}
+		})
+	}
 }
 
 func TestSettleBillingAndProviderEarningUsesRetainedPreConsumeOnFinalShortfall(t *testing.T) {

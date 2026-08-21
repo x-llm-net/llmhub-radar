@@ -32,6 +32,12 @@ export function ProviderEarningsSummary() {
       label: t('Total provider earnings'),
       value: data?.settled_income_quota ?? 0,
       icon: CircleDollarSign,
+      detail:
+        (data?.referral_income_quota ?? 0) > 0
+          ? t('Includes referral commissions: {{amount}}', {
+              amount: formatQuota(data?.referral_income_quota ?? 0),
+            })
+          : undefined,
     },
     {
       label: t('Available earnings'),

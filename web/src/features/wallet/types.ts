@@ -340,6 +340,7 @@ export interface HubProviderSettlementSummary {
   withdrawable_quota: number
   platform_fee_basis_points: number
   minimum_withdrawal_quota: number
+  referral_income_quota: number
 }
 
 export interface HubProviderEarning {
@@ -359,6 +360,10 @@ export interface HubProviderEarning {
   platform_fee_basis_points: number
   platform_fee_quota: number
   provider_income_quota: number
+  referral_provider_id: number
+  referral_basis_points: number
+  referral_income_quota: number
+  earning_role?: 'service' | 'referral'
   base_group_ratio: number
   supply_multiplier: number
   billing_ratio: number

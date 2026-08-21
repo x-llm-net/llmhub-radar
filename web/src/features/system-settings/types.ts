@@ -39,6 +39,13 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type UpdateHubProviderSettlementRequest = {
+  platform_fee_basis_points: number
+  minimum_withdrawal_quota: number
+  fallback_referral_enabled: boolean
+  fallback_referral_basis_points: number
+}
+
 export type ServiceTierFamilyCeilings = {
   special: number
   low: number
@@ -350,6 +357,8 @@ export type BillingSettings = {
   'checkin_setting.max_quota': number
   'hub_provider_settlement_setting.platform_fee_basis_points': number
   'hub_provider_settlement_setting.minimum_withdrawal_quota': number
+  'hub_provider_settlement_setting.fallback_referral_enabled': boolean
+  'hub_provider_settlement_setting.fallback_referral_basis_points': number
 }
 
 export type OperationsSettings = {

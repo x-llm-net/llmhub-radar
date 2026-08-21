@@ -65,6 +65,282 @@ func TestCalculateHubProviderRevenueSplitKeepsGrossQuotaExact(t *testing.T) {
 	}
 }
 
+func TestCalculateHubProviderRevenueSplitWithReferralKeepsPlatformFee(t *testing.T) {
+	platformFee, providerIncome, referralIncome := CalculateHubProviderRevenueSplitWithReferral(1000, 1000, 100)
+	assert.Equal(t, 100, platformFee)
+	assert.Equal(t, 890, providerIncome)
+	assert.Equal(t, 10, referralIncome)
+	assert.Equal(t, 1000, platformFee+providerIncome+referralIncome)
+
+	platformFee, providerIncome, referralIncome = CalculateHubProviderRevenueSplitWithReferral(1000, 10000, 100)
+	assert.Equal(t, 1000, platformFee)
+	assert.Zero(t, providerIncome)
+	assert.Zero(t, referralIncome)
+}
+
+func TestHubProviderSettlementOptionsSaveTogether(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	settings := hub_provider_settlement_setting.Get()
+	original := *settings
+	originalOptionMap := common.OptionMap
+	common.OptionMap = make(map[string]string)
+	t.Cleanup(func() {
+		*settings = original
+		for _, key := range []string{
+			hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints,
+			hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota,
+			hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled,
+			hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints,
+		} {
+			DB.Delete(&Option{}, "key = ?", key)
+		}
+		common.OptionMap = originalOptionMap
+	})
+
+	values := map[string]string{
+		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:      "1200",
+		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:      "500",
+		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:     "false",
+		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints: "150",
+	}
+	require.NoError(t, UpdateOptionsBulk(values))
+	assert.Equal(t, 1200, settings.PlatformFeeBasisPoints)
+	assert.Equal(t, 500, settings.MinimumWithdrawalQuota)
+	assert.False(t, settings.FallbackReferralEnabled)
+	assert.Equal(t, 150, settings.FallbackReferralBasisPoints)
+
+	invalid := map[string]string{
+		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:      "1300",
+		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints: "10001",
+	}
+	require.Error(t, UpdateOptionsBulk(invalid))
+	var persisted Option
+	require.NoError(t, DB.First(&persisted, "key = ?", hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints).Error)
+	assert.Equal(t, "1200", persisted.Value)
+	assert.Equal(t, 1200, settings.PlatformFeeBasisPoints)
+}
+
+func TestFallbackReferralIncomeIsSettledAndWithdrawable(t *testing.T) {
+	truncateTables(t)
+	referralOwner := User{Id: 72, Username: "referral-owner", Quota: 0, Status: common.UserStatusEnabled}
+	require.NoError(t, DB.Create(&referralOwner).Error)
+	serviceProvider := HubProvider{OwnerUserId: 71, Slot: 1, Name: "Service Provider", Slug: "service-provider", Status: HubProviderStatusActive}
+	referralProvider := HubProvider{OwnerUserId: referralOwner.Id, Slot: 1, Name: "Referral Provider", Slug: "referral-provider", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&referralProvider).Error)
+
+	params := HubProviderEarningParams{
+		RequestId: "req-fallback-referral", ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "gpt-5", BillingSource: "wallet", GrossQuota: 1000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+		PlatformFeeBasisPoints: 1000, HasPlatformFeeBasisPoints: true,
+		ReferralProviderId: referralProvider.Id, ReferralBasisPoints: 100,
+	}
+	first, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	second, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, second.Id)
+	require.NoError(t, SettleHubProviderEarning(params.RequestId, params.GrossQuota))
+	require.NoError(t, SettleHubProviderEarning(params.RequestId, params.GrossQuota))
+
+	var earning HubProviderEarning
+	require.NoError(t, DB.First(&earning, first.Id).Error)
+	assert.Equal(t, 100, earning.PlatformFeeQuota)
+	assert.Equal(t, 890, earning.ProviderIncomeQuota)
+	assert.Equal(t, 10, earning.ReferralIncomeQuota)
+	assert.Equal(t, params.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota)
+
+	serviceSummary, err := GetHubProviderSettlementSummary(serviceProvider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 890, serviceSummary.SettledIncomeQuota)
+	assert.Zero(t, serviceSummary.ReferralIncomeQuota)
+	referralSummary, err := GetHubProviderSettlementSummary(referralProvider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 10, referralSummary.SettledIncomeQuota)
+	assert.Equal(t, 10, referralSummary.ReferralIncomeQuota)
+	assert.Equal(t, 10, referralSummary.WithdrawableQuota)
+
+	items, total, err := ListHubProviderEarnings(referralProvider.Id, 0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "referral", items[0].EarningRole)
+	assert.Equal(t, 10, items[0].ProviderIncomeQuota)
+	assert.Equal(t, referralProvider.Id, items[0].ProviderId)
+	assert.Zero(t, items[0].ConsumerUserId)
+	assert.Zero(t, items[0].TokenId)
+	assert.Zero(t, items[0].SupplyGroupId)
+	assert.Zero(t, items[0].ChannelId)
+	assert.Zero(t, items[0].PlatformFeeQuota)
+	assert.Zero(t, items[0].ReferralProviderId)
+
+	adminItems, adminTotal, err := ListHubProviderEarningsForAdmin(referralProvider.Id, 0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), adminTotal)
+	require.Len(t, adminItems, 1)
+	assert.Equal(t, "referral", adminItems[0].EarningRole)
+	assert.Equal(t, serviceProvider.Id, adminItems[0].ProviderId)
+	assert.Equal(t, referralProvider.Id, adminItems[0].ReferralProviderId)
+	assert.Equal(t, params.ConsumerUserId, adminItems[0].ConsumerUserId)
+	assert.Equal(t, params.ChannelId, adminItems[0].ChannelId)
+	assert.Equal(t, 890, adminItems[0].ProviderIncomeQuota)
+	assert.Equal(t, 10, adminItems[0].ReferralIncomeQuota)
+
+	transfer, err := CreateHubProviderBalanceTransfer(referralProvider.OwnerUserId, 6, "referral-transfer")
+	require.NoError(t, err)
+	assert.Equal(t, -6, transfer.ProviderIncomeQuota)
+	require.NoError(t, DB.First(&referralOwner, referralOwner.Id).Error)
+	assert.Equal(t, 6, referralOwner.Quota)
+	referralSummary, err = GetHubProviderSettlementSummary(referralProvider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 10, referralSummary.SettledIncomeQuota)
+	assert.Equal(t, 6, referralSummary.TransferredBalanceQuota)
+	assert.Equal(t, 4, referralSummary.WithdrawableQuota)
+}
+
+func TestFallbackReferralRequiresDistinctActiveProvider(t *testing.T) {
+	truncateTables(t)
+	serviceProvider := HubProvider{OwnerUserId: 73, Slot: 1, Name: "Service Provider", Slug: "referral-service", Status: HubProviderStatusActive}
+	disabledProvider := HubProvider{OwnerUserId: 74, Slot: 1, Name: "Disabled Provider", Slug: "referral-disabled", Status: HubProviderStatusDisabled}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&disabledProvider).Error)
+
+	base := HubProviderEarningParams{
+		ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "gpt-5", BillingSource: "wallet", GrossQuota: 1000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+		PlatformFeeBasisPoints: 1000, HasPlatformFeeBasisPoints: true,
+		ReferralBasisPoints: 100,
+	}
+	tests := []struct {
+		name               string
+		requestID          string
+		referralProviderID int
+	}{
+		{name: "normal request", requestID: "req-no-fallback-referral"},
+		{name: "same provider", requestID: "req-same-provider-referral", referralProviderID: serviceProvider.Id},
+		{name: "disabled provider", requestID: "req-disabled-provider-referral", referralProviderID: disabledProvider.Id},
+		{name: "missing provider", requestID: "req-missing-provider-referral", referralProviderID: 999999},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			params := base
+			params.RequestId = test.requestID
+			params.ReferralProviderId = test.referralProviderID
+			earning, err := PrepareHubProviderEarning(params)
+			require.NoError(t, err)
+			assert.Zero(t, earning.ReferralProviderId)
+			assert.Zero(t, earning.ReferralOwnerUserId)
+			assert.Zero(t, earning.ReferralBasisPoints)
+			assert.Zero(t, earning.ReferralIncomeQuota)
+			assert.Equal(t, params.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota)
+		})
+	}
+}
+
+func TestFallbackReferralFinalGrossIsRecalculatedBeforeAsyncSettlement(t *testing.T) {
+	truncateTables(t)
+	serviceProvider := HubProvider{OwnerUserId: 75, Slot: 1, Name: "Async Service", Slug: "async-service", Status: HubProviderStatusActive}
+	referralProvider := HubProvider{OwnerUserId: 76, Slot: 1, Name: "Async Referral", Slug: "async-referral", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&referralProvider).Error)
+	deferred := true
+	params := HubProviderEarningParams{
+		RequestId: "req-async-fallback-referral", ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "video-model", BillingSource: "wallet", GrossQuota: 1000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+		PlatformFeeBasisPoints: 1000, HasPlatformFeeBasisPoints: true,
+		ReferralProviderId: referralProvider.Id, ReferralBasisPoints: 100,
+		SettlementDeferred: &deferred,
+	}
+	earning, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, 100, earning.PlatformFeeQuota)
+	assert.Equal(t, 890, earning.ProviderIncomeQuota)
+	assert.Equal(t, 10, earning.ReferralIncomeQuota)
+
+	require.NoError(t, MarkHubProviderEarningReady(params.RequestId, 2500))
+	require.NoError(t, DB.First(&earning, earning.Id).Error)
+	require.NotNil(t, earning.SettlementDeferred)
+	assert.False(t, *earning.SettlementDeferred)
+	assert.Equal(t, 250, earning.PlatformFeeQuota)
+	assert.Equal(t, 2225, earning.ProviderIncomeQuota)
+	assert.Equal(t, 25, earning.ReferralIncomeQuota)
+	assert.Equal(t, 2500, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota)
+
+	require.NoError(t, SettleHubProviderEarning(params.RequestId, 2500))
+	require.NoError(t, DB.First(&earning, earning.Id).Error)
+	assert.Equal(t, HubProviderEarningStatusSettled, earning.Status)
+}
+
+func TestFallbackReferralIsRemovedWhenOriginProviderIsDisabledBeforeSettlement(t *testing.T) {
+	truncateTables(t)
+	serviceProvider := HubProvider{OwnerUserId: 77, Slot: 1, Name: "Delayed Service", Slug: "delayed-service", Status: HubProviderStatusActive}
+	referralProvider := HubProvider{OwnerUserId: 78, Slot: 1, Name: "Delayed Referral", Slug: "delayed-referral", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&referralProvider).Error)
+	deferred := true
+	params := HubProviderEarningParams{
+		RequestId: "req-disabled-before-settlement", ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 80, TokenId: 90, SupplyGroupId: 11, ChannelId: 12,
+		ModelName: "video-model", BillingSource: "wallet", GrossQuota: 1000,
+		BaseGroupRatio: 1, SupplyMultiplier: 1, BillingRatio: 1,
+		PlatformFeeBasisPoints: 1000, HasPlatformFeeBasisPoints: true,
+		ReferralProviderId: referralProvider.Id, ReferralBasisPoints: 100,
+		SettlementDeferred: &deferred,
+	}
+	earning, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, 10, earning.ReferralIncomeQuota)
+	require.NoError(t, DB.Model(&HubProvider{}).Where("id = ?", referralProvider.Id).Update("status", HubProviderStatusDisabled).Error)
+
+	require.NoError(t, MarkHubProviderEarningReady(params.RequestId, 2500))
+	require.NoError(t, SettleHubProviderEarning(params.RequestId, 2500))
+	require.NoError(t, DB.First(&earning, earning.Id).Error)
+	assert.Equal(t, 250, earning.PlatformFeeQuota)
+	assert.Equal(t, 2250, earning.ProviderIncomeQuota)
+	assert.Zero(t, earning.ReferralIncomeQuota)
+	assert.Equal(t, 2500, earning.PlatformFeeQuota+earning.ProviderIncomeQuota)
+
+	referralSummary, err := GetHubProviderSettlementSummary(referralProvider.Id)
+	require.NoError(t, err)
+	assert.Zero(t, referralSummary.SettledIncomeQuota)
+	items, total, err := ListHubProviderEarnings(referralProvider.Id, 0, 10)
+	require.NoError(t, err)
+	assert.Zero(t, total)
+	assert.Empty(t, items)
+}
+
+func TestFallbackReferralPreparationKeepsOriginalSnapshotAcrossRetries(t *testing.T) {
+	truncateTables(t)
+	serviceProvider := HubProvider{OwnerUserId: 79, Slot: 1, Name: "Retry Service", Slug: "retry-service", Status: HubProviderStatusActive}
+	referralProvider := HubProvider{OwnerUserId: 80, Slot: 1, Name: "Retry Referral", Slug: "retry-referral", Status: HubProviderStatusActive}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&referralProvider).Error)
+	params := HubProviderEarningParams{
+		RequestId: "req-referral-retry-snapshot", ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 81, TokenId: 91, SupplyGroupId: 12, ChannelId: 13,
+		ModelName: "gpt-5", BillingSource: "wallet", GrossQuota: 1000,
+		PlatformFeeBasisPoints: 1000, HasPlatformFeeBasisPoints: true,
+		ReferralProviderId: referralProvider.Id, ReferralBasisPoints: 100,
+	}
+	first, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, 10, first.ReferralIncomeQuota)
+
+	params.ReferralProviderId = 0
+	params.ReferralBasisPoints = 0
+	retried, err := PrepareHubProviderEarning(params)
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, retried.Id)
+	assert.Equal(t, referralProvider.Id, retried.ReferralProviderId)
+	assert.Equal(t, 100, retried.ReferralBasisPoints)
+}
+
 func TestHubProviderEarningSettlementIsIdempotentByRequest(t *testing.T) {
 	truncateTables(t)
 	params := HubProviderEarningParams{
