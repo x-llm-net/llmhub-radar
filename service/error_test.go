@@ -136,6 +136,48 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
+func TestTaskErrorPreservesStructuredLoopCode(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"message":"recursive route detected","type":"new_api_error","code":"request_loop_detected"}}`,
+		)),
+	}
+
+	apiErr := RelayErrorHandler(context.Background(), resp, false)
+	taskErr := TaskErrorFromAPIError(apiErr)
+
+	require.NotNil(t, taskErr)
+	require.Equal(t, string(types.ErrorCodeRequestLoopDetected), taskErr.Code)
+	require.Equal(t, "recursive route detected", taskErr.Message)
+	require.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+}
+
+func TestTaskErrorFromAPIErrorHandlesMissingCause(t *testing.T) {
+	taskErr := TaskErrorFromAPIError(types.InitOpenAIError(
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusBadGateway,
+	))
+
+	require.NotNil(t, taskErr)
+	require.Equal(t, string(types.ErrorCodeBadResponseStatusCode), taskErr.Code)
+	require.Equal(t, string(types.ErrorCodeBadResponseStatusCode), taskErr.Message)
+}
+
+func TestTaskErrorFromLocalAPIErrorMarksLocalFailure(t *testing.T) {
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("insufficient quota"),
+		types.ErrorCodeInsufficientUserQuota,
+		http.StatusForbidden,
+	)
+
+	taskErr := TaskErrorFromLocalAPIError(apiErr)
+
+	require.NotNil(t, taskErr)
+	require.True(t, taskErr.LocalError)
+	require.Equal(t, string(types.ErrorCodeInsufficientUserQuota), taskErr.Code)
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 

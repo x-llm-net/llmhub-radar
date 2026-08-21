@@ -74,6 +74,7 @@ type channelAffinityMeta struct {
 
 type channelAffinityFallbackState struct {
 	ChannelID        int   `json:"channel_id"`
+	PreferredID      int   `json:"preferred_id,omitempty"`
 	NextRecoveryAt   int64 `json:"next_recovery_at"`
 	RecoveryFailures int   `json:"recovery_failures"`
 }
@@ -520,6 +521,37 @@ func putChannelAffinityFallbackState(c *gin.Context, channelID int, recoveryFail
 		recoveryFailures = 1
 	}
 	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForRequestPath(meta.RequestPath, recoveryFailures)
+	preferredID := verifiedChannelAffinityPreferredID(meta)
+	if preferredID <= 0 {
+		if existing, found := getChannelAffinityFallbackState(meta.CacheKeySuffix); found {
+			preferredID = existing.PreferredID
+		}
+	}
+	state := channelAffinityFallbackState{
+		ChannelID:        channelID,
+		PreferredID:      preferredID,
+		NextRecoveryAt:   time.Now().Unix() + recoveryDelaySeconds,
+		RecoveryFailures: recoveryFailures,
+	}
+	setChannelAffinityFallbackState(meta, state)
+}
+
+func verifiedChannelAffinityPreferredID(meta channelAffinityMeta) int {
+	if meta.PreferredID <= 0 || meta.CacheKey == "" {
+		return 0
+	}
+	currentID, found, err := getChannelAffinityCache().Get(meta.CacheKey)
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity preferred cache verify failed: key=%s, err=%v", meta.CacheKey, err))
+		return 0
+	}
+	if !found || currentID != meta.PreferredID {
+		return 0
+	}
+	return currentID
+}
+
+func setChannelAffinityFallbackState(meta channelAffinityMeta, state channelAffinityFallbackState) {
 	ttlSeconds := meta.TTLSeconds
 	if ttlSeconds <= 0 {
 		ttlSeconds = operation_setting.GetChannelAffinitySetting().DefaultTTLSeconds
@@ -527,13 +559,12 @@ func putChannelAffinityFallbackState(c *gin.Context, channelID int, recoveryFail
 	if ttlSeconds <= 0 {
 		ttlSeconds = 3600
 	}
-	if int64(ttlSeconds) <= recoveryDelaySeconds {
-		ttlSeconds = int(recoveryDelaySeconds + 60)
+	remainingRecoverySeconds := state.NextRecoveryAt - time.Now().Unix()
+	if remainingRecoverySeconds < 0 {
+		remainingRecoverySeconds = 0
 	}
-	state := channelAffinityFallbackState{
-		ChannelID:        channelID,
-		NextRecoveryAt:   time.Now().Unix() + recoveryDelaySeconds,
-		RecoveryFailures: recoveryFailures,
+	if int64(ttlSeconds) <= remainingRecoverySeconds {
+		ttlSeconds = int(remainingRecoverySeconds + 60)
 	}
 	if err := getChannelAffinityFallbackCache().SetWithTTL(meta.CacheKeySuffix, state, time.Duration(ttlSeconds)*time.Second); err != nil {
 		common.SysError(fmt.Sprintf("channel affinity fallback cache set failed: key=%s, err=%v", meta.CacheKeySuffix, err))
@@ -811,6 +842,11 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		}
 
 		if isHubRequest && fallbackFound && fallbackRoutable {
+			if !found && fallbackState.PreferredID > 0 {
+				channelID = fallbackState.PreferredID
+				found = true
+				preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path)
+			}
 			if preferredRoutable && found && fallbackState.NextRecoveryAt <= time.Now().Unix() {
 				setChannelAffinityRouteMeta(c, channelAffinityRoleRecovery, channelID, fallbackState.ChannelID)
 				return channelID, true
@@ -998,11 +1034,15 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 	if hasMeta && IsHubServiceTierRequest(c) &&
 		(common.GetContextKeyBool(c, constant.ContextKeyHubRoutingFallback) || meta.Role == channelAffinityRoleFallback) {
 		state, found := getChannelAffinityFallbackState(meta.CacheKeySuffix)
-		recoveryFailures := 1
-		if found && state.RecoveryFailures > 0 {
-			recoveryFailures = state.RecoveryFailures
+		if found {
+			state.ChannelID = channelID
+			if state.PreferredID <= 0 {
+				state.PreferredID = verifiedChannelAffinityPreferredID(meta)
+			}
+			setChannelAffinityFallbackState(meta, state)
+			return
 		}
-		putChannelAffinityFallbackState(c, channelID, recoveryFailures)
+		putChannelAffinityFallbackState(c, channelID, 1)
 		return
 	}
 

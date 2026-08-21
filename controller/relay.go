@@ -604,6 +604,9 @@ func appendHubTaskAttemptFailure(c *gin.Context, relayInfo *relaycommon.RelayInf
 		return relayErr
 	}
 	service.AppendHubRelayAttemptFailure(c, relayInfo, relayErr)
+	if relayErr.GetErrorCode() == types.ErrorCodeRequestLoopDetected {
+		return relayErr
+	}
 	return types.NewOpenAIError(relayErr.Err, types.ErrorCodeBadResponseStatusCode, relayErr.StatusCode)
 }
 
@@ -791,8 +794,11 @@ func RelayTask(c *gin.Context) {
 		}
 
 		retriesRemaining := common.RetryTimes - retryParam.GetRetry()
-		retryBudgetExhausted = retriesRemaining <= 0 && shouldRetryTaskRelay(c, channel.Id, taskErr, 1)
-		if !shouldRetryTaskRelay(c, channel.Id, taskErr, retriesRemaining) {
+		channelLocked := relayInfo.LockedChannel != nil
+		retryBudgetExhausted = retriesRemaining <= 0 &&
+			taskErr.Code != string(types.ErrorCodeRequestLoopDetected) &&
+			shouldRetryTaskRelay(c, taskErr, 1, channelLocked)
+		if !shouldRetryTaskRelay(c, taskErr, retriesRemaining, channelLocked) {
 			break
 		}
 		if service.IsHubServiceTierRequest(c) {
@@ -815,9 +821,20 @@ func RelayTask(c *gin.Context) {
 	}
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
-	settledTaskQuota := result.Quota
+	settledTaskQuota := 0
 	if taskErr == nil {
-		if settleErr := service.SettleTaskBillingAndPrepareProviderEarning(c, relayInfo, result.Quota); settleErr != nil {
+		if result == nil {
+			taskErr = service.TaskErrorWrapperLocal(
+				errors.New("task submit returned no result"),
+				"empty_task_submit_result",
+				http.StatusInternalServerError,
+			)
+		} else {
+			settledTaskQuota = result.Quota
+		}
+	}
+	if taskErr == nil {
+		if settleErr := service.SettleTaskBillingAndPrepareProviderEarning(c, relayInfo, settledTaskQuota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
 			if service.BillingSettlementCommitted(relayInfo) {
 				settledTaskQuota = service.BillingCommittedQuota(relayInfo)
@@ -899,7 +916,7 @@ func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	c.JSON(taskErr.StatusCode, taskErr)
 }
 
-func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *taskdto.TaskError, retryTimes int) bool {
+func shouldRetryTaskRelay(c *gin.Context, taskErr *taskdto.TaskError, retryTimes int, channelLocked bool) bool {
 	if taskErr == nil {
 		return false
 	}
@@ -911,6 +928,9 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *taskdto.TaskEr
 	}
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
+	}
+	if taskErr.Code == string(types.ErrorCodeRequestLoopDetected) {
+		return !channelLocked && service.IsHubServiceTierRequest(c)
 	}
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		return true
