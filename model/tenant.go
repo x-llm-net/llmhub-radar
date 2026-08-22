@@ -18,6 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 package model
 
+import (
+	"errors"
+
+	"gorm.io/gorm"
+)
+
+var (
+	ErrTenantNotFound       = errors.New("tenant not found")
+	ErrTenantMemberNotFound = errors.New("active tenant member not found")
+)
+
 const (
 	TenantStatusActive   = "active"
 	TenantStatusDisabled = "disabled"
@@ -82,4 +93,52 @@ type TenantMember struct {
 
 func (TenantMember) TableName() string {
 	return "tenant_members"
+}
+
+func IsTenantAdminRole(role string) bool {
+	return role == TenantMemberRoleOwner || role == TenantMemberRoleAdmin
+}
+
+func GetActiveTenantMember(tenantID, userID int) (*TenantMember, error) {
+	if tenantID <= 0 || userID <= 0 {
+		return nil, ErrTenantMemberNotFound
+	}
+	var member TenantMember
+	err := DB.Joins("JOIN tenants ON tenants.id = tenant_members.tenant_id").Where(
+		"tenant_members.tenant_id = ? AND tenant_members.user_id = ? AND tenant_members.status = ? AND tenants.status = ?",
+		tenantID, userID, TenantMemberStatusActive, TenantStatusActive,
+	).First(&member).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrTenantMemberNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
+}
+
+// ApplyHubProviderTenantScope applies the ownership boundary for provider
+// management queries. A nil tenant ID means platform-direct ownership.
+func ApplyHubProviderTenantScope(query *gorm.DB, tenantID *int) *gorm.DB {
+	if tenantID == nil {
+		return query.Where("tenant_id IS NULL")
+	}
+	return query.Where("tenant_id = ?", *tenantID)
+}
+
+func GetHubProviderByIDInTenant(providerID int, tenantID *int) (*HubProvider, error) {
+	if providerID <= 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	var provider HubProvider
+	err := ApplyHubProviderTenantScope(
+		DB.Where("id = ?", providerID), tenantID,
+	).First(&provider).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
 }
