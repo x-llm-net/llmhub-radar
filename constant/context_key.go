@@ -46,6 +46,7 @@ const (
 
 	ContextKeyHubRequestedProviderId      ContextKey = "hub_requested_provider_id"
 	ContextKeyHubRequestedProviderSlug    ContextKey = "hub_requested_provider_slug"
+	ContextKeyTenantId                    ContextKey = "tenant_id"
 	ContextKeyHubRoutingPhase             ContextKey = "hub_routing_phase"
 	ContextKeyHubRoutingFallback          ContextKey = "hub_provider_fallback"
 	ContextKeyHubFallbackStartRetry       ContextKey = "hub_fallback_start_retry"
