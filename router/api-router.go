@@ -200,7 +200,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderRoute.POST("/withdrawals", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderWithdrawal)
 		}
 		hubProviderAdminRoute := apiRouter.Group("/hub/admin/providers")
-		hubProviderAdminRoute.Use(middleware.TenantHostContext(), middleware.AdminAuth())
+		hubProviderAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
 			hubProviderAdminRoute.GET("", controller.AdminListHubProviders)
 			hubProviderAdminRoute.GET("/:id/logo", controller.GetAdminHubProviderLogo)
@@ -213,7 +213,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
 		}
 		hubAdminRoute := apiRouter.Group("/hub/admin")
-		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.AdminAuth())
+		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
 			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
 			hubAdminRoute.GET("/routing-metrics", controller.AdminListHubRoutingMetrics)

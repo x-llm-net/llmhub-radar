@@ -53,6 +53,7 @@ var (
 	ErrHubProviderEarningAlreadySettled       = errors.New("hub provider earning is already settled")
 	ErrHubProviderEarningSettlementDeferred   = errors.New("hub provider earning settlement is deferred")
 	ErrHubProviderWithdrawalPending           = errors.New("hub provider already has a pending withdrawal")
+	ErrHubProviderWithdrawalNotFound          = errors.New("hub provider withdrawal not found")
 	ErrHubProviderWithdrawalBelowMinimum      = errors.New("hub provider withdrawal amount is below the minimum")
 	ErrHubProviderWithdrawalInsufficient      = errors.New("hub provider withdrawable balance is insufficient")
 	ErrHubProviderWithdrawalTransition        = errors.New("invalid hub provider withdrawal status transition")
@@ -932,10 +933,31 @@ func ListHubProviderWithdrawals(providerId, offset, limit int) ([]HubProviderWit
 	return items, total, nil
 }
 
-func AdminListHubProviderWithdrawals(status string, offset, limit int) ([]HubProviderWithdrawalAdminItem, int64, error) {
+func GetHubProviderWithdrawalByID(withdrawalID int) (*HubProviderWithdrawal, error) {
+	if withdrawalID <= 0 {
+		return nil, ErrHubProviderWithdrawalNotFound
+	}
+	var withdrawal HubProviderWithdrawal
+	err := DB.First(&withdrawal, withdrawalID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrHubProviderWithdrawalNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := hydrateHubProviderWithdrawal(&withdrawal); err != nil {
+		return nil, err
+	}
+	return &withdrawal, nil
+}
+
+func listAdminHubProviderWithdrawals(status string, offset, limit int, tenantID *int) ([]HubProviderWithdrawalAdminItem, int64, error) {
 	query := DB.Table("hub_provider_withdrawals AS withdrawals").
 		Joins("JOIN hub_providers AS providers ON providers.id = withdrawals.provider_id").
 		Joins("JOIN users ON users.id = withdrawals.owner_user_id")
+	if tenantID != nil {
+		query = query.Where("providers.tenant_id = ?", *tenantID)
+	}
 	if IsValidHubProviderWithdrawalStatus(status) {
 		query = query.Where("withdrawals.status = ?", status)
 	}
@@ -959,6 +981,17 @@ func AdminListHubProviderWithdrawals(status string, offset, limit int) ([]HubPro
 		}
 	}
 	return items, total, nil
+}
+
+func AdminListHubProviderWithdrawals(status string, offset, limit int) ([]HubProviderWithdrawalAdminItem, int64, error) {
+	return listAdminHubProviderWithdrawals(status, offset, limit, nil)
+}
+
+func AdminListHubProviderWithdrawalsInTenant(status string, offset, limit, tenantID int) ([]HubProviderWithdrawalAdminItem, int64, error) {
+	if tenantID <= 0 {
+		return nil, 0, ErrTenantNotFound
+	}
+	return listAdminHubProviderWithdrawals(status, offset, limit, &tenantID)
 }
 
 func IsValidHubProviderWithdrawalStatus(status string) bool {

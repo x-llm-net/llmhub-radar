@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -103,6 +104,77 @@ func TestUserAuthAllowsOpaqueDottedPAT(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 	assert.Equal(t, user.Id, body.ID)
+}
+
+func TestTenantAdminAuthRequiresActiveTenantMembershipForRegularUsers(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantMember{}))
+
+	user := createMiddlewarePATUser(t, "tenant-admin-user", "tenant-admin-pat")
+	tenant := model.Tenant{Name: "Tenant", Slug: "tenant", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+
+	newRouter := func(withTenant bool) *gin.Engine {
+		router := gin.New()
+		if withTenant {
+			router.Use(func(c *gin.Context) {
+				common.SetContextKey(c, constant.ContextKeyTenantId, tenant.Id)
+				c.Next()
+			})
+		}
+		router.GET("/protected", TenantAdminAuth(), func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		})
+		return router
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer tenant-admin-pat")
+	response := httptest.NewRecorder()
+	newRouter(false).ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+
+	request = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer tenant-admin-pat")
+	response = httptest.NewRecorder()
+	newRouter(true).ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+
+	require.NoError(t, model.DB.Create(&model.TenantMember{
+		TenantId: tenant.Id, UserId: user.Id,
+		Role: model.TenantMemberRoleAdmin, Status: model.TenantMemberStatusActive,
+	}).Error)
+	request = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer tenant-admin-pat")
+	response = httptest.NewRecorder()
+	newRouter(true).ServeHTTP(response, request)
+	assert.Equal(t, http.StatusNoContent, response.Code)
+
+	require.NoError(t, model.DB.Model(&model.TenantMember{}).
+		Where("tenant_id = ? AND user_id = ?", tenant.Id, user.Id).
+		Update("status", model.TenantMemberStatusDisabled).Error)
+	request = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer tenant-admin-pat")
+	response = httptest.NewRecorder()
+	newRouter(true).ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestTenantAdminAuthPreservesPlatformAdminAccess(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	admin := createMiddlewarePATUser(t, "platform-admin", "platform-admin-pat")
+	admin.Role = common.RoleAdminUser
+	require.NoError(t, model.DB.Save(admin).Error)
+
+	router := gin.New()
+	router.GET("/protected", TenantAdminAuth(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer platform-admin-pat")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusNoContent, response.Code)
 }
 
 func TestUserAuthNeverFallsBackForRecognizedInvalidInternalJWT(t *testing.T) {

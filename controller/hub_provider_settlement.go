@@ -173,6 +173,9 @@ func AdminGetHubProviderEarnings(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if !requireHubProviderAdminScope(c, providerId) {
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	items, total, err := model.ListHubProviderEarningsForAdmin(
 		providerId,
@@ -194,6 +197,9 @@ func AdminGetHubProviderEarningSummary(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if !requireHubProviderAdminScope(c, providerId) {
+		return
+	}
 	summary, err := model.GetHubProviderSettlementSummary(providerId)
 	if err != nil {
 		common.ApiError(c, err)
@@ -206,6 +212,9 @@ func AdminCreateHubProviderEarningAdjustment(c *gin.Context) {
 	providerId, err := strconv.Atoi(c.Param("id"))
 	if err != nil || providerId <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if !requireHubProviderAdminScope(c, providerId) {
 		return
 	}
 	var req hubProviderEarningAdjustmentRequest
@@ -228,11 +237,18 @@ func AdminCreateHubProviderEarningAdjustment(c *gin.Context) {
 
 func AdminGetHubProviderWithdrawals(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.AdminListHubProviderWithdrawals(
-		strings.TrimSpace(c.Query("status")),
-		pageInfo.GetStartIdx(),
-		pageInfo.GetPageSize(),
-	)
+	var items []model.HubProviderWithdrawalAdminItem
+	var total int64
+	var err error
+	if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
+		items, total, err = model.AdminListHubProviderWithdrawalsInTenant(
+			strings.TrimSpace(c.Query("status")), pageInfo.GetStartIdx(), pageInfo.GetPageSize(), *tenantID,
+		)
+	} else {
+		items, total, err = model.AdminListHubProviderWithdrawals(
+			strings.TrimSpace(c.Query("status")), pageInfo.GetStartIdx(), pageInfo.GetPageSize(),
+		)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -246,6 +262,18 @@ func AdminUpdateHubProviderWithdrawalStatus(c *gin.Context) {
 	withdrawalId, err := strconv.Atoi(c.Param("withdrawal_id"))
 	if err != nil || withdrawalId <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	withdrawal, err := model.GetHubProviderWithdrawalByID(withdrawalId)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderWithdrawalNotFound) {
+			common.ApiErrorI18n(c, i18n.MsgNotFound)
+		} else {
+			common.ApiError(c, err)
+		}
+		return
+	}
+	if !requireHubProviderAdminScope(c, withdrawal.ProviderId) {
 		return
 	}
 	var req hubProviderWithdrawalStatusRequest
@@ -276,7 +304,7 @@ func AdminUpdateHubProviderWithdrawalStatus(c *gin.Context) {
 			ExchangeRate: req.ExchangeRate,
 		}
 	}
-	withdrawal, err := model.UpdateHubProviderWithdrawalStatus(
+	withdrawal, err = model.UpdateHubProviderWithdrawalStatus(
 		withdrawalId,
 		req.Status,
 		c.GetInt("id"),

@@ -162,6 +162,21 @@ func GetHubProviderByOwnerUserID(ownerUserID int) (*HubProvider, error) {
 	return &provider, nil
 }
 
+func GetHubProviderByID(providerID int) (*HubProvider, error) {
+	if providerID <= 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	var provider HubProvider
+	err := DB.First(&provider, providerID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
+
 func NormalizeHubProviderSlug(value string) (string, error) {
 	slug := strings.ToLower(strings.TrimSpace(value))
 	if len(slug) < hubProviderSlugMinLength || len(slug) > hubProviderSlugMaxLength {
@@ -464,9 +479,12 @@ func IsValidHubProviderStatus(status string) bool {
 		status == HubProviderStatusDisabled
 }
 
-func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
+func listHubProviders(keyword, status string, offset, limit int, tenantID *int) ([]HubProviderAdminListItem, int64, error) {
 	query := DB.Table("hub_providers AS providers").
 		Joins("JOIN users ON users.id = providers.owner_user_id")
+	if tenantID != nil {
+		query = query.Where("providers.tenant_id = ?", *tenantID)
+	}
 	keyword = strings.TrimSpace(keyword)
 	if keyword != "" {
 		pattern := "%" + strings.ToLower(keyword) + "%"
@@ -544,11 +562,34 @@ func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderA
 		}
 		HydrateHubProviderVerificationFields(&providers[i].HubProvider)
 	}
-	if err := populateHubProviderUpstreamUsages(providers); err != nil {
+	if err := populateHubProviderUpstreamUsages(providers, tenantID); err != nil {
 		return nil, 0, err
 	}
 
 	return providers, total, nil
+}
+
+func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
+	return listHubProviders(keyword, status, offset, limit, nil)
+}
+
+func ListHubProvidersInTenant(keyword, status string, offset, limit, tenantID int) ([]HubProviderAdminListItem, int64, error) {
+	if tenantID <= 0 {
+		return nil, 0, ErrTenantNotFound
+	}
+	return listHubProviders(keyword, status, offset, limit, &tenantID)
+}
+
+func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {
+	if tenantID <= 0 {
+		return nil, ErrTenantNotFound
+	}
+	var channelIDs []int
+	err := DB.Table("hub_supply_groups AS supply_groups").
+		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
+		Where("providers.tenant_id = ?", tenantID).
+		Pluck("supply_groups.new_api_channel_id", &channelIDs).Error
+	return channelIDs, err
 }
 
 func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
@@ -574,7 +615,7 @@ func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*Hu
 	return &provider, nil
 }
 
-func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem) error {
+func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem, tenantID *int) error {
 	if len(providers) == 0 {
 		return nil
 	}
@@ -588,10 +629,14 @@ func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem) err
 		channelCount int64
 	}
 	rows := make([]supplyOriginRow, 0)
-	if err := DB.Table("hub_supply_groups AS supply_groups").
+	query := DB.Table("hub_supply_groups AS supply_groups").
 		Select("supply_groups.provider_id, channels.type AS channel_type, channels.base_url").
-		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
-		Scan(&rows).Error; err != nil {
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id")
+	if tenantID != nil {
+		query = query.Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
+			Where("providers.tenant_id = ?", *tenantID)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
 		return err
 	}
 

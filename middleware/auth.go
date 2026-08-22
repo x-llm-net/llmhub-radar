@@ -101,6 +101,47 @@ func AdminAuth() func(c *gin.Context) {
 	}
 }
 
+// TenantAdminAuth allows platform administrators to keep their existing
+// access and allows a regular user only when the trusted Host resolved to an
+// active tenant where that user is an active owner/admin member.
+func TenantAdminAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		user, identity, useAccessToken, err := authenticateDashboardRequest(c)
+		if err != nil {
+			writeDashboardAuthError(c, err)
+			return
+		}
+		if user.Status != common.UserStatusEnabled {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "code": "AUTH_USER_DISABLED", "message": common.TranslateMessage(c, i18n.MsgAuthUserBanned)})
+			return
+		}
+		if !validUserInfo(user.Username, user.Role) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "code": "AUTH_USER_INVALID", "message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid)})
+			return
+		}
+
+		tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+		if user.Role < common.RoleAdminUser {
+			if tenantID <= 0 {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege)})
+				return
+			}
+			if _, err := model.GetActiveTenantMember(tenantID, user.Id); err != nil {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege)})
+				return
+			}
+		}
+
+		setDashboardAuthContext(c, user, identity, useAccessToken)
+		var auditWriter *auditResponseWriter
+		if user.Role >= common.RoleAdminUser || tenantID > 0 {
+			auditWriter = beginAdminAudit(c)
+		}
+		c.Next()
+		finishAdminAudit(c, auditWriter)
+	}
+}
+
 func RootAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleRootUser)

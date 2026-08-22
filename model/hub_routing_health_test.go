@@ -136,6 +136,30 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	assert.Equal(t, platformChannel.Id, filtered[0].ChannelID)
 }
 
+func TestListHubRoutingHealthFiltersByTenant(t *testing.T) {
+	truncateTables(t)
+	tenantAID, tenantBID := 101, 102
+	providerA := &HubProvider{OwnerUserId: 601, TenantId: &tenantAID, Name: "Tenant A provider", Slug: "tenant-a-provider"}
+	providerB := &HubProvider{OwnerUserId: 602, TenantId: &tenantBID, Name: "Tenant B provider", Slug: "tenant-b-provider"}
+	require.NoError(t, DB.Create(providerA).Error)
+	require.NoError(t, DB.Create(providerB).Error)
+
+	baseURL := "https://tenant.example"
+	channelA := &Channel{Type: constant.ChannelTypeOpenAI, Key: "tenant-a-secret", Name: "Tenant A channel", BaseURL: &baseURL, Models: "gpt-tenant", Group: "default", Status: common.ChannelStatusEnabled}
+	channelB := &Channel{Type: constant.ChannelTypeOpenAI, Key: "tenant-b-secret", Name: "Tenant B channel", BaseURL: &baseURL, Models: "gpt-tenant", Group: "default", Status: common.ChannelStatusEnabled}
+	require.NoError(t, DB.Create(channelA).Error)
+	require.NoError(t, DB.Create(channelB).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroup{ProviderId: providerA.Id, NewAPIChannelId: channelA.Id, PriceMultiplier: 1, PublishedModels: "gpt-tenant", Status: HubSupplyGroupStatusAvailable}).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroup{ProviderId: providerB.Id, NewAPIChannelId: channelB.Id, PriceMultiplier: 1, PublishedModels: "gpt-tenant", Status: HubSupplyGroupStatusAvailable}).Error)
+
+	tenantRows, total, err := ListHubRoutingHealth(HubRoutingHealthListOptions{TenantID: &tenantAID, Limit: 20}, common.GetTimestamp())
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, tenantRows, 1)
+	assert.Equal(t, channelA.Id, tenantRows[0].ChannelID)
+	assert.Equal(t, providerA.Id, tenantRows[0].ProviderID)
+}
+
 func TestListHubRoutingHealthShowsAutoProbeDisabledModelAsRoutable(t *testing.T) {
 	truncateTables(t)
 	resetHubRoutingSnapshotsForTest(t)

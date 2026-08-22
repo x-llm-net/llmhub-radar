@@ -87,3 +87,23 @@ func TestGetActiveTenantMemberRejectsMembersOfDisabledTenant(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTenantMemberNotFound)
 	assert.Nil(t, member)
 }
+
+func TestGetHubProviderChannelIDsInTenantExcludesOtherTenants(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&Tenant{}, &HubProvider{}, &HubSupplyGroup{}))
+
+	tenantA := Tenant{Name: "Tenant A", Slug: "tenant-a", Status: TenantStatusActive}
+	tenantB := Tenant{Name: "Tenant B", Slug: "tenant-b", Status: TenantStatusActive}
+	require.NoError(t, db.Create(&tenantA).Error)
+	require.NoError(t, db.Create(&tenantB).Error)
+	providerA := HubProvider{OwnerUserId: 101, TenantId: &tenantA.Id, Slot: 1, Name: "Provider A", Slug: "provider-a"}
+	providerB := HubProvider{OwnerUserId: 102, TenantId: &tenantB.Id, Slot: 1, Name: "Provider B", Slug: "provider-b"}
+	require.NoError(t, db.Create(&providerA).Error)
+	require.NoError(t, db.Create(&providerB).Error)
+	require.NoError(t, db.Create(&HubSupplyGroup{ProviderId: providerA.Id, NewAPIChannelId: 11, PriceMultiplier: 1}).Error)
+	require.NoError(t, db.Create(&HubSupplyGroup{ProviderId: providerB.Id, NewAPIChannelId: 22, PriceMultiplier: 1}).Error)
+
+	channelIDs, err := GetHubProviderChannelIDsInTenant(tenantA.Id)
+	require.NoError(t, err)
+	assert.Equal(t, []int{11}, channelIDs)
+}

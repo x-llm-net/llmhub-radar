@@ -45,6 +45,7 @@ const (
 type HubRoutingHealthListOptions struct {
 	Keyword       string
 	ProviderID    *int
+	TenantID      *int
 	Model         string
 	Endpoint      string
 	ChannelStatus int
@@ -151,7 +152,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 
 	providers := make([]HubProvider, 0)
 	if DB.Migrator().HasTable(&HubProvider{}) {
-		if err := DB.Select("id", "name", "status").Find(&providers).Error; err != nil {
+		if err := DB.Select("id", "name", "status", "tenant_id").Find(&providers).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -195,6 +196,15 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 	rows := make([]HubRoutingHealthRow, 0)
 	for _, channel := range channels {
 		group, providerOwned := groupsByChannelID[channel.Id]
+		if options.TenantID != nil {
+			if !providerOwned {
+				continue
+			}
+			provider, ok := providersByID[group.ProviderId]
+			if !ok || provider.TenantId == nil || *provider.TenantId != *options.TenantID {
+				continue
+			}
+		}
 		provider := providersByID[group.ProviderId]
 		publishedModels := make(map[string]struct{})
 		if providerOwned {
