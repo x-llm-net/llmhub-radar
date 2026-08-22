@@ -528,7 +528,7 @@ serving_provider_income = gross - platform_fee - referral_income
 
 第一版实现采用 `tokens.hub_routing_policy` JSON 字段，不新增方案表。根域名策略保存模型族和倍率闭区间，倍率合法范围为 `0.01-100.000`、步进和持久化精度为 `0.001`；`1.000` 只是平台官方基准倍率，不是上限，前端新增模型族默认取包含 `1.000` 的有效范围，若该模型族只有高价供给则从实际最小倍率开始。渠道商子域名策略保存渠道商作用域、模型族和渠道商已发布的单个精确倍率。旧 Token 和旧分组字段继续保留，未携带策略的请求完全走原有 New API/服务档位路径。
 
-新增策略只改变候选过滤：先按策略筛选模型族和供给倍率，再复用现有渠道健康/上架检查、亲和、priority、weight、渠道商优先、公共池兜底和失败 Channel 排除。动态候选仍先随机选择渠道商，再在渠道商内部按 priority/weight 选择 Channel；普通选择、Affinity 和固定 Channel 使用同一策略边界。平台自有 Channel 在根域名按倍率 `1.000` 参与；兜底不突破策略边界。Token 字符串、计费价格、模型基础价格和失败扣费口径不变。
+新增策略只改变候选过滤：先按策略筛选模型族和供给倍率，再复用现有渠道健康/上架检查、亲和、priority、weight、渠道商优先、公共池兜底和失败 Channel 排除。动态候选仍先随机选择渠道商，再在渠道商内部按 priority/weight 选择 Channel；普通选择、Affinity 和固定 Channel 使用同一策略边界。平台自有 Channel 在根域名按倍率 `1.000` 参与；渠道商子域 Token 的 preferred 阶段严格匹配精确倍率，platform fallback 阶段允许不高于该倍率的更便宜候选，不允许更贵候选。Token 字符串、计费价格、模型基础价格和失败扣费口径不变。
 
 新策略 Key 的 `group=default` 只是兼容字段。价格基准固定为 `1.000x`，不会再乘管理员配置的旧 `default` GroupRatio 或用户组覆盖；最终计费倍率由成功 Channel 的供给倍率决定。
 

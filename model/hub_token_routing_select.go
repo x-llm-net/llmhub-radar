@@ -41,14 +41,32 @@ func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 			return false, nil
 		}
 	}
+	providerFilter := ChannelProviderFilter{}
+	if policy.Mode == HubTokenRoutingModeProvider {
+		providerFilter = ChannelProviderFilter{
+			ProviderID: policy.ProviderID, Mode: ChannelProviderOnly, StrictExcludedChannels: true,
+		}
+	}
 	channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
 		policy,
 		modelName,
 		0,
 		"",
 		nil,
-		ChannelProviderFilter{},
+		providerFilter,
 	)
+	if channel == nil && policy.Mode == HubTokenRoutingModeProvider {
+		channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
+			policy,
+			modelName,
+			0,
+			"",
+			nil,
+			ChannelProviderFilter{
+				ProviderID: policy.ProviderID, Mode: ChannelProviderExclude, StrictExcludedChannels: true,
+			},
+		)
+	}
 	return channel != nil, err
 }
 
@@ -88,7 +106,7 @@ func HasConfiguredSupplyForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelNa
 	family := ClassifyHubPublicModelFamily(modelName)
 	for _, row := range supplyRows {
 		configuredSupplyChannels[row.ChannelID] = struct{}{}
-		if !policy.AllowsMultiplier(family, row.PriceMultiplier) {
+		if !policy.AllowsMultiplierForPlatformFallback(family, row.PriceMultiplier) {
 			continue
 		}
 		group := HubSupplyGroup{PublishedModels: row.PublishedModels}
@@ -151,6 +169,8 @@ func getHubPolicyChannelFromCache(
 		modelNames = append(modelNames, normalized)
 	}
 	family := ClassifyHubPublicModelFamily(modelName)
+	allowCheaperMultiplier := policy.Mode == HubTokenRoutingModeProvider &&
+		providerFilter.Mode == ChannelProviderExclude
 	seen := make(map[int]struct{})
 	candidates := make([]hubTierChannelCandidate, 0)
 	for group, groups := range group2model2channels {
@@ -183,7 +203,11 @@ func getHubPolicyChannelFromCache(
 					multiplier = pricing.PriceMultiplier
 					providerID = pricing.SupplyProviderId
 				}
-				if !policy.AllowsMultiplier(family, multiplier) {
+				if allowCheaperMultiplier {
+					if !policy.AllowsMultiplierForPlatformFallback(family, multiplier) {
+						continue
+					}
+				} else if !policy.AllowsMultiplier(family, multiplier) {
 					continue
 				}
 				seen[channelID] = struct{}{}
@@ -255,6 +279,8 @@ func getHubPolicyChannelFromDB(
 	}
 	candidates := make([]hubTierChannelCandidate, 0, len(channelIDs))
 	family := ClassifyHubPublicModelFamily(modelName)
+	allowCheaperMultiplier := policy.Mode == HubTokenRoutingModeProvider &&
+		providerFilter.Mode == ChannelProviderExclude
 	for _, channelID := range channelIDs {
 		channel := channelByID[channelID]
 		if channel == nil {
@@ -269,7 +295,11 @@ func getHubPolicyChannelFromDB(
 			multiplier = pricing.PriceMultiplier
 			providerID = pricing.SupplyProviderId
 		}
-		if !policy.AllowsMultiplier(family, multiplier) {
+		if allowCheaperMultiplier {
+			if !policy.AllowsMultiplierForPlatformFallback(family, multiplier) {
+				continue
+			}
+		} else if !policy.AllowsMultiplier(family, multiplier) {
 			continue
 		}
 		priority := channel.GetPriority()
@@ -338,7 +368,11 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 	} else if snapshot.Configured || (policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback) {
 		return false
 	}
-	if !policy.AllowsMultiplier(ClassifyHubPublicModelFamily(modelName), multiplier) {
+	if allowProviderFallback {
+		if !policy.AllowsMultiplierForPlatformFallback(ClassifyHubPublicModelFamily(modelName), multiplier) {
+			return false
+		}
+	} else if !policy.AllowsMultiplier(ClassifyHubPublicModelFamily(modelName), multiplier) {
 		return false
 	}
 	if requestPath != "" && !IsHubSupplyChannelRoutableForRequest(channelID, modelName, requestPath) {
