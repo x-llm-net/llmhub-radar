@@ -37,6 +37,14 @@ func TestChannelStatusRoutesRegisterWithoutConflict(t *testing.T) {
 	})
 }
 
+func TestGlobalChannelCreateRouteIsClosed(t *testing.T) {
+	for _, route := range channelPermissionRoutes {
+		if route.method == http.MethodPost && route.path == "/" {
+			t.Fatal("global channel creation route must remain closed")
+		}
+	}
+}
+
 func assertChannelRoutePermission(t *testing.T, method string, path string, permission authz.Permission, handler any) {
 	t.Helper()
 	for _, route := range channelPermissionRoutes {
