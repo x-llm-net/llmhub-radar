@@ -8,8 +8,8 @@ import (
 )
 
 // TenantHostContext resolves a trusted custom tenant host into request
-// context. It is intentionally not mounted until tenant management routes
-// are ready; existing relay and dashboard traffic must not pay this lookup.
+// context. Callers should mount it only on tenant-aware management routes;
+// existing relay and dashboard traffic must not pay this lookup.
 func TenantHostContext() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resolution, err := model.ResolveTenantHost(c.Request.Host)

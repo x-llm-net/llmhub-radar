@@ -48,7 +48,8 @@ const (
 )
 
 // Tenant is the ownership boundary for a future domain administrator.
-// A nil HubProvider.TenantId still represents platform-direct ownership.
+// A nil HubProvider.TenantId is a migration-compatibility state whose actual
+// historical ownership still needs to be confirmed.
 type Tenant struct {
 	Id        int    `json:"id" gorm:"primaryKey"`
 	Name      string `json:"name" gorm:"type:varchar(120);not null"`
@@ -118,7 +119,8 @@ func GetActiveTenantMember(tenantID, userID int) (*TenantMember, error) {
 }
 
 // ApplyHubProviderTenantScope applies the ownership boundary for provider
-// management queries. A nil tenant ID means platform-direct ownership.
+// management queries. A nil tenant ID selects only migration-compatibility
+// records whose historical tenant ownership is still unresolved.
 func ApplyHubProviderTenantScope(query *gorm.DB, tenantID *int) *gorm.DB {
 	if tenantID == nil {
 		return query.Where("tenant_id IS NULL")
