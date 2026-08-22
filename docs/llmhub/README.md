@@ -10,7 +10,7 @@
 - [渠道商通知](provider-notifications.md)：站内、浏览器、多个邮箱和多个企业微信 Webhook 通知的配置、权限和触发边界。
 - [渠道排名与 Affinity 恢复切换](ranking-and-affinity-recovery-plan.md)：渠道商/Channel 排名、服务档位候选权重、平台兜底后的原渠道恢复和亲和切回拆分方案。
 - [模型定价能力验证](model-pricing-verification-design.md)：以协议、隐藏指纹题、可信基线与消费合理性为证据，审核模型声明可使用的价格档。
-- [独立域名总代理](domain-reseller-plan.md)：平台超级管理员、域名级管理员、下属渠道商、独立品牌域名和多方分成的后续专题。
+- [独立域名总代理与角色权限](domain-reseller-plan.md)：角色组合、租户数据范围、渠道商管理、独立品牌域名、多方分账边界及分阶段实施顺序。
 - [LLM-Hub 生产发布](production-release.md)：唯一生产目标、发布入口、强制身份校验、备份与回滚约束。
 
 ## 基座
