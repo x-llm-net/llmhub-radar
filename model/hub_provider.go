@@ -56,6 +56,7 @@ var hubProviderReservedSlugs = map[string]struct{}{
 type HubProvider struct {
 	Id                           int    `json:"id" gorm:"primaryKey"`
 	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
+	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index"`
 	Slot                         int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
 	Name                         string `json:"name" gorm:"type:varchar(80);not null"`
 	Slug                         string `json:"slug" gorm:"type:varchar(63)"`
