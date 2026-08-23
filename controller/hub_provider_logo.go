@@ -129,3 +129,22 @@ func GetAdminHubProviderLogo(c *gin.Context) {
 	}
 	serveHubProviderLogo(c, asset, false)
 }
+
+func GetAdminHubProviderOverviewLogo(c *gin.Context) {
+	providerID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || providerID <= 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	provider, err := model.GetHubProviderByID(providerID)
+	if err != nil || provider == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	asset, err := getHubProviderLogoAssetForProvider(c, provider.Id)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	serveHubProviderLogo(c, asset, false)
+}

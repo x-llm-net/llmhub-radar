@@ -212,6 +212,12 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.PUT("/:id/settlement-settings", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderSettlementSettings)
 			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
 		}
+		hubProviderOverviewRoute := apiRouter.Group("/hub/admin/provider-overview")
+		hubProviderOverviewRoute.Use(middleware.RootAuth())
+		{
+			hubProviderOverviewRoute.GET("", controller.AdminListHubProviderOverview)
+			hubProviderOverviewRoute.GET("/:id/logo", controller.GetAdminHubProviderOverviewLogo)
+		}
 		hubAdminRoute := apiRouter.Group("/hub/admin")
 		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{

@@ -6030,6 +6030,10 @@
     "Tenant unpublished": "Tenant unpublished",
     "Publish selected channels": "Publish selected channels",
     "Unpublish selected channels": "Unpublish selected channels",
+    "Provider Overview": "Provider Overview",
+    "All tenants": "All tenants",
+    "Platform public pool": "Platform public pool",
+    "Filter by provider, owner or website...": "Filter by provider, owner or website...",
     "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.": "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.",
     "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.": "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available."
   }

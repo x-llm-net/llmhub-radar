@@ -24,6 +24,9 @@ import type {
 
 export type HubProviderAdminItem = {
   id: number
+  tenant_id: number | null
+  tenant_name: string
+  tenant_slug: string
   owner_user_id: number
   owner_username: string
   owner_display_name: string
@@ -77,6 +80,8 @@ export type HubProviderAdminListParams = {
   p?: number
   page_size?: number
 }
+
+export type HubProviderOverviewListParams = HubProviderAdminListParams
 
 export type HubProviderAdminListResponse = {
   success: boolean

@@ -64,3 +64,54 @@ func TestAdminProviderManagementUsesTenantScope(t *testing.T) {
 	require.NoError(t, model.DB.First(&stored, providerB.Id).Error)
 	assert.Nil(t, stored.PlatformFeeBasisPoints)
 }
+
+func TestAdminProviderOverviewIgnoresTenantHostScope(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}))
+	require.NoError(t, model.DB.Create(&model.User{
+		Id: 42, Username: "tenant-a-owner", DisplayName: "Tenant A", Email: "a@example.com",
+		Password: "unused", Status: common.UserStatusEnabled, AffCode: "tenant-a",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id: 43, Username: "platform-owner", DisplayName: "Platform Owner", Email: "platform@example.com",
+		Password: "unused", Status: common.UserStatusEnabled, AffCode: "platform",
+	}).Error)
+	tenant := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+	tenantProvider := &model.HubProvider{OwnerUserId: 42, TenantId: &tenant.Id, Slot: 1, Name: "Tenant Provider", Slug: "tenant-provider"}
+	platformProvider := &model.HubProvider{OwnerUserId: 43, Slot: 1, Name: "Platform Provider", Slug: "platform-provider"}
+	require.NoError(t, model.DB.Create(tenantProvider).Error)
+	require.NoError(t, model.DB.Create(platformProvider).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/provider-overview", nil, 1)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	AdminListHubProviderOverview(ctx)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.HubProviderAdminListItem `json:"items"`
+			Total int                              `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, 2, response.Data.Total)
+	require.Len(t, response.Data.Items, 2)
+	assert.Equal(t, "", response.Data.Items[0].TenantName)
+	assert.Equal(t, "Tenant A", response.Data.Items[1].TenantName)
+
+	platformCtx, platformRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/provider-overview?tenant_id=platform", nil, 1)
+	AdminListHubProviderOverview(platformCtx)
+	var platformResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.HubProviderAdminListItem `json:"items"`
+			Total int                              `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(platformRecorder.Body.Bytes(), &platformResponse))
+	require.True(t, platformResponse.Success, platformRecorder.Body.String())
+	assert.Equal(t, 1, platformResponse.Data.Total)
+	require.Len(t, platformResponse.Data.Items, 1)
+	assert.Equal(t, platformProvider.Id, platformResponse.Data.Items[0].Id)
+}

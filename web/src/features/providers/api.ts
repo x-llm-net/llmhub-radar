@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   HubProviderAdminListParams,
+  HubProviderOverviewListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
   HubAdminAccessResponse,
@@ -46,6 +47,13 @@ export async function getAdminProviders(
   params: HubProviderAdminListParams
 ): Promise<HubProviderAdminListResponse> {
   const response = await api.get('/api/hub/admin/providers', { params })
+  return response.data
+}
+
+export async function getAdminProviderOverview(
+  params: HubProviderOverviewListParams & { tenant_id?: string }
+): Promise<HubProviderAdminListResponse> {
+  const response = await api.get('/api/hub/admin/provider-overview', { params })
   return response.data
 }
 

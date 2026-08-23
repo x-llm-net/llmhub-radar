@@ -95,6 +95,9 @@ type HubProvider struct {
 
 type HubProviderAdminListItem struct {
 	HubProvider
+	TenantID                        *int                       `json:"tenant_id" gorm:"column:admin_tenant_id"`
+	TenantName                      string                     `json:"tenant_name" gorm:"column:tenant_name"`
+	TenantSlug                      string                     `json:"tenant_slug" gorm:"column:tenant_slug"`
 	OwnerID                         int                        `json:"owner_user_id" gorm:"column:owner_id"`
 	OwnerUsername                   string                     `json:"owner_username" gorm:"column:owner_username"`
 	OwnerDisplayName                string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
@@ -479,10 +482,15 @@ func IsValidHubProviderStatus(status string) bool {
 		status == HubProviderStatusDisabled
 }
 
-func listHubProviders(keyword, status string, offset, limit int, tenantID *int) ([]HubProviderAdminListItem, int64, error) {
+func listHubProviders(keyword, status string, offset, limit int, tenantID *int, tenantFilterSet, platformOnly, includeTenantMetadata bool) ([]HubProviderAdminListItem, int64, error) {
 	query := DB.Table("hub_providers AS providers").
 		Joins("JOIN users ON users.id = providers.owner_user_id")
-	if tenantID != nil {
+	if includeTenantMetadata {
+		query = query.Joins("LEFT JOIN tenants ON tenants.id = providers.tenant_id")
+	}
+	if tenantFilterSet && platformOnly {
+		query = query.Where("providers.tenant_id IS NULL")
+	} else if tenantFilterSet && tenantID != nil {
 		query = query.Where("providers.tenant_id = ?", *tenantID)
 	}
 	keyword = strings.TrimSpace(keyword)
@@ -503,9 +511,11 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int) 
 	}
 
 	providers := make([]HubProviderAdminListItem, 0)
-	listQuery := query.Select(
-		"providers.*, providers.platform_fee_basis_points AS platform_fee_override_basis_points, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status",
-	).Order("providers.id DESC")
+	selectColumns := "providers.*, providers.platform_fee_basis_points AS platform_fee_override_basis_points, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status"
+	if includeTenantMetadata {
+		selectColumns = "providers.*, tenants.id AS admin_tenant_id, tenants.name AS tenant_name, tenants.slug AS tenant_slug, " + selectColumns
+	}
+	listQuery := query.Select(selectColumns).Order("providers.id DESC")
 	if limit > 0 {
 		listQuery = listQuery.Limit(limit).Offset(offset)
 	}
@@ -570,14 +580,21 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int) 
 }
 
 func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
-	return listHubProviders(keyword, status, offset, limit, nil)
+	return listHubProviders(keyword, status, offset, limit, nil, false, false, false)
 }
 
 func ListHubProvidersInTenant(keyword, status string, offset, limit, tenantID int) ([]HubProviderAdminListItem, int64, error) {
 	if tenantID <= 0 {
 		return nil, 0, ErrTenantNotFound
 	}
-	return listHubProviders(keyword, status, offset, limit, &tenantID)
+	return listHubProviders(keyword, status, offset, limit, &tenantID, true, false, false)
+}
+
+// ListHubProvidersForOverview is the platform-wide read scope for super
+// administrators. A nil tenant ID with platformOnly=true selects providers
+// that have not been assigned to a tenant yet.
+func ListHubProvidersForOverview(keyword, status string, offset, limit int, tenantID *int, platformOnly bool) ([]HubProviderAdminListItem, int64, error) {
+	return listHubProviders(keyword, status, offset, limit, tenantID, platformOnly || tenantID != nil, platformOnly, true)
 }
 
 func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {
