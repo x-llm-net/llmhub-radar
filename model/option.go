@@ -243,6 +243,9 @@ func validateOptionValue(key string, value string) error {
 }
 
 func UpdateOption(key string, value string) error {
+	if hub_provider_settlement_setting.IsOptionKey(key) {
+		return UpdateOptionsBulk(map[string]string{key: value})
+	}
 	if hub_routing_setting.IsOptionKey(key) {
 		return ErrHubRoutingSettingRequiresAtomicSave
 	}
@@ -309,8 +312,19 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
+	settlementValues := make(map[string]string)
 	for k, v := range values {
+		if hub_provider_settlement_setting.IsOptionKey(k) {
+			updateOptionMapValue(k, v)
+			settlementValues[k] = v
+			continue
+		}
 		if err := updateOptionMap(k, v); err != nil {
+			return err
+		}
+	}
+	if len(settlementValues) > 0 {
+		if err := hub_provider_settlement_setting.UpdateFromMap(settlementValues); err != nil {
 			return err
 		}
 	}
@@ -329,9 +343,7 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMapRWMutex.Unlock()
 		return nil
 	}
-	common.OptionMapRWMutex.Lock()
-	defer common.OptionMapRWMutex.Unlock()
-	common.OptionMap[key] = value
+	updateOptionMapValue(key, value)
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, value) {
@@ -653,6 +665,12 @@ func updateOptionMap(key string, value string) (err error) {
 	return err
 }
 
+func updateOptionMapValue(key, value string) {
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[key] = value
+	common.OptionMapRWMutex.Unlock()
+}
+
 // handleConfigUpdate 处理分层配置更新，返回是否已处理
 func handleConfigUpdate(key, value string) bool {
 	if key == operation_setting.ToolPriceOptionKey {
@@ -671,6 +689,11 @@ func handleConfigUpdate(key, value string) bool {
 		// The four routing options must be published together by the dedicated
 		// save path so the derived Ability rows never use a partial snapshot.
 		return true
+	}
+	if configName == "hub_provider_settlement_setting" {
+		return hub_provider_settlement_setting.UpdateFromMap(map[string]string{
+			configName + "." + key: value,
+		}) == nil
 	}
 
 	// 获取配置对象

@@ -282,153 +282,158 @@ export function ProviderWebsiteVerification(
             {props.provider.website &&
               props.provider.website_verification_status !== 'verified' && (
                 <Tabs
-              value={method}
-              onValueChange={(value) =>
-                setMethod(value as HubProviderWebsiteVerificationMethod)
-              }
-              className='gap-4'
-            >
-              <TabsList className='h-auto max-w-full flex-wrap justify-start'>
-                <TabsTrigger value='manual'>
-                  <ImageUp />
-                  {t('Admin screenshot')}
-                </TabsTrigger>
-                <TabsTrigger value='dns'>
-                  <ShieldCheck />
-                  {t('DNS TXT')}
-                </TabsTrigger>
-                <TabsTrigger value='http'>
-                  <FileCode2 />
-                  {t('HTTP file')}
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value='manual' className='space-y-3'>
-                <div>
-                  <p className='text-sm font-medium'>
-                    {t('Recommended for early access')}
-                  </p>
-                  <p className='text-muted-foreground mt-1 text-sm'>
-                    {t(
-                      'Upload a screenshot showing the browser address bar and the logged-in management page. Mask API keys, balances, and order details.'
-                    )}
-                  </p>
-                </div>
-                <div className='grid gap-2'>
-                  <Label htmlFor='provider-website-evidence'>
-                    {t('Verification screenshot')}
-                  </Label>
-                  <Input
-                    id='provider-website-evidence'
-                    type='file'
-                    accept='image/png,image/jpeg,image/webp'
-                    onChange={(event) =>
-                      setFile(event.target.files?.item(0) ?? null)
-                    }
-                  />
-                  <p className='text-muted-foreground text-xs'>
-                    {t('PNG, JPEG, or WebP, up to 5 MB.')}
-                  </p>
-                </div>
-                {props.provider.website_evidence_asset_id > 0 &&
-                  props.provider.website_verification_method === 'manual' && (
-                    <ProviderWebsiteEvidenceImage
-                      assetId={props.provider.website_evidence_asset_id}
-                      alt={t('Submitted verification screenshot')}
-                      className='max-h-48 max-w-full rounded-md border object-contain'
-                    />
-                  )}
-                <Button
-                  type='button'
-                  onClick={() => submitMutation.mutate()}
-                  disabled={submitMutation.isPending || !file}
+                  value={method}
+                  onValueChange={(value) =>
+                    setMethod(value as HubProviderWebsiteVerificationMethod)
+                  }
+                  className='gap-4'
                 >
-                  {submitMutation.isPending ? (
-                    <Loader2 className='animate-spin' />
-                  ) : (
-                    <ImageUp />
-                  )}
-                  {t('Submit screenshot')}
-                </Button>
-              </TabsContent>
+                  <TabsList className='h-auto max-w-full flex-wrap justify-start'>
+                    <TabsTrigger value='manual'>
+                      <ImageUp />
+                      {t('Admin screenshot')}
+                    </TabsTrigger>
+                    <TabsTrigger value='dns'>
+                      <ShieldCheck />
+                      {t('DNS TXT')}
+                    </TabsTrigger>
+                    <TabsTrigger value='http'>
+                      <FileCode2 />
+                      {t('HTTP file')}
+                    </TabsTrigger>
+                  </TabsList>
 
-              {(['dns', 'http'] as const).map((verificationMethod) => {
-                const isCurrent =
-                  props.provider.website_verification_method ===
-                    verificationMethod &&
-                  props.provider.website_verification_status === 'pending'
-                const record =
-                  verificationMethod === 'dns'
-                    ? props.provider.website_verification_dns_record
-                    : props.provider.website_verification_http_url
-                const value =
-                  verificationMethod === 'dns'
-                    ? props.provider.website_verification_dns_value
-                    : props.provider.website_verification_http_body
-                return (
-                  <TabsContent
-                    key={verificationMethod}
-                    value={verificationMethod}
-                    className='space-y-3'
-                  >
-                    {!isCurrent ? (
-                      <Button
-                        type='button'
-                        variant='outline'
-                        onClick={() => submitMutation.mutate()}
-                        disabled={submitMutation.isPending}
-                      >
-                        {submitMutation.isPending && (
-                          <Loader2 className='animate-spin' />
+                  <TabsContent value='manual' className='space-y-3'>
+                    <div>
+                      <p className='text-sm font-medium'>
+                        {t('Recommended for early access')}
+                      </p>
+                      <p className='text-muted-foreground mt-1 text-sm'>
+                        {t(
+                          'Upload a screenshot showing the browser address bar and the logged-in management page. Mask API keys, balances, and order details.'
                         )}
-                        {t('Generate verification instructions')}
-                      </Button>
-                    ) : (
-                      <>
-                        <div className='grid gap-3 rounded-md border p-4 text-sm'>
-                          <div>
-                            <p className='text-muted-foreground text-xs'>
-                              {t(
-                                verificationMethod === 'dns'
-                                  ? 'TXT record name'
-                                  : 'Verification URL'
-                              )}
-                            </p>
-                            <p className='mt-1 font-mono break-all'>{record}</p>
-                          </div>
-                          <div>
-                            <p className='text-muted-foreground text-xs'>
-                              {t(
-                                verificationMethod === 'dns'
-                                  ? 'TXT record value'
-                                  : 'File content'
-                              )}
-                            </p>
-                            <p className='mt-1 font-mono break-all'>{value}</p>
-                          </div>
-                        </div>
-                        {props.provider.website_verification_last_error && (
-                          <p className='text-destructive text-sm'>
-                            {props.provider.website_verification_last_error}
-                          </p>
-                        )}
-                        <Button
-                          type='button'
-                          onClick={() => verifyMutation.mutate()}
-                          disabled={verifyMutation.isPending}
-                        >
-                          {verifyMutation.isPending ? (
-                            <Loader2 className='animate-spin' />
-                          ) : (
-                            <RefreshCw />
-                          )}
-                          {t('Verify now')}
-                        </Button>
-                      </>
-                    )}
+                      </p>
+                    </div>
+                    <div className='grid gap-2'>
+                      <Label htmlFor='provider-website-evidence'>
+                        {t('Verification screenshot')}
+                      </Label>
+                      <Input
+                        id='provider-website-evidence'
+                        type='file'
+                        accept='image/png,image/jpeg,image/webp'
+                        onChange={(event) =>
+                          setFile(event.target.files?.item(0) ?? null)
+                        }
+                      />
+                      <p className='text-muted-foreground text-xs'>
+                        {t('PNG, JPEG, or WebP, up to 5 MB.')}
+                      </p>
+                    </div>
+                    {props.provider.website_evidence_asset_id > 0 &&
+                      props.provider.website_verification_method ===
+                        'manual' && (
+                        <ProviderWebsiteEvidenceImage
+                          assetId={props.provider.website_evidence_asset_id}
+                          alt={t('Submitted verification screenshot')}
+                          className='max-h-48 max-w-full rounded-md border object-contain'
+                        />
+                      )}
+                    <Button
+                      type='button'
+                      onClick={() => submitMutation.mutate()}
+                      disabled={submitMutation.isPending || !file}
+                    >
+                      {submitMutation.isPending ? (
+                        <Loader2 className='animate-spin' />
+                      ) : (
+                        <ImageUp />
+                      )}
+                      {t('Submit screenshot')}
+                    </Button>
                   </TabsContent>
-                )
-              })}
+
+                  {(['dns', 'http'] as const).map((verificationMethod) => {
+                    const isCurrent =
+                      props.provider.website_verification_method ===
+                        verificationMethod &&
+                      props.provider.website_verification_status === 'pending'
+                    const record =
+                      verificationMethod === 'dns'
+                        ? props.provider.website_verification_dns_record
+                        : props.provider.website_verification_http_url
+                    const value =
+                      verificationMethod === 'dns'
+                        ? props.provider.website_verification_dns_value
+                        : props.provider.website_verification_http_body
+                    return (
+                      <TabsContent
+                        key={verificationMethod}
+                        value={verificationMethod}
+                        className='space-y-3'
+                      >
+                        {!isCurrent ? (
+                          <Button
+                            type='button'
+                            variant='outline'
+                            onClick={() => submitMutation.mutate()}
+                            disabled={submitMutation.isPending}
+                          >
+                            {submitMutation.isPending && (
+                              <Loader2 className='animate-spin' />
+                            )}
+                            {t('Generate verification instructions')}
+                          </Button>
+                        ) : (
+                          <>
+                            <div className='grid gap-3 rounded-md border p-4 text-sm'>
+                              <div>
+                                <p className='text-muted-foreground text-xs'>
+                                  {t(
+                                    verificationMethod === 'dns'
+                                      ? 'TXT record name'
+                                      : 'Verification URL'
+                                  )}
+                                </p>
+                                <p className='mt-1 font-mono break-all'>
+                                  {record}
+                                </p>
+                              </div>
+                              <div>
+                                <p className='text-muted-foreground text-xs'>
+                                  {t(
+                                    verificationMethod === 'dns'
+                                      ? 'TXT record value'
+                                      : 'File content'
+                                  )}
+                                </p>
+                                <p className='mt-1 font-mono break-all'>
+                                  {value}
+                                </p>
+                              </div>
+                            </div>
+                            {props.provider.website_verification_last_error && (
+                              <p className='text-destructive text-sm'>
+                                {props.provider.website_verification_last_error}
+                              </p>
+                            )}
+                            <Button
+                              type='button'
+                              onClick={() => verifyMutation.mutate()}
+                              disabled={verifyMutation.isPending}
+                            >
+                              {verifyMutation.isPending ? (
+                                <Loader2 className='animate-spin' />
+                              ) : (
+                                <RefreshCw />
+                              )}
+                              {t('Verify now')}
+                            </Button>
+                          </>
+                        )}
+                      </TabsContent>
+                    )
+                  })}
                 </Tabs>
               )}
 

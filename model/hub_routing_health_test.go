@@ -89,6 +89,7 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	assert.Equal(t, string(constant.EndpointTypeOpenAIResponse), health.ResolvedEndpointType)
 	assert.Contains(t, health.EligibleServiceTiers, hub_routing_setting.ServiceTierSpecial)
 	assert.Equal(t, []string{hub_routing_setting.ServiceTierSpecial}, health.RoutableServiceTiers)
+	assert.True(t, health.RoutingRoutable)
 	assert.True(t, health.ServiceTierRoutable)
 	assert.Equal(t, 4, health.SampleCount7d)
 	require.NotNil(t, health.SuccessRate7d)
@@ -120,6 +121,7 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	require.NoError(t, err)
 	disabledHealth := findHubRoutingHealthRow(t, disabledRows, channel.Id, "gpt-health")
 	assert.False(t, disabledHealth.ServiceTierRoutable)
+	assert.False(t, disabledHealth.RoutingRoutable)
 	assert.Empty(t, disabledHealth.RoutableServiceTiers)
 	assert.Contains(t, disabledHealth.SkipReasonCodes, HubRoutingHealthReasonChannelManualDisabled)
 	assert.NotContains(t, disabledHealth.SkipReasonCodes, HubRoutingHealthReasonNoRoutableAbility)
@@ -132,6 +134,30 @@ func TestListHubRoutingHealthIncludesUnavailableRowsAndReusesRankingRules(t *tes
 	assert.Equal(t, 1, filteredTotal)
 	require.Len(t, filtered, 1)
 	assert.Equal(t, platformChannel.Id, filtered[0].ChannelID)
+}
+
+func TestListHubRoutingHealthFiltersByTenant(t *testing.T) {
+	truncateTables(t)
+	tenantAID, tenantBID := 101, 102
+	providerA := &HubProvider{OwnerUserId: 601, TenantId: &tenantAID, Name: "Tenant A provider", Slug: "tenant-a-provider"}
+	providerB := &HubProvider{OwnerUserId: 602, TenantId: &tenantBID, Name: "Tenant B provider", Slug: "tenant-b-provider"}
+	require.NoError(t, DB.Create(providerA).Error)
+	require.NoError(t, DB.Create(providerB).Error)
+
+	baseURL := "https://tenant.example"
+	channelA := &Channel{Type: constant.ChannelTypeOpenAI, Key: "tenant-a-secret", Name: "Tenant A channel", BaseURL: &baseURL, Models: "gpt-tenant", Group: "default", Status: common.ChannelStatusEnabled}
+	channelB := &Channel{Type: constant.ChannelTypeOpenAI, Key: "tenant-b-secret", Name: "Tenant B channel", BaseURL: &baseURL, Models: "gpt-tenant", Group: "default", Status: common.ChannelStatusEnabled}
+	require.NoError(t, DB.Create(channelA).Error)
+	require.NoError(t, DB.Create(channelB).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroup{ProviderId: providerA.Id, NewAPIChannelId: channelA.Id, PriceMultiplier: 1, PublishedModels: "gpt-tenant", Status: HubSupplyGroupStatusAvailable}).Error)
+	require.NoError(t, DB.Create(&HubSupplyGroup{ProviderId: providerB.Id, NewAPIChannelId: channelB.Id, PriceMultiplier: 1, PublishedModels: "gpt-tenant", Status: HubSupplyGroupStatusAvailable}).Error)
+
+	tenantRows, total, err := ListHubRoutingHealth(HubRoutingHealthListOptions{TenantID: &tenantAID, Limit: 20}, common.GetTimestamp())
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, tenantRows, 1)
+	assert.Equal(t, channelA.Id, tenantRows[0].ChannelID)
+	assert.Equal(t, providerA.Id, tenantRows[0].ProviderID)
 }
 
 func TestListHubRoutingHealthShowsAutoProbeDisabledModelAsRoutable(t *testing.T) {
@@ -164,6 +190,98 @@ func TestListHubRoutingHealthShowsAutoProbeDisabledModelAsRoutable(t *testing.T)
 	assert.Equal(t, HubSupplyProbeStatusSkipped, row.ProbeStatus)
 	assert.True(t, row.ServiceTierRoutable)
 	assert.NotContains(t, row.SkipReasonCodes, HubRoutingHealthReasonProbeUnmonitored)
+}
+
+func TestSortHubRoutingHealthTreatsInternalPolicyAbilityAsRoutable(t *testing.T) {
+	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
+	now := common.GetTimestamp()
+	priority := int64(0)
+	channels := []*Channel{
+		{Type: constant.ChannelTypeOpenAI, Key: "unroutable-secret", Name: "A unroutable", Models: "gpt-policy-rank", Group: "default", Status: common.ChannelStatusEnabled},
+		{Type: constant.ChannelTypeOpenAI, Key: "policy-secret", Name: "Z policy routable", Models: "gpt-policy-rank", Group: "default", Status: common.ChannelStatusEnabled},
+	}
+	for _, channel := range channels {
+		require.NoError(t, DB.Create(channel).Error)
+	}
+	require.NoError(t, DB.Create(&Ability{
+		Group: HubTokenRoutingAbilityGroup, Model: "gpt-policy-rank", ChannelId: channels[1].Id,
+		Enabled: true, Priority: &priority, Weight: 100,
+	}).Error)
+
+	rows, _, err := ListHubRoutingHealth(HubRoutingHealthListOptions{Limit: 10}, now)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "Z policy routable", rows[0].ChannelName)
+	assert.True(t, rows[0].RoutingRoutable)
+	assert.False(t, rows[0].ServiceTierRoutable)
+	assert.False(t, rows[1].RoutingRoutable)
+}
+
+func TestSortHubRoutingHealthKeepsStableChannelAheadOfFasterDegradedChannel(t *testing.T) {
+	fastP95, stableP95 := int64(300), int64(1_000)
+	rows := []HubRoutingHealthRow{
+		{
+			ChannelID: 1, ChannelName: "Fast degraded", RoutingRoutable: true,
+			RealHealthState: HubRoutingRealHealthDegraded, RealSampleCount: 20, RealSuccessRateBps: 9_000,
+			RealFirstTokenSampleCount: 20, RealFirstTokenP95Ms: &fastP95,
+		},
+		{
+			ChannelID: 2, ChannelName: "Stable", RoutingRoutable: true,
+			RealHealthState: HubRoutingRealHealthHealthy, RealSampleCount: 20, RealSuccessRateBps: 9_900,
+			RealFirstTokenSampleCount: 20, RealFirstTokenP95Ms: &stableP95,
+		},
+	}
+
+	sortHubRoutingHealthRows(rows)
+	assert.Equal(t, "Stable", rows[0].ChannelName)
+}
+
+func TestListHubRoutingHealthRanksCompleteResultBeforePagination(t *testing.T) {
+	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
+	now := common.GetTimestamp()
+	priority := int64(0)
+	channels := []*Channel{
+		{Type: constant.ChannelTypeOpenAI, Key: "slow-secret", Name: "A slow channel", Models: "gpt-global-rank", Group: "default", Status: common.ChannelStatusEnabled},
+		{Type: constant.ChannelTypeOpenAI, Key: "fast-secret", Name: "Z fast channel", Models: "gpt-global-rank", Group: "default", Status: common.ChannelStatusEnabled},
+	}
+	for _, channel := range channels {
+		require.NoError(t, DB.Create(channel).Error)
+		require.NoError(t, DB.Create(&Ability{
+			Group: hub_routing_setting.ServiceTierSpecial, Model: "gpt-global-rank", ChannelId: channel.Id,
+			Enabled: true, Priority: &priority, Weight: 100,
+		}).Error)
+	}
+	fastP50, fastP95 := int64(500), int64(1_000)
+	slowP50, slowP95 := int64(1_000), int64(3_000)
+	PublishHubRoutingRuntimeSignals(now, []HubRoutingRuntimeSignal{
+		{
+			ChannelID: channels[0].Id, ModelName: "gpt-global-rank", ProbeKind: HubSupplyProbeKindText,
+			RealHealthState: HubRoutingRealHealthHealthy, RealSampleCount: 20, RealSuccessRateBps: 9_900,
+			RealAvailabilityFactorBps: HubRoutingFactorNeutralBps, RealFirstTokenSampleCount: 20,
+			RealFirstTokenP50Ms: &slowP50, RealFirstTokenP95Ms: &slowP95,
+		},
+		{
+			ChannelID: channels[1].Id, ModelName: "gpt-global-rank", ProbeKind: HubSupplyProbeKindText,
+			RealHealthState: HubRoutingRealHealthHealthy, RealSampleCount: 20, RealSuccessRateBps: 9_900,
+			RealAvailabilityFactorBps: HubRoutingFactorNeutralBps, RealFirstTokenSampleCount: 20,
+			RealFirstTokenP50Ms: &fastP50, RealFirstTokenP95Ms: &fastP95,
+		},
+	})
+
+	firstPage, total, err := ListHubRoutingHealth(HubRoutingHealthListOptions{Limit: 1}, now)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	require.Len(t, firstPage, 1)
+	assert.Equal(t, "Z fast channel", firstPage[0].ChannelName)
+	assert.Equal(t, 1, firstPage[0].GlobalRank)
+
+	secondPage, _, err := ListHubRoutingHealth(HubRoutingHealthListOptions{Offset: 1, Limit: 1}, now)
+	require.NoError(t, err)
+	require.Len(t, secondPage, 1)
+	assert.Equal(t, "A slow channel", secondPage[0].ChannelName)
+	assert.Equal(t, 2, secondPage[0].GlobalRank)
 }
 
 func findHubRoutingHealthRow(t *testing.T, rows []HubRoutingHealthRow, channelID int, modelName string) HubRoutingHealthRow {

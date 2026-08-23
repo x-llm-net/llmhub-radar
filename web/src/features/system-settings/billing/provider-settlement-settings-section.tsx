@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -36,19 +37,26 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group'
+import { Switch } from '@/components/ui/switch'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 
+import { updateHubProviderSettlement } from '../api'
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
-import { SettingsForm } from '../components/settings-form-layout'
+import {
+  SettingsForm,
+  SettingsSwitchContent,
+  SettingsSwitchItem,
+} from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
-import { useUpdateOption } from '../hooks/use-update-option'
 
 const schema = z.object({
   platformFeePercent: z.coerce.number().min(0).max(100),
   minimumWithdrawalAmount: z.coerce.number().min(0),
+  fallbackReferralEnabled: z.boolean(),
+  fallbackReferralPercent: z.coerce.number().min(0).max(100),
 })
 
 type Values = z.infer<typeof schema>
@@ -57,6 +65,8 @@ type ProviderSettlementSettingsSectionProps = {
   defaultValues: {
     platformFeeBasisPoints: number
     minimumWithdrawalQuota: number
+    fallbackReferralEnabled: boolean
+    fallbackReferralBasisPoints: number
   }
 }
 
@@ -64,7 +74,17 @@ export function ProviderSettlementSettingsSection({
   defaultValues,
 }: ProviderSettlementSettingsSectionProps) {
   const { t } = useTranslation()
-  const updateOption = useUpdateOption()
+  const queryClient = useQueryClient()
+  const updateSettlement = useMutation({
+    mutationFn: updateHubProviderSettlement,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      toast.success(t('Setting updated successfully'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to update setting'))
+    },
+  })
   const { meta } = getCurrencyDisplay()
   const form = useForm<Values>({
     resolver: zodResolver(schema) as Resolver<Values>,
@@ -73,6 +93,8 @@ export function ProviderSettlementSettingsSection({
       minimumWithdrawalAmount: quotaUnitsToDollars(
         defaultValues.minimumWithdrawalQuota
       ),
+      fallbackReferralEnabled: defaultValues.fallbackReferralEnabled,
+      fallbackReferralPercent: defaultValues.fallbackReferralBasisPoints / 100,
     },
   })
   const { isDirty, isSubmitting } = form.formState
@@ -82,28 +104,21 @@ export function ProviderSettlementSettingsSection({
     const minimumWithdrawalQuota = parseQuotaFromDollars(
       values.minimumWithdrawalAmount
     )
-    const updates: Array<{ key: string; value: number }> = []
-
-    if (platformFeeBasisPoints !== defaultValues.platformFeeBasisPoints) {
-      updates.push({
-        key: 'hub_provider_settlement_setting.platform_fee_basis_points',
-        value: platformFeeBasisPoints,
-      })
-    }
-    if (minimumWithdrawalQuota !== defaultValues.minimumWithdrawalQuota) {
-      updates.push({
-        key: 'hub_provider_settlement_setting.minimum_withdrawal_quota',
-        value: minimumWithdrawalQuota,
-      })
-    }
-    if (updates.length === 0) {
-      toast.info(t('No changes to save'))
-      return
-    }
-    for (const update of updates) {
-      await updateOption.mutateAsync(update)
-    }
-    form.reset(values)
+    const fallbackReferralBasisPoints = Math.round(
+      values.fallbackReferralPercent * 100
+    )
+    await updateSettlement.mutateAsync({
+      platform_fee_basis_points: platformFeeBasisPoints,
+      minimum_withdrawal_quota: minimumWithdrawalQuota,
+      fallback_referral_enabled: values.fallbackReferralEnabled,
+      fallback_referral_basis_points: fallbackReferralBasisPoints,
+    })
+    form.reset({
+      ...values,
+      platformFeePercent: platformFeeBasisPoints / 100,
+      minimumWithdrawalAmount: quotaUnitsToDollars(minimumWithdrawalQuota),
+      fallbackReferralPercent: fallbackReferralBasisPoints / 100,
+    })
   }
 
   return (
@@ -113,7 +128,7 @@ export function ProviderSettlementSettingsSection({
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending || isSubmitting}
+            isSaving={updateSettlement.isPending || isSubmitting}
             isSaveDisabled={!isDirty}
           />
           <FormDirtyIndicator isDirty={isDirty} />
@@ -138,6 +153,56 @@ export function ProviderSettlementSettingsSection({
                 <FormDescription>
                   {t(
                     'Used for providers without an individual fee. Changes only affect earnings created afterwards.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='fallbackReferralEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Fallback referral commission')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'When a provider brings the user but another provider serves a fallback request, transfer a commission from the serving provider income. User charges and platform fees stay unchanged.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='fallbackReferralPercent'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Fallback referral rate')}</FormLabel>
+                <FormControl>
+                  <InputGroup>
+                    <InputGroupInput
+                      type='number'
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      disabled={!form.watch('fallbackReferralEnabled')}
+                      {...field}
+                    />
+                    <InputGroupAddon align='inline-end'>%</InputGroupAddon>
+                  </InputGroup>
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Calculated from the final user charge and deducted from the provider that actually serves the request. The default is 1%.'
                   )}
                 </FormDescription>
                 <FormMessage />

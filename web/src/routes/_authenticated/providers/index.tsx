@@ -20,6 +20,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { Providers } from '@/features/providers'
+import { getHubAdminAccess } from '@/features/providers/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -31,9 +32,18 @@ const providersSearchSchema = z.object({
 })
 
 export const Route = createFileRoute('/_authenticated/providers/')({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const { auth } = useAuthStore.getState()
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    if (!auth.user) {
+      throw redirect({ to: '/403' })
+    }
+    if (auth.user.role >= ROLE.ADMIN) return
+    try {
+      const response = await getHubAdminAccess()
+      if (!response.success || !response.data?.can_manage_providers) {
+        throw new Error('provider management is unavailable')
+      }
+    } catch {
       throw redirect({ to: '/403' })
     }
   },

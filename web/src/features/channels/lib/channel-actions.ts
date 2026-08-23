@@ -28,6 +28,8 @@ import {
   testChannel,
   updateChannel,
   updateChannelStatus,
+  updateHubChannelPublication,
+  batchUpdateHubChannelPublication,
   batchUpdateChannelStatus,
   batchDeleteChannels,
   batchSetChannelTag,
@@ -174,6 +176,52 @@ export async function handleToggleChannelStatus(
     await handleDisableChannel(id, queryClient, onSuccess)
   } else {
     await handleEnableChannel(id, queryClient, onSuccess)
+  }
+}
+
+/** Toggle tenant-local publication without touching New-API Channel.Status. */
+export async function handleToggleHubChannelPublication(
+  id: number,
+  currentPublished: boolean,
+  queryClient?: QueryClient,
+  onSuccess?: () => void
+): Promise<void> {
+  try {
+    const response = await updateHubChannelPublication(id, !currentPublished)
+    if (!response.success) {
+      toast.error(response.message || i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
+      return
+    }
+    toast.success(
+      i18next.t(!currentPublished ? 'Channel published' : 'Channel unpublished')
+    )
+    queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+    onSuccess?.()
+  } catch {
+    toast.error(i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
+  }
+}
+
+/** Update tenant-local publication for a selected set of provider channels. */
+export async function handleBatchHubChannelPublication(
+  ids: number[],
+  published: boolean,
+  queryClient?: QueryClient,
+  onSuccess?: () => void
+): Promise<void> {
+  try {
+    const response = await batchUpdateHubChannelPublication(ids, published)
+    if (!response.success) {
+      toast.error(response.message || i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
+      return
+    }
+    toast.success(
+      i18next.t(published ? 'Channels published' : 'Channels unpublished')
+    )
+    queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+    onSuccess?.()
+  } catch {
+    toast.error(i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
   }
 }
 

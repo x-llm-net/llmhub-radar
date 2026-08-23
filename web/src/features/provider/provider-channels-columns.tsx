@@ -131,6 +131,25 @@ export function useProviderChannelsColumns(
       meta: { mobileBadge: true },
     },
     {
+      id: 'tenant_published',
+      accessorFn: (item) => item.supply.tenant_published,
+      header: t('Tenant publication'),
+      cell: ({ row }) => (
+        <StatusBadge
+          label={
+            row.original.supply.tenant_published
+              ? t('Published')
+              : t('Unpublished')
+          }
+          variant={row.original.supply.tenant_published ? 'success' : 'neutral'}
+          copyable={false}
+        />
+      ),
+      enableSorting: false,
+      size: 145,
+      meta: { mobileBadge: true },
+    },
+    {
       id: 'models',
       header: t('Models'),
       cell: ({ row }) => {

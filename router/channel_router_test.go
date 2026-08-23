@@ -18,6 +18,26 @@ func TestChannelStatusRoutesUseOperatePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodPut, "/", authz.ChannelWrite, controller.UpdateChannel)
 }
 
+func TestTenantAdminChannelRoutesAreLimitedToReadAndStatus(t *testing.T) {
+	allowedReadRoutes := map[string]struct{}{
+		"/":                  {},
+		"/search":            {},
+		"/models":            {},
+		"/models_enabled":    {},
+		"/ops":               {},
+		"/ownership-options": {},
+		"/:id":               {},
+	}
+	for _, route := range channelPermissionRoutes {
+		allowed := route.method == http.MethodGet &&
+			func() bool {
+				_, ok := allowedReadRoutes[route.path]
+				return ok
+			}()
+		assert.Equalf(t, allowed, route.tenantAdminAllowed, "unexpected tenant Channel access for %s %s", route.method, route.path)
+	}
+}
+
 func TestChannelDeleteRoutesUseSensitiveWritePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodDelete, "/:id", authz.ChannelSensitiveWrite, controller.DeleteChannel)
 	assertChannelRoutePermission(t, http.MethodPost, "/batch", authz.ChannelSensitiveWrite, controller.DeleteChannelBatch)
@@ -35,6 +55,14 @@ func TestChannelStatusRoutesRegisterWithoutConflict(t *testing.T) {
 	require.NotPanics(t, func() {
 		registerChannelRoutes(api)
 	})
+}
+
+func TestGlobalChannelCreateRouteIsClosed(t *testing.T) {
+	for _, route := range channelPermissionRoutes {
+		if route.method == http.MethodPost && route.path == "/" {
+			t.Fatal("global channel creation route must remain closed")
+		}
+	}
 }
 
 func assertChannelRoutePermission(t *testing.T, method string, path string, permission authz.Permission, handler any) {

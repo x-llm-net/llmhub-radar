@@ -20,6 +20,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { Channels } from '@/features/channels'
+import { getHubAdminAccess } from '@/features/providers/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -35,13 +36,22 @@ const channelsSearchSchema = z.object({
 })
 
 export const Route = createFileRoute('/_authenticated/channels/')({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const { auth } = useAuthStore.getState()
 
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    if (!auth.user) {
       throw redirect({
         to: '/403',
       })
+    }
+    if (auth.user.role >= ROLE.ADMIN) return
+    try {
+      const response = await getHubAdminAccess()
+      if (!response.success || !response.data?.can_view_channels) {
+        throw new Error('channel management is unavailable')
+      }
+    } catch {
+      throw redirect({ to: '/403' })
     }
   },
   validateSearch: channelsSearchSchema,

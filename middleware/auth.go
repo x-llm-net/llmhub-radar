@@ -101,6 +101,47 @@ func AdminAuth() func(c *gin.Context) {
 	}
 }
 
+// TenantAdminAuth allows platform administrators to keep their existing
+// access and allows a regular user only when the trusted Host resolved to an
+// active tenant where that user is an active owner/admin member.
+func TenantAdminAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		user, identity, useAccessToken, err := authenticateDashboardRequest(c)
+		if err != nil {
+			writeDashboardAuthError(c, err)
+			return
+		}
+		if user.Status != common.UserStatusEnabled {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "code": "AUTH_USER_DISABLED", "message": common.TranslateMessage(c, i18n.MsgAuthUserBanned)})
+			return
+		}
+		if !validUserInfo(user.Username, user.Role) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "code": "AUTH_USER_INVALID", "message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid)})
+			return
+		}
+
+		tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+		if user.Role < common.RoleAdminUser {
+			if tenantID <= 0 {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege)})
+				return
+			}
+			if !isActiveTenantAdminMember(tenantID, user.Id) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege)})
+				return
+			}
+		}
+
+		setDashboardAuthContext(c, user, identity, useAccessToken)
+		var auditWriter *auditResponseWriter
+		if user.Role >= common.RoleAdminUser || tenantID > 0 {
+			auditWriter = beginAdminAudit(c)
+		}
+		c.Next()
+		finishAdminAudit(c, auditWriter)
+	}
+}
+
 func RootAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleRootUser)
@@ -237,6 +278,44 @@ func RequirePermission(permission authz.Permission) func(c *gin.Context) {
 		})
 		c.Abort()
 	}
+}
+
+// RequireTenantChannelPermission extends the platform permission check for
+// the deliberately small set of Channel capabilities exposed to tenant
+// administrators. TenantAdminAuth must run before this middleware so the
+// active tenant membership has already been verified.
+//
+// tenantAdminAllowed is route metadata, not a user-controlled value. A
+// regular tenant member can only use explicitly allowlisted read routes;
+// publication is managed by the separate tenant-scoped Hub routes.
+func RequireTenantChannelPermission(permission authz.Permission, tenantAdminAllowed bool) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		role := c.GetInt("role")
+		userID := c.GetInt("id")
+		if authz.Can(userID, role, permission) {
+			c.Next()
+			return
+		}
+
+		tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+		if tenantID > 0 && tenantAdminAllowed && permission == authz.ChannelRead {
+			if isActiveTenantAdminMember(tenantID, userID) {
+				c.Next()
+				return
+			}
+		}
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
+		})
+		c.Abort()
+	}
+}
+
+func isActiveTenantAdminMember(tenantID, userID int) bool {
+	member, err := model.GetActiveTenantMember(tenantID, userID)
+	return err == nil && model.IsTenantAdminRole(member.Role)
 }
 
 func WssAuth(c *gin.Context) {

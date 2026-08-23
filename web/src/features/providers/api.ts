@@ -22,6 +22,7 @@ import type {
   HubProviderAdminListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
+  HubAdminAccessResponse,
   HubProviderEarning,
   HubProviderSettlementSummary,
   HubProviderWithdrawalAdminItem,
@@ -30,6 +31,16 @@ import type {
 } from './types'
 
 export const adminProvidersQueryKey = ['hub-admin', 'providers'] as const
+
+export const hubAdminAccessQueryKey = ['hub-admin', 'access'] as const
+
+export async function getHubAdminAccess(): Promise<HubAdminAccessResponse> {
+  const response = await api.get('/api/hub/admin/access', {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  return response.data
+}
 
 export async function getAdminProviders(
   params: HubProviderAdminListParams

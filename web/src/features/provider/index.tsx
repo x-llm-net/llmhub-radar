@@ -58,7 +58,6 @@ import {
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { useProviderLogoURL } from '@/lib/provider-logo'
 import {
   ChannelMutateDrawer,
   type ChannelEditorTransport,
@@ -68,6 +67,7 @@ import {
   getProviderRootDomain,
   providerSlugFromName,
 } from '@/lib/provider-domain'
+import { useProviderLogoURL } from '@/lib/provider-logo'
 
 import {
   createProvider,
@@ -461,7 +461,9 @@ export function ProviderOnboarding() {
 
                   <div className='grid gap-3'>
                     <div className='grid gap-1'>
-                      <Label htmlFor='provider-logo'>{t('Provider logo')}</Label>
+                      <Label htmlFor='provider-logo'>
+                        {t('Provider logo')}
+                      </Label>
                       <p className='text-muted-foreground text-xs'>
                         {t(
                           'Upload a logo for your public provider page. This is the default option for providers without their own website.'

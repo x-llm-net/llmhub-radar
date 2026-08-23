@@ -39,6 +39,7 @@ func AdminListHubRoutingHealth(c *gin.Context) {
 		Offset:      pageInfo.GetStartIdx(),
 		Limit:       pageInfo.GetPageSize(),
 	}
+	options.TenantID = hubProviderAdminTenantID(c)
 	if raw := strings.TrimSpace(c.Query("provider_id")); raw != "" {
 		providerID := 0
 		if raw != "platform" {

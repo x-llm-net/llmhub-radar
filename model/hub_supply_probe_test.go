@@ -762,6 +762,17 @@ func TestHubSupplyProbeNextProbeAtUsesFailureBackoff(t *testing.T) {
 	assert.Equal(t, now+3*60, hubSupplyProbeNextProbeAt(group, textTarget, now, 30))
 }
 
+func TestHubSupplyProbeRecoveryDelayReusesFailureBackoff(t *testing.T) {
+	assert.Equal(t, 5*60, int(HubSupplyProbeRecoveryDelaySeconds(1)))
+	assert.Equal(t, 5*60, int(HubSupplyProbeRecoveryDelaySeconds(9)))
+	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySeconds(10)))
+	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySeconds(30)))
+	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySeconds(HubSupplyProbeFailureSuspendLimit-1)))
+	assert.Equal(t, 5*60, int(HubSupplyProbeRecoveryDelaySecondsForRequestPath("/v1/images/generations", 1)))
+	assert.Equal(t, 15*60, int(HubSupplyProbeRecoveryDelaySecondsForRequestPath("/v1/images/generations", 10)))
+	assert.Equal(t, 30*60, int(HubSupplyProbeRecoveryDelaySecondsForRequestPath("/v1/images/generations", 30)))
+}
+
 func TestRecordHubSupplyProbeResultSuspendsAtFailureLimitAndManualProbeResets(t *testing.T) {
 	truncateTables(t)
 	baseURL := "https://upstream.example"

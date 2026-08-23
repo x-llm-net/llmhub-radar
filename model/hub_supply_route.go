@@ -101,6 +101,9 @@ func hubSupplyChannelSupportsRequest(
 	requestPath string,
 ) bool {
 	modelKinds, isSupplyChannel := availability[channelID]
+	if isSupplyChannel && !IsHubSupplyChannelTenantPublished(channelID) {
+		return false
+	}
 	decision := GetHubRoutingDecision(channelID, modelName, requestPath)
 	if decision.HardUnavailable {
 		return false

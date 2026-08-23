@@ -147,11 +147,13 @@ export function useSidebarData(): SidebarData {
             title: t('Providers'),
             url: '/providers',
             icon: Building2,
+            tenantAdminAllowed: true,
           },
           {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+            tenantAdminAllowed: true,
           },
           {
             title: t('Models'),
@@ -184,6 +186,12 @@ export function useSidebarData(): SidebarData {
             url: '/system-settings/site',
             activeUrls: ['/system-settings'],
             icon: Settings,
+          },
+          {
+            title: t('Tenant Administration'),
+            url: '/tenant-admin',
+            icon: Building2,
+            requiredRole: ROLE.SUPER_ADMIN,
           },
         ],
       },

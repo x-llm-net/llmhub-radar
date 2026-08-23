@@ -282,6 +282,17 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
         sourceLabel = t('Manual adjustment')
       } else if (isBalanceTransfer) {
         sourceLabel = t('Transfer to balance')
+      } else if (item.earning_role === 'referral') {
+        sourceLabel = t('Fallback referral commission')
+      }
+      let chargedLabel = '-'
+      if (!isBalanceTransfer) {
+        chargedLabel = formatQuota(item.gross_quota)
+        if (item.earning_role === 'referral') {
+          chargedLabel = t('Commission basis: {{amount}}', {
+            amount: formatQuota(item.gross_quota),
+          })
+        }
       }
       return (
         <TableRow key={item.id}>
@@ -292,9 +303,7 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
           <TableCell>
             {item.consumer_user_id > 0 ? `#${item.consumer_user_id}` : '-'}
           </TableCell>
-          <TableCell>
-            {isBalanceTransfer ? '-' : formatQuota(item.gross_quota)}
-          </TableCell>
+          <TableCell>{chargedLabel}</TableCell>
           <TableCell
             className={
               item.provider_income_quota < 0
@@ -302,7 +311,15 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
                 : 'font-medium'
             }
           >
-            {formatQuota(item.provider_income_quota)}
+            <p>{formatQuota(item.provider_income_quota)}</p>
+            {item.earning_role !== 'referral' &&
+              item.referral_income_quota > 0 && (
+                <p className='text-muted-foreground text-xs'>
+                  {t('Referral commission deducted: {{amount}}', {
+                    amount: formatQuota(item.referral_income_quota),
+                  })}
+                </p>
+              )}
           </TableCell>
           <TableCell>
             <StatusBadge
@@ -379,6 +396,12 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
       label: t('Total provider earnings'),
       value: summaryData?.settled_income_quota ?? 0,
       icon: CircleDollarSign,
+      detail:
+        (summaryData?.referral_income_quota ?? 0) > 0
+          ? t('Includes referral commissions: {{amount}}', {
+              amount: formatQuota(summaryData?.referral_income_quota ?? 0),
+            })
+          : undefined,
     },
     {
       label: t('Available earnings'),
@@ -388,9 +411,7 @@ export function ProviderEarnings(props: ProviderEarningsProps) {
       detail:
         (summaryData?.reserved_withdrawal_quota ?? 0) > 0
           ? t('Withdrawal in progress: {{amount}}', {
-              amount: formatQuota(
-                summaryData?.reserved_withdrawal_quota ?? 0
-              ),
+              amount: formatQuota(summaryData?.reserved_withdrawal_quota ?? 0),
             })
           : undefined,
     },

@@ -73,6 +73,9 @@ func InitChannelCache() {
 		if !ok || channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
+		if pricing, isSupplyChannel := pricingData.pricingByChannel[channel.Id]; isSupplyChannel && !pricing.TenantPublished {
+			continue // skip channels unpublished by their owning tenant
+		}
 		if _, ok := newGroup2model2channels[ability.Group]; !ok {
 			newGroup2model2channels[ability.Group] = make(map[string][]int)
 		}

@@ -142,6 +142,29 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	assert.Equal(t, response.Data.Id, stored.Id)
 }
 
+func TestCreateHubProviderBindsTrustedTenant(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
+		"name":          "Tenant Provider",
+		"slug":          "tenant-provider",
+		"website":       "",
+		"description":   "Provider submitted from a trusted tenant host",
+		"contact_type":  "qq",
+		"contact_value": "123456789",
+	}, 42)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	var stored model.HubProvider
+	require.NoError(t, db.First(&stored, response.Data.Id).Error)
+	require.NotNil(t, stored.TenantId)
+	assert.Equal(t, 7, *stored.TenantId)
+}
+
 func TestCreateHubProviderAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubProviderLogoAsset{}))

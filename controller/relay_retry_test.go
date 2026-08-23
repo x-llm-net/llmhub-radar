@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	taskdto "github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -15,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
+func TestShouldRetryScopesRequestLoopRecoveryToServiceTier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	loopResponse := &http.Response{
@@ -31,6 +35,20 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, loopErr.StatusCode)
 	assert.False(t, shouldRetry(ctx, loopErr, 3))
 
+	serviceTierCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(serviceTierCtx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	assert.True(t, shouldRetry(serviceTierCtx, loopErr, 3))
+	assert.False(t, shouldRetry(serviceTierCtx, loopErr, 0))
+
+	fixedChannelCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(fixedChannelCtx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	fixedChannelCtx.Set("specific_channel_id", 7)
+	assert.False(t, shouldRetry(fixedChannelCtx, loopErr, 3))
+
 	ordinaryResponse := &http.Response{
 		StatusCode: http.StatusLoopDetected,
 		Body: io.NopCloser(strings.NewReader(
@@ -41,6 +59,38 @@ func TestShouldRetryTreatsRequestLoopDetectedAsTerminal(t *testing.T) {
 	require.NotNil(t, ordinaryErr)
 	assert.Equal(t, types.ErrorCode("third_party_508"), ordinaryErr.GetErrorCode())
 	assert.True(t, shouldRetry(ctx, ordinaryErr, 3))
+}
+
+func TestShouldRetryTaskRelayPreservesServiceTierLoopRecovery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	loopTaskErr := &taskdto.TaskError{
+		Code:       string(types.ErrorCodeRequestLoopDetected),
+		Message:    "recursive route detected",
+		StatusCode: http.StatusBadRequest,
+		Error:      io.ErrUnexpectedEOF,
+	}
+
+	ordinaryCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	assert.False(t, shouldRetryTaskRelay(ordinaryCtx, loopTaskErr, 1, false))
+
+	serviceTierCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	serviceTierCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	common.SetContextKey(serviceTierCtx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModePublic,
+	})
+	assert.True(t, shouldRetryTaskRelay(serviceTierCtx, loopTaskErr, 1, false))
+	assert.False(t, shouldRetryTaskRelay(serviceTierCtx, loopTaskErr, 0, false))
+	assert.False(t, shouldRetryTaskRelay(serviceTierCtx, loopTaskErr, 1, true))
+
+	relayErr := appendHubTaskAttemptFailure(serviceTierCtx, nil, loopTaskErr)
+	require.NotNil(t, relayErr)
+	assert.Equal(t, types.ErrorCodeRequestLoopDetected, relayErr.GetErrorCode())
+	assert.False(t, service.ShouldDisableChannel(relayErr))
+
+	attempts := service.GetHubRelayAttempts(serviceTierCtx)
+	require.Len(t, attempts, 1)
+	assert.Equal(t, service.HubFailureClassLoop, attempts[0].FailureClass)
+	assert.False(t, attempts[0].HealthEligible)
 }
 
 func TestShouldRetryTreatsEndpointUnsupportedAsChannelScoped(t *testing.T) {

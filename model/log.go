@@ -472,6 +472,21 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) error {
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	return getAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, upstreamRequestId, nil)
+}
+
+// GetAllLogsInChannels applies a main-database-resolved channel scope to the
+// log database. A nil channel list is reserved for the platform-wide query;
+// an empty, non-nil list intentionally returns no logs.
+func GetAllLogsInChannels(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, channelIDs []int) (logs []*Log, total int64, err error) {
+	return getAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, upstreamRequestId, channelIDs)
+}
+
+func getAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, channelIDs []int) (logs []*Log, total int64, err error) {
+	if channelIDs != nil && len(channelIDs) == 0 {
+		return make([]*Log, 0), 0, nil
+	}
+
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -502,6 +517,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	}
 	if channel != 0 {
 		tx = tx.Where("logs.channel_id = ?", channel)
+	}
+	if channelIDs != nil {
+		tx = tx.Where("logs.channel_id IN ?", channelIDs)
 	}
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
@@ -622,6 +640,20 @@ type Stat struct {
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+	return sumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, nil)
+}
+
+// SumUsedQuotaInChannels applies a main-database-resolved channel scope to
+// both the quota and recent RPM/TPM queries in the log database.
+func SumUsedQuotaInChannels(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, channelIDs []int) (stat Stat, err error) {
+	return sumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, channelIDs)
+}
+
+func sumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, channelIDs []int) (stat Stat, err error) {
+	if channelIDs != nil && len(channelIDs) == 0 {
+		return stat, nil
+	}
+
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	// 为rpm和tpm创建单独的查询
@@ -652,6 +684,10 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if channel != 0 {
 		tx = tx.Where("channel_id = ?", channel)
 		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
+	}
+	if channelIDs != nil {
+		tx = tx.Where("channel_id IN ?", channelIDs)
+		rpmTpmQuery = rpmTpmQuery.Where("channel_id IN ?", channelIDs)
 	}
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)

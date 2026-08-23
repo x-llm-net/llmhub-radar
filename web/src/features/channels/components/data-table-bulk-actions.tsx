@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
 import type { Table } from '@tanstack/react-table'
-import { Power, PowerOff, Tag, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,6 +37,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -44,16 +45,19 @@ import {
   handleBatchDelete,
   handleBatchDisable,
   handleBatchEnable,
+  handleBatchHubChannelPublication,
   handleBatchSetTag,
 } from '../lib'
 import type { Channel } from '../types'
 
 interface DataTableBulkActionsProps<TData> {
   table: Table<TData>
+  tenantScoped?: boolean
 }
 
 export function DataTableBulkActions<TData>({
   table,
+  tenantScoped = false,
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -66,6 +70,7 @@ export function DataTableBulkActions<TData>({
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const tenantAdminOnly = (currentUser?.role ?? 0) < ROLE.ADMIN && tenantScoped
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
@@ -93,6 +98,24 @@ export function DataTableBulkActions<TData>({
     handleBatchDisable(selectedIds, queryClient, handleClearSelection)
   }
 
+  const handlePublishAll = () => {
+    handleBatchHubChannelPublication(
+      selectedIds,
+      true,
+      queryClient,
+      handleClearSelection
+    )
+  }
+
+  const handleUnpublishAll = () => {
+    handleBatchHubChannelPublication(
+      selectedIds,
+      false,
+      queryClient,
+      handleClearSelection
+    )
+  }
+
   const handleDeleteAll = () => {
     if (!canEditSensitive) return
     handleBatchDelete(selectedIds, queryClient, () => {
@@ -112,106 +135,164 @@ export function DataTableBulkActions<TData>({
   return (
     <>
       <BulkActionsToolbar table={table} entityName='channel'>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={handleEnableAll}
-                className='size-8'
-                aria-label={t('Enable selected channels')}
-                title={t('Enable selected channels')}
-              />
-            }
-          >
-            <Power />
-            <span className='sr-only'>{t('Enable selected channels')}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Enable selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={handleDisableAll}
-                className='size-8'
-                aria-label={t('Disable selected channels')}
-                title={t('Disable selected channels')}
-              />
-            }
-          >
-            <PowerOff />
-            <span className='sr-only'>{t('Disable selected channels')}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Disable selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={() => setShowTagDialog(true)}
-                className='size-8'
-                aria-label={t('Set tag for selected channels')}
-                title={t('Set tag for selected channels')}
-              />
-            }
-          >
-            <Tag />
-            <span className='sr-only'>
-              {t('Set tag for selected channels')}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Set tag for selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='destructive'
-                size='icon'
-                onClick={() => {
-                  if (!canEditSensitive) return
-                  setShowDeleteConfirm(true)
-                }}
-                aria-disabled={!canEditSensitive}
-                className={cn(
-                  'size-8',
-                  !canEditSensitive && 'cursor-not-allowed opacity-50'
-                )}
-                aria-label={t('Delete selected channels')}
-                title={
-                  canEditSensitive
-                    ? t('Delete selected channels')
-                    : t('No permission to perform this action')
+        {tenantScoped ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    onClick={handlePublishAll}
+                    className='size-8'
+                    aria-label={t('Publish selected channels')}
+                    title={t('Publish selected channels')}
+                  />
                 }
-              />
-            }
-          >
-            <Trash2 />
-            <span className='sr-only'>{t('Delete selected channels')}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>
-              {canEditSensitive
-                ? t('Delete selected channels')
-                : t('No permission to perform this action')}
-            </p>
-          </TooltipContent>
-        </Tooltip>
+              >
+                <Eye />
+                <span className='sr-only'>
+                  {t('Publish selected channels')}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('Publish selected channels')}</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    onClick={handleUnpublishAll}
+                    className='size-8'
+                    aria-label={t('Unpublish selected channels')}
+                    title={t('Unpublish selected channels')}
+                  />
+                }
+              >
+                <EyeOff />
+                <span className='sr-only'>
+                  {t('Unpublish selected channels')}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('Unpublish selected channels')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </>
+        ) : (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    onClick={handleEnableAll}
+                    className='size-8'
+                    aria-label={t('Enable selected channels')}
+                    title={t('Enable selected channels')}
+                  />
+                }
+              >
+                <Power />
+                <span className='sr-only'>{t('Enable selected channels')}</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('Enable selected channels')}</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    onClick={handleDisableAll}
+                    className='size-8'
+                    aria-label={t('Disable selected channels')}
+                    title={t('Disable selected channels')}
+                  />
+                }
+              >
+                <PowerOff />
+                <span className='sr-only'>
+                  {t('Disable selected channels')}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('Disable selected channels')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </>
+        )}
+
+        {!tenantAdminOnly && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='icon'
+                  onClick={() => setShowTagDialog(true)}
+                  className='size-8'
+                  aria-label={t('Set tag for selected channels')}
+                  title={t('Set tag for selected channels')}
+                />
+              }
+            >
+              <Tag />
+              <span className='sr-only'>
+                {t('Set tag for selected channels')}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Set tag for selected channels')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+
+        {!tenantAdminOnly && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='destructive'
+                  size='icon'
+                  onClick={() => {
+                    if (!canEditSensitive) return
+                    setShowDeleteConfirm(true)
+                  }}
+                  aria-disabled={!canEditSensitive}
+                  className={cn(
+                    'size-8',
+                    !canEditSensitive && 'cursor-not-allowed opacity-50'
+                  )}
+                  aria-label={t('Delete selected channels')}
+                  title={
+                    canEditSensitive
+                      ? t('Delete selected channels')
+                      : t('No permission to perform this action')
+                  }
+                />
+              }
+            >
+              <Trash2 />
+              <span className='sr-only'>{t('Delete selected channels')}</span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>
+                {canEditSensitive
+                  ? t('Delete selected channels')
+                  : t('No permission to perform this action')}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </BulkActionsToolbar>
 
       {/* Set Tag Dialog */}

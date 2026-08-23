@@ -102,10 +102,7 @@ export function ProviderApplicationState(props: ProviderApplicationStateProps) {
             </CardHeader>
             <CardContent className='flex items-start gap-4'>
               <Avatar className='size-12 rounded-md'>
-                <AvatarImage
-                  src={logoURL || undefined}
-                  alt=''
-                />
+                <AvatarImage src={logoURL || undefined} alt='' />
                 <AvatarFallback className='rounded-md'>
                   {props.provider.name.slice(0, 1).toUpperCase()}
                 </AvatarFallback>

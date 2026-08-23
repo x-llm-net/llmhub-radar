@@ -15,6 +15,7 @@ import (
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -91,13 +92,18 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	originalRetryTimes := common.RetryTimes
 	originalModelRatios := ratio_setting.ModelRatio2JSONString()
+	settlementSettings := hub_provider_settlement_setting.Get()
+	originalSettlementSettings := *settlementSettings
 	common.MemoryCacheEnabled = false
 	common.RetryTimes = 1
+	settlementSettings.FallbackReferralEnabled = true
+	settlementSettings.FallbackReferralBasisPoints = 100
 	ratio_setting.InitRatioSettings()
 	t.Setenv("HUB_PROVIDER_ROOT_DOMAIN", "llm-hub.store")
 	t.Cleanup(func() {
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
 		common.RetryTimes = originalRetryTimes
+		*settlementSettings = originalSettlementSettings
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatios))
 		providerIDs := model.DB.Model(&model.HubProvider{}).
 			Select("id").
@@ -294,7 +300,12 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	assert.Equal(t, actualQuota, earning.GrossQuota)
 	assert.Equal(t, fallbackFee, earning.PlatformFeeBasisPoints)
 	assert.Equal(t, 125, earning.PlatformFeeQuota)
-	assert.Equal(t, 375, earning.ProviderIncomeQuota)
+	assert.Equal(t, 370, earning.ProviderIncomeQuota)
+	assert.Equal(t, originProvider.Id, earning.ReferralProviderId)
+	assert.Equal(t, originProvider.OwnerUserId, earning.ReferralOwnerUserId)
+	assert.Equal(t, 100, earning.ReferralBasisPoints)
+	assert.Equal(t, 5, earning.ReferralIncomeQuota)
+	assert.Equal(t, earning.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota)
 	assert.Equal(t, 0.5, earning.SupplyMultiplier)
 	assert.True(t, finalInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
 	assert.Equal(t, fallbackFee, finalInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
@@ -303,6 +314,15 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 		Where("provider_id = ? AND request_id = ?", originProvider.Id, finalInfo.RequestId).
 		Count(&originEarningCount).Error)
 	assert.Zero(t, originEarningCount)
+	originSummary, err := model.GetHubProviderSettlementSummary(originProvider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 5, originSummary.SettledIncomeQuota)
+	assert.Equal(t, 5, originSummary.ReferralIncomeQuota)
+	assert.Equal(t, 5, originSummary.WithdrawableQuota)
+	fallbackSummary, err := model.GetHubProviderSettlementSummary(fallbackProvider.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 370, fallbackSummary.SettledIncomeQuota)
+	assert.Zero(t, fallbackSummary.ReferralIncomeQuota)
 
 	finalInfo.FirstResponseTime = successStartedAt.Add(20 * time.Millisecond)
 	other := map[string]interface{}{}

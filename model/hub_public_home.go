@@ -129,6 +129,9 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 		if !active {
 			continue
 		}
+		if !group.TenantPublished {
+			continue
+		}
 		publishedModels := group.GetPublishedModels(group.ChannelModels)
 		if len(publishedModels) == 0 {
 			continue

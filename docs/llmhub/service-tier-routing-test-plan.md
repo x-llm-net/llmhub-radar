@@ -93,7 +93,7 @@ Key 字符串保持普通格式。策略只保存在 `hub_routing_policy`，内�
 
 先让 A 失败并由 B 完成一次平台兜底，再用相同会话标识重复请求；随后换模型或换另一个 Provider 子域重复。
 
-预期：相同 Provider、模型和会话可继续复用 B，并保持 `platform_fallback`；不会每次重新撞 A。不同模型或 Provider 不共享该 Affinity。缓存 Channel 失效时应清除缓存并重新选择。
+预期：相同 Provider、模型和会话可继续复用 B，并保持 `platform_fallback`；不会每次重新撞 A。冷却到期且 A 的当前模型/端点探测资格恢复后，允许一次请求尝试 A，成功后删除临时 B 记录并切回 A；失败仍回到 B 并按现有探测退避延后。不同模型或 Provider 不共享该 Affinity。缓存 Channel 失效时应清除缓存并重新选择。
 
 ### 9. 模型列表
 

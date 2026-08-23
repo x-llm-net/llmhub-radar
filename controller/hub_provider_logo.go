@@ -118,6 +118,10 @@ func GetAdminHubProviderLogo(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
+	if _, err := getHubProviderForAdminScope(c, providerID); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
 	asset, err := getHubProviderLogoAssetForProvider(c, providerID)
 	if err != nil {
 		c.Status(http.StatusNotFound)

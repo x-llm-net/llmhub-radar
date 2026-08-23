@@ -61,6 +61,8 @@ type Channel struct {
 	HubProviderName     string   `json:"hub_provider_name,omitempty" gorm:"-"`
 	HubSupplyMultiplier float64  `json:"hub_supply_multiplier,omitempty" gorm:"-"`
 	HubServiceTiers     []string `json:"hub_service_tiers,omitempty" gorm:"-"`
+	HubTenantPublished  *bool    `json:"hub_tenant_published,omitempty" gorm:"-"`
+	HubTenantScoped     *bool    `json:"hub_tenant_scoped,omitempty" gorm:"-"`
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
@@ -384,6 +386,16 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 }
 
 func SearchChannels(keyword string, group string, model string, ownership string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+	return searchChannels(keyword, group, model, ownership, idSort, nil, sortOptions...)
+}
+
+// SearchChannelsInChannelIDs keeps the existing channel search behavior while
+// applying a caller-resolved tenant Channel scope.
+func SearchChannelsInChannelIDs(keyword string, group string, model string, ownership string, idSort bool, channelIDs []int, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+	return searchChannels(keyword, group, model, ownership, idSort, channelIDs, sortOptions...)
+}
+
+func searchChannels(keyword string, group string, model string, ownership string, idSort bool, channelIDs []int, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	modelsCol := "`models`"
 
@@ -408,6 +420,13 @@ func SearchChannels(keyword string, group string, model string, ownership string
 	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 	baseQuery = ApplyHubChannelOwnershipFilter(baseQuery, ownership)
+	if channelIDs != nil {
+		if len(channelIDs) == 0 {
+			baseQuery = baseQuery.Where("1 = 0")
+		} else {
+			baseQuery = baseQuery.Where("id IN ?", channelIDs)
+		}
+	}
 
 	// 执行查询
 	err := order.Apply(baseQuery).Find(&channels).Error
@@ -935,6 +954,14 @@ func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, 
 }
 
 func SearchTags(keyword string, group string, model string, ownership string, idSort bool) ([]*string, error) {
+	return searchTags(keyword, group, model, ownership, idSort, nil)
+}
+
+func SearchTagsInChannelIDs(keyword string, group string, model string, ownership string, idSort bool, channelIDs []int) ([]*string, error) {
+	return searchTags(keyword, group, model, ownership, idSort, channelIDs)
+}
+
+func searchTags(keyword string, group string, model string, ownership string, idSort bool, channelIDs []int) ([]*string, error) {
 	var tags []*string
 	modelsCol := "`models`"
 
@@ -962,6 +989,13 @@ func SearchTags(keyword string, group string, model string, ownership string, id
 	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 	baseQuery = ApplyHubChannelOwnershipFilter(baseQuery, ownership)
+	if channelIDs != nil {
+		if len(channelIDs) == 0 {
+			baseQuery = baseQuery.Where("1 = 0")
+		} else {
+			baseQuery = baseQuery.Where("id IN ?", channelIDs)
+		}
+	}
 
 	subQuery := baseQuery.
 		Select("tag").

@@ -5977,6 +5977,17 @@
     "Maximum multiplier": "Maximum multiplier",
     "{{channels}} channels / {{providers}} providers": "{{channels}} channels / {{providers}} providers",
     "This previously selected route is no longer available.": "This previously selected route is no longer available.",
-    "Remove unavailable routes before saving": "Remove unavailable routes before saving"
+    "Remove unavailable routes before saving": "Remove unavailable routes before saving",
+    "Tenant publication": "テナント公開",
+    "Unpublished": "未公開",
+    "Publish for tenant": "テナントに公開",
+    "Unpublish for tenant": "テナントから非公開",
+    "Channel published": "チャンネルを公開しました",
+    "Channel unpublished": "チャンネルを非公開にしました",
+    "Channels published": "チャンネルを一括公開しました",
+    "Channels unpublished": "チャンネルを一括非公開にしました",
+    "Tenant unpublished": "テナントで非公開",
+    "Publish selected channels": "選択したチャンネルを公開",
+    "Unpublish selected channels": "選択したチャンネルを非公開"
   }
 }

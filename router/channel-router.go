@@ -10,15 +10,16 @@ import (
 )
 
 type permissionRoute struct {
-	method     string
-	path       string
-	permission authz.Permission
-	handler    gin.HandlerFunc
+	method             string
+	path               string
+	permission         authz.Permission
+	tenantAdminAllowed bool
+	handler            gin.HandlerFunc
 }
 
 func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 	channelRoute := apiRouter.Group("/channel")
-	channelRoute.Use(middleware.AdminAuth())
+	channelRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 
 	channelRoute.POST("/:id/key",
 		middleware.RootAuth(),
@@ -29,27 +30,29 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 	)
 
 	for _, route := range channelPermissionRoutes {
+		permissionMiddleware := middleware.RequireTenantChannelPermission(route.permission, route.tenantAdminAllowed)
 		channelRoute.Handle(route.method, route.path,
-			middleware.RequirePermission(route.permission),
+			permissionMiddleware,
 			route.handler,
 		)
 	}
 }
 
 var channelPermissionRoutes = []permissionRoute{
-	{method: http.MethodGet, path: "/", permission: authz.ChannelRead, handler: controller.GetAllChannels},
-	{method: http.MethodGet, path: "/search", permission: authz.ChannelRead, handler: controller.SearchChannels},
-	{method: http.MethodGet, path: "/models", permission: authz.ChannelRead, handler: controller.ChannelListModels},
-	{method: http.MethodGet, path: "/models_enabled", permission: authz.ChannelRead, handler: controller.EnabledListModels},
-	{method: http.MethodGet, path: "/ops", permission: authz.ChannelRead, handler: controller.GetChannelOps},
-	{method: http.MethodGet, path: "/ownership-options", permission: authz.ChannelRead, handler: controller.GetChannelOwnershipOptions},
-	{method: http.MethodGet, path: "/:id", permission: authz.ChannelRead, handler: controller.GetChannel},
+	{method: http.MethodGet, path: "/", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.GetAllChannels},
+	{method: http.MethodGet, path: "/search", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.SearchChannels},
+	{method: http.MethodGet, path: "/models", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.ChannelListModels},
+	{method: http.MethodGet, path: "/models_enabled", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.EnabledListModels},
+	{method: http.MethodGet, path: "/ops", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.GetChannelOps},
+	{method: http.MethodGet, path: "/ownership-options", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.GetChannelOwnershipOptions},
+	{method: http.MethodGet, path: "/:id", permission: authz.ChannelRead, tenantAdminAllowed: true, handler: controller.GetChannel},
 	{method: http.MethodGet, path: "/test", permission: authz.ChannelOperate, handler: controller.TestAllChannels},
 	{method: http.MethodGet, path: "/test/:id", permission: authz.ChannelOperate, handler: controller.TestChannel},
 	{method: http.MethodGet, path: "/update_balance", permission: authz.ChannelOperate, handler: controller.UpdateAllChannelsBalance},
 	{method: http.MethodGet, path: "/update_balance/:id", permission: authz.ChannelOperate, handler: controller.UpdateChannelBalance},
-	{method: http.MethodPost, path: "/", permission: authz.ChannelSensitiveWrite, handler: controller.AddChannel},
 	{method: http.MethodPut, path: "/", permission: authz.ChannelWrite, handler: controller.UpdateChannel},
+	// Channel.Status is global New-API health/manual state. Tenant admins use
+	// the separate HubSupplyGroup publication routes instead.
 	{method: http.MethodPost, path: "/status/batch", permission: authz.ChannelOperate, handler: controller.BatchUpdateChannelStatus},
 	{method: http.MethodPost, path: "/:id/status", permission: authz.ChannelOperate, handler: controller.UpdateChannelStatus},
 	{method: http.MethodDelete, path: "/disabled", permission: authz.ChannelSensitiveWrite, handler: controller.DeleteDisabledChannel},

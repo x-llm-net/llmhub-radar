@@ -72,6 +72,7 @@ const TIER_LABELS: Record<string, string> = {
 
 const REASON_LABELS: Record<string, string> = {
   provider_disabled: 'Provider disabled',
+  tenant_unpublished: 'Tenant unpublished',
   channel_manually_disabled: 'Channel manually disabled',
   channel_auto_disabled: 'Channel automatically disabled',
   channel_disabled: 'Channel disabled',
@@ -174,7 +175,15 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
     <TableRow>
       <TableCell className='min-w-56 align-top'>
         <div className='space-y-1'>
-          <div className='font-medium'>{row.channel_name}</div>
+          <div className='flex items-center gap-2'>
+            <span
+              className='bg-muted text-muted-foreground inline-flex h-5 min-w-8 items-center justify-center rounded px-1.5 text-xs font-medium tabular-nums'
+              title={t('Global rank')}
+            >
+              #{row.global_rank}
+            </span>
+            <span className='font-medium'>{row.channel_name}</span>
+          </div>
           <div className='text-muted-foreground text-xs'>
             {row.provider_id > 0 ? row.provider_name : t('Platform-owned')} · #
             {row.channel_id}
@@ -283,7 +292,7 @@ function RoutingHealthRow({ row }: { row: HubRoutingHealthRow }) {
           {formatLatency(row.first_token_p95_ms)}
         </div>
         <div className='text-muted-foreground text-xs'>
-          {t('Ranking score')}:{' '}
+          {t('7-day probe score')}:{' '}
           {row.ranking_score_bps == null
             ? '-'
             : (row.ranking_score_bps / 100).toFixed(1)}{' '}
@@ -408,10 +417,10 @@ export function ChannelHealthRoutingSection() {
           aria-hidden='true'
         />
         <div className='min-w-0'>
-          <p className='text-sm font-medium'>{t('Live routing signals')}</p>
+          <p className='text-sm font-medium'>{t('Global channel ranking')}</p>
           <p className='text-muted-foreground text-xs'>
             {t(
-              'Probe health, real request health, and TTFT affect live routing within the same model and endpoint kind.'
+              'The complete filtered result is ranked before pagination. Stability and real TTFT define the quality band before channel priority and weight are applied.'
             )}
           </p>
         </div>

@@ -18,6 +18,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useMediaQuery } from '@/hooks'
+import { useHubAdminAccess } from '@/hooks/use-hub-admin-access'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getChannelOwnershipOptions,
@@ -66,6 +69,11 @@ function isDisabledChannelRow(channel: Channel) {
 
 export function ChannelsTable() {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const hubAdminAccess = useHubAdminAccess()
+  const tenantAdminOnly =
+    (currentUser?.role ?? 0) < ROLE.ADMIN &&
+    hubAdminAccess.data?.tenant_scoped === true
   const {
     enableTagMode,
     idSort,
@@ -103,9 +111,11 @@ export function ChannelsTable() {
   const { data: ownershipData } = useQuery({
     queryKey: ['channel-ownership-options'],
     queryFn: getChannelOwnershipOptions,
+    enabled: hubAdminAccess.isSuccess && !tenantAdminOnly,
     staleTime: 60 * 1000,
   })
   const ownershipOptions = useMemo(() => {
+    if (tenantAdminOnly) return undefined
     const data = ownershipData?.data
     return [
       {
@@ -131,7 +141,7 @@ export function ChannelsTable() {
         count: provider.channel_count,
       })),
     ]
-  }, [ownershipData?.data, t])
+  }, [ownershipData?.data, t, tenantAdminOnly])
 
   const params = {
     group: listState.queryParams.group,
@@ -170,6 +180,9 @@ export function ChannelsTable() {
       ? aggregateChannelsByTag(items)
       : items
   }, [data, enableTagMode])
+  const tenantScoped = channels.some(
+    (channel) => channel.hub_tenant_scoped === true
+  )
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     serviceTierMode,
@@ -261,7 +274,11 @@ export function ChannelsTable() {
         if (!isDisabledChannelRow(row.original)) return undefined
         return context.isMobile ? DISABLED_ROW_MOBILE : DISABLED_ROW_DESKTOP
       }}
-      bulkActions={batchMode ? <DataTableBulkActions table={table} /> : null}
+      bulkActions={
+        batchMode ? (
+          <DataTableBulkActions table={table} tenantScoped={tenantScoped} />
+        ) : null
+      }
     />
   )
 }

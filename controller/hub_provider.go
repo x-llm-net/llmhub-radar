@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -178,6 +179,9 @@ func CreateHubProvider(c *gin.Context) {
 		SupportValue:       req.SupportValue,
 		Status:             model.HubProviderStatusPending,
 		UseProvisionalSlug: true,
+	}
+	if tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId); tenantID > 0 {
+		provider.TenantId = &tenantID
 	}
 	if assets.VerifyWebsite || len(assets.Logo) > 0 {
 		err = model.CreateHubProviderWithAssets(
@@ -338,12 +342,20 @@ func isHubProviderSupportType(value string) bool {
 
 func AdminListHubProviders(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	providers, total, err := model.ListHubProviders(
-		c.Query("keyword"),
-		c.Query("status"),
-		pageInfo.GetStartIdx(),
-		pageInfo.GetPageSize(),
-	)
+	var providers []model.HubProviderAdminListItem
+	var total int64
+	var err error
+	if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
+		providers, total, err = model.ListHubProvidersInTenant(
+			c.Query("keyword"), c.Query("status"),
+			pageInfo.GetStartIdx(), pageInfo.GetPageSize(), *tenantID,
+		)
+	} else {
+		providers, total, err = model.ListHubProviders(
+			c.Query("keyword"), c.Query("status"),
+			pageInfo.GetStartIdx(), pageInfo.GetPageSize(),
+		)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -362,6 +374,9 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 	providerID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if !requireHubProviderAdminScope(c, providerID) {
 		return
 	}
 	var req hubProviderStatusUpdateRequest
@@ -416,6 +431,9 @@ func AdminUpdateHubProviderSettlementSettings(c *gin.Context) {
 	providerID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || providerID <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if !requireHubProviderAdminScope(c, providerID) {
 		return
 	}
 	var req hubProviderSettlementSettingsUpdateRequest

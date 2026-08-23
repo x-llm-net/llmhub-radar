@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  Plus,
   MoreHorizontal,
   Settings2,
   Trash2,
@@ -46,16 +45,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { useHubAdminAccess } from '@/hooks/use-hub-admin-access'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -69,8 +65,6 @@ import { useChannels } from './channels-provider'
 export function ChannelsPrimaryButtons() {
   const { t } = useTranslation()
   const {
-    setOpen,
-    setCurrentRow,
     enableTagMode,
     setEnableTagMode,
     idSort,
@@ -84,6 +78,10 @@ export function ChannelsPrimaryButtons() {
   const [showConsistencyDialog, setShowConsistencyDialog] = useState(false)
   const [isRepairingConsistency, setIsRepairingConsistency] = useState(false)
   const currentUser = useAuthStore((s) => s.auth.user)
+  const hubAdminAccess = useHubAdminAccess()
+  const tenantAdminOnly =
+    (currentUser?.role ?? 0) < ROLE.ADMIN &&
+    hubAdminAccess.data?.tenant_scoped === true
   const canEditSensitive = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
@@ -147,35 +145,17 @@ export function ChannelsPrimaryButtons() {
           />
         </div>
 
-        {/* Create Channel */}
-        <Tooltip>
-          <TooltipTrigger render={<span className='inline-flex' />}>
-            <Button
-              onClick={() => {
-                if (!canEditSensitive) return
-                setCurrentRow(null)
-                setOpen('create-channel')
-              }}
-              size='sm'
-              disabled={!canEditSensitive}
-            >
-              <Plus className='h-4 w-4' />
-              <span className='max-sm:hidden'>
-                {t('Create Platform Channel')}
-              </span>
-              <span className='sm:hidden'>{t('Create')}</span>
-            </Button>
-          </TooltipTrigger>
-          {!canEditSensitive && (
-            <TooltipContent>
-              {t('No permission to perform this action')}
-            </TooltipContent>
-          )}
-        </Tooltip>
-
         {/* More Actions */}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant='outline' size='sm' />}>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant='outline'
+                size='sm'
+                className={tenantAdminOnly ? 'sm:hidden' : undefined}
+              />
+            }
+          >
             <MoreHorizontal className='h-4 w-4' />
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='w-56'>
@@ -207,82 +187,86 @@ export function ChannelsPrimaryButtons() {
               {t('Sort by ID')}
             </DropdownMenuCheckboxItem>
 
-            <DropdownMenuSeparator className='sm:hidden' />
+            {!tenantAdminOnly && (
+              <>
+                <DropdownMenuSeparator className='sm:hidden' />
 
-            <DropdownMenuItem
-              onClick={() => {
-                handleTestAllChannels(queryClient)
-              }}
-            >
-              {t('Test All Channels')}
-              <DropdownMenuShortcut>
-                <TestTube className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    handleTestAllChannels(queryClient)
+                  }}
+                >
+                  {t('Test All Channels')}
+                  <DropdownMenuShortcut>
+                    <TestTube className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
 
-            <DropdownMenuItem
-              onClick={() => {
-                handleUpdateAllBalances(queryClient)
-              }}
-            >
-              {t('Update All Balances')}
-              <DropdownMenuShortcut>
-                <DollarSign className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    handleUpdateAllBalances(queryClient)
+                  }}
+                >
+                  {t('Update All Balances')}
+                  <DropdownMenuShortcut>
+                    <DollarSign className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
 
-            <DropdownMenuSeparator />
+                <DropdownMenuSeparator />
 
-            <DropdownMenuItem
-              onClick={() => upstream.detectAllUpdates()}
-              disabled={upstream.detectAllLoading}
-            >
-              {t('Detect All Upstream Updates')}
-              <DropdownMenuShortcut>
-                <RefreshCw className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => upstream.detectAllUpdates()}
+                  disabled={upstream.detectAllLoading}
+                >
+                  {t('Detect All Upstream Updates')}
+                  <DropdownMenuShortcut>
+                    <RefreshCw className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
 
-            <DropdownMenuItem
-              onClick={() => upstream.applyAllUpdates()}
-              disabled={upstream.applyAllLoading}
-            >
-              {t('Apply All Upstream Updates')}
-              <DropdownMenuShortcut>
-                <ArrowUpFromLine className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => upstream.applyAllUpdates()}
+                  disabled={upstream.applyAllLoading}
+                >
+                  {t('Apply All Upstream Updates')}
+                  <DropdownMenuShortcut>
+                    <ArrowUpFromLine className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
 
-            <DropdownMenuSeparator />
+                <DropdownMenuSeparator />
 
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault()
-                setShowConsistencyDialog(true)
-              }}
-            >
-              {t('Repair Channel Consistency')}
-              <DropdownMenuShortcut>
-                <Settings2 className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setShowConsistencyDialog(true)
+                  }}
+                >
+                  {t('Repair Channel Consistency')}
+                  <DropdownMenuShortcut>
+                    <Settings2 className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
 
-            <DropdownMenuSeparator />
+                <DropdownMenuSeparator />
 
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault()
-                if (!canEditSensitive) return
-                setShowDeleteDialog(true)
-              }}
-              disabled={!canEditSensitive}
-              className='text-destructive focus:text-destructive'
-            >
-              {t('Delete All Disabled')}
-              <DropdownMenuShortcut>
-                <Trash2 className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    if (!canEditSensitive) return
+                    setShowDeleteDialog(true)
+                  }}
+                  disabled={!canEditSensitive}
+                  className='text-destructive focus:text-destructive'
+                >
+                  {t('Delete All Disabled')}
+                  <DropdownMenuShortcut>
+                    <Trash2 className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

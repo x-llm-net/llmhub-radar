@@ -214,6 +214,34 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplier(family string, multiplier 
 	return false
 }
 
+// AllowsMultiplierForPlatformFallback keeps provider-scoped tokens within
+// their cost ceiling when the preferred provider has no usable channel. Public
+// range policies retain their explicit lower bound; provider policies may use
+// a cheaper multiplier during platform fallback, but never a more expensive
+// one.
+func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(family string, multiplier float64) bool {
+	if policy == nil || policy.Mode != HubTokenRoutingModeProvider {
+		return policy != nil && policy.AllowsMultiplier(family, multiplier)
+	}
+	multiplier = roundHubTokenMultiplier(multiplier)
+	if !validHubTokenMultiplier(multiplier) {
+		return false
+	}
+	family = strings.ToLower(strings.TrimSpace(family))
+	for _, selection := range policy.Selections {
+		if selection.Family != family {
+			continue
+		}
+		for _, exact := range selection.ExactMultipliers {
+			if multiplier <= exact+0.0005 {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 func (policy *HubTokenRoutingPolicy) AllowsModel(modelName string) bool {
 	if policy == nil {
 		return false

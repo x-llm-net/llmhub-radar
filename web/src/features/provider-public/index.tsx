@@ -41,13 +41,13 @@ import { PublicLayout } from '@/components/layout'
 import { RichContent } from '@/components/rich-content'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getFamilyMeta } from '@/features/home/components/public-home-family-meta'
 import { getProviderPublicURL } from '@/lib/provider-domain'
 
 import { getPublicProvider } from './api'
 import { ProviderModelCard } from './components/provider-model-card'
 import { ProviderModelNav } from './components/provider-model-nav'
 import { ProviderModelRow } from './components/provider-model-row'
-import { getFamilyMeta } from '@/features/home/components/public-home-family-meta'
 import { groupProviderModels, getProviderFamilyId } from './model-family'
 import type { ProviderPublicProfile } from './types'
 
@@ -298,7 +298,7 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
                   {provider.support_value && !supportHref && (
                     <span title={provider.support_value}>
                       <MessageCircle aria-hidden='true' />
-                      {t(publicSupportLabel(provider.support_type))}: {' '}
+                      {t(publicSupportLabel(provider.support_type))}:{' '}
                       {provider.support_value}
                     </span>
                   )}
@@ -411,7 +411,9 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
           </div>
         </section>
 
-        {modelFamilies.length > 0 && <ProviderModelNav families={modelFamilies} />}
+        {modelFamilies.length > 0 && (
+          <ProviderModelNav families={modelFamilies} />
+        )}
 
         <section
           className='hub-provider-models'
@@ -503,9 +505,15 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
                       >
                         {family.models.map((model) =>
                           modelView === 'cards' ? (
-                            <ProviderModelCard key={model.model_name} model={model} />
+                            <ProviderModelCard
+                              key={model.model_name}
+                              model={model}
+                            />
                           ) : (
-                            <ProviderModelRow key={model.model_name} model={model} />
+                            <ProviderModelRow
+                              key={model.model_name}
+                              model={model}
+                            />
                           )
                         )}
                       </div>

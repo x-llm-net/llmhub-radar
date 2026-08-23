@@ -7,6 +7,14 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+const (
+	hubRoutingQualityMinRealSamples      = int64(20)
+	hubRoutingQualityHealthySuccessBps   = 9_500
+	hubRoutingQualitySuccessBandBps      = 100
+	hubRoutingQualityTTFTRelativeBandBps = 12_000
+	hubRoutingQualityTTFTAbsoluteBandMs  = int64(300)
+)
+
 type hubTierChannelCandidate struct {
 	ChannelID             int
 	Priority              int64
@@ -15,6 +23,11 @@ type hubTierChannelCandidate struct {
 	AvailabilityFactorBps int
 	LatencyFactorBps      int
 	HardUnavailable       bool
+	RealSampleCount       int64
+	RealSuccessRateBps    int
+	RealFirstTokenSamples int64
+	RealFirstTokenP95Ms   int64
+	HasRealFirstTokenP95  bool
 }
 
 // hubTierCandidateBuckets is published with the channel cache. It keeps the
@@ -29,7 +42,7 @@ type hubTierCandidateBuckets struct {
 // that owner. Platform Channels share provider key 0. This prevents a provider
 // from gaining traffic merely by splitting one upstream into more Channels.
 func selectHubTierChannel(candidates []hubTierChannelCandidate, excludedChannelIDs map[int]struct{}) int {
-	providers := make(map[int][]hubTierChannelCandidate)
+	eligible := make([]hubTierChannelCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		if _, excluded := excludedChannelIDs[candidate.ChannelID]; excluded {
 			continue
@@ -37,6 +50,14 @@ func selectHubTierChannel(candidates []hubTierChannelCandidate, excludedChannelI
 		if candidate.HardUnavailable {
 			continue
 		}
+		eligible = append(eligible, candidate)
+	}
+	return selectHubTierChannelFromEligible(filterHubTierCandidatesByQualityBand(eligible))
+}
+
+func selectHubTierChannelFromEligible(candidates []hubTierChannelCandidate) int {
+	providers := make(map[int][]hubTierChannelCandidate)
+	for _, candidate := range candidates {
 		providers[candidate.Provider] = append(providers[candidate.Provider], candidate)
 	}
 	if len(providers) == 0 {
@@ -65,8 +86,7 @@ func selectHubTierChannelFromBuckets(
 		return 0
 	}
 
-	providerIDs := make([]int, 0, len(buckets.providerIDs))
-	eligibleByProvider := make(map[int][]hubTierChannelCandidate, len(buckets.providerIDs))
+	eligible := make([]hubTierChannelCandidate, 0)
 	for _, providerID := range buckets.providerIDs {
 		if !hubTierBucketProviderMatchesFilter(providerID, providerFilter) {
 			continue
@@ -84,18 +104,71 @@ func selectHubTierChannelFromBuckets(
 			if candidate.HardUnavailable {
 				continue
 			}
-			eligibleByProvider[providerID] = append(eligibleByProvider[providerID], candidate)
-		}
-		if len(eligibleByProvider[providerID]) > 0 {
-			providerIDs = append(providerIDs, providerID)
+			eligible = append(eligible, candidate)
 		}
 	}
-	if len(providerIDs) == 0 {
-		return 0
+	return selectHubTierChannelFromEligible(filterHubTierCandidatesByQualityBand(eligible))
+}
+
+// filterHubTierCandidatesByQualityBand keeps cold or slower Channels as
+// fallback candidates. Excluding failed Channels and calling the selector
+// again recalculates the band from the remaining pool.
+func filterHubTierCandidatesByQualityBand(candidates []hubTierChannelCandidate) []hubTierChannelCandidate {
+	bestSuccessRateBps := -1
+	for _, candidate := range candidates {
+		if candidate.RealSampleCount >= hubRoutingQualityMinRealSamples && candidate.RealSuccessRateBps > bestSuccessRateBps {
+			bestSuccessRateBps = candidate.RealSuccessRateBps
+		}
+	}
+	if bestSuccessRateBps < 0 {
+		return candidates
+	}
+	if bestSuccessRateBps < hubRoutingQualityHealthySuccessBps {
+		return candidates
 	}
 
-	providerID := providerIDs[common.GetRandomInt(len(providerIDs))]
-	return selectHubTierProviderChannel(eligibleByProvider[providerID])
+	successThresholdBps := bestSuccessRateBps - hubRoutingQualitySuccessBandBps
+	if successThresholdBps < 0 {
+		successThresholdBps = 0
+	}
+	stable := make([]hubTierChannelCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.RealSampleCount < hubRoutingQualityMinRealSamples || candidate.RealSuccessRateBps < successThresholdBps {
+			continue
+		}
+		stable = append(stable, candidate)
+	}
+
+	bestTTFTP95Ms := int64(-1)
+	for _, candidate := range stable {
+		if candidate.RealFirstTokenSamples < hubRoutingQualityMinRealSamples || !candidate.HasRealFirstTokenP95 {
+			continue
+		}
+		if bestTTFTP95Ms < 0 || candidate.RealFirstTokenP95Ms < bestTTFTP95Ms {
+			bestTTFTP95Ms = candidate.RealFirstTokenP95Ms
+		}
+	}
+	if bestTTFTP95Ms < 0 {
+		return stable
+	}
+
+	relativeThresholdMs := (bestTTFTP95Ms*hubRoutingQualityTTFTRelativeBandBps + HubRoutingFactorNeutralBps - 1) /
+		HubRoutingFactorNeutralBps
+	absoluteThresholdMs := bestTTFTP95Ms + hubRoutingQualityTTFTAbsoluteBandMs
+	ttftThresholdMs := relativeThresholdMs
+	if absoluteThresholdMs > ttftThresholdMs {
+		ttftThresholdMs = absoluteThresholdMs
+	}
+
+	fast := make([]hubTierChannelCandidate, 0, len(stable))
+	for _, candidate := range stable {
+		if candidate.RealFirstTokenSamples < hubRoutingQualityMinRealSamples || !candidate.HasRealFirstTokenP95 ||
+			candidate.RealFirstTokenP95Ms > ttftThresholdMs {
+			continue
+		}
+		fast = append(fast, candidate)
+	}
+	return fast
 }
 
 func hubTierBucketProviderMatchesFilter(providerID int, filter ChannelProviderFilter) bool {
@@ -191,6 +264,15 @@ func decorateHubTierCandidateWithRuntimeHealth(candidate hubTierChannelCandidate
 	candidate.AvailabilityFactorBps = decision.AvailabilityFactorBps
 	candidate.LatencyFactorBps = decision.LatencyFactorBps
 	candidate.HardUnavailable = decision.HardUnavailable
+	if decision.HasRuntimeSignal {
+		candidate.RealSampleCount = decision.RuntimeSignal.RealSampleCount
+		candidate.RealSuccessRateBps = decision.RuntimeSignal.RealSuccessRateBps
+		candidate.RealFirstTokenSamples = decision.RuntimeSignal.RealFirstTokenSampleCount
+		if decision.RuntimeSignal.RealFirstTokenP95Ms != nil {
+			candidate.RealFirstTokenP95Ms = *decision.RuntimeSignal.RealFirstTokenP95Ms
+			candidate.HasRealFirstTokenP95 = true
+		}
+	}
 	return candidate
 }
 

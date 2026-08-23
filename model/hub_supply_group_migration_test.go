@@ -71,6 +71,7 @@ func TestMigrateHubSupplyGroupLegacyColumnsPreservesPublicationData(t *testing.T
 	assert.Equal(t, 7, migrated.ProviderId)
 	assert.Equal(t, 11, migrated.NewAPIChannelId)
 	assert.Equal(t, 0.8, migrated.PriceMultiplier)
+	assert.True(t, migrated.TenantPublished, "legacy supply channels must remain published")
 
 	newGroup := HubSupplyGroup{
 		PublicId:        "new-group",

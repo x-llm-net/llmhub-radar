@@ -27,6 +27,7 @@ import type {
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  UpdateHubProviderSettlementRequest,
   UpdateServiceTierRoutingRequest,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
@@ -47,6 +48,21 @@ export async function getSystemOptions() {
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
   return res.data
+}
+
+export async function updateHubProviderSettlement(
+  request: UpdateHubProviderSettlementRequest
+) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/option/hub-provider-settlement',
+    request,
+    { skipBusinessError: true }
+  )
+  const response = res.data
+  if (!response.success) {
+    throw new Error(response.message || 'Failed to update provider settlement')
+  }
+  return response
 }
 
 export async function updateServiceTierRouting(

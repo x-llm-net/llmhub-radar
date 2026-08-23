@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/command'
 import { useSearch } from '@/context/search-provider'
 import { useTheme } from '@/context/theme-provider'
-import { useSidebarData } from '@/hooks/use-sidebar-data'
+import { useSidebarView } from '@/hooks/use-sidebar-view'
 
 import { getNavGroupsForPath } from './layout/lib/sidebar-view-registry'
 import { ScrollArea } from './ui/scroll-area'
@@ -44,11 +44,11 @@ export function CommandMenu() {
   const { setTheme } = useTheme()
   const { open, setOpen } = useSearch()
   const { pathname } = useLocation()
-  const sidebarData = useSidebarData()
+  const { navGroups: sidebarNavGroups } = useSidebarView()
 
   // Use the active nested sidebar view's nav groups when one matches
   // the current URL; otherwise fall back to the root navigation.
-  const navGroups = getNavGroupsForPath(pathname, t) ?? sidebarData.navGroups
+  const navGroups = getNavGroupsForPath(pathname, t) ?? sidebarNavGroups
 
   const runCommand = React.useCallback(
     (command: () => unknown) => {

@@ -169,6 +169,23 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
                         sourceLabel = t('Manual adjustment')
                       } else if (item.entry_type === 'balance_transfer') {
                         sourceLabel = t('Transfer to balance')
+                      } else if (item.earning_role === 'referral') {
+                        sourceLabel = t('Fallback referral commission')
+                      }
+                      const isBalanceTransfer =
+                        item.entry_type === 'balance_transfer'
+                      const displayedIncomeQuota =
+                        item.earning_role === 'referral'
+                          ? item.referral_income_quota
+                          : item.provider_income_quota
+                      let chargedLabel = '-'
+                      if (!isBalanceTransfer) {
+                        chargedLabel = formatQuota(item.gross_quota)
+                        if (item.earning_role === 'referral') {
+                          chargedLabel = t('Commission basis: {{amount}}', {
+                            amount: formatQuota(item.gross_quota),
+                          })
+                        }
                       }
                       return (
                         <TableRow key={item.id}>
@@ -183,13 +200,22 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
                               ? `#${item.consumer_user_id}`
                               : '-'}
                           </TableCell>
+                          <TableCell>{chargedLabel}</TableCell>
                           <TableCell>
-                            {item.entry_type === 'balance_transfer'
-                              ? '-'
-                              : formatQuota(item.gross_quota)}
-                          </TableCell>
-                          <TableCell>
-                            {formatQuota(item.provider_income_quota)}
+                            <p>{formatQuota(displayedIncomeQuota)}</p>
+                            {item.earning_role !== 'referral' &&
+                              item.referral_income_quota > 0 && (
+                                <p className='text-muted-foreground text-xs'>
+                                  {t(
+                                    'Referral commission deducted: {{amount}}',
+                                    {
+                                      amount: formatQuota(
+                                        item.referral_income_quota
+                                      ),
+                                    }
+                                  )}
+                                </p>
+                              )}
                           </TableCell>
                           <TableCell>
                             <StatusBadge
@@ -213,7 +239,10 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
         providerName={props.provider?.name || '-'}
         pending={adjustment.isPending}
         onConfirm={async (amountQuota, remark) => {
-          const response = await adjustment.mutateAsync({ amountQuota, remark })
+          const response = await adjustment.mutateAsync({
+            amountQuota,
+            remark,
+          })
           return response.success === true
         }}
       />

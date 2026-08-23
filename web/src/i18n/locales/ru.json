@@ -5977,6 +5977,17 @@
     "Maximum multiplier": "Maximum multiplier",
     "{{channels}} channels / {{providers}} providers": "{{channels}} channels / {{providers}} providers",
     "This previously selected route is no longer available.": "This previously selected route is no longer available.",
-    "Remove unavailable routes before saving": "Remove unavailable routes before saving"
+    "Remove unavailable routes before saving": "Remove unavailable routes before saving",
+    "Tenant publication": "Публикация для арендатора",
+    "Unpublished": "Не опубликовано",
+    "Publish for tenant": "Опубликовать для арендатора",
+    "Unpublish for tenant": "Снять с публикации для арендатора",
+    "Channel published": "Канал опубликован",
+    "Channel unpublished": "Канал снят с публикации",
+    "Channels published": "Каналы опубликованы",
+    "Channels unpublished": "Каналы сняты с публикации",
+    "Tenant unpublished": "Не опубликовано у арендатора",
+    "Publish selected channels": "Опубликовать выбранные каналы",
+    "Unpublish selected channels": "Снять выбранные каналы с публикации"
   }
 }

@@ -31,6 +31,7 @@ const HubRoutingHealthProbeStatusUnmonitored = "unmonitored"
 
 const (
 	HubRoutingHealthReasonProviderDisabled      = "provider_disabled"
+	HubRoutingHealthReasonTenantUnpublished     = "tenant_unpublished"
 	HubRoutingHealthReasonChannelManualDisabled = "channel_manually_disabled"
 	HubRoutingHealthReasonChannelAutoDisabled   = "channel_auto_disabled"
 	HubRoutingHealthReasonChannelDisabled       = "channel_disabled"
@@ -45,6 +46,7 @@ const (
 type HubRoutingHealthListOptions struct {
 	Keyword       string
 	ProviderID    *int
+	TenantID      *int
 	Model         string
 	Endpoint      string
 	ChannelStatus int
@@ -55,6 +57,7 @@ type HubRoutingHealthListOptions struct {
 }
 
 type HubRoutingHealthRow struct {
+	GlobalRank                  int      `json:"global_rank"`
 	ChannelID                   int      `json:"channel_id"`
 	ChannelName                 string   `json:"channel_name"`
 	ChannelType                 int      `json:"channel_type"`
@@ -63,6 +66,7 @@ type HubRoutingHealthRow struct {
 	ProviderID                  int      `json:"provider_id"`
 	ProviderName                string   `json:"provider_name"`
 	ProviderStatus              string   `json:"provider_status"`
+	TenantPublished             bool     `json:"tenant_published"`
 	SupplyGroupID               int      `json:"supply_group_id"`
 	SupplyStatus                string   `json:"supply_status"`
 	PriceMultiplier             *float64 `json:"price_multiplier"`
@@ -113,6 +117,7 @@ type HubRoutingHealthRow struct {
 	ConfidenceBps               *int     `json:"confidence_bps"`
 	RankingScoreBps             *int     `json:"ranking_score_bps"`
 	SkipReasonCodes             []string `json:"skip_reason_codes"`
+	RoutingRoutable             bool     `json:"routing_routable"`
 	ServiceTierRoutable         bool     `json:"service_tier_routable"`
 	probeTargetCreatedAt        int64
 	probeIntervalMinutes        int
@@ -149,7 +154,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 
 	providers := make([]HubProvider, 0)
 	if DB.Migrator().HasTable(&HubProvider{}) {
-		if err := DB.Select("id", "name", "status").Find(&providers).Error; err != nil {
+		if err := DB.Select("id", "name", "status", "tenant_id").Find(&providers).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -193,6 +198,15 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 	rows := make([]HubRoutingHealthRow, 0)
 	for _, channel := range channels {
 		group, providerOwned := groupsByChannelID[channel.Id]
+		if options.TenantID != nil {
+			if !providerOwned {
+				continue
+			}
+			provider, ok := providersByID[group.ProviderId]
+			if !ok || provider.TenantId == nil || *provider.TenantId != *options.TenantID {
+				continue
+			}
+		}
 		provider := providersByID[group.ProviderId]
 		publishedModels := make(map[string]struct{})
 		if providerOwned {
@@ -261,6 +275,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 					row.ProviderID = group.ProviderId
 					row.ProviderName = provider.Name
 					row.ProviderStatus = provider.Status
+					row.TenantPublished = group.TenantPublished
 					row.SupplyGroupID = group.Id
 					row.SupplyStatus = group.Status
 					row.PriceMultiplier = &multiplier
@@ -284,31 +299,9 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 		}
 	}
 	rows = filtered
-	sort.SliceStable(rows, func(left, right int) bool {
-		if rows[left].ProviderName != rows[right].ProviderName {
-			return strings.ToLower(rows[left].ProviderName) < strings.ToLower(rows[right].ProviderName)
-		}
-		if rows[left].ChannelName != rows[right].ChannelName {
-			return strings.ToLower(rows[left].ChannelName) < strings.ToLower(rows[right].ChannelName)
-		}
-		if rows[left].ModelName != rows[right].ModelName {
-			return strings.ToLower(rows[left].ModelName) < strings.ToLower(rows[right].ModelName)
-		}
-		if rows[left].EndpointType != rows[right].EndpointType {
-			return rows[left].EndpointType < rows[right].EndpointType
-		}
-		return rows[left].ChannelID < rows[right].ChannelID
-	})
 	total := len(rows)
-	if options.Offset >= total {
-		return []HubRoutingHealthRow{}, total, nil
-	}
-	end := options.Offset + options.Limit
-	if end > total {
-		end = total
-	}
-	rows = append([]HubRoutingHealthRow(nil), rows[options.Offset:end]...)
-
+	// Populate and rank the complete filtered set before slicing. Otherwise a
+	// high-quality row can be hidden on a later alphabetic page forever.
 	if err := populateHubRoutingHealthAbilities(rows); err != nil {
 		return nil, 0, err
 	}
@@ -319,7 +312,93 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 		populateHubRoutingRuntimeHealth(&rows[index])
 		finalizeHubRoutingHealthReasons(&rows[index])
 	}
+	sortHubRoutingHealthRows(rows)
+	for index := range rows {
+		rows[index].GlobalRank = index + 1
+	}
+	if options.Offset >= total {
+		return []HubRoutingHealthRow{}, total, nil
+	}
+	end := options.Offset + options.Limit
+	if end > total {
+		end = total
+	}
+	rows = append([]HubRoutingHealthRow(nil), rows[options.Offset:end]...)
 	return rows, total, nil
+}
+
+func sortHubRoutingHealthRows(rows []HubRoutingHealthRow) {
+	sort.SliceStable(rows, func(left, right int) bool {
+		leftRow, rightRow := rows[left], rows[right]
+		if leftRow.RoutingRoutable != rightRow.RoutingRoutable {
+			return leftRow.RoutingRoutable
+		}
+		if leftRow.RoutingHardUnavailable != rightRow.RoutingHardUnavailable {
+			return !leftRow.RoutingHardUnavailable
+		}
+		leftHealthRank := hubRoutingHealthStateRank(leftRow.RealHealthState)
+		rightHealthRank := hubRoutingHealthStateRank(rightRow.RealHealthState)
+		if leftHealthRank != rightHealthRank {
+			return leftHealthRank < rightHealthRank
+		}
+		leftHasTTFT := leftRow.RealFirstTokenSampleCount >= hubRoutingQualityMinRealSamples && leftRow.RealFirstTokenP95Ms != nil
+		rightHasTTFT := rightRow.RealFirstTokenSampleCount >= hubRoutingQualityMinRealSamples && rightRow.RealFirstTokenP95Ms != nil
+		if leftHasTTFT != rightHasTTFT {
+			return leftHasTTFT
+		}
+		if leftHasTTFT && *leftRow.RealFirstTokenP95Ms != *rightRow.RealFirstTokenP95Ms {
+			return *leftRow.RealFirstTokenP95Ms < *rightRow.RealFirstTokenP95Ms
+		}
+		leftHasReal := leftRow.RealSampleCount >= hubRoutingQualityMinRealSamples
+		rightHasReal := rightRow.RealSampleCount >= hubRoutingQualityMinRealSamples
+		if leftHasReal != rightHasReal {
+			return leftHasReal
+		}
+		if leftHasReal && leftRow.RealSuccessRateBps != rightRow.RealSuccessRateBps {
+			return leftRow.RealSuccessRateBps > rightRow.RealSuccessRateBps
+		}
+		if leftRow.RankingScoreBps != nil || rightRow.RankingScoreBps != nil {
+			if leftRow.RankingScoreBps == nil {
+				return false
+			}
+			if rightRow.RankingScoreBps == nil {
+				return true
+			}
+			if *leftRow.RankingScoreBps != *rightRow.RankingScoreBps {
+				return *leftRow.RankingScoreBps > *rightRow.RankingScoreBps
+			}
+		}
+		if leftRow.ProviderName != rightRow.ProviderName {
+			return strings.ToLower(leftRow.ProviderName) < strings.ToLower(rightRow.ProviderName)
+		}
+		if leftRow.ChannelName != rightRow.ChannelName {
+			return strings.ToLower(leftRow.ChannelName) < strings.ToLower(rightRow.ChannelName)
+		}
+		if leftRow.ModelName != rightRow.ModelName {
+			return strings.ToLower(leftRow.ModelName) < strings.ToLower(rightRow.ModelName)
+		}
+		if leftRow.EndpointType != rightRow.EndpointType {
+			return leftRow.EndpointType < rightRow.EndpointType
+		}
+		return leftRow.ChannelID < rightRow.ChannelID
+	})
+}
+
+func hubRoutingHealthStateRank(state string) int {
+	switch state {
+	case HubRoutingRealHealthHealthy:
+		return 0
+	case HubRoutingRealHealthUnknown, "":
+		return 1
+	case HubRoutingRealHealthDegraded:
+		return 2
+	case HubRoutingRealHealthUnhealthy:
+		return 3
+	case HubRoutingRealHealthQuarantined:
+		return 4
+	default:
+		return 1
+	}
 }
 
 func populateHubRoutingRuntimeHealth(row *HubRoutingHealthRow) {
@@ -420,11 +499,15 @@ func populateHubRoutingHealthAbilities(rows []HubRoutingHealthRow) error {
 		return err
 	}
 	tiersByChannelModel := make(map[string]map[string]struct{})
+	routableByChannelModel := make(map[string]struct{})
 	for _, ability := range abilities {
+		key := fmt.Sprintf("%d\n%s", ability.ChannelId, ability.Model)
+		if isHubTokenRoutingCandidateAbilityGroup(ability.Group) {
+			routableByChannelModel[key] = struct{}{}
+		}
 		if !hub_routing_setting.IsServiceTier(ability.Group) {
 			continue
 		}
-		key := fmt.Sprintf("%d\n%s", ability.ChannelId, ability.Model)
 		if tiersByChannelModel[key] == nil {
 			tiersByChannelModel[key] = make(map[string]struct{})
 		}
@@ -432,6 +515,7 @@ func populateHubRoutingHealthAbilities(rows []HubRoutingHealthRow) error {
 	}
 	for index := range rows {
 		key := fmt.Sprintf("%d\n%s", rows[index].ChannelID, rows[index].ModelName)
+		_, rows[index].RoutingRoutable = routableByChannelModel[key]
 		for _, tier := range hub_routing_setting.ServiceTiers() {
 			if _, ok := tiersByChannelModel[key][tier]; ok {
 				rows[index].RoutableServiceTiers = append(rows[index].RoutableServiceTiers, tier)
@@ -560,6 +644,10 @@ func finalizeHubRoutingHealthReasons(row *HubRoutingHealthRow) {
 		blocked = true
 	}
 	if row.ProviderID > 0 {
+		if !row.TenantPublished {
+			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonTenantUnpublished)
+			blocked = true
+		}
 		if row.SupplyStatus != HubSupplyGroupStatusAvailable && row.SupplyStatus != HubSupplyGroupStatusPartial {
 			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonSupplyUnavailable)
 			blocked = true
@@ -582,6 +670,7 @@ func finalizeHubRoutingHealthReasons(row *HubRoutingHealthRow) {
 	}
 	if blocked {
 		row.RoutableServiceTiers = []string{}
+		row.RoutingRoutable = false
 		row.ServiceTierRoutable = false
 	} else if len(row.EligibleServiceTiers) > 0 && len(row.RoutableServiceTiers) == 0 {
 		row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonNoRoutableAbility)

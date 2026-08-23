@@ -211,6 +211,21 @@ func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultipli
 	assert.False(t, policy.AllowsMultiplier("anthropic", 0.3))
 }
 
+func TestProviderPolicyAllowsCheaperMultiplierOnlyDuringPlatformFallback(t *testing.T) {
+	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{
+			Family:           "openai",
+			ExactMultipliers: []float64{0.2},
+		}},
+	}, 7)
+	require.NoError(t, err)
+
+	assert.False(t, policy.AllowsMultiplier("openai", 0.18))
+	assert.True(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.18))
+	assert.True(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.2))
+	assert.False(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.201))
+}
+
 func TestNormalizeHubTokenRoutingPolicyRejectsMultipleProviderMultipliers(t *testing.T) {
 	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
 		Selections: []HubTokenRoutingSelection{{
@@ -371,6 +386,23 @@ func TestHubTokenRoutingUsesPublishedGroupsAndKeepsFallbackInsideMultiplierPolic
 	assert.True(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[0].Id))
 	assert.False(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[1].Id))
 	assert.True(t, IsChannelEnabledForHubTokenPolicyFallback(providerPolicy, modelName, "/v1/chat/completions", channels[1].Id))
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).
+		Where("id = ?", supplyGroups[1].Id).
+		Update("price_multiplier", 0.18).Error)
+	require.NoError(t, RefreshHubSupplyPricingCache())
+	channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
+		providerPolicy,
+		modelName,
+		0,
+		"/v1/chat/completions",
+		nil,
+		ChannelProviderFilter{ProviderID: providers[0].Id, Mode: ChannelProviderExclude, StrictExcludedChannels: true},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, channel)
+	assert.Equal(t, channels[1].Id, channel.Id)
+	assert.True(t, IsChannelEnabledForHubTokenPolicyFallback(providerPolicy, modelName, "/v1/chat/completions", channels[1].Id))
+	assert.False(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[1].Id))
 
 	options, err := GetHubTokenRoutingOptions(providers[0].Id)
 	require.NoError(t, err)

@@ -1,6 +1,12 @@
 package model
 
-import "sync"
+import (
+	"errors"
+	"sync"
+
+	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
+)
 
 type HubSupplyPricing struct {
 	SupplyGroupId          int
@@ -8,6 +14,7 @@ type HubSupplyPricing struct {
 	SupplyProviderStatus   string
 	SupplyOwnerUserId      int
 	PriceMultiplier        float64
+	TenantPublished        bool
 	PlatformFeeBasisPoints *int
 }
 
@@ -88,13 +95,14 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		OwnerUserId            int
 		NewAPIChannelId        int
 		PriceMultiplier        float64
+		TenantPublished        bool
 		PlatformFeeBasisPoints *int
 	}
 	var rows []hubSupplyPricingRow
 	if err := DB.Table("hub_supply_groups AS supply_groups").
 		Select(
 			"supply_groups.id, supply_groups.provider_id, providers.status AS provider_status, providers.owner_user_id, " +
-				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, providers.platform_fee_basis_points",
+				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, supply_groups.tenant_published, providers.platform_fee_basis_points",
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
 		Scan(&rows).Error; err != nil {
@@ -108,6 +116,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 			SupplyProviderStatus:   row.ProviderStatus,
 			SupplyOwnerUserId:      row.OwnerUserId,
 			PriceMultiplier:        row.PriceMultiplier,
+			TenantPublished:        row.TenantPublished,
 			PlatformFeeBasisPoints: row.PlatformFeeBasisPoints,
 		}
 	}
@@ -118,6 +127,37 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		providerBySlug:   providerBySlug,
 		providerByID:     providerByID,
 	}, nil
+}
+
+// IsHubSupplyChannelTenantPublished reads the tenant-local publication state.
+// Platform channels are always considered published because this switch only
+// applies to HubSupplyGroup-backed channels.
+func IsHubSupplyChannelTenantPublished(channelID int) bool {
+	if channelID <= 0 {
+		return false
+	}
+	hubSupplyPricingMu.RLock()
+	pricing, found := hubSupplyPricingByChannel[channelID]
+	_, configured := hubSupplyConfiguredIDs[channelID]
+	hubSupplyPricingMu.RUnlock()
+	if found {
+		return pricing.TenantPublished
+	}
+	if common.MemoryCacheEnabled && !configured {
+		return true
+	}
+	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) {
+		return true
+	}
+	var group HubSupplyGroup
+	err := DB.Select("tenant_published").Where("new_api_channel_id = ?", channelID).First(&group).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	return group.TenantPublished
 }
 
 func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
