@@ -26,6 +26,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Button } from '@/components/ui/button'
 import { formatTimestamp } from '@/lib/format'
+import { getProviderPublicURL } from '@/lib/provider-domain'
 
 import { ProviderLogoAvatar } from './provider-logo-avatar'
 import { ProviderRowActions } from './provider-row-actions'
@@ -74,6 +75,22 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
                   className='text-muted-foreground hover:text-foreground mt-0.5 flex max-w-[240px] items-center gap-1 text-xs'
                 >
                   <LongText>{provider.website}</LongText>
+                  <ExternalLink
+                    className='size-3 shrink-0'
+                    aria-hidden='true'
+                  />
+                </a>
+              )}
+              {provider.slug && (
+                <a
+                  href={getProviderPublicURL(provider.slug)}
+                  target='_blank'
+                  rel='noreferrer'
+                  title={t('Public homepage')}
+                  aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug)}`}
+                  className='text-primary hover:text-primary/80 mt-0.5 flex max-w-[240px] items-center gap-1 text-xs'
+                >
+                  <LongText>{getProviderPublicURL(provider.slug)}</LongText>
                   <ExternalLink
                     className='size-3 shrink-0'
                     aria-hidden='true'

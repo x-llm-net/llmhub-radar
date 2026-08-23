@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table'
 import { useMediaQuery } from '@/hooks'
 import { formatTimestamp } from '@/lib/format'
+import { getProviderPublicURL } from '@/lib/provider-domain'
 
 import { getHubAdminTenants, tenantAdminQueryKey } from '../tenant-admin/api'
 import { getAdminProviderOverview } from './api'
@@ -228,6 +229,21 @@ function ProviderOverviewRow({
                 className='text-muted-foreground flex max-w-[240px] items-center gap-1 truncate text-xs hover:underline'
               >
                 <span className='truncate'>{provider.website}</span>
+                <ExternalLink className='size-3 shrink-0' aria-hidden='true' />
+              </a>
+            )}
+            {provider.slug && (
+              <a
+                href={getProviderPublicURL(provider.slug)}
+                target='_blank'
+                rel='noreferrer'
+                title={t('Public homepage')}
+                aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug)}`}
+                className='text-primary hover:text-primary/80 flex max-w-[240px] items-center gap-1 truncate text-xs'
+              >
+                <span className='truncate'>
+                  {getProviderPublicURL(provider.slug)}
+                </span>
                 <ExternalLink className='size-3 shrink-0' aria-hidden='true' />
               </a>
             )}
