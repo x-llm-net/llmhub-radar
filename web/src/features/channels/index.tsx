@@ -42,9 +42,11 @@ export function Channels() {
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
+  const currentUser = useAuthStore((state) => state.auth.user)
   const channelOpsQuery = useQuery({
     queryKey: ['channel-ops'],
     queryFn: getChannelOps,
+    enabled: (currentUser?.role ?? 0) >= ROLE.ADMIN,
     retry: false,
     staleTime: 5 * 60 * 1000,
   })

@@ -31,6 +31,12 @@ func normalizeTenantHost(host string) (string, error) {
 	return hostname, nil
 }
 
+// NormalizeTenantHost exposes the same hostname normalization used by
+// trusted Host resolution for administrator-managed domain records.
+func NormalizeTenantHost(host string) (string, error) {
+	return normalizeTenantHost(host)
+}
+
 func ResolveTenantHost(host string) (TenantHostResolution, error) {
 	hostname, err := normalizeTenantHost(host)
 	if err != nil {

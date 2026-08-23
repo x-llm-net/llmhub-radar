@@ -116,6 +116,7 @@ export type HubSupplyProfile = {
   id: number
   public_id: string
   price_multiplier: number
+  tenant_published: boolean
   status: string
   published_models: string[]
   online_models: string[]

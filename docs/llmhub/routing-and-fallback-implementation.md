@@ -11,6 +11,8 @@
 - “特价 / 经济 / 标准 / 高品质”仅为前端按最高选中倍率显示的辅助标签，不参与候选过滤、计费或跨档兜底。旧 Token 和未携带 `hub_routing_policy` 的请求继续走旧 New API/服务档位兼容路径。
 - 实际用户扣费沿用 New API 的 `BillingSession`。新策略 Key 的计费基准固定为 `1x`，不乘旧用户组倍率；最终费用使用模型价格、最终命中渠道倍率和其他请求倍率。重试只对最终成功渠道结算收益；失败尝试不扣用户、不记渠道商收益。
 - 渠道商平台服务费在最终 Channel 选定时与归属、供给倍率一起快照，使用该渠道商覆盖值或当时的全局默认值；后续修改费率不影响本次请求或已创建收益记录。
+- 总代理的 Channel 上架是租户级供给开关，不复用 New API 全局 `Channel.Status`。`HubSupplyGroup.TenantPublished` 默认值为 `true`，兼容历史供给；设置为 `false` 后从本租户路由候选、能力缓存、LLM-Hub 首页和渠道商公开页移除，但保留探针、健康详情和历史数据。重新设为 `true` 后仍须满足原有模型探测、Provider、Channel、Ability 和健康条件才会恢复路由。
+- New API `Channel.Status` 保持原生全局语义：`1` 启用、`2` 管理员手动禁用、`3` 系统自动禁用。租户上架、模型/端点探测资格和这个全局状态是三层不同判断，排名只做软权重或候选排序，不能替代明确禁用和故障隔离。
 
 ## 1. 首版范围
 
@@ -97,6 +99,22 @@
 管理员可以继续使用 New API 原有的固定 Channel Token 调试能力。该能力只在传统分组中保留历史上的“直接指定渠道”语义；服务档位请求仍必须经过同档 Ability、当前请求的文本/图片资格、供给渠道商状态和入口子域归属校验，固定渠道不会因为校验失败而静默切到另一个渠道。
 
 供给计费复用 `model/hub_supply_pricing.go` 的现有内存缓存。缓存未命中时只回查一次 `HubSupplyGroup` 归属：无供给扩展的管理员平台渠道按基础倍率继续运行；数据库已有供给扩展但缓存没有完整倍率快照时，计费在上游请求前失败关闭。这样可以避免供给渠道被误当作平台自营渠道并按 `1x` 计费，同时不为平台渠道新增第二套归属表。
+
+### 2.5 T2：租户级 Channel 上架
+
+总代理在可信租户 Host 下只能操作本租户的供给 Channel。单个和批量接口分别为：
+
+```text
+PUT /api/hub/admin/channels/:id/publication
+PUT /api/hub/admin/channels/publication/batch
+body: { "published": true | false }
+```
+
+服务端先校验 `HubSupplyGroup -> HubProvider.tenant_id` 的归属，再在事务中更新 `TenantPublished`；批量请求遇到其他租户或不存在的 Channel 时整体失败，不发生部分更新。平台管理员在平台 Host 下仍保留全局 New-API 状态语义，不能把 `Channel.Status` 当成租户上架开关。
+
+Channel 管理 API 的租户权限也已收口：总代理仅可读取本租户渠道列表、搜索和详情；测试渠道、刷新上游余额、修改全局 `Channel.Status`、删除和编辑上游配置仍需平台权限。总代理的上架/下架统一走本节的 `TenantPublished` 接口，避免复用 New API 的全局状态。
+
+前端租户 Channel 列表的单行和批量按钮都只修改租户上架状态。健康管理页保留未上架行，并显示 `tenant_unpublished` 原因，便于管理员区分“主动下架”和“渠道故障”。探针不因租户下架而停止，避免重新上架后失去恢复依据。
 
 ## 3. M1：管理员渠道状态与实时路由指标
 

@@ -34,6 +34,8 @@ type BaseNavItem = {
    * `useSidebarView`). Route-level guards still enforce access independently.
    */
   requiredRole?: number
+  /** Whether a tenant administrator may see this item on a trusted tenant Host. */
+  tenantAdminAllowed?: boolean
 }
 
 /**

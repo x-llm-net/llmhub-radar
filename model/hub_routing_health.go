@@ -31,6 +31,7 @@ const HubRoutingHealthProbeStatusUnmonitored = "unmonitored"
 
 const (
 	HubRoutingHealthReasonProviderDisabled      = "provider_disabled"
+	HubRoutingHealthReasonTenantUnpublished     = "tenant_unpublished"
 	HubRoutingHealthReasonChannelManualDisabled = "channel_manually_disabled"
 	HubRoutingHealthReasonChannelAutoDisabled   = "channel_auto_disabled"
 	HubRoutingHealthReasonChannelDisabled       = "channel_disabled"
@@ -65,6 +66,7 @@ type HubRoutingHealthRow struct {
 	ProviderID                  int      `json:"provider_id"`
 	ProviderName                string   `json:"provider_name"`
 	ProviderStatus              string   `json:"provider_status"`
+	TenantPublished             bool     `json:"tenant_published"`
 	SupplyGroupID               int      `json:"supply_group_id"`
 	SupplyStatus                string   `json:"supply_status"`
 	PriceMultiplier             *float64 `json:"price_multiplier"`
@@ -273,6 +275,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 					row.ProviderID = group.ProviderId
 					row.ProviderName = provider.Name
 					row.ProviderStatus = provider.Status
+					row.TenantPublished = group.TenantPublished
 					row.SupplyGroupID = group.Id
 					row.SupplyStatus = group.Status
 					row.PriceMultiplier = &multiplier
@@ -641,6 +644,10 @@ func finalizeHubRoutingHealthReasons(row *HubRoutingHealthRow) {
 		blocked = true
 	}
 	if row.ProviderID > 0 {
+		if !row.TenantPublished {
+			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonTenantUnpublished)
+			blocked = true
+		}
 		if row.SupplyStatus != HubSupplyGroupStatusAvailable && row.SupplyStatus != HubSupplyGroupStatusPartial {
 			row.SkipReasonCodes = append(row.SkipReasonCodes, HubRoutingHealthReasonSupplyUnavailable)
 			blocked = true

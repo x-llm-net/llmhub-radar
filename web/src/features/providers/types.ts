@@ -89,6 +89,19 @@ export type HubProviderAdminListResponse = {
   }
 }
 
+export type HubAdminAccess = {
+  can_manage_providers: boolean
+  can_view_channels: boolean
+  tenant_scoped: boolean
+  tenant_id?: number
+}
+
+export type HubAdminAccessResponse = {
+  success: boolean
+  message?: string
+  data?: HubAdminAccess
+}
+
 export type HubProviderSettlementSummary = {
   provider_id: number
   gross_quota: number

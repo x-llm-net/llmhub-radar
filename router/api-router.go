@@ -215,8 +215,11 @@ func SetApiRouter(router *gin.Engine) {
 		hubAdminRoute := apiRouter.Group("/hub/admin")
 		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
+			hubAdminRoute.GET("/access", controller.GetHubAdminAccess)
 			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
 			hubAdminRoute.GET("/routing-metrics", controller.AdminListHubRoutingMetrics)
+			hubAdminRoute.PUT("/channels/publication/batch", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.BatchUpdateHubChannelPublication)
+			hubAdminRoute.PUT("/channels/:id/publication", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubChannelPublication)
 		}
 		hubAdminNotificationsRoute := apiRouter.Group("/hub/admin/notifications")
 		{
@@ -224,6 +227,17 @@ func SetApiRouter(router *gin.Engine) {
 			hubAdminNotificationsRoute.GET("/settings", middleware.RootAuth(), controller.GetHubProviderNotificationSettings)
 			hubAdminNotificationsRoute.PUT("/settings", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderNotificationSettings)
 			hubAdminNotificationsRoute.POST("/settings/test", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.TestHubProviderNotification)
+		}
+		hubTenantAdminRoute := apiRouter.Group("/hub/admin/tenants")
+		hubTenantAdminRoute.Use(middleware.RootAuth())
+		{
+			hubTenantAdminRoute.GET("", controller.AdminListHubTenants)
+			hubTenantAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenant)
+			hubTenantAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantStatus)
+			hubTenantAdminRoute.POST("/:id/domains", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenantDomain)
+			hubTenantAdminRoute.PUT("/:id/domains/:domain_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantDomain)
+			hubTenantAdminRoute.POST("/:id/members", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpsertHubTenantMember)
+			hubTenantAdminRoute.PUT("/:id/members/:user_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantMember)
 		}
 
 		// Subscription billing (plans, purchase, admin management)
@@ -348,8 +362,8 @@ func SetApiRouter(router *gin.Engine) {
 			redemptionRoute.DELETE("/:id", controller.DeleteRedemption)
 		}
 		logRoute := apiRouter.Group("/log")
-		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
-		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
+		logRoute.GET("/", middleware.TenantHostContext(), middleware.TenantAdminAuth(), controller.GetAllLogs)
+		logRoute.GET("/stat", middleware.TenantHostContext(), middleware.TenantAdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)

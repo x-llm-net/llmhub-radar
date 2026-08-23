@@ -18,6 +18,14 @@ func TestChannelStatusRoutesUseOperatePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodPut, "/", authz.ChannelWrite, controller.UpdateChannel)
 }
 
+func TestTenantAdminChannelRoutesAreLimitedToReadAndStatus(t *testing.T) {
+	for _, route := range channelPermissionRoutes {
+		allowed := route.method == http.MethodGet &&
+			(route.path == "/" || route.path == "/search" || route.path == "/:id")
+		assert.Equalf(t, allowed, route.tenantAdminAllowed, "unexpected tenant Channel access for %s %s", route.method, route.path)
+	}
+}
+
 func TestChannelDeleteRoutesUseSensitiveWritePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodDelete, "/:id", authz.ChannelSensitiveWrite, controller.DeleteChannel)
 	assertChannelRoutePermission(t, http.MethodPost, "/batch", authz.ChannelSensitiveWrite, controller.DeleteChannelBatch)

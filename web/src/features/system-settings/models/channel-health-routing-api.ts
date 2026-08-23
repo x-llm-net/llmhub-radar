@@ -28,6 +28,7 @@ export type HubRoutingHealthRow = {
   provider_id: number
   provider_name: string
   provider_status: string
+  tenant_published: boolean
   supply_group_id: number
   supply_status: string
   price_multiplier: number | null

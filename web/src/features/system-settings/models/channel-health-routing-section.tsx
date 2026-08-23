@@ -72,6 +72,7 @@ const TIER_LABELS: Record<string, string> = {
 
 const REASON_LABELS: Record<string, string> = {
   provider_disabled: 'Provider disabled',
+  tenant_unpublished: 'Tenant unpublished',
   channel_manually_disabled: 'Channel manually disabled',
   channel_auto_disabled: 'Channel automatically disabled',
   channel_disabled: 'Channel disabled',

@@ -5977,6 +5977,17 @@
     "Maximum multiplier": "Maximum multiplier",
     "{{channels}} channels / {{providers}} providers": "{{channels}} channels / {{providers}} providers",
     "This previously selected route is no longer available.": "This previously selected route is no longer available.",
-    "Remove unavailable routes before saving": "Remove unavailable routes before saving"
+    "Remove unavailable routes before saving": "Remove unavailable routes before saving",
+    "Tenant publication": "Công khai cho tenant",
+    "Unpublished": "Chưa công khai",
+    "Publish for tenant": "Công khai cho tenant",
+    "Unpublish for tenant": "Bỏ công khai cho tenant",
+    "Channel published": "Đã công khai kênh",
+    "Channel unpublished": "Đã bỏ công khai kênh",
+    "Channels published": "Đã công khai các kênh",
+    "Channels unpublished": "Đã bỏ công khai các kênh",
+    "Tenant unpublished": "Tenant chưa công khai",
+    "Publish selected channels": "Công khai các kênh đã chọn",
+    "Unpublish selected channels": "Bỏ công khai các kênh đã chọn"
   }
 }

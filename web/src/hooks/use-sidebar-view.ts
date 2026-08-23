@@ -25,6 +25,7 @@ import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { useHubAdminAccess } from './use-hub-admin-access'
 import { useSidebarConfig } from './use-sidebar-config'
 import { useSidebarData } from './use-sidebar-data'
 
@@ -48,21 +49,33 @@ export function useSidebarView(): ResolvedSidebarView {
   const { t } = useTranslation()
   const pathname = useLocation({ select: (l) => l.pathname })
   const userRole = useAuthStore((s) => s.auth.user?.role)
+  const hubAdminAccess = useHubAdminAccess()
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
+    const canTenantAdminManage =
+      hubAdminAccess.data?.can_manage_providers === true ||
+      hubAdminAccess.data?.can_view_channels === true
     return configFilteredRoot
-      .filter((group) => (group.id === 'admin' ? isAdmin : true))
+      .filter((group) =>
+        group.id === 'admin' ? isAdmin || canTenantAdminManage : true
+      )
       .map((group) => {
-        const items = group.items.filter(
-          (item) => item.requiredRole === undefined || role >= item.requiredRole
-        )
+        const items = group.items.filter((item) => {
+          if (item.requiredRole !== undefined && role < item.requiredRole) {
+            return false
+          }
+          if (group.id === 'admin' && !isAdmin) {
+            return item.tenantAdminAllowed === true
+          }
+          return true
+        })
         return items.length === group.items.length ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole])
+  }, [configFilteredRoot, hubAdminAccess.data, userRole])
 
   const view = resolveSidebarView(pathname)
 

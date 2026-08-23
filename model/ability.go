@@ -296,6 +296,9 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
+		if !IsHubSupplyChannelTenantPublished(ability.ChannelId) {
+			continue
+		}
 		if !hubSupplyChannelSupportsRequest(supplyAvailability, ability.ChannelId, model, requestPath) {
 			continue
 		}

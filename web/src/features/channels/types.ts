@@ -40,7 +40,7 @@ export const channelSchema = z.object({
   key: z.string(),
   openai_organization: z.string().nullish(),
   test_model: z.string().nullish(),
-  status: z.number(), // 1: enabled, 0: manual disabled, 2: auto disabled
+  status: z.number(), // 1: enabled, 2: manual disabled, 3: auto disabled
   name: z.string(),
   weight: z.number().nullish(),
   created_time: z.number(),
@@ -76,6 +76,8 @@ export const channelSchema = z.object({
   hub_provider_name: z.string().optional(),
   hub_supply_multiplier: z.number().optional(),
   hub_service_tiers: z.array(z.string()).optional().default([]),
+  hub_tenant_published: z.boolean().optional(),
+  hub_tenant_scoped: z.boolean().optional(),
 })
 
 export type Channel = z.infer<typeof channelSchema>

@@ -153,6 +153,9 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 	models := make(map[string]*hubProviderPublicModelAccumulator)
 	for i := range groups {
 		group := &groups[i]
+		if !group.TenantPublished {
+			continue
+		}
 		published := group.GetPublishedModels(group.ChannelModels)
 		if len(published) == 0 {
 			continue

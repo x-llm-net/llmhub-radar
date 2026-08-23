@@ -52,6 +52,7 @@ type hubSupplyProfileResponse struct {
 	Id                  int      `json:"id"`
 	PublicId            string   `json:"public_id"`
 	PriceMultiplier     float64  `json:"price_multiplier"`
+	TenantPublished     bool     `json:"tenant_published"`
 	Status              string   `json:"status"`
 	PublishedModels     []string `json:"published_models"`
 	OnlineModels        []string `json:"online_models"`
@@ -183,7 +184,7 @@ func newHubProviderChannelResponse(group *model.HubSupplyGroup, channel *model.C
 		Channel: publicChannel,
 		Supply: hubSupplyProfileResponse{
 			Id: group.Id, PublicId: group.PublicId,
-			PriceMultiplier: group.PriceMultiplier, Status: group.Status,
+			PriceMultiplier: group.PriceMultiplier, TenantPublished: group.TenantPublished, Status: group.Status,
 			PublishedModels: publishedModels, OnlineModels: routableModels,
 			ConfigVersion:    group.ConfigVersion,
 			TextProbeMinutes: group.TextProbeMinutes, ImageProbeMinutes: group.ImageProbeMinutes,

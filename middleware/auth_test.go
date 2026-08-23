@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
@@ -157,6 +158,80 @@ func TestTenantAdminAuthRequiresActiveTenantMembershipForRegularUsers(t *testing
 	request.Header.Set("Authorization", "Bearer tenant-admin-pat")
 	response = httptest.NewRecorder()
 	newRouter(true).ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestTenantAdminAuthRejectsNonAdminTenantMember(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantMember{}))
+
+	user := createMiddlewarePATUser(t, "tenant-viewer-user", "tenant-viewer-pat")
+	tenant := model.Tenant{Name: "Tenant", Slug: "tenant-viewer", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+	require.NoError(t, model.DB.Create(&model.TenantMember{
+		TenantId: tenant.Id, UserId: user.Id,
+		Role: "viewer", Status: model.TenantMemberStatusActive,
+	}).Error)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		common.SetContextKey(c, constant.ContextKeyTenantId, tenant.Id)
+		c.Next()
+	})
+	router.GET("/protected", TenantAdminAuth(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer tenant-viewer-pat")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestRequireTenantChannelPermissionOnlyAllowsAllowlistedReadRoutes(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantMember{}))
+
+	user := createMiddlewarePATUser(t, "tenant-channel-admin", "tenant-channel-admin-pat")
+	tenant := model.Tenant{Name: "Tenant", Slug: "tenant-channel", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+	require.NoError(t, model.DB.Create(&model.TenantMember{
+		TenantId: tenant.Id, UserId: user.Id,
+		Role: model.TenantMemberRoleAdmin, Status: model.TenantMemberStatusActive,
+	}).Error)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("id", user.Id)
+		c.Set("role", common.RoleCommonUser)
+		common.SetContextKey(c, constant.ContextKeyTenantId, tenant.Id)
+		c.Next()
+	})
+	router.GET("/read", RequireTenantChannelPermission(authz.ChannelRead, true), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/operate", RequireTenantChannelPermission(authz.ChannelOperate, true), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/unlisted-read", RequireTenantChannelPermission(authz.ChannelRead, false), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/read", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusNoContent, response.Code)
+
+	request = httptest.NewRequest(http.MethodGet, "/operate", nil)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+
+	request = httptest.NewRequest(http.MethodGet, "/unlisted-read", nil)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
 	assert.Equal(t, http.StatusForbidden, response.Code)
 }
 

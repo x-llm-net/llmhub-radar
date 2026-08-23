@@ -81,7 +81,7 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	return query
 }
 
-func buildChannelListQuery(group string, statusFilter int, typeFilter int, ownership string) *gorm.DB {
+func buildChannelListQuery(group string, statusFilter int, typeFilter int, ownership string, scopedChannelIDs ...[]int) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = model.ApplyHubChannelOwnershipFilter(query, ownership)
@@ -89,10 +89,17 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int, owner
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
 	}
+	if len(scopedChannelIDs) > 0 {
+		if len(scopedChannelIDs[0]) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("id IN ?", scopedChannelIDs[0])
+		}
+	}
 	return query
 }
 
-func attachHubChannelOwnership(channels []*model.Channel) error {
+func attachHubChannelOwnership(channels []*model.Channel, tenantScoped ...bool) error {
 	channelIDs := make([]int, 0, len(channels))
 	for _, channel := range channels {
 		if channel != nil {
@@ -108,6 +115,10 @@ func attachHubChannelOwnership(channels []*model.Channel) error {
 			continue
 		}
 		channel.Ownership = "platform"
+		if len(tenantScoped) > 0 && tenantScoped[0] {
+			channel.HubTenantScoped = new(bool)
+			*channel.HubTenantScoped = true
+		}
 		if ownership, ok := ownershipByChannel[channel.Id]; ok {
 			channel.Ownership = "provider"
 			channel.HubProviderId = ownership.ProviderId
@@ -118,6 +129,8 @@ func attachHubChannelOwnership(channels []*model.Channel) error {
 				ownership.PriceMultiplier,
 				ownership.ProviderId,
 			)
+			published := ownership.TenantPublished
+			channel.HubTenantPublished = &published
 		}
 	}
 	return nil
@@ -130,6 +143,17 @@ func GetChannelOps(c *gin.Context) {
 }
 
 func GetAllChannels(c *gin.Context) {
+	tenantChannelIDs, tenantScoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channelListQuery := func(group string, statusFilter int, typeFilter int, ownership string) *gorm.DB {
+		if tenantScoped {
+			return buildChannelListQuery(group, statusFilter, typeFilter, ownership, tenantChannelIDs)
+		}
+		return buildChannelListQuery(group, statusFilter, typeFilter, ownership)
+	}
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
@@ -152,13 +176,13 @@ func GetAllChannels(c *gin.Context) {
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(channelListQuery(groupFilter, statusFilter, typeFilter, ownership), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership))
+		total, err = model.CountChannelTags(channelListQuery(groupFilter, statusFilter, typeFilter, ownership))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -169,7 +193,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(channelListQuery(groupFilter, statusFilter, typeFilter, ownership).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -180,13 +204,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership).Count(&total).Error; err != nil {
+		if err := channelListQuery(groupFilter, statusFilter, typeFilter, ownership).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, ownership)).
+		err := sortOptions.Apply(channelListQuery(groupFilter, statusFilter, typeFilter, ownership)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -201,12 +225,12 @@ func GetAllChannels(c *gin.Context) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
-	if err := attachHubChannelOwnership(channelData); err != nil {
+	if err := attachHubChannelOwnership(channelData, tenantScoped); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, ownership)
+	countQuery := channelListQuery(groupFilter, statusFilter, -1, ownership)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -310,6 +334,11 @@ func FixChannelsAbilities(c *gin.Context) {
 }
 
 func SearchChannels(c *gin.Context) {
+	tenantChannelIDs, tenantScoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	keyword := c.Query("keyword")
 	group := c.Query("group")
 	modelKeyword := c.Query("model")
@@ -321,7 +350,12 @@ func SearchChannels(c *gin.Context) {
 	ownership := c.Query("ownership")
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
-		tags, err := model.SearchTags(keyword, group, modelKeyword, ownership, idSort)
+		var tags []*string
+		if tenantScoped {
+			tags, err = model.SearchTagsInChannelIDs(keyword, group, modelKeyword, ownership, idSort, tenantChannelIDs)
+		} else {
+			tags, err = model.SearchTags(keyword, group, modelKeyword, ownership, idSort)
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -332,7 +366,11 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1, ownership).Where("tag = ?", *tag)).
+				channelListQuery := buildChannelListQuery(group, -1, -1, ownership)
+				if tenantScoped {
+					channelListQuery = buildChannelListQuery(group, -1, -1, ownership, tenantChannelIDs)
+				}
+				err := sortOptions.Apply(channelListQuery.Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -346,7 +384,12 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, ownership, idSort, sortOptions)
+		var channels []*model.Channel
+		if tenantScoped {
+			channels, err = model.SearchChannelsInChannelIDs(keyword, group, modelKeyword, ownership, idSort, tenantChannelIDs, sortOptions)
+		} else {
+			channels, err = model.SearchChannels(keyword, group, modelKeyword, ownership, idSort, sortOptions)
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -419,7 +462,10 @@ func SearchChannels(c *gin.Context) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
-	if err := attachHubChannelOwnership(pagedData); err != nil {
+	if _, tenantScoped, scopeErr := hubProviderAdminChannelIDs(c); scopeErr != nil {
+		common.ApiError(c, scopeErr)
+		return
+	} else if err := attachHubChannelOwnership(pagedData, tenantScoped); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -442,6 +488,9 @@ func GetChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if !requireHubProviderAdminChannelScope(c, id) {
+		return
+	}
 	channel, err := model.GetChannelById(id, false)
 	if err != nil {
 		common.ApiError(c, err)
@@ -449,7 +498,12 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
-		if err := attachHubChannelOwnership([]*model.Channel{channel}); err != nil {
+		_, tenantScoped, scopeErr := hubProviderAdminChannelIDs(c)
+		if scopeErr != nil {
+			common.ApiError(c, scopeErr)
+			return
+		}
+		if err := attachHubChannelOwnership([]*model.Channel{channel}, tenantScoped); err != nil {
 			common.ApiError(c, err)
 			return
 		}
@@ -1226,6 +1280,9 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if !requireHubProviderAdminChannelScope(c, id) {
+		return
+	}
 	req := ChannelStatusRequest{}
 	if err := c.ShouldBindJSON(&req); err != nil || !isManageableChannelStatus(req.Status) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -1252,6 +1309,23 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 || !isManageableChannelStatus(req.Status) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
+	}
+	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if scoped {
+		allowed := make(map[int]struct{}, len(channelIDs))
+		for _, channelID := range channelIDs {
+			allowed[channelID] = struct{}{}
+		}
+		for _, channelID := range req.Ids {
+			if _, ok := allowed[channelID]; !ok {
+				common.ApiErrorI18n(c, i18n.MsgNotFound)
+				return
+			}
+		}
 	}
 	changedCount := 0
 	for _, id := range req.Ids {

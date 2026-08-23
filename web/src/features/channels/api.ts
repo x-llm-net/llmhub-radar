@@ -160,6 +160,32 @@ export async function updateChannelStatus(
   return res.data
 }
 
+/** Update a provider channel's publication state in the current tenant. */
+export async function updateHubChannelPublication(
+  id: number,
+  published: boolean
+): Promise<{ success: boolean; message?: string }> {
+  const res = await api.put(
+    `/api/hub/admin/channels/${id}/publication`,
+    { published },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/** Update publication for multiple provider channels in the current tenant. */
+export async function batchUpdateHubChannelPublication(
+  ids: number[],
+  published: boolean
+): Promise<{ success: boolean; message?: string }> {
+  const res = await api.put(
+    '/api/hub/admin/channels/publication/batch',
+    { ids, published },
+    channelActionConfig()
+  )
+  return res.data
+}
+
 /**
  * Batch update channel enabled/disabled status.
  */

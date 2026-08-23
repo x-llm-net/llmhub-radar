@@ -21,6 +21,42 @@ func hubProviderAdminTenantID(c *gin.Context) *int {
 	return &tenantID
 }
 
+// hubProviderAdminChannelIDs resolves the tenant's channels in the main DB
+// before a log DB query. The boolean distinguishes platform-wide scope from a
+// tenant scope with no channels, whose result must remain empty.
+func hubProviderAdminChannelIDs(c *gin.Context) ([]int, bool, error) {
+	tenantID := hubProviderAdminTenantID(c)
+	if tenantID == nil {
+		return nil, false, nil
+	}
+	channelIDs, err := model.GetHubProviderChannelIDsInTenant(*tenantID)
+	if err != nil {
+		return nil, true, err
+	}
+	if channelIDs == nil {
+		channelIDs = make([]int, 0)
+	}
+	return channelIDs, true, nil
+}
+
+func requireHubProviderAdminChannelScope(c *gin.Context, channelID int) bool {
+	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if !scoped {
+		return true
+	}
+	for _, allowedID := range channelIDs {
+		if allowedID == channelID {
+			return true
+		}
+	}
+	common.ApiErrorI18n(c, i18n.MsgNotFound)
+	return false
+}
+
 func getHubProviderForAdminScope(c *gin.Context, providerID int) (*model.HubProvider, error) {
 	var (
 		provider *model.HubProvider

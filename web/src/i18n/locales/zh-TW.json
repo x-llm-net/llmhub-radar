@@ -5984,6 +5984,17 @@
     "Maximum multiplier": "最高倍率",
     "{{channels}} channels / {{providers}} providers": "{{channels}} 條渠道 / {{providers}} 家渠道商",
     "This previously selected route is no longer available.": "之前選擇的路由已不可用，請移除後重新選擇。",
-    "Remove unavailable routes before saving": "請先移除不可用路由再儲存"
+    "Remove unavailable routes before saving": "請先移除不可用路由再儲存",
+    "Tenant publication": "租戶上架",
+    "Unpublished": "未上架",
+    "Publish for tenant": "在租戶中上架",
+    "Unpublish for tenant": "在租戶中下架",
+    "Channel published": "渠道已上架",
+    "Channel unpublished": "渠道已下架",
+    "Channels published": "渠道已批量上架",
+    "Channels unpublished": "渠道已批量下架",
+    "Tenant unpublished": "租戶未上架",
+    "Publish selected channels": "上架選中渠道",
+    "Unpublish selected channels": "下架選中渠道"
   }
 }

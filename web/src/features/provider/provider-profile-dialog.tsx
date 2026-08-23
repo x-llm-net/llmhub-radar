@@ -167,9 +167,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
       onOpenChange={(open) => {
         if (!mutation.isPending) props.onOpenChange(open)
       }}
-      title={t(
-        editingApplication ? 'Edit application' : 'Edit public profile'
-      )}
+      title={t(editingApplication ? 'Edit application' : 'Edit public profile')}
       description={t(
         editingApplication
           ? 'Saving changes will submit the application for review again.'

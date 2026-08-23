@@ -39,29 +39,34 @@ const (
 	HubSupplyGroupDefaultImageProbeMinutes = 30
 )
 
+var ErrHubSupplyGroupNotFound = errors.New("hub supply group not found")
+
 // HubSupplyGroup is the one-to-one supply extension of a New API Channel.
 // Channel owns all upstream configuration; this record only owns LLM-Hub
 // commercial, publication, and probe state.
 type HubSupplyGroup struct {
-	Id                      int     `json:"id" gorm:"primaryKey"`
-	PublicId                string  `json:"public_id" gorm:"type:varchar(32);not null;uniqueIndex"`
-	ProviderId              int     `json:"-" gorm:"not null;index"`
-	NewAPIChannelId         int     `json:"-" gorm:"column:new_api_channel_id;not null;uniqueIndex"`
-	PriceMultiplier         float64 `json:"price_multiplier" gorm:"type:real;not null"`
-	PublishedModels         string  `json:"-" gorm:"type:text"`
-	ProbeEndpointOverrides  string  `json:"-" gorm:"type:text"`
-	AutoProbeDisabledModels string  `json:"-" gorm:"type:text"`
-	ConfigVersion           int     `json:"config_version" gorm:"not null;default:1"`
-	TextProbeMinutes        int     `json:"text_probe_minutes" gorm:"not null;default:10"`
-	ImageProbeMinutes       int     `json:"image_probe_minutes" gorm:"not null;default:30"`
-	Status                  string  `json:"status" gorm:"type:varchar(24);not null;index"`
-	AvailableModelCount     int     `json:"available_model_count" gorm:"not null;default:0"`
-	ErrorModelCount         int     `json:"error_model_count" gorm:"not null;default:0"`
-	PendingModelCount       int     `json:"pending_model_count" gorm:"not null;default:0"`
-	LastProbeAt             int64   `json:"last_probe_at" gorm:"bigint;not null;default:0"`
-	LastManualProbeAt       int64   `json:"-" gorm:"bigint;not null;default:0"`
-	CreatedAt               int64   `json:"created_at" gorm:"bigint"`
-	UpdatedAt               int64   `json:"updated_at" gorm:"bigint"`
+	Id              int     `json:"id" gorm:"primaryKey"`
+	PublicId        string  `json:"public_id" gorm:"type:varchar(32);not null;uniqueIndex"`
+	ProviderId      int     `json:"-" gorm:"not null;index"`
+	NewAPIChannelId int     `json:"-" gorm:"column:new_api_channel_id;not null;uniqueIndex"`
+	PriceMultiplier float64 `json:"price_multiplier" gorm:"type:real;not null"`
+	// TenantPublished is independent from Channel.Status: the former is a
+	// tenant publication choice, while the latter is global/health-managed.
+	TenantPublished         bool   `json:"tenant_published" gorm:"not null;default:true;index"`
+	PublishedModels         string `json:"-" gorm:"type:text"`
+	ProbeEndpointOverrides  string `json:"-" gorm:"type:text"`
+	AutoProbeDisabledModels string `json:"-" gorm:"type:text"`
+	ConfigVersion           int    `json:"config_version" gorm:"not null;default:1"`
+	TextProbeMinutes        int    `json:"text_probe_minutes" gorm:"not null;default:10"`
+	ImageProbeMinutes       int    `json:"image_probe_minutes" gorm:"not null;default:30"`
+	Status                  string `json:"status" gorm:"type:varchar(24);not null;index"`
+	AvailableModelCount     int    `json:"available_model_count" gorm:"not null;default:0"`
+	ErrorModelCount         int    `json:"error_model_count" gorm:"not null;default:0"`
+	PendingModelCount       int    `json:"pending_model_count" gorm:"not null;default:0"`
+	LastProbeAt             int64  `json:"last_probe_at" gorm:"bigint;not null;default:0"`
+	LastManualProbeAt       int64  `json:"-" gorm:"bigint;not null;default:0"`
+	CreatedAt               int64  `json:"created_at" gorm:"bigint"`
+	UpdatedAt               int64  `json:"updated_at" gorm:"bigint"`
 }
 
 type HubSupplyGroupWithChannel struct {
@@ -89,6 +94,7 @@ type HubChannelProviderOwnership struct {
 	ProviderId      int     `json:"provider_id" gorm:"column:provider_id"`
 	ProviderName    string  `json:"provider_name" gorm:"column:provider_name"`
 	PriceMultiplier float64 `json:"price_multiplier" gorm:"column:price_multiplier"`
+	TenantPublished bool    `json:"tenant_published" gorm:"column:tenant_published"`
 }
 
 type HubChannelOwnershipOptions struct {
@@ -140,6 +146,7 @@ func GetHubChannelProviderOwnership(channelIDs []int) (map[int]HubChannelProvide
 		Select(
 			"supply_groups.new_api_channel_id AS channel_id, "+
 				"supply_groups.price_multiplier AS price_multiplier, "+
+				"supply_groups.tenant_published AS tenant_published, "+
 				"providers.id AS provider_id, providers.name AS provider_name",
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
@@ -326,7 +333,6 @@ func getHubSupplyChannelAbilityModels(tx *gorm.DB, channel *Channel) ([]string, 
 		}
 		return nil, err
 	}
-
 	var targets []HubSupplyGroupProbeTarget
 	if err := query.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&targets).Error; err != nil {
 		return nil, err
@@ -663,6 +669,50 @@ func GetHubSupplyGroupByChannelID(channelID int) (*HubSupplyGroup, error) {
 		return nil, err
 	}
 	return &group, nil
+}
+
+// UpdateHubSupplyGroupTenantPublication changes only the tenant-local
+// publication state. The caller must perform tenant authorization before
+// calling this function.
+func UpdateHubSupplyGroupTenantPublication(channelIDs []int, published bool) error {
+	uniqueIDs := make([]int, 0, len(channelIDs))
+	seen := make(map[int]struct{}, len(channelIDs))
+	for _, channelID := range channelIDs {
+		if channelID <= 0 {
+			return ErrHubSupplyGroupNotFound
+		}
+		if _, exists := seen[channelID]; exists {
+			continue
+		}
+		seen[channelID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, channelID)
+	}
+	if len(uniqueIDs) == 0 {
+		return ErrHubSupplyGroupNotFound
+	}
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		groups := make([]HubSupplyGroup, 0, len(uniqueIDs))
+		if err := lockForUpdate(tx).
+			Where("new_api_channel_id IN ?", uniqueIDs).
+			Find(&groups).Error; err != nil {
+			return err
+		}
+		if len(groups) != len(uniqueIDs) {
+			return ErrHubSupplyGroupNotFound
+		}
+		return tx.Model(&HubSupplyGroup{}).
+			Where("new_api_channel_id IN ?", uniqueIDs).
+			Updates(map[string]any{
+				"tenant_published": published,
+				"updated_at":       common.GetTimestamp(),
+			}).Error
+	})
+	if err != nil {
+		return err
+	}
+	InitChannelCache()
+	return nil
 }
 
 // syncHubSupplyGroupFromChannelTx keeps the one-to-one supply extension aligned
