@@ -93,7 +93,7 @@ export function ProviderOverview() {
                 setTenantID(event.target.value)
                 resetPage()
               }}
-              aria-label={t('Tenant')}
+              aria-label={t('Reseller')}
             >
               <NativeSelectOption value='all'>
                 {t('All tenants')}
@@ -132,7 +132,7 @@ export function ProviderOverview() {
                 <TableRow>
                   <TableHead>{t('ID')}</TableHead>
                   <TableHead>{t('Channel Provider')}</TableHead>
-                  <TableHead>{t('Tenant')}</TableHead>
+                  <TableHead>{t('Reseller')}</TableHead>
                   <TableHead>{t('Owner')}</TableHead>
                   <TableHead>{t('Status')}</TableHead>
                   <TableHead>{t('Supply Channels')}</TableHead>
