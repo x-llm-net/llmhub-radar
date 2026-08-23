@@ -5995,6 +5995,8 @@
     "Channels unpublished": "渠道已批量下架",
     "Tenant unpublished": "租戶未上架",
     "Publish selected channels": "上架選中渠道",
-    "Unpublish selected channels": "下架選中渠道"
+    "Unpublish selected channels": "下架選中渠道",
+    "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.": "確定要在目前租戶下架渠道「{{name}}」嗎？渠道本身及健康探測仍會保留。",
+    "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.": "確定要在目前租戶下架選取的 {{count}} 個渠道嗎？渠道本身及健康探測仍會保留。"
   }
 }

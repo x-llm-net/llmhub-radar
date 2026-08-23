@@ -22,6 +22,7 @@ import { Eye, EyeOff, Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
@@ -63,6 +64,7 @@ export function DataTableBulkActions<TData>({
   const queryClient = useQueryClient()
   const [showTagDialog, setShowTagDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showUnpublishConfirm, setShowUnpublishConfirm] = useState(false)
   const [tagValue, setTagValue] = useState('')
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
@@ -108,6 +110,11 @@ export function DataTableBulkActions<TData>({
   }
 
   const handleUnpublishAll = () => {
+    setShowUnpublishConfirm(true)
+  }
+
+  const handleConfirmUnpublishAll = () => {
+    setShowUnpublishConfirm(false)
     handleBatchHubChannelPublication(
       selectedIds,
       false,
@@ -294,6 +301,20 @@ export function DataTableBulkActions<TData>({
           </Tooltip>
         )}
       </BulkActionsToolbar>
+
+      {/* Unpublish Confirmation Dialog */}
+      <ConfirmDialog
+        open={showUnpublishConfirm}
+        onOpenChange={setShowUnpublishConfirm}
+        title={t('Unpublish selected channels')}
+        desc={t(
+          'Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.',
+          { count: selectedIds.length }
+        )}
+        confirmText={t('Unpublish selected channels')}
+        destructive
+        handleConfirm={handleConfirmUnpublishAll}
+      />
 
       {/* Set Tag Dialog */}
       <Dialog

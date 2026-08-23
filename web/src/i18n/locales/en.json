@@ -6029,6 +6029,8 @@
     "Channels unpublished": "Channels unpublished",
     "Tenant unpublished": "Tenant unpublished",
     "Publish selected channels": "Publish selected channels",
-    "Unpublish selected channels": "Unpublish selected channels"
+    "Unpublish selected channels": "Unpublish selected channels",
+    "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.": "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.",
+    "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.": "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available."
   }
 }
