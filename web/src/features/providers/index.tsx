@@ -47,36 +47,38 @@ export function Providers() {
   })
   const tenants = tenantsQuery.data?.data?.items ?? []
   return (
-    <SectionPageLayout fixedContent>
-      <SectionPageLayout.Title>{t('Providers')}</SectionPageLayout.Title>
-      <SectionPageLayout.Actions>
-        <Button type='button' onClick={() => setCreateOpen(true)}>
-          <Plus />
-          {t('Create provider')}
-        </Button>
-      </SectionPageLayout.Actions>
-      <SectionPageLayout.Content>
-        <Tabs defaultValue='providers' className='min-h-0 flex-1 gap-3'>
-          <TabsList>
-            <TabsTrigger value='providers'>{t('Providers')}</TabsTrigger>
-            <TabsTrigger value='withdrawals'>
-              {t('Withdrawal requests')}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value='providers' className='min-h-0'>
-            <ProvidersTable />
-          </TabsContent>
-          <TabsContent value='withdrawals' className='min-h-0'>
-            <ProviderWithdrawals />
-          </TabsContent>
-        </Tabs>
-      </SectionPageLayout.Content>
+    <>
+      <SectionPageLayout fixedContent>
+        <SectionPageLayout.Title>{t('Providers')}</SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <Button type='button' onClick={() => setCreateOpen(true)}>
+            <Plus />
+            {t('Create provider')}
+          </Button>
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          <Tabs defaultValue='providers' className='min-h-0 flex-1 gap-3'>
+            <TabsList>
+              <TabsTrigger value='providers'>{t('Providers')}</TabsTrigger>
+              <TabsTrigger value='withdrawals'>
+                {t('Withdrawal requests')}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value='providers' className='min-h-0'>
+              <ProvidersTable />
+            </TabsContent>
+            <TabsContent value='withdrawals' className='min-h-0'>
+              <ProviderWithdrawals />
+            </TabsContent>
+          </Tabs>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
       <ProviderCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         isPlatformAdmin={isPlatformAdmin}
         tenants={tenants}
       />
-    </SectionPageLayout>
+    </>
   )
 }
