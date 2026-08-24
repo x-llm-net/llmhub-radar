@@ -89,6 +89,24 @@ export type HubProviderAdminListResponse = {
   }
 }
 
+export type HubProviderOwnerCandidate = {
+  id: number
+  username: string
+  display_name: string
+  email: string
+}
+
+export type HubProviderOwnerCandidatesResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    items: HubProviderOwnerCandidate[]
+    total: number
+    page: number
+    page_size: number
+  }
+}
+
 export type HubAdminAccess = {
   can_manage_providers: boolean
   can_view_channels: boolean

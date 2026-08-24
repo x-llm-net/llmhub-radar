@@ -118,6 +118,21 @@ func GetActiveTenantMember(tenantID, userID int) (*TenantMember, error) {
 	return &member, nil
 }
 
+func GetActiveTenantByID(tenantID int) (*Tenant, error) {
+	if tenantID <= 0 {
+		return nil, ErrTenantNotFound
+	}
+	var tenant Tenant
+	err := DB.Where("id = ? AND status = ?", tenantID, TenantStatusActive).First(&tenant).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrTenantNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &tenant, nil
+}
+
 // ApplyHubProviderTenantScope applies the ownership boundary for provider
 // management queries. A nil tenant ID selects only migration-compatibility
 // records whose historical tenant ownership is still unresolved.

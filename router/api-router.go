@@ -203,6 +203,8 @@ func SetApiRouter(router *gin.Engine) {
 		hubProviderAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
 			hubProviderAdminRoute.GET("", controller.AdminListHubProviders)
+			hubProviderAdminRoute.GET("/owner-candidates", controller.AdminListHubProviderOwnerCandidates)
+			hubProviderAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProvider)
 			hubProviderAdminRoute.GET("/:id/logo", controller.GetAdminHubProviderLogo)
 			hubProviderAdminRoute.GET("/withdrawals", controller.AdminGetHubProviderWithdrawals)
 			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)

@@ -16,19 +16,45 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
+import { Plus } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  getHubAdminTenants,
+  tenantAdminQueryKey,
+} from '@/features/tenant-admin/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
+import { ProviderCreateDialog } from './provider-create-dialog'
 import { ProviderWithdrawals } from './provider-withdrawals'
 import { ProvidersTable } from './providers-table'
 
 export function Providers() {
   const { t } = useTranslation()
+  const [createOpen, setCreateOpen] = useState(false)
+  const user = useAuthStore((state) => state.auth.user)
+  const isPlatformAdmin = (user?.role ?? 0) >= ROLE.SUPER_ADMIN
+  const tenantsQuery = useQuery({
+    queryKey: tenantAdminQueryKey,
+    queryFn: getHubAdminTenants,
+    enabled: isPlatformAdmin,
+  })
+  const tenants = tenantsQuery.data?.data?.items ?? []
   return (
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Providers')}</SectionPageLayout.Title>
+      <SectionPageLayout.Actions>
+        <Button type='button' onClick={() => setCreateOpen(true)}>
+          <Plus />
+          {t('Create provider')}
+        </Button>
+      </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <Tabs defaultValue='providers' className='min-h-0 flex-1 gap-3'>
           <TabsList>
@@ -45,6 +71,12 @@ export function Providers() {
           </TabsContent>
         </Tabs>
       </SectionPageLayout.Content>
+      <ProviderCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        isPlatformAdmin={isPlatformAdmin}
+        tenants={tenants}
+      />
     </SectionPageLayout>
   )
 }

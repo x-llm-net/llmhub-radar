@@ -111,6 +111,13 @@ type HubProviderAdminListItem struct {
 	EffectivePlatformFeeBasisPoints int                        `json:"effective_platform_fee_basis_points" gorm:"-"`
 }
 
+type HubProviderOwnerCandidate struct {
+	Id          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
 type HubProviderUpstreamUsage struct {
 	Origin        string `json:"origin"`
 	ProviderCount int64  `json:"provider_count"`
@@ -578,6 +585,36 @@ func ListHubProvidersInTenant(keyword, status string, offset, limit, tenantID in
 		return nil, 0, ErrTenantNotFound
 	}
 	return listHubProviders(keyword, status, offset, limit, &tenantID)
+}
+
+func ListHubProviderOwnerCandidates(keyword string, offset, limit int) ([]HubProviderOwnerCandidate, int64, error) {
+	query := DB.Table("users AS users").
+		Select("users.id, users.username, users.display_name, users.email").
+		Joins("LEFT JOIN hub_providers AS providers ON providers.owner_user_id = users.id").
+		Where("users.status = ? AND users.deleted_at IS NULL AND providers.id IS NULL", common.UserStatusEnabled)
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		pattern := "%" + strings.ToLower(keyword) + "%"
+		query = query.Where(
+			"LOWER(users.username) LIKE ? OR LOWER(users.display_name) LIKE ? OR LOWER(users.email) LIKE ?",
+			pattern, pattern, pattern,
+		)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	candidates := make([]HubProviderOwnerCandidate, 0)
+	listQuery := query.Order("users.id DESC")
+	if limit > 0 {
+		listQuery = listQuery.Limit(limit).Offset(offset)
+	}
+	if err := listQuery.Scan(&candidates).Error; err != nil {
+		return nil, 0, err
+	}
+	return candidates, total, nil
 }
 
 func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {

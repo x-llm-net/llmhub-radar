@@ -22,6 +22,7 @@ import type {
   HubProviderAdminListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
+  HubProviderOwnerCandidatesResponse,
   HubAdminAccessResponse,
   HubProviderEarning,
   HubProviderSettlementSummary,
@@ -46,6 +47,42 @@ export async function getAdminProviders(
   params: HubProviderAdminListParams
 ): Promise<HubProviderAdminListResponse> {
   const response = await api.get('/api/hub/admin/providers', { params })
+  return response.data
+}
+
+export const adminProviderOwnerCandidatesQueryKey = [
+  'hub-admin',
+  'provider-owner-candidates',
+] as const
+
+export async function getAdminProviderOwnerCandidates(
+  keyword = ''
+): Promise<HubProviderOwnerCandidatesResponse> {
+  const response = await api.get('/api/hub/admin/providers/owner-candidates', {
+    params: { keyword, p: 1, page_size: 20 },
+  })
+  return response.data
+}
+
+export type CreateAdminProviderInput = {
+  owner_user_id: number
+  tenant_id?: number
+  name: string
+  slug: string
+  website: string
+  description: string
+  contact_type: string
+  contact_value: string
+  support_type: string
+  support_value: string
+}
+
+export async function createAdminProvider(
+  input: CreateAdminProviderInput
+): Promise<{ success: boolean; message?: string }> {
+  const response = await api.post('/api/hub/admin/providers', input, {
+    skipBusinessError: true,
+  })
   return response.data
 }
 
