@@ -87,6 +87,15 @@ func GetHubTenantEarningSummary(c *gin.Context) {
 	common.ApiSuccess(c, summary)
 }
 
+func AdminListHubTenantSettlementSummaries(c *gin.Context) {
+	items, err := model.AdminListHubTenantSettlementSummaries()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": items})
+}
+
 func GetHubTenantEarnings(c *gin.Context) {
 	tenantID, ok := hubTenantFinanceID(c)
 	if !ok {

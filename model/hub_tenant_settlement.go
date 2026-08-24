@@ -138,6 +138,14 @@ type HubTenantSettlementSummary struct {
 	MinimumWithdrawalQuota  int `json:"minimum_withdrawal_quota"`
 }
 
+type HubTenantSettlementAdminItem struct {
+	TenantId     int                        `json:"tenant_id"`
+	TenantName   string                     `json:"tenant_name"`
+	TenantSlug   string                     `json:"tenant_slug"`
+	TenantStatus string                     `json:"tenant_status"`
+	Summary      HubTenantSettlementSummary `json:"summary"`
+}
+
 type HubTenantWithdrawalAdminItem struct {
 	HubTenantWithdrawal
 	TenantName    string `json:"tenant_name" gorm:"column:tenant_name"`
@@ -285,6 +293,31 @@ func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, er
 		summary.WithdrawableQuota = 0
 	}
 	return summary, nil
+}
+
+// AdminListHubTenantSettlementSummaries is intentionally read-only and
+// platform-scoped. Keep the per-tenant summary calculation in one place so
+// this report cannot drift from the tenant finance page's balance rules.
+func AdminListHubTenantSettlementSummaries() ([]HubTenantSettlementAdminItem, error) {
+	var tenants []Tenant
+	if err := DB.Order("id ASC").Find(&tenants).Error; err != nil {
+		return nil, err
+	}
+	items := make([]HubTenantSettlementAdminItem, 0, len(tenants))
+	for _, tenant := range tenants {
+		summary, err := GetHubTenantSettlementSummary(tenant.Id)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, HubTenantSettlementAdminItem{
+			TenantId:     tenant.Id,
+			TenantName:   tenant.Name,
+			TenantSlug:   tenant.Slug,
+			TenantStatus: tenant.Status,
+			Summary:      summary,
+		})
+	}
+	return items, nil
 }
 
 func ListHubTenantEarnings(tenantID, offset, limit int) ([]HubProviderEarning, int64, error) {

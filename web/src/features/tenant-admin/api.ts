@@ -22,6 +22,7 @@ import { api } from '@/lib/api'
 import type { TenantBrand, TenantBrandResponse } from '../tenant-brand/types'
 import type {
   TenantAdminDomain,
+  TenantAdminFinanceResponse,
   TenantAdminMember,
   TenantAdminResponse,
   TenantAdminTenant,
@@ -29,9 +30,18 @@ import type {
 } from './types'
 
 export const tenantAdminQueryKey = ['hub-admin', 'tenants'] as const
+export const tenantAdminFinanceQueryKey = [
+  'hub-admin',
+  'tenant-finance',
+] as const
 
 export async function getHubAdminTenants(): Promise<TenantAdminTenantsResponse> {
   const response = await api.get('/api/hub/admin/tenants')
+  return response.data
+}
+
+export async function getHubAdminTenantFinance(): Promise<TenantAdminFinanceResponse> {
+  const response = await api.get('/api/hub/admin/tenants/finance')
   return response.data
 }
 

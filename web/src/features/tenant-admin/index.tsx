@@ -53,6 +53,7 @@ import {
   updateHubAdminTenantBrand,
   upsertHubAdminTenantMember,
 } from './api'
+import { TenantFinanceOverview } from './finance-overview'
 import type { TenantAdminTenant } from './types'
 
 function statusBadge(
@@ -278,6 +279,8 @@ export function TenantAdmin() {
                 )}
               </AlertDescription>
             </Alert>
+
+            <TenantFinanceOverview />
 
             <div className='grid gap-4 xl:grid-cols-[minmax(280px,0.7fr)_minmax(0,1.3fr)]'>
               <Card>

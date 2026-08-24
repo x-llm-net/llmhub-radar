@@ -92,6 +92,20 @@ func TestHubTenantSettlementSummaryAndBalanceTransferAreIndependentAndIdempotent
 	assert.ErrorIs(t, err, ErrHubTenantBalanceTransferInsufficient)
 }
 
+func TestAdminListHubTenantSettlementSummariesUsesTenantScopedBalances(t *testing.T) {
+	tenant, _ := seedHubTenantFinance(t)
+	createHubTenantUsageEarning(t, tenant.Id, 5, 1, 75)
+
+	items, err := AdminListHubTenantSettlementSummaries()
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, tenant.Id, items[0].TenantId)
+	assert.Equal(t, tenant.Name, items[0].TenantName)
+	assert.Equal(t, tenant.Slug, items[0].TenantSlug)
+	assert.Equal(t, 75, items[0].Summary.SettledIncomeQuota)
+	assert.Equal(t, 75, items[0].Summary.WithdrawableQuota)
+}
+
 func TestHubTenantWithdrawalReservesOnlyTenantIncome(t *testing.T) {
 	tenant, owner := seedHubTenantFinance(t)
 	createHubTenantUsageEarning(t, tenant.Id, 3, 1, 100)

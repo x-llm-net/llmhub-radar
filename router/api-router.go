@@ -264,6 +264,7 @@ func SetApiRouter(router *gin.Engine) {
 		hubTenantAdminRoute.Use(middleware.RootAuth())
 		{
 			hubTenantAdminRoute.GET("", controller.AdminListHubTenants)
+			hubTenantAdminRoute.GET("/finance", controller.AdminListHubTenantSettlementSummaries)
 			hubTenantAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenant)
 			hubTenantAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantStatus)
 			hubTenantAdminRoute.PUT("/:id/brand", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantBrand)

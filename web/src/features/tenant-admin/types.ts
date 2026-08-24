@@ -65,3 +65,23 @@ export type TenantAdminResponse<T = unknown> = {
 export type TenantAdminTenantsResponse = TenantAdminResponse<{
   items: TenantAdminTenant[]
 }>
+
+export type TenantAdminFinanceSummary = {
+  tenant_id: number
+  tenant_name: string
+  tenant_slug: string
+  tenant_status: 'active' | 'disabled' | string
+  summary: {
+    gross_quota: number
+    platform_fee_quota: number
+    settled_income_quota: number
+    pending_income_quota: number
+    transferred_balance_quota: number
+    paid_withdrawal_quota: number
+    withdrawable_quota: number
+  }
+}
+
+export type TenantAdminFinanceResponse = TenantAdminResponse<{
+  items: TenantAdminFinanceSummary[]
+}>
