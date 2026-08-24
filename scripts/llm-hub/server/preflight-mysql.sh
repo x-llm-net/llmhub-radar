@@ -11,7 +11,7 @@ dump_file="/tmp/llm-hub-preflight-$release_tag.sql"
 image="llm-hub/new-api:$release_tag"
 
 cleanup() {
-  docker rm -f "$app_container" "$mysql_container" >/dev/null 2>&1 || true
+  docker rm -fv "$app_container" "$mysql_container" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   rm -f "$dump_file"
 }

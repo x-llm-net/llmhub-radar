@@ -7,7 +7,7 @@ container="llm-hub-preflight"
 status_file="/tmp/llm-hub-preflight-status.json"
 
 cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  docker rm -fv "$container" >/dev/null 2>&1 || true
   rm -f "$status_file"
 }
 trap cleanup EXIT
