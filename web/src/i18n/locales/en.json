@@ -5351,8 +5351,6 @@
     "Become a Provider": "Become a Provider",
     "Channel Supply": "Channel Supply",
     "Create provider": "Create provider",
-    "Create provider as administrator": "Create provider as administrator",
-    "Create and activate a provider for an existing user.": "Create and activate a provider for an existing user.",
     "Select an owner": "Select an owner",
     "Search enabled users...": "Search enabled users...",
     "Loading users...": "Loading users...",
@@ -5367,7 +5365,6 @@
     "Owner user is required": "Owner user is required",
     "Tenant is required": "Tenant is required",
     "Provider subdomain is required": "Provider subdomain is required",
-    "Review contact is required": "Review contact is required",
     "Provider owner": "Provider owner",
     "Provider created": "Provider created",
     "Optional support link or account": "Optional support link or account",
@@ -5978,6 +5975,7 @@
     "Public support entry must be at most 512 characters": "Public support entry must be at most 512 characters",
     "Public support type": "Public support type",
     "Review contact": "Review contact",
+    "Review contact type": "Review contact type",
     "Review contact is private. The public support entry is shown to users on your provider homepage.": "Review contact is private. The public support entry is shown to users on your provider homepage.",
     "Review contact is required": "Review contact is required",
     "Review contact method": "Review contact method",
@@ -6049,6 +6047,15 @@
     "Channels unpublished": "Channels unpublished",
     "Tenant unpublished": "Tenant unpublished",
     "Publish selected channels": "Publish selected channels",
-    "Unpublish selected channels": "Unpublish selected channels"
+    "Unpublish selected channels": "Unpublish selected channels",
+    "Provider Overview": "Provider Overview",
+    "Provider details": "Provider details",
+    "View all channels": "View all channels",
+    "Reseller": "Reseller",
+    "All tenants": "All tenants",
+    "Platform public pool": "Platform public pool",
+    "Filter by provider, owner or website...": "Filter by provider, owner or website...",
+    "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.": "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.",
+    "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.": "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available."
   }
 }

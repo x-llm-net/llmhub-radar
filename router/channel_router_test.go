@@ -19,9 +19,21 @@ func TestChannelStatusRoutesUseOperatePermission(t *testing.T) {
 }
 
 func TestTenantAdminChannelRoutesAreLimitedToReadAndStatus(t *testing.T) {
+	allowedReadRoutes := map[string]struct{}{
+		"/":                  {},
+		"/search":            {},
+		"/models":            {},
+		"/models_enabled":    {},
+		"/ops":               {},
+		"/ownership-options": {},
+		"/:id":               {},
+	}
 	for _, route := range channelPermissionRoutes {
 		allowed := route.method == http.MethodGet &&
-			(route.path == "/" || route.path == "/search" || route.path == "/:id")
+			func() bool {
+				_, ok := allowedReadRoutes[route.path]
+				return ok
+			}()
 		assert.Equalf(t, allowed, route.tenantAdminAllowed, "unexpected tenant Channel access for %s %s", route.method, route.path)
 	}
 }

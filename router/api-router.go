@@ -156,7 +156,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		hubProviderRoute := apiRouter.Group("/hub/provider")
-		hubProviderRoute.Use(middleware.UserAuth())
+		hubProviderRoute.Use(middleware.TenantHostContext(), middleware.UserAuth())
 		{
 			hubProviderRoute.GET("/self", controller.GetHubProviderSelf)
 			hubProviderRoute.GET("/logo", controller.GetHubProviderLogo)
@@ -205,6 +205,8 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.GET("", controller.AdminListHubProviders)
 			hubProviderAdminRoute.GET("/owner-candidates", controller.AdminListHubProviderOwnerCandidates)
 			hubProviderAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProvider)
+			hubProviderAdminRoute.GET("/:id", controller.AdminGetHubProvider)
+			hubProviderAdminRoute.GET("/:id/channels", controller.AdminGetHubProviderChannels)
 			hubProviderAdminRoute.GET("/:id/logo", controller.GetAdminHubProviderLogo)
 			hubProviderAdminRoute.GET("/withdrawals", controller.AdminGetHubProviderWithdrawals)
 			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)
@@ -213,6 +215,12 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)
 			hubProviderAdminRoute.PUT("/:id/settlement-settings", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderSettlementSettings)
 			hubProviderAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderStatus)
+		}
+		hubProviderOverviewRoute := apiRouter.Group("/hub/admin/provider-overview")
+		hubProviderOverviewRoute.Use(middleware.RootAuth())
+		{
+			hubProviderOverviewRoute.GET("", controller.AdminListHubProviderOverview)
+			hubProviderOverviewRoute.GET("/:id/logo", controller.GetAdminHubProviderOverviewLogo)
 		}
 		hubAdminRoute := apiRouter.Group("/hub/admin")
 		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())

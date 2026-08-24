@@ -91,9 +91,13 @@ export function ChannelsTable() {
     statusStorageKey: CHANNELS_STATUS_FILTER_STORAGE_KEY,
     defaultPageSize: isMobile ? 10 : DEFAULT_PAGE_SIZE,
   })
+  const canLoadGlobalGroups =
+    (currentUser?.role ?? 0) >= ROLE.ADMIN ||
+    (hubAdminAccess.isSuccess && !tenantAdminOnly)
   const { data: groupsData } = useQuery({
     queryKey: ['groups'],
     queryFn: getGroups,
+    enabled: canLoadGlobalGroups,
   })
   const ownership = listState.queryParams.ownership ?? ''
   const serviceTierMode =

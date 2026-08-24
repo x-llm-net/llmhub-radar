@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { HubProviderStatus } from '@/features/provider/types'
+import type {
+  HubProviderChannel,
+  HubProviderChannelListParams,
+  HubProviderStatus,
+} from '@/features/provider/types'
 import type {
   HubProviderPayoutAccountSnapshot,
   HubProviderPayoutMethod,
@@ -24,6 +28,9 @@ import type {
 
 export type HubProviderAdminItem = {
   id: number
+  tenant_id: number | null
+  tenant_name: string
+  tenant_slug: string
   owner_user_id: number
   owner_username: string
   owner_display_name: string
@@ -74,9 +81,12 @@ export type HubProviderAdminItem = {
 export type HubProviderAdminListParams = {
   keyword?: string
   status?: string
+  tenant_id?: string
   p?: number
   page_size?: number
 }
+
+export type HubProviderOverviewListParams = HubProviderAdminListParams
 
 export type HubProviderAdminListResponse = {
   success: boolean
@@ -86,6 +96,26 @@ export type HubProviderAdminListResponse = {
     total: number
     page: number
     page_size: number
+  }
+}
+
+export type HubProviderAdminDetailResponse = {
+  success: boolean
+  message?: string
+  data?: HubProviderAdminItem
+}
+
+export type HubProviderAdminChannelListParams = HubProviderChannelListParams
+
+export type HubProviderAdminChannelListResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    items: HubProviderChannel[]
+    total: number
+    page: number
+    page_size: number
+    type_counts?: Record<string, number>
   }
 }
 

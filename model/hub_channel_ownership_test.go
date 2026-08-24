@@ -65,3 +65,33 @@ func TestHubChannelOwnershipQueriesAndFilters(t *testing.T) {
 	assert.Equal(t, "Provider A", options.Providers[0].Name)
 	assert.Equal(t, int64(1), options.Providers[0].ChannelCount)
 }
+
+func TestHubChannelOwnershipOptionsAreScopedToTenant(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&Channel{}, &HubProvider{}, &HubSupplyGroup{}, &Tenant{}))
+
+	tenantA := Tenant{Name: "Tenant A", Slug: "tenant-a", Status: TenantStatusActive}
+	tenantB := Tenant{Name: "Tenant B", Slug: "tenant-b", Status: TenantStatusActive}
+	require.NoError(t, db.Create(&tenantA).Error)
+	require.NoError(t, db.Create(&tenantB).Error)
+	providerA := HubProvider{OwnerUserId: 201, TenantId: &tenantA.Id, Slot: 1, Name: "Provider A", Slug: "provider-a"}
+	providerB := HubProvider{OwnerUserId: 202, TenantId: &tenantB.Id, Slot: 1, Name: "Provider B", Slug: "provider-b"}
+	require.NoError(t, db.Create(&providerA).Error)
+	require.NoError(t, db.Create(&providerB).Error)
+	channels := []Channel{
+		{Name: "Tenant A supply", Key: "tenant-a-key"},
+		{Name: "Tenant B supply", Key: "tenant-b-key"},
+		{Name: "Platform", Key: "platform-key"},
+	}
+	require.NoError(t, db.Create(&channels).Error)
+	require.NoError(t, db.Create(&HubSupplyGroup{ProviderId: providerA.Id, NewAPIChannelId: channels[0].Id}).Error)
+	require.NoError(t, db.Create(&HubSupplyGroup{ProviderId: providerB.Id, NewAPIChannelId: channels[1].Id}).Error)
+
+	options, err := GetHubChannelOwnershipOptionsInTenant(tenantA.Id)
+	require.NoError(t, err)
+	assert.Zero(t, options.PlatformChannelCount)
+	assert.Equal(t, int64(1), options.ProviderChannelCount)
+	require.Len(t, options.Providers, 1)
+	assert.Equal(t, providerA.Id, options.Providers[0].Id)
+	assert.Equal(t, int64(1), options.Providers[0].ChannelCount)
+}

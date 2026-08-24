@@ -89,6 +89,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [unpublishConfirmOpen, setUnpublishConfirmOpen] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
   const [isTogglingPublication, setIsTogglingPublication] = useState(false)
@@ -166,10 +167,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     }
   }
 
-  const handleTogglePublication = async (
-    e?: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    e?.stopPropagation()
+  const togglePublication = async () => {
     if (channel.hub_tenant_published === undefined) return
     setIsTogglingPublication(true)
     try {
@@ -181,6 +179,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     } finally {
       setIsTogglingPublication(false)
     }
+  }
+
+  const handleTogglePublication = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.stopPropagation()
+    if (channel.hub_tenant_published === undefined) return
+    if (channel.hub_tenant_published) {
+      setUnpublishConfirmOpen(true)
+      return
+    }
+    void togglePublication()
   }
 
   let statusIcon = <Power className='size-4' />
@@ -264,7 +272,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </Tooltip>
       )}
 
-      {canManageTenantPublication ? (
+      {canManageTenantPublication && (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -294,7 +302,9 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               : t('Publish for tenant')}
           </TooltipContent>
         </Tooltip>
-      ) : !tenantAdminOnly ? (
+      )}
+
+      {!canManageTenantPublication && !tenantAdminOnly && (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -318,7 +328,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             {isEnabled ? t('Disable') : t('Enable')}
           </TooltipContent>
         </Tooltip>
-      ) : null}
+      )}
 
       {!tenantAdminOnly && (
         <DropdownMenu>
@@ -452,6 +462,22 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+
+      <ConfirmDialog
+        open={unpublishConfirmOpen}
+        onOpenChange={setUnpublishConfirmOpen}
+        title={t('Unpublish for tenant')}
+        desc={t(
+          'Are you sure you want to unpublish channel "{{name}}" for this tenant? The channel and its health probes will remain available.',
+          { name: channel.name }
+        )}
+        confirmText={t('Unpublish for tenant')}
+        destructive
+        handleConfirm={() => {
+          setUnpublishConfirmOpen(false)
+          void togglePublication()
+        }}
+      />
 
       <ConfirmDialog
         open={deleteConfirmOpen}

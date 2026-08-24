@@ -179,37 +179,60 @@ func ResolveHubSupplyServiceTiers(modelsCSV string, multiplier float64, provider
 }
 
 func GetHubChannelOwnershipOptions() (*HubChannelOwnershipOptions, error) {
+	return getHubChannelOwnershipOptions(nil)
+}
+
+func GetHubChannelOwnershipOptionsInTenant(tenantID int) (*HubChannelOwnershipOptions, error) {
+	if tenantID <= 0 {
+		return nil, ErrTenantNotFound
+	}
+	return getHubChannelOwnershipOptions(&tenantID)
+}
+
+func getHubChannelOwnershipOptions(tenantID *int) (*HubChannelOwnershipOptions, error) {
 	options := &HubChannelOwnershipOptions{
 		Providers: make([]HubChannelProviderOption, 0),
 	}
 	if !DB.Migrator().HasTable(&HubSupplyGroup{}) {
-		if err := DB.Model(&Channel{}).Count(&options.PlatformChannelCount).Error; err != nil {
-			return nil, err
+		if tenantID == nil {
+			if err := DB.Model(&Channel{}).Count(&options.PlatformChannelCount).Error; err != nil {
+				return nil, err
+			}
 		}
 		return options, nil
 	}
 
-	if err := DB.Model(&HubSupplyGroup{}).Count(&options.ProviderChannelCount).Error; err != nil {
+	supplyQuery := DB.Model(&HubSupplyGroup{})
+	if tenantID != nil {
+		supplyQuery = supplyQuery.
+			Joins("JOIN hub_providers ON hub_providers.id = hub_supply_groups.provider_id").
+			Where("hub_providers.tenant_id = ?", *tenantID)
+	}
+	if err := supplyQuery.Count(&options.ProviderChannelCount).Error; err != nil {
 		return nil, err
 	}
-	var totalChannels int64
-	if err := DB.Model(&Channel{}).Count(&totalChannels).Error; err != nil {
-		return nil, err
-	}
-	options.PlatformChannelCount = totalChannels - options.ProviderChannelCount
-	if options.PlatformChannelCount < 0 {
-		options.PlatformChannelCount = 0
+	if tenantID == nil {
+		var totalChannels int64
+		if err := DB.Model(&Channel{}).Count(&totalChannels).Error; err != nil {
+			return nil, err
+		}
+		options.PlatformChannelCount = totalChannels - options.ProviderChannelCount
+		if options.PlatformChannelCount < 0 {
+			options.PlatformChannelCount = 0
+		}
 	}
 
-	err := DB.Table("hub_providers AS providers").
+	providerQuery := DB.Table("hub_providers AS providers").
 		Select(
 			"providers.id, providers.name, COUNT(supply_groups.id) AS channel_count",
 		).
 		Joins("JOIN hub_supply_groups AS supply_groups ON supply_groups.provider_id = providers.id").
 		Group("providers.id, providers.name").
-		Order("providers.name ASC").
-		Scan(&options.Providers).Error
-	if err != nil {
+		Order("providers.name ASC")
+	if tenantID != nil {
+		providerQuery = providerQuery.Where("providers.tenant_id = ?", *tenantID)
+	}
+	if err := providerQuery.Scan(&options.Providers).Error; err != nil {
 		return nil, err
 	}
 	return options, nil

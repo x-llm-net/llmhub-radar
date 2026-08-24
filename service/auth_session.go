@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -304,7 +305,7 @@ func WriteRefreshCookie(c *gin.Context, rawToken string) {
 		Name:     RefreshCookieName,
 		Value:    rawToken,
 		Path:     "/api/user/auth",
-		Domain:   common.SessionCookieDomain,
+		Domain:   refreshCookieDomain(c.Request),
 		MaxAge:   maxAge,
 		Expires:  expiresAt,
 		HttpOnly: true,
@@ -318,13 +319,33 @@ func ClearRefreshCookie(c *gin.Context) {
 		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     "/api/user/auth",
-		Domain:   common.SessionCookieDomain,
+		Domain:   refreshCookieDomain(c.Request),
 		MaxAge:   -1,
 		Expires:  time.Unix(1, 0),
 		HttpOnly: true,
 		Secure:   common.SessionCookieSecure,
 		SameSite: http.SameSiteStrictMode,
 	})
+}
+
+// refreshCookieDomain shares the session across the configured platform
+// domain, but falls back to a host-only cookie for unrelated custom domains.
+// Browsers reject a cookie whose Domain is not a suffix of the request host.
+func refreshCookieDomain(request *http.Request) string {
+	configured := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(common.SessionCookieDomain)), ".")
+	if configured == "" || request == nil {
+		return ""
+	}
+
+	host := strings.ToLower(strings.TrimSpace(request.Host))
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == configured || strings.HasSuffix(host, "."+configured) {
+		return configured
+	}
+	return ""
 }
 
 func issueAuthBundle(session *model.UserSession, rawRefreshToken string, current bool) (*AuthBundle, error) {

@@ -26,6 +26,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Button } from '@/components/ui/button'
 import { formatTimestamp } from '@/lib/format'
+import { getProviderPublicURL } from '@/lib/provider-domain'
 
 import { ProviderLogoAvatar } from './provider-logo-avatar'
 import { ProviderRowActions } from './provider-row-actions'
@@ -41,6 +42,17 @@ const providerStatusDisplay = {
 export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
   const { t } = useTranslation()
   return [
+    {
+      accessorKey: 'tenant_id',
+      header: t('Reseller'),
+      cell: () => null,
+      enableSorting: false,
+      enableHiding: false,
+      size: 0,
+      minSize: 0,
+      maxSize: 0,
+      meta: { mobileHidden: true },
+    },
     {
       accessorKey: 'id',
       header: t('ID'),
@@ -59,8 +71,8 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
             <div className='min-w-0'>
               <LongText className='max-w-[220px] font-medium'>
                 <Link
-                  to='/channels'
-                  search={{ ownership: [`provider:${provider.id}`] }}
+                  to='/provider/$providerId'
+                  params={{ providerId: String(provider.id) }}
                   className='hover:text-primary hover:underline'
                 >
                   {provider.name}
@@ -74,6 +86,22 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
                   className='text-muted-foreground hover:text-foreground mt-0.5 flex max-w-[240px] items-center gap-1 text-xs'
                 >
                   <LongText>{provider.website}</LongText>
+                  <ExternalLink
+                    className='size-3 shrink-0'
+                    aria-hidden='true'
+                  />
+                </a>
+              )}
+              {provider.slug && (
+                <a
+                  href={getProviderPublicURL(provider.slug)}
+                  target='_blank'
+                  rel='noreferrer'
+                  title={t('Public homepage')}
+                  aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug)}`}
+                  className='text-primary hover:text-primary/80 mt-0.5 flex max-w-[240px] items-center gap-1 text-xs'
+                >
+                  <LongText>{getProviderPublicURL(provider.slug)}</LongText>
                   <ExternalLink
                     className='size-3 shrink-0'
                     aria-hidden='true'

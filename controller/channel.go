@@ -517,7 +517,15 @@ func GetChannel(c *gin.Context) {
 }
 
 func GetChannelOwnershipOptions(c *gin.Context) {
-	options, err := model.GetHubChannelOwnershipOptions()
+	var (
+		options *model.HubChannelOwnershipOptions
+		err     error
+	)
+	if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
+		options, err = model.GetHubChannelOwnershipOptionsInTenant(*tenantID)
+	} else {
+		options, err = model.GetHubChannelOwnershipOptions()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

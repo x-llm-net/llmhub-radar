@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -178,6 +179,9 @@ func CreateHubProvider(c *gin.Context) {
 		SupportValue:       req.SupportValue,
 		Status:             model.HubProviderStatusPending,
 		UseProvisionalSlug: true,
+	}
+	if tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId); tenantID > 0 {
+		provider.TenantId = &tenantID
 	}
 	if assets.VerifyWebsite || len(assets.Logo) > 0 {
 		err = model.CreateHubProviderWithAssets(
@@ -341,7 +345,31 @@ func AdminListHubProviders(c *gin.Context) {
 	var providers []model.HubProviderAdminListItem
 	var total int64
 	var err error
-	if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
+	if isPlatformAdmin(c) {
+		tenantFilter := strings.TrimSpace(c.Query("tenant_id"))
+		switch tenantFilter {
+		case "", "all":
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), nil, false,
+			)
+		case "platform":
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), nil, true,
+			)
+		default:
+			parsedTenantID, parseErr := strconv.Atoi(tenantFilter)
+			if parseErr != nil || parsedTenantID <= 0 {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), &parsedTenantID, false,
+			)
+		}
+	} else if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
 		providers, total, err = model.ListHubProvidersInTenant(
 			c.Query("keyword"), c.Query("status"),
 			pageInfo.GetStartIdx(), pageInfo.GetPageSize(), *tenantID,
@@ -359,6 +387,43 @@ func AdminListHubProviders(c *gin.Context) {
 	for i := range providers {
 		if providers[i].LogoAssetId > 0 {
 			providers[i].LogoURL = "/api/hub/admin/providers/" + strconv.Itoa(providers[i].Id) + "/logo"
+		}
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(providers)
+	common.ApiSuccess(c, pageInfo)
+}
+
+// AdminListHubProviderOverview is intentionally separate from the tenant
+// scoped provider page. It is a read-only, platform-wide view for root users.
+func AdminListHubProviderOverview(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	var tenantID *int
+	platformOnly := false
+	tenantFilter := strings.TrimSpace(c.Query("tenant_id"))
+	if tenantFilter != "" && tenantFilter != "all" {
+		if tenantFilter == "platform" {
+			platformOnly = true
+		} else {
+			parsedTenantID, err := strconv.Atoi(tenantFilter)
+			if err != nil || parsedTenantID <= 0 {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			tenantID = &parsedTenantID
+		}
+	}
+	providers, total, err := model.ListHubProvidersForOverview(
+		c.Query("keyword"), c.Query("status"),
+		pageInfo.GetStartIdx(), pageInfo.GetPageSize(), tenantID, platformOnly,
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for i := range providers {
+		if providers[i].LogoAssetId > 0 {
+			providers[i].LogoURL = "/api/hub/admin/provider-overview/" + strconv.Itoa(providers[i].Id) + "/logo"
 		}
 	}
 	pageInfo.SetTotal(int(total))

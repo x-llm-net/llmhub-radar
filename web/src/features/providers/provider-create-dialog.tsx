@@ -206,6 +206,23 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
   const [slugDirty, setSlugDirty] = useState(false)
   const [owner, setOwner] = useState<HubProviderOwnerCandidate | null>(null)
   const [tenantId, setTenantId] = useState('')
+  const contactTypeOptions = [
+    { value: 'qq', label: 'QQ' },
+    { value: 'wechat', label: t('WeChat') },
+    { value: 'telegram', label: 'Telegram' },
+    { value: 'email', label: t('Email') },
+    { value: 'phone', label: t('Phone') },
+    { value: 'other', label: t('Other') },
+  ]
+  const supportTypeOptions = [
+    { value: 'community', label: t('Community') },
+    { value: 'qq_group', label: t('QQ group') },
+    { value: 'telegram_group', label: t('Telegram group') },
+    { value: 'customer_service', label: t('Customer service') },
+    { value: 'announcement', label: t('Announcement channel') },
+    { value: 'email', label: t('Email') },
+    { value: 'other', label: t('Other') },
+  ]
 
   useEffect(() => {
     if (!props.open) return
@@ -283,8 +300,7 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
       onOpenChange={(open) => {
         if (!mutation.isPending) props.onOpenChange(open)
       }}
-      title={t('Create provider as administrator')}
-      description={t('Create and activate a provider for an existing user.')}
+      title={t('Create provider')}
       contentClassName='sm:max-w-2xl'
       footer={
         <>
@@ -469,16 +485,21 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
                 id='admin-provider-contact-type'
                 className='w-full'
               >
-                <SelectValue />
+                <SelectValue>
+                  {
+                    contactTypeOptions.find(
+                      (option) => option.value === form.contact_type
+                    )?.label
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 <SelectGroup>
-                  <SelectItem value='qq'>QQ</SelectItem>
-                  <SelectItem value='wechat'>{t('WeChat')}</SelectItem>
-                  <SelectItem value='telegram'>Telegram</SelectItem>
-                  <SelectItem value='email'>{t('Email')}</SelectItem>
-                  <SelectItem value='phone'>{t('Phone')}</SelectItem>
-                  <SelectItem value='other'>{t('Other')}</SelectItem>
+                  {contactTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -514,23 +535,21 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
                 id='admin-provider-support-type'
                 className='w-full'
               >
-                <SelectValue />
+                <SelectValue>
+                  {
+                    supportTypeOptions.find(
+                      (option) => option.value === form.support_type
+                    )?.label
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 <SelectGroup>
-                  <SelectItem value='community'>{t('Community')}</SelectItem>
-                  <SelectItem value='qq_group'>{t('QQ group')}</SelectItem>
-                  <SelectItem value='telegram_group'>
-                    {t('Telegram group')}
-                  </SelectItem>
-                  <SelectItem value='customer_service'>
-                    {t('Customer service')}
-                  </SelectItem>
-                  <SelectItem value='announcement'>
-                    {t('Announcement channel')}
-                  </SelectItem>
-                  <SelectItem value='email'>{t('Email')}</SelectItem>
-                  <SelectItem value='other'>{t('Other')}</SelectItem>
+                  {supportTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectGroup>
               </SelectContent>
             </Select>

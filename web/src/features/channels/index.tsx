@@ -39,10 +39,11 @@ import { ChannelsTable } from './components/channels-table'
 
 export function Channels() {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const isPlatformAdmin = (currentUser?.role ?? 0) >= ROLE.ADMIN
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
-  const currentUser = useAuthStore((state) => state.auth.user)
   const channelOpsQuery = useQuery({
     queryKey: ['channel-ops'],
     queryFn: getChannelOps,
@@ -103,7 +104,7 @@ export function Channels() {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <ChannelsDialogs />
+      {isPlatformAdmin && <ChannelsDialogs />}
     </ChannelsProvider>
   )
 }

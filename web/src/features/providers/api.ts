@@ -20,8 +20,12 @@ import { api } from '@/lib/api'
 
 import type {
   HubProviderAdminListParams,
+  HubProviderOverviewListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
+  HubProviderAdminDetailResponse,
+  HubProviderAdminChannelListParams,
+  HubProviderAdminChannelListResponse,
   HubProviderOwnerCandidatesResponse,
   HubAdminAccessResponse,
   HubProviderEarning,
@@ -48,6 +52,38 @@ export async function getAdminProviders(
 ): Promise<HubProviderAdminListResponse> {
   const response = await api.get('/api/hub/admin/providers', { params })
   return response.data
+}
+
+export const adminProviderDetailQueryKey = (providerId: number) =>
+  ['hub-admin', 'providers', providerId, 'detail'] as const
+
+export const adminProviderChannelsQueryKey = (providerId: number) =>
+  ['hub-admin', 'providers', providerId, 'channels'] as const
+
+export async function getAdminProvider(
+  providerId: number
+): Promise<HubProviderAdminDetailResponse> {
+  const response = await api.get(`/api/hub/admin/providers/${providerId}`)
+  const result = response.data as HubProviderAdminDetailResponse
+  if (!result.success || !result.data) {
+    throw new Error(result.message || 'Failed to load provider')
+  }
+  return result
+}
+
+export async function getAdminProviderChannels(
+  providerId: number,
+  params: HubProviderAdminChannelListParams = {}
+): Promise<HubProviderAdminChannelListResponse> {
+  const response = await api.get(
+    `/api/hub/admin/providers/${providerId}/channels`,
+    { params }
+  )
+  const result = response.data as HubProviderAdminChannelListResponse
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to load supply channels')
+  }
+  return result
 }
 
 export const adminProviderOwnerCandidatesQueryKey = [
@@ -84,6 +120,13 @@ export async function createAdminProvider(
   const response = await api.post('/api/hub/admin/providers', input, {
     skipBusinessError: true,
   })
+  return response.data
+}
+
+export async function getAdminProviderOverview(
+  params: HubProviderOverviewListParams & { tenant_id?: string }
+): Promise<HubProviderAdminListResponse> {
+  const response = await api.get('/api/hub/admin/provider-overview', { params })
   return response.data
 }
 

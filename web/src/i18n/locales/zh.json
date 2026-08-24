@@ -5351,8 +5351,6 @@
     "Become a Provider": "成为渠道商",
     "Channel Supply": "渠道商中心",
     "Create provider": "创建渠道商",
-    "Create provider as administrator": "以管理员身份创建渠道商",
-    "Create and activate a provider for an existing user.": "为已有用户创建并立即启用渠道商。",
     "Select an owner": "选择所有者",
     "Search enabled users...": "搜索已启用用户...",
     "Loading users...": "正在加载用户...",
@@ -5367,7 +5365,6 @@
     "Owner user is required": "必须选择所有者用户",
     "Tenant is required": "必须选择总代理",
     "Provider subdomain is required": "请输入渠道商子域名",
-    "Review contact is required": "请输入审核联系方式",
     "Provider owner": "渠道商所有者",
     "Provider created": "渠道商已创建",
     "Optional support link or account": "可选，填写服务链接或账号",
@@ -5978,6 +5975,7 @@
     "Public support entry must be at most 512 characters": "公开服务入口最多 512 个字符",
     "Public support type": "公开服务类型",
     "Review contact": "审核联系方式",
+    "Review contact type": "审核联系方式类型",
     "Review contact is private. The public support entry is shown to users on your provider homepage.": "审核联系方式仅供平台审核和运营使用；公开服务入口会展示在渠道商首页。",
     "Review contact is required": "请填写审核联系方式",
     "Review contact method": "审核联系类型",
@@ -6049,6 +6047,15 @@
     "Channels unpublished": "渠道已批量下架",
     "Tenant unpublished": "租户未上架",
     "Publish selected channels": "上架选中渠道",
-    "Unpublish selected channels": "下架选中渠道"
+    "Unpublish selected channels": "下架选中渠道",
+    "Provider Overview": "渠道商总览",
+    "Provider details": "渠道商详情",
+    "View all channels": "查看全部渠道",
+    "Reseller": "所属总代理",
+    "All tenants": "全部总代理",
+    "Platform public pool": "平台公共池",
+    "Filter by provider, owner or website...": "按渠道商、用户或官网筛选...",
+    "Are you sure you want to unpublish channel \"{{name}}\" for this tenant? The channel and its health probes will remain available.": "确定要在当前租户下架渠道“{{name}}”吗？渠道本身及健康探测仍会保留。",
+    "Are you sure you want to unpublish {{count}} selected channel(s) for this tenant? The channels and their health probes will remain available.": "确定要在当前租户下架选中的 {{count}} 个渠道吗？渠道本身及健康探测仍会保留。"
   }
 }
