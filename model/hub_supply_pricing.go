@@ -28,9 +28,10 @@ type HubSupplyPricingSnapshot struct {
 }
 
 type HubProviderRoutingInfo struct {
-	Id     int
-	Slug   string
-	Status string
+	Id       int
+	Slug     string
+	Status   string
+	TenantId *int
 }
 
 type ChannelProviderFilterMode int
@@ -77,12 +78,12 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	}
 
 	var providers []HubProvider
-	if err := DB.Select("id", "slug", "status").Find(&providers).Error; err != nil {
+	if err := DB.Select("id", "slug", "status", "tenant_id").Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	for _, provider := range providers {
 		info := HubProviderRoutingInfo{
-			Id: provider.Id, Slug: provider.Slug, Status: provider.Status,
+			Id: provider.Id, Slug: provider.Slug, Status: provider.Status, TenantId: provider.TenantId,
 		}
 		providerBySlug[provider.Slug] = info
 		providerByID[provider.Id] = info

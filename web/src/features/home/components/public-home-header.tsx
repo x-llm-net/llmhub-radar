@@ -20,6 +20,8 @@ import { ArrowUpRight, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useSystemConfig } from '@/hooks/use-system-config'
+
 const navigation = [
   { label: 'Homepage', href: '#top' },
   { label: 'Model rankings', href: '#model-rankings' },
@@ -29,19 +31,30 @@ const navigation = [
 
 export function PublicHomeHeader() {
   const { t } = useTranslation()
+  const { systemName, tenantBrand } = useSystemConfig()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const brandName = systemName || 'LLMHub'
+  const brandLogo = tenantBrand?.logo_url?.trim()
 
   return (
     <header className='hub-header'>
       <div className='hub-shell hub-header-inner'>
-        <a className='hub-brand' href='#top' aria-label='LLMHub'>
-          <span className='hub-brand-mark' aria-hidden='true'>
-            <i />
-            <i />
-            <i />
-          </span>
+        <a className='hub-brand' href='#top' aria-label={brandName}>
+          {brandLogo ? (
+            <img
+              className='hub-brand-mark object-contain'
+              src={brandLogo}
+              alt=''
+            />
+          ) : (
+            <span className='hub-brand-mark' aria-hidden='true'>
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
           <span className='hub-brand-copy'>
-            <strong>LLMHub</strong>
+            <strong>{brandName}</strong>
             <small>{t('Relay field-test rankings')}</small>
           </span>
         </a>

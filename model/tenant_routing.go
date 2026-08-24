@@ -54,7 +54,31 @@ func ResolveTenantHost(host string) (TenantHostResolution, error) {
 		Where("domains.host = ?", hostname).
 		Take(&resolution).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return TenantHostResolution{}, nil
+		// Provider subdomains inherit the brand and tenant scope of the
+		// provider they expose. The platform root remains resolved through
+		// tenant_domains above, while legacy platform providers stay unscoped.
+		providerHost, providerErr := ResolveHubProviderHost(hostname)
+		if providerErr != nil || !providerHost.IsProviderHost ||
+			providerHost.Provider.Status != HubProviderStatusActive ||
+			providerHost.Provider.TenantId == nil {
+			return TenantHostResolution{}, nil
+		}
+		tenant, tenantErr := GetActiveTenantByID(*providerHost.Provider.TenantId)
+		if errors.Is(tenantErr, ErrTenantNotFound) {
+			return TenantHostResolution{}, nil
+		}
+		if tenantErr != nil {
+			return TenantHostResolution{}, tenantErr
+		}
+		return TenantHostResolution{
+			IsConfigured:       true,
+			IsTenantHost:       true,
+			TenantID:           tenant.Id,
+			Host:               hostname,
+			TenantStatus:       tenant.Status,
+			DomainStatus:       TenantDomainStatusActive,
+			VerificationStatus: TenantDomainVerificationVerified,
+		}, nil
 	}
 	if err != nil {
 		return TenantHostResolution{}, err

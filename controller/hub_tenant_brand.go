@@ -172,6 +172,7 @@ func GetPublicHubTenantBrandAsset(c *gin.Context) {
 }
 
 func GetPublicHubTenantBrand(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	resolution, err := model.ResolveTenantHost(c.Request.Host)
 	if errors.Is(err, model.ErrTenantHostInvalid) || (err == nil && !resolution.IsTenantHost) {
 		common.ApiSuccess(c, tenantBrandData(nil))

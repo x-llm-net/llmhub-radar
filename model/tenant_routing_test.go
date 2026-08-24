@@ -54,6 +54,29 @@ func TestResolveTenantHostRequiresActiveVerifiedDomainAndTenant(t *testing.T) {
 	assert.False(t, resolution.IsTenantHost)
 }
 
+func TestResolveTenantHostInheritsProviderTenant(t *testing.T) {
+	truncateTables(t)
+	t.Setenv("HUB_PROVIDER_ROOT_DOMAIN", "llm-hub.store")
+	require.NoError(t, DB.AutoMigrate(&Tenant{}, &TenantDomain{}, &HubProvider{}))
+	tenant := Tenant{Name: "Provider tenant", Slug: "provider-tenant", Status: TenantStatusActive}
+	require.NoError(t, DB.Create(&tenant).Error)
+	provider := &HubProvider{
+		OwnerUserId: 94003,
+		TenantId:    &tenant.Id,
+		Name:        "Provider",
+		Slug:        "tenant-router",
+		Status:      HubProviderStatusActive,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+
+	resolution, err := ResolveTenantHost("tenant-router.llm-hub.store")
+	require.NoError(t, err)
+	assert.True(t, resolution.IsConfigured)
+	assert.True(t, resolution.IsTenantHost)
+	assert.Equal(t, tenant.Id, resolution.TenantID)
+	assert.Equal(t, "tenant-router.llm-hub.store", resolution.Host)
+}
+
 func TestResolveTenantHostRejectsLocalAndIPHosts(t *testing.T) {
 	db := useHubSupplyGroupMigrationDB(t)
 	require.NoError(t, db.AutoMigrate(&Tenant{}, &TenantDomain{}))

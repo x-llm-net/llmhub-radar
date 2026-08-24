@@ -71,13 +71,22 @@ func newTenantBrandLogoMultipartContext(t *testing.T, brand map[string]string, l
 
 func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
-	createTenantBrandFixture(t, "Tenant A", "tenant-a", "a.example.com", model.TenantBrandConfig{
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.HubProvider{}))
+	tenantA := createTenantBrandFixture(t, "Tenant A", "tenant-a", "a.example.com", model.TenantBrandConfig{
 		Name: "Brand A", LogoURL: "https://a.example.com/logo.png",
 	})
 	createTenantBrandFixture(t, "Tenant B", "tenant-b", "b.example.com", model.TenantBrandConfig{
 		Name: "Brand B", LogoURL: "https://b.example.com/logo.png",
 	})
+	t.Setenv("HUB_PROVIDER_ROOT_DOMAIN", "llm-hub.store")
+	provider := &model.HubProvider{
+		OwnerUserId: 94004,
+		TenantId:    &tenantA.Id,
+		Name:        "Tenant A provider",
+		Slug:        "tenant-a-provider",
+		Status:      model.HubProviderStatusActive,
+	}
+	require.NoError(t, model.CreateHubProvider(provider))
 
 	for _, test := range []struct {
 		host      string
@@ -87,6 +96,7 @@ func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 	}{
 		{host: "a.example.com", isTenant: true, brandName: "Brand A", brandLogo: "https://a.example.com/logo.png"},
 		{host: "b.example.com:443", isTenant: true, brandName: "Brand B", brandLogo: "https://b.example.com/logo.png"},
+		{host: "tenant-a-provider.llm-hub.store", isTenant: true, brandName: "Brand A", brandLogo: "https://a.example.com/logo.png"},
 		{host: "unknown.example.com", isTenant: false},
 		{host: "localhost:3000", isTenant: false},
 	} {
