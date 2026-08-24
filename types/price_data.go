@@ -8,17 +8,20 @@ import (
 )
 
 type GroupRatioInfo struct {
-	GroupRatio                float64
-	GroupSpecialRatio         float64
-	HasSpecialRatio           bool
-	BaseGroupRatio            float64
-	SupplyMultiplier          float64
-	HasSupplyPricing          bool
-	SupplyGroupId             int
-	SupplyProviderId          int
-	SupplyOwnerUserId         int
-	PlatformFeeBasisPoints    int
-	HasPlatformFeeBasisPoints bool
+	GroupRatio                       float64
+	GroupSpecialRatio                float64
+	HasSpecialRatio                  bool
+	BaseGroupRatio                   float64
+	SupplyMultiplier                 float64
+	HasSupplyPricing                 bool
+	SupplyGroupId                    int
+	SupplyProviderId                 int
+	SupplyOwnerUserId                int
+	SupplyTenantId                   int
+	ProviderServiceFeeBasisPoints    int
+	HasProviderServiceFeeBasisPoints bool
+	PlatformFeeBasisPoints           int
+	HasPlatformFeeBasisPoints        bool
 }
 
 type PriceData struct {

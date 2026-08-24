@@ -35,7 +35,11 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.TenantMember{}, &model.User{}))
 	require.NoError(t, model.DB.Create(&model.User{
 		Id: 42, Username: "tenant-lifecycle-user", DisplayName: "Lifecycle User",
-		Password: "unused", Status: common.UserStatusEnabled,
+		Password: "unused", Status: common.UserStatusEnabled, AffCode: "tenant-lifecycle-user",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id: 43, Username: "tenant-replacement-user", DisplayName: "Replacement User",
+		Password: "unused", Status: common.UserStatusEnabled, AffCode: "tenant-replacement-user",
 	}).Error)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants", map[string]any{
@@ -85,7 +89,55 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}, {Key: "user_id", Value: "42"}}
 	AdminUpdateHubTenantMember(ctx)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &memberResponse))
+	require.True(t, memberResponse.Success, recorder.Body.String())
+
+	// A disabled owner still occupies the tenant's single owner role.
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/members", map[string]any{
+		"user_id": 43,
+		"role":    model.TenantMemberRoleOwner,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}}
+	AdminUpsertHubTenantMember(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &memberResponse))
 	assert.False(t, memberResponse.Success, recorder.Body.String())
+
+	// Promoting an existing admin is subject to the same single-owner rule.
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/members", map[string]any{
+		"user_id": 43,
+		"role":    model.TenantMemberRoleAdmin,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}}
+	AdminUpsertHubTenantMember(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &memberResponse))
+	require.True(t, memberResponse.Success, recorder.Body.String())
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/members/43", map[string]any{
+		"role": model.TenantMemberRoleOwner,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}, {Key: "user_id", Value: "43"}}
+	AdminUpdateHubTenantMember(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &memberResponse))
+	assert.False(t, memberResponse.Success, recorder.Body.String())
+
+	// Reassigning ownership requires removing the old owner's role first.
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/members/42", map[string]any{
+		"role": model.TenantMemberRoleAdmin,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}, {Key: "user_id", Value: "42"}}
+	AdminUpdateHubTenantMember(ctx)
+	var updateResponse struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, recorder.Body.String())
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/members/43", map[string]any{
+		"role": model.TenantMemberRoleOwner,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenantID)}, {Key: "user_id", Value: "43"}}
+	AdminUpdateHubTenantMember(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &memberResponse))
+	require.True(t, memberResponse.Success, recorder.Body.String())
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/tenants", nil, 1)
 	AdminListHubTenants(ctx)
@@ -99,7 +151,7 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	require.True(t, listResponse.Success, recorder.Body.String())
 	require.Len(t, listResponse.Data.Items, 1)
 	assert.Len(t, listResponse.Data.Items[0].Domains, 1)
-	assert.Len(t, listResponse.Data.Items[0].Members, 1)
+	assert.Len(t, listResponse.Data.Items[0].Members, 2)
 }
 
 func TestAdminTenantDomainCanBeUntrustedAndTrusted(t *testing.T) {

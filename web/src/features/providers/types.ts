@@ -57,9 +57,9 @@ export type HubProviderAdminItem = {
   contact_value: string
   support_type: string
   support_value: string
-  platform_fee_basis_points: number | null
-  global_platform_fee_basis_points: number
-  effective_platform_fee_basis_points: number
+  provider_service_fee_basis_points: number | null
+  global_provider_service_fee_basis_points: number
+  effective_provider_service_fee_basis_points: number
   status: HubProviderStatus
   review_remark: string
   reviewed_by_user_id: number
@@ -141,6 +141,9 @@ export type HubAdminAccess = {
   can_manage_providers: boolean
   can_view_channels: boolean
   can_manage_brand: boolean
+  can_view_tenant_finance: boolean
+  can_operate_tenant_finance: boolean
+  tenant_member_role?: 'owner' | 'admin' | string
   tenant_scoped: boolean
   tenant_id?: number
 }
@@ -155,6 +158,9 @@ export type HubProviderSettlementSummary = {
   provider_id: number
   gross_quota: number
   platform_fee_quota: number
+  reseller_gross_quota: number
+  reseller_net_income_quota: number
+  provider_service_fee_basis_points: number
   settled_income_quota: number
   pending_income_quota: number
   reserved_withdrawal_quota: number
@@ -176,6 +182,10 @@ export type HubProviderEarning = {
   channel_id: number
   model_name: string
   gross_quota: number
+  provider_service_fee_basis_points: number
+  reseller_gross_quota: number
+  reseller_net_income_quota: number
+  settlement_version: number
   platform_fee_quota: number
   provider_income_quota: number
   referral_provider_id: number
@@ -214,6 +224,31 @@ export type HubProviderWithdrawalAdminItem = {
   created_at: number
   updated_at: number
   provider_name: string
+  owner_username: string
+  owner_email: string
+}
+
+export type HubTenantWithdrawalAdminItem = {
+  id: number
+  tenant_id: number
+  owner_user_id: number
+  amount_quota: number
+  status: HubProviderWithdrawalStatus
+  payout_account_id: number
+  payout_method: HubProviderPayoutMethod | ''
+  payout_account?: HubProviderPayoutAccountSnapshot
+  applicant_note: string
+  payout_currency: string
+  payout_amount_minor: number
+  exchange_rate: string
+  admin_remark: string
+  admin_user_id: number
+  reviewed_at: number
+  paid_at: number
+  created_at: number
+  updated_at: number
+  tenant_name: string
+  tenant_slug: string
   owner_username: string
   owner_email: string
 }

@@ -37,7 +37,7 @@ type ProviderFeeDialogProps = {
   open: boolean
   pending: boolean
   onOpenChange: (open: boolean) => void
-  onConfirm: (platformFeeBasisPoints: number | null) => void
+  onConfirm: (providerServiceFeeBasisPoints: number | null) => void
 }
 
 export function ProviderFeeDialog(props: ProviderFeeDialogProps) {
@@ -52,12 +52,13 @@ export function ProviderFeeDialog(props: ProviderFeeDialogProps) {
 
   useEffect(() => {
     if (!props.open) return
-    const followsGlobal = props.provider.platform_fee_basis_points == null
+    const followsGlobal =
+      props.provider.provider_service_fee_basis_points == null
     setUseGlobal(followsGlobal)
     setFeePercent(
       String(
-        (props.provider.platform_fee_basis_points ??
-          props.provider.effective_platform_fee_basis_points) / 100
+        (props.provider.provider_service_fee_basis_points ??
+          props.provider.effective_provider_service_fee_basis_points) / 100
       )
     )
   }, [props.open, props.provider])
@@ -67,7 +68,7 @@ export function ProviderFeeDialog(props: ProviderFeeDialogProps) {
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Provider service fee')}
-      description={t('Configure the platform service fee for {{name}}.', {
+      description={t('Configure the provider service fee for {{name}}.', {
         name: props.provider.name,
       })}
       contentHeight='auto'
@@ -103,8 +104,9 @@ export function ProviderFeeDialog(props: ProviderFeeDialogProps) {
               {t('Follow global service fee')}
             </Label>
             <p className='text-muted-foreground mt-1 text-xs'>
-              {t('Current global fee: {{percent}}%', {
-                percent: props.provider.global_platform_fee_basis_points / 100,
+              {t('Current default provider service fee: {{percent}}%', {
+                percent:
+                  props.provider.global_provider_service_fee_basis_points / 100,
               })}
             </p>
           </div>
@@ -118,7 +120,7 @@ export function ProviderFeeDialog(props: ProviderFeeDialogProps) {
         {!useGlobal && (
           <div className='space-y-2'>
             <Label htmlFor={`provider-fee-${props.provider.id}`}>
-              {t('Individual platform service fee')}
+              {t('Individual provider service fee')}
             </Label>
             <InputGroup>
               <InputGroupInput

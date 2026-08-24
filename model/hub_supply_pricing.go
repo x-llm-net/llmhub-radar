@@ -9,13 +9,14 @@ import (
 )
 
 type HubSupplyPricing struct {
-	SupplyGroupId          int
-	SupplyProviderId       int
-	SupplyProviderStatus   string
-	SupplyOwnerUserId      int
-	PriceMultiplier        float64
-	TenantPublished        bool
-	PlatformFeeBasisPoints *int
+	SupplyGroupId                 int
+	SupplyProviderId              int
+	SupplyProviderStatus          string
+	SupplyOwnerUserId             int
+	TenantId                      *int
+	PriceMultiplier               float64
+	TenantPublished               bool
+	ProviderServiceFeeBasisPoints *int
 }
 
 // HubSupplyPricingSnapshot is captured when a channel is selected and kept
@@ -90,20 +91,21 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	}
 
 	type hubSupplyPricingRow struct {
-		Id                     int
-		ProviderId             int
-		ProviderStatus         string
-		OwnerUserId            int
-		NewAPIChannelId        int
-		PriceMultiplier        float64
-		TenantPublished        bool
-		PlatformFeeBasisPoints *int
+		Id                            int
+		ProviderId                    int
+		ProviderStatus                string
+		OwnerUserId                   int
+		TenantId                      *int
+		NewAPIChannelId               int
+		PriceMultiplier               float64
+		TenantPublished               bool
+		ProviderServiceFeeBasisPoints *int
 	}
 	var rows []hubSupplyPricingRow
 	if err := DB.Table("hub_supply_groups AS supply_groups").
 		Select(
-			"supply_groups.id, supply_groups.provider_id, providers.status AS provider_status, providers.owner_user_id, " +
-				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, supply_groups.tenant_published, providers.platform_fee_basis_points",
+			"supply_groups.id, supply_groups.provider_id, providers.status AS provider_status, providers.owner_user_id, providers.tenant_id, " +
+				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, supply_groups.tenant_published, providers.platform_fee_basis_points AS provider_service_fee_basis_points",
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
 		Scan(&rows).Error; err != nil {
@@ -112,13 +114,14 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	for _, row := range rows {
 		configuredIDs[row.NewAPIChannelId] = struct{}{}
 		pricingByChannel[row.NewAPIChannelId] = HubSupplyPricing{
-			SupplyGroupId:          row.Id,
-			SupplyProviderId:       row.ProviderId,
-			SupplyProviderStatus:   row.ProviderStatus,
-			SupplyOwnerUserId:      row.OwnerUserId,
-			PriceMultiplier:        row.PriceMultiplier,
-			TenantPublished:        row.TenantPublished,
-			PlatformFeeBasisPoints: row.PlatformFeeBasisPoints,
+			SupplyGroupId:                 row.Id,
+			SupplyProviderId:              row.ProviderId,
+			SupplyProviderStatus:          row.ProviderStatus,
+			SupplyOwnerUserId:             row.OwnerUserId,
+			TenantId:                      row.TenantId,
+			PriceMultiplier:               row.PriceMultiplier,
+			TenantPublished:               row.TenantPublished,
+			ProviderServiceFeeBasisPoints: row.ProviderServiceFeeBasisPoints,
 		}
 	}
 

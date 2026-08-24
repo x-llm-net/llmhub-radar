@@ -164,6 +164,13 @@ export function useSidebarData(): SidebarData {
             requiresTenantHost: true,
           },
           {
+            title: t('Tenant Finance'),
+            url: '/tenant-finance',
+            icon: Wallet,
+            tenantAdminAllowed: true,
+            requiresTenantHost: true,
+          },
+          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,

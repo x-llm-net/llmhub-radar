@@ -117,12 +117,15 @@ export function PayoutQRCodeImage(props: {
   alt: string
   className?: string
   previewable?: boolean
+  getAssetBlob?: (assetId: number) => Promise<Blob>
 }) {
   const [url, setURL] = useState('')
   const [loading, setLoading] = useState(false)
+  const assetId = props.assetId
+  const getAssetBlob = props.getAssetBlob
 
   useEffect(() => {
-    if (props.assetId <= 0) {
+    if (assetId <= 0) {
       setURL('')
       return
     }
@@ -131,7 +134,7 @@ export function PayoutQRCodeImage(props: {
     setLoading(true)
     const loadImage = async () => {
       try {
-        const blob = await getProviderPayoutAssetBlob(props.assetId)
+        const blob = await (getAssetBlob ?? getProviderPayoutAssetBlob)(assetId)
         if (!active) return
         objectURL = URL.createObjectURL(blob)
         setURL(objectURL)
@@ -146,7 +149,7 @@ export function PayoutQRCodeImage(props: {
       active = false
       if (objectURL) URL.revokeObjectURL(objectURL)
     }
-  }, [props.assetId])
+  }, [assetId, getAssetBlob])
 
   if (loading) {
     return (

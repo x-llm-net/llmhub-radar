@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -107,8 +108,10 @@ func TestApplyHubSupplyPricingFailsClosedOnMissingSnapshot(t *testing.T) {
 func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 	db := setupHubSupplyPricingTestDB(t)
 	feeOverride := 1750
+	tenantID := 98001
 	provider := &model.HubProvider{
 		OwnerUserId:            98002,
+		TenantId:               &tenantID,
 		Name:                   "Request Snapshot Provider",
 		Slug:                   "request-snapshot-provider",
 		PlatformFeeBasisPoints: &feeOverride,
@@ -135,8 +138,10 @@ func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 	require.Equal(t, 0.4, priced.SupplyMultiplier)
 	require.Equal(t, 0.4, priced.GroupRatio)
 	require.Equal(t, group.Id, priced.SupplyGroupId)
+	require.True(t, priced.HasProviderServiceFeeBasisPoints)
+	require.Equal(t, 1750, priced.ProviderServiceFeeBasisPoints)
 	require.True(t, priced.HasPlatformFeeBasisPoints)
-	require.Equal(t, 1750, priced.PlatformFeeBasisPoints)
+	require.Equal(t, hub_provider_settlement_setting.PlatformFeeBasisPoints(), priced.PlatformFeeBasisPoints)
 }
 
 func TestApplyHubSupplyPricingFromRequestFailsClosedOnIncompleteCapturedSnapshot(t *testing.T) {

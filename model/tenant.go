@@ -25,8 +25,9 @@ import (
 )
 
 var (
-	ErrTenantNotFound       = errors.New("tenant not found")
-	ErrTenantMemberNotFound = errors.New("active tenant member not found")
+	ErrTenantNotFound           = errors.New("tenant not found")
+	ErrTenantMemberNotFound     = errors.New("active tenant member not found")
+	ErrTenantOwnerAlreadyExists = errors.New("tenant already has another owner")
 )
 
 const (
@@ -99,6 +100,21 @@ func (TenantMember) TableName() string {
 
 func IsTenantAdminRole(role string) bool {
 	return role == TenantMemberRoleOwner || role == TenantMemberRoleAdmin
+}
+
+func GetTenantOwnerMember(tenantID int) (*TenantMember, error) {
+	if tenantID <= 0 {
+		return nil, ErrTenantMemberNotFound
+	}
+	var member TenantMember
+	err := DB.Where("tenant_id = ? AND role = ?", tenantID, TenantMemberRoleOwner).First(&member).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrTenantMemberNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
 }
 
 func GetActiveTenantMember(tenantID, userID int) (*TenantMember, error) {

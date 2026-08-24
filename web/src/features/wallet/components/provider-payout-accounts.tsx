@@ -52,6 +52,7 @@ interface ProviderPayoutAccountsProps {
     value: ProviderPayoutAccountFormValue
   ) => Promise<boolean>
   onDelete: (account: HubProviderPayoutAccount) => Promise<boolean>
+  getAssetBlob?: (assetId: number) => Promise<Blob>
 }
 
 export function ProviderPayoutAccounts(props: ProviderPayoutAccountsProps) {
@@ -177,6 +178,7 @@ export function ProviderPayoutAccounts(props: ProviderPayoutAccountsProps) {
         account={editing}
         pending={props.pending}
         onConfirm={(value) => props.onSave(editing, value)}
+        getAssetBlob={props.getAssetBlob}
       />
       <ConfirmDialog
         open={Boolean(deleting)}

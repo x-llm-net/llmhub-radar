@@ -56,6 +56,7 @@ import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedTenantAdminIndexRouteImport } from './routes/_authenticated/tenant-admin/index'
 import { Route as AuthenticatedTenantBrandIndexRouteImport } from './routes/_authenticated/tenant-brand/index'
+import { Route as AuthenticatedTenantFinanceIndexRouteImport } from './routes/_authenticated/tenant-finance/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
@@ -329,6 +330,12 @@ const AuthenticatedTenantBrandIndexRoute =
     path: '/tenant-brand/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTenantFinanceIndexRoute =
+  AuthenticatedTenantFinanceIndexRouteImport.update({
+    id: '/tenant-finance/',
+    path: '/tenant-finance/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsageLogsIndexRoute =
   AuthenticatedUsageLogsIndexRouteImport.update({
     id: '/usage-logs/',
@@ -489,6 +496,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/tenant-admin/': typeof AuthenticatedTenantAdminIndexRoute
   '/tenant-brand/': typeof AuthenticatedTenantBrandIndexRoute
+  '/tenant-finance/': typeof AuthenticatedTenantFinanceIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
@@ -554,6 +562,7 @@ export interface FileRoutesByTo {
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/tenant-admin': typeof AuthenticatedTenantAdminIndexRoute
   '/tenant-brand': typeof AuthenticatedTenantBrandIndexRoute
+  '/tenant-finance': typeof AuthenticatedTenantFinanceIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
@@ -623,6 +632,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/tenant-admin/': typeof AuthenticatedTenantAdminIndexRoute
   '/_authenticated/tenant-brand/': typeof AuthenticatedTenantBrandIndexRoute
+  '/_authenticated/tenant-finance/': typeof AuthenticatedTenantFinanceIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
@@ -691,6 +701,7 @@ export interface FileRouteTypes {
     | '/system-settings/'
     | '/tenant-admin/'
     | '/tenant-brand/'
+    | '/tenant-finance/'
     | '/usage-logs/'
     | '/users/'
     | '/wallet/'
@@ -756,6 +767,7 @@ export interface FileRouteTypes {
     | '/system-settings'
     | '/tenant-admin'
     | '/tenant-brand'
+    | '/tenant-finance'
     | '/usage-logs'
     | '/users'
     | '/wallet'
@@ -824,6 +836,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/'
     | '/_authenticated/tenant-admin/'
     | '/_authenticated/tenant-brand/'
+    | '/_authenticated/tenant-finance/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/users/'
     | '/_authenticated/wallet/'
@@ -1195,6 +1208,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTenantBrandIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tenant-finance/': {
+      id: '/_authenticated/tenant-finance/'
+      path: '/tenant-finance'
+      fullPath: '/tenant-finance/'
+      preLoaderRoute: typeof AuthenticatedTenantFinanceIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/usage-logs/': {
       id: '/_authenticated/usage-logs/'
       path: '/usage-logs'
@@ -1438,6 +1458,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
   AuthenticatedTenantAdminIndexRoute: typeof AuthenticatedTenantAdminIndexRoute
   AuthenticatedTenantBrandIndexRoute: typeof AuthenticatedTenantBrandIndexRoute
+  AuthenticatedTenantFinanceIndexRoute: typeof AuthenticatedTenantFinanceIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
@@ -1470,6 +1491,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
   AuthenticatedTenantAdminIndexRoute: AuthenticatedTenantAdminIndexRoute,
   AuthenticatedTenantBrandIndexRoute: AuthenticatedTenantBrandIndexRoute,
+  AuthenticatedTenantFinanceIndexRoute: AuthenticatedTenantFinanceIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,

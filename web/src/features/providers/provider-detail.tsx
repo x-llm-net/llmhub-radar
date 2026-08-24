@@ -187,9 +187,9 @@ export function ProviderDetail({ providerId }: { providerId: number }) {
                   {t('Provider earnings')}
                 </h2>
                 <p className='text-muted-foreground text-sm'>
-                  {t('Platform fee')}:{' '}
-                  {(summary?.platform_fee_basis_points ??
-                    provider.effective_platform_fee_basis_points) / 100}
+                  {t('Provider service fee')}:{' '}
+                  {(summary?.provider_service_fee_basis_points ??
+                    provider.effective_provider_service_fee_basis_points) / 100}
                   %
                 </p>
               </div>

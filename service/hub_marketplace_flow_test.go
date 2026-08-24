@@ -136,14 +136,18 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	}
 	originFee := 0
 	fallbackFee := 2500
+	originTenantID := 96111
+	fallbackTenantID := 96112
 	originProvider := &model.HubProvider{
 		OwnerUserId:            96101,
+		TenantId:               &originTenantID,
 		Name:                   "Marketplace Origin",
 		Slug:                   "marketplace-origin",
 		PlatformFeeBasisPoints: &originFee,
 	}
 	fallbackProvider := &model.HubProvider{
 		OwnerUserId:            96102,
+		TenantId:               &fallbackTenantID,
 		Name:                   "Marketplace Fallback",
 		Slug:                   "marketplace-fallback",
 		PlatformFeeBasisPoints: &fallbackFee,
@@ -298,17 +302,21 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	assert.Equal(t, fallbackGroup.Id, earning.SupplyGroupId)
 	assert.Equal(t, fallback.Id, earning.ChannelId)
 	assert.Equal(t, actualQuota, earning.GrossQuota)
-	assert.Equal(t, fallbackFee, earning.PlatformFeeBasisPoints)
-	assert.Equal(t, 125, earning.PlatformFeeQuota)
+	assert.Equal(t, fallbackFee, earning.ProviderServiceFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, earning.PlatformFeeBasisPoints)
+	assert.Equal(t, 13, earning.PlatformFeeQuota)
 	assert.Equal(t, 370, earning.ProviderIncomeQuota)
+	assert.Equal(t, 125, earning.ResellerGrossQuota)
+	assert.Equal(t, 112, earning.ResellerNetIncomeQuota)
 	assert.Equal(t, originProvider.Id, earning.ReferralProviderId)
 	assert.Equal(t, originProvider.OwnerUserId, earning.ReferralOwnerUserId)
 	assert.Equal(t, 100, earning.ReferralBasisPoints)
 	assert.Equal(t, 5, earning.ReferralIncomeQuota)
-	assert.Equal(t, earning.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota)
+	assert.Equal(t, earning.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota+earning.ResellerNetIncomeQuota)
 	assert.Equal(t, 0.5, earning.SupplyMultiplier)
 	assert.True(t, finalInfo.PriceData.GroupRatioInfo.HasPlatformFeeBasisPoints)
-	assert.Equal(t, fallbackFee, finalInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
+	assert.Equal(t, fallbackFee, finalInfo.PriceData.GroupRatioInfo.ProviderServiceFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, finalInfo.PriceData.GroupRatioInfo.PlatformFeeBasisPoints)
 	var originEarningCount int64
 	require.NoError(t, model.DB.Model(&model.HubProviderEarning{}).
 		Where("provider_id = ? AND request_id = ?", originProvider.Id, finalInfo.RequestId).

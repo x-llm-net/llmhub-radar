@@ -27,17 +27,23 @@ import { getCurrencyDisplay } from '@/lib/currency'
 import { formatQuota } from '@/lib/format'
 
 import type {
+  HubTenantWithdrawalAdminItem,
   HubProviderWithdrawalAdminItem,
   HubProviderWithdrawalStatus,
 } from './types'
 
+type WithdrawalAdminItem =
+  | HubProviderWithdrawalAdminItem
+  | HubTenantWithdrawalAdminItem
+
 interface WithdrawalReviewDialogProps {
-  withdrawal: HubProviderWithdrawalAdminItem | null
+  withdrawal: WithdrawalAdminItem | null
   targetStatus: HubProviderWithdrawalStatus | null
   open: boolean
   onOpenChange: (open: boolean) => void
   pending: boolean
   onConfirm: (value: WithdrawalReviewValue) => Promise<boolean>
+  getAssetBlob?: (assetId: number) => Promise<Blob>
 }
 
 export interface WithdrawalReviewValue {
@@ -125,6 +131,13 @@ export function WithdrawalReviewDialog(props: WithdrawalReviewDialogProps) {
   ])
 
   const actionLabel = getActionLabel(props.targetStatus, t)
+  let requestorName = '-'
+  if (props.withdrawal) {
+    requestorName =
+      'provider_name' in props.withdrawal
+        ? props.withdrawal.provider_name
+        : props.withdrawal.tenant_name
+  }
 
   return (
     <Dialog
@@ -132,7 +145,7 @@ export function WithdrawalReviewDialog(props: WithdrawalReviewDialogProps) {
       onOpenChange={props.onOpenChange}
       title={actionLabel}
       description={t('{{provider}} requested {{amount}}.', {
-        provider: props.withdrawal?.provider_name || '-',
+        provider: requestorName || '-',
         amount: formatQuota(props.withdrawal?.amount_quota ?? 0),
       })}
       contentHeight='auto'
@@ -244,6 +257,7 @@ export function WithdrawalReviewDialog(props: WithdrawalReviewDialogProps) {
               alt={t('Payment QR code')}
               className='size-64 max-w-full'
               previewable
+              getAssetBlob={props.getAssetBlob}
             />
           </aside>
         )}

@@ -26,7 +26,7 @@ export function ProviderEarningsSummary() {
     queryFn: getProviderEarningSummary,
   })
   const data = summary.data?.data
-  const feePercent = (data?.platform_fee_basis_points ?? 1000) / 100
+  const feePercent = (data?.provider_service_fee_basis_points ?? 1000) / 100
   const stats = [
     {
       label: t('Total provider earnings'),
@@ -72,7 +72,7 @@ export function ProviderEarningsSummary() {
           </h2>
           <p className='text-muted-foreground mt-1 text-sm'>
             {t(
-              'Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.',
+              'Successful charges from your supply channels are settled automatically. The current provider service fee is {{percent}}%.',
               { percent: feePercent }
             )}
           </p>

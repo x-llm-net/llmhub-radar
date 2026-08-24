@@ -201,6 +201,21 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderRoute.GET("/withdrawals", controller.GetHubProviderWithdrawals)
 			hubProviderRoute.POST("/withdrawals", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderWithdrawal)
 		}
+		hubTenantFinanceRoute := apiRouter.Group("/hub/tenant")
+		hubTenantFinanceRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
+		{
+			hubTenantFinanceRoute.GET("/earnings/summary", controller.GetHubTenantEarningSummary)
+			hubTenantFinanceRoute.GET("/earnings", controller.GetHubTenantEarnings)
+			hubTenantFinanceRoute.POST("/earnings/balance-transfer", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubTenantBalanceTransfer)
+			hubTenantFinanceRoute.GET("/payout-accounts", controller.GetHubTenantPayoutAccounts)
+			hubTenantFinanceRoute.POST("/payout-accounts", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubTenantPayoutAccount)
+			hubTenantFinanceRoute.PUT("/payout-accounts/:account_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubTenantPayoutAccount)
+			hubTenantFinanceRoute.DELETE("/payout-accounts/:account_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.DeleteHubTenantPayoutAccount)
+			hubTenantFinanceRoute.POST("/payout-assets", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UploadHubTenantPayoutQRCode)
+			hubTenantFinanceRoute.GET("/payout-assets/:asset_id", middleware.DisableCache(), controller.GetHubTenantPayoutAsset)
+			hubTenantFinanceRoute.GET("/withdrawals", controller.GetHubTenantWithdrawals)
+			hubTenantFinanceRoute.POST("/withdrawals", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubTenantWithdrawal)
+		}
 		hubProviderAdminRoute := apiRouter.Group("/hub/admin/providers")
 		hubProviderAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
@@ -212,6 +227,9 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.GET("/:id/logo", controller.GetAdminHubProviderLogo)
 			hubProviderAdminRoute.GET("/withdrawals", controller.AdminGetHubProviderWithdrawals)
 			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)
+			hubProviderAdminRoute.GET("/tenant-withdrawals", controller.AdminGetHubTenantWithdrawals)
+			hubProviderAdminRoute.GET("/tenant-payout-assets/:asset_id", middleware.DisableCache(), controller.AdminGetHubTenantPayoutAsset)
+			hubProviderAdminRoute.PUT("/tenant-withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantWithdrawalStatus)
 			hubProviderAdminRoute.GET("/:id/earnings/summary", controller.AdminGetHubProviderEarningSummary)
 			hubProviderAdminRoute.GET("/:id/earnings", controller.AdminGetHubProviderEarnings)
 			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)

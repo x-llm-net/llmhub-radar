@@ -309,11 +309,21 @@ func AdminUpsertHubTenantMember(c *gin.Context) {
 	}
 	now := time.Now().Unix()
 	member := model.TenantMember{TenantId: tenantID, UserId: request.UserID, Role: request.Role, Status: model.TenantMemberStatusActive, CreatedAt: now, UpdatedAt: now}
-	if err := model.DB.Where("tenant_id = ? AND user_id = ?", tenantID, request.UserID).Assign(map[string]any{
-		"role":       member.Role,
-		"status":     member.Status,
-		"updated_at": now,
-	}).FirstOrCreate(&member).Error; err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockTenantForOwnerChange(tx, tenantID); err != nil {
+			return err
+		}
+		if request.Role == model.TenantMemberRoleOwner {
+			if err := ensureTenantOwnerAvailable(tx, tenantID, request.UserID); err != nil {
+				return err
+			}
+		}
+		return tx.Where("tenant_id = ? AND user_id = ?", tenantID, request.UserID).Assign(map[string]any{
+			"role":       member.Role,
+			"status":     member.Status,
+			"updated_at": now,
+		}).FirstOrCreate(&member).Error
+	}); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -345,29 +355,52 @@ func AdminUpdateHubTenantMember(c *gin.Context) {
 		common.ApiError(c, model.ErrTenantMemberNotFound)
 		return
 	}
-	if request.Status == model.TenantMemberStatusDisabled && member.Status == model.TenantMemberStatusActive && member.Role == model.TenantMemberRoleOwner {
-		var ownerCount int64
-		if err := model.DB.Model(&model.TenantMember{}).Where("tenant_id = ? AND role = ? AND status = ?", tenantID, model.TenantMemberRoleOwner, model.TenantMemberStatusActive).Count(&ownerCount).Error; err != nil {
-			common.ApiError(c, err)
-			return
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockTenantForOwnerChange(tx, tenantID); err != nil {
+			return err
 		}
-		if ownerCount <= 1 {
-			common.ApiError(c, errors.New("tenant must keep at least one active owner"))
-			return
+		if request.Role == model.TenantMemberRoleOwner {
+			if err := ensureTenantOwnerAvailable(tx, tenantID, userID); err != nil {
+				return err
+			}
 		}
-	}
-	if request.Role != "" {
-		member.Role = request.Role
-	}
-	if request.Status != "" {
-		member.Status = request.Status
-	}
-	member.UpdatedAt = time.Now().Unix()
-	if err := model.DB.Save(&member).Error; err != nil {
+		if request.Role != "" {
+			member.Role = request.Role
+		}
+		if request.Status != "" {
+			member.Status = request.Status
+		}
+		member.UpdatedAt = time.Now().Unix()
+		return tx.Save(&member).Error
+	}); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, member)
+}
+
+// lockTenantForOwnerChange serializes owner changes for the same tenant on
+// databases that support row locks. SQLite tests keep the transaction
+// semantics without appending a dialect-incompatible FOR UPDATE clause.
+func lockTenantForOwnerChange(tx *gorm.DB, tenantID int) error {
+	query := tx.Where("id = ?", tenantID)
+	if tx.Dialector.Name() == "mysql" || tx.Dialector.Name() == "postgres" {
+		query = query.Set("gorm:query_option", "FOR UPDATE")
+	}
+	var tenant model.Tenant
+	return query.First(&tenant).Error
+}
+
+func ensureTenantOwnerAvailable(tx *gorm.DB, tenantID, userID int) error {
+	var owner model.TenantMember
+	err := tx.Where("tenant_id = ? AND role = ? AND user_id <> ?", tenantID, model.TenantMemberRoleOwner, userID).First(&owner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return model.ErrTenantOwnerAlreadyExists
 }
 
 func parseIDParam(c *gin.Context, name string) int {

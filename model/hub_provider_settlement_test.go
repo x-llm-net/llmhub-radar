@@ -78,6 +78,39 @@ func TestCalculateHubProviderRevenueSplitWithReferralKeepsPlatformFee(t *testing
 	assert.Zero(t, referralIncome)
 }
 
+func TestCalculateHubProviderTwoLayerRevenueSplitKeepsUserChargeExact(t *testing.T) {
+	tests := []struct {
+		name              string
+		gross             int
+		providerFee       int
+		platformFee       int
+		referralFee       int
+		wantPlatform      int
+		wantProvider      int
+		wantReferral      int
+		wantResellerGross int
+		wantResellerNet   int
+	}{
+		{name: "ten percent reseller and platform", gross: 100, providerFee: 1000, platformFee: 1000, wantPlatform: 1, wantProvider: 90, wantResellerGross: 10, wantResellerNet: 9},
+		{name: "five percent reseller", gross: 1000, providerFee: 500, platformFee: 1000, wantPlatform: 5, wantProvider: 950, wantResellerGross: 50, wantResellerNet: 45},
+		{name: "fallback commission comes from provider", gross: 1000, providerFee: 1000, platformFee: 1000, referralFee: 100, wantPlatform: 10, wantProvider: 890, wantReferral: 10, wantResellerGross: 100, wantResellerNet: 90},
+		{name: "free reseller", gross: 1000, providerFee: 0, platformFee: 1000, wantProvider: 1000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			platform, provider, referral, resellerGross, resellerNet := CalculateHubProviderTwoLayerRevenueSplit(
+				test.gross, test.providerFee, test.platformFee, test.referralFee,
+			)
+			assert.Equal(t, test.wantPlatform, platform)
+			assert.Equal(t, test.wantProvider, provider)
+			assert.Equal(t, test.wantReferral, referral)
+			assert.Equal(t, test.wantResellerGross, resellerGross)
+			assert.Equal(t, test.wantResellerNet, resellerNet)
+			assert.Equal(t, test.gross, platform+provider+referral+resellerNet)
+		})
+	}
+}
+
 func TestHubProviderSettlementOptionsSaveTogether(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 	settings := hub_provider_settlement_setting.Get()
@@ -88,6 +121,7 @@ func TestHubProviderSettlementOptionsSaveTogether(t *testing.T) {
 		*settings = original
 		for _, key := range []string{
 			hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints,
+			hub_provider_settlement_setting.OptionKeyProviderServiceFeeBasisPoints,
 			hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota,
 			hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled,
 			hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints,
@@ -98,13 +132,15 @@ func TestHubProviderSettlementOptionsSaveTogether(t *testing.T) {
 	})
 
 	values := map[string]string{
-		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:      "1200",
-		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:      "500",
-		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:     "false",
-		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints: "150",
+		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:        "1200",
+		hub_provider_settlement_setting.OptionKeyProviderServiceFeeBasisPoints: "700",
+		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:        "500",
+		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:       "false",
+		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints:   "150",
 	}
 	require.NoError(t, UpdateOptionsBulk(values))
 	assert.Equal(t, 1200, settings.PlatformFeeBasisPoints)
+	assert.Equal(t, 700, settings.ProviderServiceFeeBasisPoints)
 	assert.Equal(t, 500, settings.MinimumWithdrawalQuota)
 	assert.False(t, settings.FallbackReferralEnabled)
 	assert.Equal(t, 150, settings.FallbackReferralBasisPoints)
@@ -450,9 +486,10 @@ func TestHubProviderEarningSnapshotsGlobalAndProviderFeeOverride(t *testing.T) {
 
 func TestUpdateHubProviderPlatformFeeRefreshesPricingSnapshot(t *testing.T) {
 	truncateTables(t)
+	tenantID := 71001
 	provider := HubProvider{
 		OwnerUserId: 71, Slot: 1, Name: "Cached Fee Provider",
-		Slug: "cached-fee-provider", Status: HubProviderStatusActive,
+		Slug: "cached-fee-provider", Status: HubProviderStatusActive, TenantId: &tenantID,
 	}
 	require.NoError(t, DB.Create(&provider).Error)
 	channel := Channel{Name: "cached-fee-channel", Status: common.ChannelStatusEnabled}
@@ -468,14 +505,14 @@ func TestUpdateHubProviderPlatformFeeRefreshesPricingSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	snapshot := CaptureHubSupplyPricingSnapshot(channel.Id)
 	require.True(t, snapshot.Found)
-	require.NotNil(t, snapshot.Pricing.PlatformFeeBasisPoints)
-	assert.Equal(t, fee, *snapshot.Pricing.PlatformFeeBasisPoints)
+	require.NotNil(t, snapshot.Pricing.ProviderServiceFeeBasisPoints)
+	assert.Equal(t, fee, *snapshot.Pricing.ProviderServiceFeeBasisPoints)
 
 	_, err = UpdateHubProviderPlatformFeeBasisPoints(provider.Id, nil)
 	require.NoError(t, err)
 	snapshot = CaptureHubSupplyPricingSnapshot(channel.Id)
 	require.True(t, snapshot.Found)
-	assert.Nil(t, snapshot.Pricing.PlatformFeeBasisPoints)
+	assert.Nil(t, snapshot.Pricing.ProviderServiceFeeBasisPoints)
 }
 
 func TestHubProviderWithdrawalEnforcesConfiguredMinimum(t *testing.T) {

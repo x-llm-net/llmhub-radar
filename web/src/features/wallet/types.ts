@@ -332,6 +332,9 @@ export interface HubProviderSettlementSummary {
   provider_id: number
   gross_quota: number
   platform_fee_quota: number
+  reseller_gross_quota: number
+  reseller_net_income_quota: number
+  provider_service_fee_basis_points: number
   settled_income_quota: number
   pending_income_quota: number
   reserved_withdrawal_quota: number
@@ -357,9 +360,14 @@ export interface HubProviderEarning {
   model_name: string
   billing_source: string
   gross_quota: number
+  tenant_id: number
+  provider_service_fee_basis_points: number
   platform_fee_basis_points: number
   platform_fee_quota: number
   provider_income_quota: number
+  reseller_gross_quota: number
+  reseller_net_income_quota: number
+  settlement_version: number
   referral_provider_id: number
   referral_basis_points: number
   referral_income_quota: number

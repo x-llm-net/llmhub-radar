@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
@@ -244,7 +245,7 @@ func TestTaskBillingOtherUsesPlatformFeeSnapshot(t *testing.T) {
 	other := taskBillingOther(task)
 
 	assert.Equal(t, 250, other["platform_fee_basis_points"])
-	assert.Equal(t, 9750, other["provider_share_basis_points"])
+	assert.Equal(t, hub_provider_settlement_setting.ProviderServiceFeeBasisPoints(), other["provider_service_fee_basis_points"])
 }
 
 func TestTaskBillingContextPriceDataFiltersMultiplier(t *testing.T) {

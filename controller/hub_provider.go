@@ -71,7 +71,8 @@ type hubProviderStatusUpdateRequest struct {
 }
 
 type hubProviderSettlementSettingsUpdateRequest struct {
-	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
+	ProviderServiceFeeBasisPoints *int `json:"provider_service_fee_basis_points"`
+	PlatformFeeBasisPoints        *int `json:"platform_fee_basis_points"` // legacy alias
 }
 
 func decodeHubProviderProfileRequest(c *gin.Context) (hubProviderProfileRequest, hubProviderProfileAssets, error) {
@@ -165,9 +166,15 @@ func CreateHubProvider(c *gin.Context) {
 		common.ApiErrorI18n(c, errorKey)
 		return
 	}
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	if tenantID <= 0 {
+		common.ApiError(c, errors.New("a trusted tenant domain is required"))
+		return
+	}
 
 	provider := &model.HubProvider{
 		OwnerUserId:        c.GetInt("id"),
+		TenantId:           &tenantID,
 		Name:               req.Name,
 		Slug:               req.Slug,
 		Website:            req.Website,
@@ -179,9 +186,6 @@ func CreateHubProvider(c *gin.Context) {
 		SupportValue:       req.SupportValue,
 		Status:             model.HubProviderStatusPending,
 		UseProvisionalSlug: true,
-	}
-	if tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId); tenantID > 0 {
-		provider.TenantId = &tenantID
 	}
 	if assets.VerifyWebsite || len(assets.Logo) > 0 {
 		err = model.CreateHubProviderWithAssets(
@@ -498,12 +502,19 @@ func AdminUpdateHubProviderSettlementSettings(c *gin.Context) {
 		return
 	}
 	var req hubProviderSettlementSettingsUpdateRequest
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil ||
-		(req.PlatformFeeBasisPoints != nil && (*req.PlatformFeeBasisPoints < 0 || *req.PlatformFeeBasisPoints > 10000)) {
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	provider, err := model.UpdateHubProviderPlatformFeeBasisPoints(providerID, req.PlatformFeeBasisPoints)
+	override := req.ProviderServiceFeeBasisPoints
+	if override == nil {
+		override = req.PlatformFeeBasisPoints
+	}
+	if override != nil && (*override < 0 || *override > 10000) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	provider, err := model.UpdateHubProviderServiceFeeBasisPoints(providerID, override)
 	if err != nil {
 		if errors.Is(err, model.ErrHubProviderNotFound) {
 			common.ApiErrorI18n(c, i18n.MsgNotFound)
@@ -512,7 +523,7 @@ func AdminUpdateHubProviderSettlementSettings(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	effectiveFee, err := model.ResolveHubProviderPlatformFeeBasisPoints(providerID)
+	effectiveFee, err := model.ResolveHubProviderServiceFeeBasisPoints(providerID)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -521,7 +532,10 @@ func AdminUpdateHubProviderSettlementSettings(c *gin.Context) {
 		"provider_id": providerID,
 	})
 	common.ApiSuccess(c, gin.H{
-		"id":                                  provider.Id,
+		"id":                                provider.Id,
+		"provider_service_fee_basis_points": provider.PlatformFeeBasisPoints,
+		"effective_provider_service_fee_basis_points": effectiveFee,
+		// Deprecated response aliases for older admin clients.
 		"platform_fee_basis_points":           provider.PlatformFeeBasisPoints,
 		"effective_platform_fee_basis_points": effectiveFee,
 	})

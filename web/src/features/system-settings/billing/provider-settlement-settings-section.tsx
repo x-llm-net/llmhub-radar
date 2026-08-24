@@ -54,6 +54,7 @@ import { SettingsSection } from '../components/settings-section'
 
 const schema = z.object({
   platformFeePercent: z.coerce.number().min(0).max(100),
+  providerServiceFeePercent: z.coerce.number().min(0).max(100),
   minimumWithdrawalAmount: z.coerce.number().min(0),
   fallbackReferralEnabled: z.boolean(),
   fallbackReferralPercent: z.coerce.number().min(0).max(100),
@@ -64,6 +65,7 @@ type Values = z.infer<typeof schema>
 type ProviderSettlementSettingsSectionProps = {
   defaultValues: {
     platformFeeBasisPoints: number
+    providerServiceFeeBasisPoints: number
     minimumWithdrawalQuota: number
     fallbackReferralEnabled: boolean
     fallbackReferralBasisPoints: number
@@ -90,6 +92,8 @@ export function ProviderSettlementSettingsSection({
     resolver: zodResolver(schema) as Resolver<Values>,
     defaultValues: {
       platformFeePercent: defaultValues.platformFeeBasisPoints / 100,
+      providerServiceFeePercent:
+        defaultValues.providerServiceFeeBasisPoints / 100,
       minimumWithdrawalAmount: quotaUnitsToDollars(
         defaultValues.minimumWithdrawalQuota
       ),
@@ -101,6 +105,9 @@ export function ProviderSettlementSettingsSection({
 
   async function onSubmit(values: Values) {
     const platformFeeBasisPoints = Math.round(values.platformFeePercent * 100)
+    const providerServiceFeeBasisPoints = Math.round(
+      values.providerServiceFeePercent * 100
+    )
     const minimumWithdrawalQuota = parseQuotaFromDollars(
       values.minimumWithdrawalAmount
     )
@@ -109,6 +116,7 @@ export function ProviderSettlementSettingsSection({
     )
     await updateSettlement.mutateAsync({
       platform_fee_basis_points: platformFeeBasisPoints,
+      provider_service_fee_basis_points: providerServiceFeeBasisPoints,
       minimum_withdrawal_quota: minimumWithdrawalQuota,
       fallback_referral_enabled: values.fallbackReferralEnabled,
       fallback_referral_basis_points: fallbackReferralBasisPoints,
@@ -116,6 +124,7 @@ export function ProviderSettlementSettingsSection({
     form.reset({
       ...values,
       platformFeePercent: platformFeeBasisPoints / 100,
+      providerServiceFeePercent: providerServiceFeeBasisPoints / 100,
       minimumWithdrawalAmount: quotaUnitsToDollars(minimumWithdrawalQuota),
       fallbackReferralPercent: fallbackReferralBasisPoints / 100,
     })
@@ -137,7 +146,7 @@ export function ProviderSettlementSettingsSection({
             name='platformFeePercent'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Default platform service fee')}</FormLabel>
+                <FormLabel>{t('Platform share of reseller profit')}</FormLabel>
                 <FormControl>
                   <InputGroup>
                     <InputGroupInput
@@ -152,7 +161,34 @@ export function ProviderSettlementSettingsSection({
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'Used for providers without an individual fee. Changes only affect earnings created afterwards.'
+                    'Taken from the reseller gross profit, not from the user charge. Changes only affect earnings created afterwards.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='providerServiceFeePercent'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Default provider service fee')}</FormLabel>
+                <FormControl>
+                  <InputGroup>
+                    <InputGroupInput
+                      type='number'
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      {...field}
+                    />
+                    <InputGroupAddon align='inline-end'>%</InputGroupAddon>
+                  </InputGroup>
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'The share of each successful user charge allocated to the serving provider tenant. Individual providers can override it.'
                   )}
                 </FormDescription>
                 <FormMessage />

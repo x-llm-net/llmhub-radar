@@ -107,6 +107,7 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
   'hub_provider_settlement_setting.platform_fee_basis_points': 1000,
+  'hub_provider_settlement_setting.provider_service_fee_basis_points': 1000,
   'hub_provider_settlement_setting.minimum_withdrawal_quota': 0,
   'hub_provider_settlement_setting.fallback_referral_enabled': true,
   'hub_provider_settlement_setting.fallback_referral_basis_points': 100,

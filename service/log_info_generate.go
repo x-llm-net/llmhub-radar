@@ -8,11 +8,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -183,12 +183,16 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		other["billing_ratio"] = groupRatioInfo.GroupRatio
 		other["hub_supply_group_id"] = groupRatioInfo.SupplyGroupId
 		other["hub_provider_id"] = groupRatioInfo.SupplyProviderId
-		feeBasisPoints := model.HubProviderPlatformFeeBasisPoints
+		feeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()
 		if groupRatioInfo.HasPlatformFeeBasisPoints {
 			feeBasisPoints = groupRatioInfo.PlatformFeeBasisPoints
 		}
 		other["platform_fee_basis_points"] = feeBasisPoints
-		other["provider_share_basis_points"] = 10000 - feeBasisPoints
+		serviceFeeBasisPoints := hub_provider_settlement_setting.ProviderServiceFeeBasisPoints()
+		if groupRatioInfo.HasProviderServiceFeeBasisPoints {
+			serviceFeeBasisPoints = groupRatioInfo.ProviderServiceFeeBasisPoints
+		}
+		other["provider_service_fee_basis_points"] = serviceFeeBasisPoints
 	}
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {

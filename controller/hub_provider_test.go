@@ -123,6 +123,7 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 		"support_type":  "community",
 		"support_value": "https://acme.example/community",
 	}, 42)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
 	CreateHubProvider(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
@@ -183,6 +184,7 @@ func TestCreateHubProviderAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 		"support_value": "https://example.com/community",
 	}, png, 42)
 
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
 	CreateHubProvider(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
@@ -225,6 +227,7 @@ func TestCreateHubProviderCanSubmitManualWebsiteVerificationAtomically(t *testin
 		"contact_value": "123456789",
 	}, true, "admin.png", png, 42)
 
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
 	CreateHubProvider(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
@@ -255,6 +258,7 @@ func TestCreateHubProviderRejectsInvalidOnboardingEvidenceWithoutCreatingProvide
 		"contact_value": "123456789",
 	}, true, "evidence.txt", []byte("not an image"), 42)
 
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
 	CreateHubProvider(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
@@ -278,6 +282,7 @@ func TestCreateHubProviderRejectsSecondProviderForCurrentUser(t *testing.T) {
 		"contact_type":  "email",
 		"contact_value": "second@example.com",
 	}, 42)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, 7)
 	CreateHubProvider(ctx)
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
@@ -532,6 +537,26 @@ func TestCreateHubProviderRequiresPrivateReviewContact(t *testing.T) {
 	assert.Zero(t, count)
 }
 
+func TestCreateHubProviderRequiresTrustedTenantContext(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
+		"name":          "Unscoped Provider",
+		"slug":          "unscoped-provider",
+		"contact_type":  "email",
+		"contact_value": "owner@example.com",
+	}, 42)
+	CreateHubProvider(ctx)
+
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	assert.False(t, response.Success)
+	assert.Contains(t, response.Message, "trusted tenant domain")
+	var count int64
+	require.NoError(t, db.Model(&model.HubProvider{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
 func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.User{}))
@@ -611,10 +636,10 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 	assert.Equal(t, int64(1), item.AvailableModelCount)
 	assert.Equal(t, int64(1), item.ErrorModelCount)
 	assert.Equal(t, int64(12345), item.LastProbeAt)
-	require.NotNil(t, item.PlatformFeeOverrideBasisPoints)
-	assert.Zero(t, *item.PlatformFeeOverrideBasisPoints)
-	assert.Zero(t, item.EffectivePlatformFeeBasisPoints)
-	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, item.GlobalPlatformFeeBasisPoints)
+	require.NotNil(t, item.ProviderServiceFeeOverrideBasisPoints)
+	assert.Zero(t, *item.ProviderServiceFeeOverrideBasisPoints)
+	assert.Zero(t, item.EffectiveProviderServiceFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, item.GlobalProviderServiceFeeBasisPoints)
 	require.Len(t, item.UpstreamUsages, 1)
 	assert.Equal(t, "https://upstream.example", item.UpstreamUsages[0].Origin)
 	assert.Equal(t, int64(2), item.UpstreamUsages[0].ProviderCount)
@@ -786,30 +811,34 @@ func TestAdminUpdateHubProviderSettlementSettingsSupportsZeroAndGlobalFee(t *tes
 	require.NoError(t, model.CreateHubProvider(provider))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/settlement-settings", map[string]any{
-		"platform_fee_basis_points": 0,
+		"provider_service_fee_basis_points": 0,
 	}, 7)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
 	AdminUpdateHubProviderSettlementSettings(ctx)
 	var response struct {
 		Success bool `json:"success"`
 		Data    struct {
-			PlatformFeeBasisPoints          *int `json:"platform_fee_basis_points"`
-			EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points"`
+			ProviderServiceFeeBasisPoints          *int `json:"provider_service_fee_basis_points"`
+			EffectiveProviderServiceFeeBasisPoints int  `json:"effective_provider_service_fee_basis_points"`
+			PlatformFeeBasisPoints                 *int `json:"platform_fee_basis_points"`
+			EffectivePlatformFeeBasisPoints        int  `json:"effective_platform_fee_basis_points"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success, recorder.Body.String())
-	require.NotNil(t, response.Data.PlatformFeeBasisPoints)
-	assert.Zero(t, *response.Data.PlatformFeeBasisPoints)
+	require.NotNil(t, response.Data.ProviderServiceFeeBasisPoints)
+	assert.Zero(t, *response.Data.ProviderServiceFeeBasisPoints)
+	assert.Zero(t, response.Data.EffectiveProviderServiceFeeBasisPoints)
 	assert.Zero(t, response.Data.EffectivePlatformFeeBasisPoints)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/settlement-settings", map[string]any{
-		"platform_fee_basis_points": nil,
+		"provider_service_fee_basis_points": nil,
 	}, 7)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(provider.Id)}}
 	AdminUpdateHubProviderSettlementSettings(ctx)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success, recorder.Body.String())
-	assert.Nil(t, response.Data.PlatformFeeBasisPoints)
+	assert.Nil(t, response.Data.ProviderServiceFeeBasisPoints)
+	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, response.Data.EffectiveProviderServiceFeeBasisPoints)
 	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, response.Data.EffectivePlatformFeeBasisPoints)
 }

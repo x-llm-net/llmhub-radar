@@ -23,6 +23,7 @@ import type {
   HubProviderOverviewListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
+  HubTenantWithdrawalAdminItem,
   HubProviderAdminDetailResponse,
   HubProviderAdminChannelListParams,
   HubProviderAdminChannelListResponse,
@@ -150,11 +151,11 @@ export async function updateAdminProviderStatus(
 
 export async function updateAdminProviderSettlementSettings(
   providerId: number,
-  platformFeeBasisPoints: number | null
+  providerServiceFeeBasisPoints: number | null
 ): Promise<{ success: boolean; message?: string }> {
   const response = await api.put(
     `/api/hub/admin/providers/${providerId}/settlement-settings`,
-    { platform_fee_basis_points: platformFeeBasisPoints },
+    { provider_service_fee_basis_points: providerServiceFeeBasisPoints },
     { skipBusinessError: true }
   )
   return response.data
@@ -235,6 +236,55 @@ export async function updateAdminProviderWithdrawalStatus(
     `/api/hub/admin/providers/withdrawals/${withdrawalId}/status`,
     { status, admin_remark: adminRemark, ...payment },
     { skipBusinessError: true }
+  )
+  return response.data
+}
+
+export const adminTenantWithdrawalsQueryKey = [
+  'hub-admin',
+  'tenant-withdrawals',
+] as const
+
+export async function getAdminTenantWithdrawals(params: {
+  status?: string
+  p: number
+  page_size: number
+}): Promise<PagedAdminResponse<HubTenantWithdrawalAdminItem>> {
+  const response = await api.get(
+    '/api/hub/admin/providers/tenant-withdrawals',
+    {
+      params,
+    }
+  )
+  return response.data
+}
+
+export async function updateAdminTenantWithdrawalStatus(
+  withdrawalId: number,
+  status: HubProviderWithdrawalStatus,
+  adminRemark: string,
+  payment?: {
+    payout_currency: string
+    payout_amount_minor: number
+    exchange_rate: string
+  }
+): Promise<{
+  success: boolean
+  message?: string
+  data?: HubTenantWithdrawalAdminItem
+}> {
+  const response = await api.put(
+    `/api/hub/admin/providers/tenant-withdrawals/${withdrawalId}/status`,
+    { status, admin_remark: adminRemark, ...payment },
+    { skipBusinessError: true }
+  )
+  return response.data
+}
+
+export async function getAdminTenantPayoutAssetBlob(id: number): Promise<Blob> {
+  const response = await api.get(
+    `/api/hub/admin/providers/tenant-payout-assets/${id}`,
+    { responseType: 'blob' }
   )
   return response.data
 }

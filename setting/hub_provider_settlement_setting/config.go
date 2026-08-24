@@ -10,29 +10,35 @@ import (
 )
 
 const (
-	OptionKeyPlatformFeeBasisPoints      = "hub_provider_settlement_setting.platform_fee_basis_points"
-	OptionKeyMinimumWithdrawalQuota      = "hub_provider_settlement_setting.minimum_withdrawal_quota"
-	OptionKeyFallbackReferralEnabled     = "hub_provider_settlement_setting.fallback_referral_enabled"
-	OptionKeyFallbackReferralBasisPoints = "hub_provider_settlement_setting.fallback_referral_basis_points"
+	// PlatformFeeBasisPoints is the platform's share of the reseller's gross
+	// income. It is deliberately separate from the provider service fee.
+	OptionKeyPlatformFeeBasisPoints        = "hub_provider_settlement_setting.platform_fee_basis_points"
+	OptionKeyProviderServiceFeeBasisPoints = "hub_provider_settlement_setting.provider_service_fee_basis_points"
+	OptionKeyMinimumWithdrawalQuota        = "hub_provider_settlement_setting.minimum_withdrawal_quota"
+	OptionKeyFallbackReferralEnabled       = "hub_provider_settlement_setting.fallback_referral_enabled"
+	OptionKeyFallbackReferralBasisPoints   = "hub_provider_settlement_setting.fallback_referral_basis_points"
 
-	DefaultPlatformFeeBasisPoints      = 1000
-	DefaultMinimumWithdrawalQuota      = 0
-	DefaultFallbackReferralEnabled     = true
-	DefaultFallbackReferralBasisPoints = 100
+	DefaultPlatformFeeBasisPoints        = 1000
+	DefaultProviderServiceFeeBasisPoints = 1000
+	DefaultMinimumWithdrawalQuota        = 0
+	DefaultFallbackReferralEnabled       = true
+	DefaultFallbackReferralBasisPoints   = 100
 )
 
 type HubProviderSettlementSetting struct {
-	PlatformFeeBasisPoints      int  `json:"platform_fee_basis_points"`
-	MinimumWithdrawalQuota      int  `json:"minimum_withdrawal_quota"`
-	FallbackReferralEnabled     bool `json:"fallback_referral_enabled"`
-	FallbackReferralBasisPoints int  `json:"fallback_referral_basis_points"`
+	PlatformFeeBasisPoints        int  `json:"platform_fee_basis_points"`
+	ProviderServiceFeeBasisPoints int  `json:"provider_service_fee_basis_points"`
+	MinimumWithdrawalQuota        int  `json:"minimum_withdrawal_quota"`
+	FallbackReferralEnabled       bool `json:"fallback_referral_enabled"`
+	FallbackReferralBasisPoints   int  `json:"fallback_referral_basis_points"`
 }
 
 var hubProviderSettlementSetting = HubProviderSettlementSetting{
-	PlatformFeeBasisPoints:      DefaultPlatformFeeBasisPoints,
-	MinimumWithdrawalQuota:      DefaultMinimumWithdrawalQuota,
-	FallbackReferralEnabled:     DefaultFallbackReferralEnabled,
-	FallbackReferralBasisPoints: DefaultFallbackReferralBasisPoints,
+	PlatformFeeBasisPoints:        DefaultPlatformFeeBasisPoints,
+	ProviderServiceFeeBasisPoints: DefaultProviderServiceFeeBasisPoints,
+	MinimumWithdrawalQuota:        DefaultMinimumWithdrawalQuota,
+	FallbackReferralEnabled:       DefaultFallbackReferralEnabled,
+	FallbackReferralBasisPoints:   DefaultFallbackReferralBasisPoints,
 }
 
 var hubProviderSettlementSettingMutex sync.RWMutex
@@ -68,6 +74,8 @@ func UpdateFromMap(values map[string]string) error {
 		switch key {
 		case OptionKeyPlatformFeeBasisPoints:
 			next.PlatformFeeBasisPoints, _ = strconv.Atoi(strings.TrimSpace(raw))
+		case OptionKeyProviderServiceFeeBasisPoints:
+			next.ProviderServiceFeeBasisPoints, _ = strconv.Atoi(strings.TrimSpace(raw))
 		case OptionKeyMinimumWithdrawalQuota:
 			next.MinimumWithdrawalQuota, _ = strconv.Atoi(strings.TrimSpace(raw))
 		case OptionKeyFallbackReferralEnabled:
@@ -86,6 +94,14 @@ func PlatformFeeBasisPoints() int {
 	value := Snapshot().PlatformFeeBasisPoints
 	if value < 0 || value > 10000 {
 		return DefaultPlatformFeeBasisPoints
+	}
+	return value
+}
+
+func ProviderServiceFeeBasisPoints() int {
+	value := Snapshot().ProviderServiceFeeBasisPoints
+	if value < 0 || value > 10000 {
+		return DefaultProviderServiceFeeBasisPoints
 	}
 	return value
 }
@@ -117,7 +133,7 @@ func FallbackReferralBasisPoints() int {
 }
 
 func IsOptionKey(key string) bool {
-	return key == OptionKeyPlatformFeeBasisPoints || key == OptionKeyMinimumWithdrawalQuota ||
+	return key == OptionKeyPlatformFeeBasisPoints || key == OptionKeyProviderServiceFeeBasisPoints || key == OptionKeyMinimumWithdrawalQuota ||
 		key == OptionKeyFallbackReferralEnabled || key == OptionKeyFallbackReferralBasisPoints
 }
 
@@ -136,6 +152,10 @@ func ValidateOption(key, raw string) error {
 	case OptionKeyPlatformFeeBasisPoints:
 		if value < 0 || value > 10000 {
 			return fmt.Errorf("provider platform fee must be between 0 and 10000 basis points")
+		}
+	case OptionKeyProviderServiceFeeBasisPoints:
+		if value < 0 || value > 10000 {
+			return fmt.Errorf("provider service fee must be between 0 and 10000 basis points")
 		}
 	case OptionKeyMinimumWithdrawalQuota:
 		if value < 0 {

@@ -21,6 +21,7 @@ package controller
 import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,10 +29,18 @@ func GetHubAdminAccess(c *gin.Context) {
 	tenantID := hubProviderAdminTenantID(c)
 	hostTenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
 	data := gin.H{
-		"can_manage_providers": true,
-		"can_view_channels":    true,
-		"can_manage_brand":     hostTenantID > 0,
-		"tenant_scoped":        tenantID != nil,
+		"can_manage_providers":       true,
+		"can_view_channels":          true,
+		"can_manage_brand":           hostTenantID > 0,
+		"can_view_tenant_finance":    hostTenantID > 0,
+		"can_operate_tenant_finance": isPlatformAdmin(c),
+		"tenant_scoped":              tenantID != nil,
+	}
+	if hostTenantID > 0 && !isPlatformAdmin(c) {
+		if member, err := model.GetActiveTenantMember(hostTenantID, c.GetInt("id")); err == nil {
+			data["tenant_member_role"] = member.Role
+			data["can_operate_tenant_finance"] = member.Role == model.TenantMemberRoleOwner
+		}
 	}
 	if tenantID != nil {
 		data["tenant_id"] = *tenantID

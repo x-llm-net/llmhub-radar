@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -147,12 +148,16 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			other["billing_ratio"] = bc.GroupRatio
 			other["hub_supply_group_id"] = bc.SupplyGroupId
 			other["hub_provider_id"] = bc.SupplyProviderId
-			feeBasisPoints := model.HubProviderPlatformFeeBasisPoints
+			feeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()
 			if bc.HasPlatformFeeBasisPoints {
 				feeBasisPoints = bc.PlatformFeeBasisPoints
 			}
 			other["platform_fee_basis_points"] = feeBasisPoints
-			other["provider_share_basis_points"] = 10000 - feeBasisPoints
+			serviceFeeBasisPoints := hub_provider_settlement_setting.ProviderServiceFeeBasisPoints()
+			if bc.HasProviderServiceFeeBasisPoints {
+				serviceFeeBasisPoints = bc.ProviderServiceFeeBasisPoints
+			}
+			other["provider_service_fee_basis_points"] = serviceFeeBasisPoints
 		}
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {

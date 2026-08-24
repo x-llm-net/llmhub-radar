@@ -126,6 +126,9 @@ func resetHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.Gr
 	groupRatioInfo.SupplyGroupId = 0
 	groupRatioInfo.SupplyProviderId = 0
 	groupRatioInfo.SupplyOwnerUserId = 0
+	groupRatioInfo.SupplyTenantId = 0
+	groupRatioInfo.ProviderServiceFeeBasisPoints = 0
+	groupRatioInfo.HasProviderServiceFeeBasisPoints = false
 	groupRatioInfo.PlatformFeeBasisPoints = 0
 	groupRatioInfo.HasPlatformFeeBasisPoints = false
 	return groupRatioInfo
@@ -158,11 +161,27 @@ func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, chan
 	groupRatioInfo.SupplyGroupId = pricing.SupplyGroupId
 	groupRatioInfo.SupplyProviderId = pricing.SupplyProviderId
 	groupRatioInfo.SupplyOwnerUserId = pricing.SupplyOwnerUserId
-	feeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()
-	if pricing.PlatformFeeBasisPoints != nil && *pricing.PlatformFeeBasisPoints >= 0 && *pricing.PlatformFeeBasisPoints <= 10000 {
-		feeBasisPoints = *pricing.PlatformFeeBasisPoints
+	if pricing.TenantId != nil {
+		groupRatioInfo.SupplyTenantId = *pricing.TenantId
 	}
-	groupRatioInfo.PlatformFeeBasisPoints = feeBasisPoints
+	if pricing.TenantId != nil && *pricing.TenantId > 0 {
+		providerServiceFeeBasisPoints := hub_provider_settlement_setting.ProviderServiceFeeBasisPoints()
+		if pricing.ProviderServiceFeeBasisPoints != nil && *pricing.ProviderServiceFeeBasisPoints >= 0 && *pricing.ProviderServiceFeeBasisPoints <= 10000 {
+			providerServiceFeeBasisPoints = *pricing.ProviderServiceFeeBasisPoints
+		}
+		groupRatioInfo.ProviderServiceFeeBasisPoints = providerServiceFeeBasisPoints
+		groupRatioInfo.HasProviderServiceFeeBasisPoints = true
+		groupRatioInfo.PlatformFeeBasisPoints = hub_provider_settlement_setting.PlatformFeeBasisPoints()
+	} else {
+		// A nil tenant is a migration-compatibility state. Keep interpreting
+		// the legacy provider column as the old platform fee until ownership is
+		// explicitly backfilled.
+		legacyFeeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()
+		if pricing.ProviderServiceFeeBasisPoints != nil && *pricing.ProviderServiceFeeBasisPoints >= 0 && *pricing.ProviderServiceFeeBasisPoints <= 10000 {
+			legacyFeeBasisPoints = *pricing.ProviderServiceFeeBasisPoints
+		}
+		groupRatioInfo.PlatformFeeBasisPoints = legacyFeeBasisPoints
+	}
 	groupRatioInfo.HasPlatformFeeBasisPoints = true
 	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * pricing.PriceMultiplier
 	return groupRatioInfo, nil

@@ -60,6 +60,7 @@ interface ProviderPayoutAccountDialogProps {
   account: HubProviderPayoutAccount | null
   pending: boolean
   onConfirm: (value: ProviderPayoutAccountFormValue) => Promise<boolean>
+  getAssetBlob?: (assetId: number) => Promise<Blob>
 }
 
 export function ProviderPayoutAccountDialog(
@@ -164,6 +165,7 @@ export function ProviderPayoutAccountDialog(
           assetId={qrCodeAssetId}
           alt={t('Payment QR code')}
           className='size-28'
+          getAssetBlob={props.getAssetBlob}
         />
       )
     }

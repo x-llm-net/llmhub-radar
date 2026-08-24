@@ -95,23 +95,28 @@ type HubProvider struct {
 
 type HubProviderAdminListItem struct {
 	HubProvider
-	TenantID                        *int                       `json:"tenant_id" gorm:"column:admin_tenant_id"`
-	TenantName                      string                     `json:"tenant_name" gorm:"column:tenant_name"`
-	TenantSlug                      string                     `json:"tenant_slug" gorm:"column:tenant_slug"`
-	OwnerID                         int                        `json:"owner_user_id" gorm:"column:owner_id"`
-	OwnerUsername                   string                     `json:"owner_username" gorm:"column:owner_username"`
-	OwnerDisplayName                string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
-	OwnerEmail                      string                     `json:"owner_email" gorm:"column:owner_email"`
-	OwnerStatus                     int                        `json:"owner_status" gorm:"column:owner_status"`
-	ChannelCount                    int64                      `json:"channel_count" gorm:"-"`
-	OnlineChannelCount              int64                      `json:"online_channel_count" gorm:"-"`
-	AvailableModelCount             int64                      `json:"available_model_count" gorm:"-"`
-	ErrorModelCount                 int64                      `json:"error_model_count" gorm:"-"`
-	LastProbeAt                     int64                      `json:"last_probe_at" gorm:"-"`
-	UpstreamUsages                  []HubProviderUpstreamUsage `json:"upstream_usages" gorm:"-"`
-	PlatformFeeOverrideBasisPoints  *int                       `json:"platform_fee_basis_points" gorm:"column:platform_fee_override_basis_points"`
-	GlobalPlatformFeeBasisPoints    int                        `json:"global_platform_fee_basis_points" gorm:"-"`
-	EffectivePlatformFeeBasisPoints int                        `json:"effective_platform_fee_basis_points" gorm:"-"`
+	TenantID                               *int                       `json:"tenant_id" gorm:"column:admin_tenant_id"`
+	TenantName                             string                     `json:"tenant_name" gorm:"column:tenant_name"`
+	TenantSlug                             string                     `json:"tenant_slug" gorm:"column:tenant_slug"`
+	OwnerID                                int                        `json:"owner_user_id" gorm:"column:owner_id"`
+	OwnerUsername                          string                     `json:"owner_username" gorm:"column:owner_username"`
+	OwnerDisplayName                       string                     `json:"owner_display_name" gorm:"column:owner_display_name"`
+	OwnerEmail                             string                     `json:"owner_email" gorm:"column:owner_email"`
+	OwnerStatus                            int                        `json:"owner_status" gorm:"column:owner_status"`
+	ChannelCount                           int64                      `json:"channel_count" gorm:"-"`
+	OnlineChannelCount                     int64                      `json:"online_channel_count" gorm:"-"`
+	AvailableModelCount                    int64                      `json:"available_model_count" gorm:"-"`
+	ErrorModelCount                        int64                      `json:"error_model_count" gorm:"-"`
+	LastProbeAt                            int64                      `json:"last_probe_at" gorm:"-"`
+	UpstreamUsages                         []HubProviderUpstreamUsage `json:"upstream_usages" gorm:"-"`
+	ProviderServiceFeeOverrideBasisPoints  *int                       `json:"provider_service_fee_basis_points" gorm:"column:provider_service_fee_override_basis_points"`
+	GlobalProviderServiceFeeBasisPoints    int                        `json:"global_provider_service_fee_basis_points" gorm:"-"`
+	EffectiveProviderServiceFeeBasisPoints int                        `json:"effective_provider_service_fee_basis_points" gorm:"-"`
+	// Deprecated aliases kept for older admin clients. These values are the
+	// provider service fee, not the platform fee.
+	PlatformFeeOverrideBasisPoints  *int `json:"platform_fee_basis_points" gorm:"-"`
+	GlobalPlatformFeeBasisPoints    int  `json:"global_platform_fee_basis_points" gorm:"-"`
+	EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points" gorm:"-"`
 }
 
 type HubProviderOwnerCandidate struct {
@@ -521,7 +526,7 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int, 
 	}
 
 	providers := make([]HubProviderAdminListItem, 0)
-	selectColumns := "providers.*, providers.platform_fee_basis_points AS platform_fee_override_basis_points, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status"
+	selectColumns := "providers.*, providers.platform_fee_basis_points AS provider_service_fee_override_basis_points, providers.owner_user_id AS owner_id, users.username AS owner_username, users.display_name AS owner_display_name, users.email AS owner_email, users.status AS owner_status"
 	if includeTenantMetadata {
 		selectColumns = "providers.*, tenants.id AS admin_tenant_id, tenants.name AS tenant_name, tenants.slug AS tenant_slug, " + selectColumns
 	}
@@ -575,11 +580,14 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int, 
 		providers[i].AvailableModelCount = item.AvailableModelCount
 		providers[i].ErrorModelCount = item.ErrorModelCount
 		providers[i].LastProbeAt = item.LastProbeAt
-		providers[i].GlobalPlatformFeeBasisPoints = hub_provider_settlement_setting.PlatformFeeBasisPoints()
-		providers[i].EffectivePlatformFeeBasisPoints = providers[i].GlobalPlatformFeeBasisPoints
-		if override := providers[i].PlatformFeeOverrideBasisPoints; override != nil && *override >= 0 && *override <= 10000 {
-			providers[i].EffectivePlatformFeeBasisPoints = *override
+		providers[i].GlobalProviderServiceFeeBasisPoints = hub_provider_settlement_setting.ProviderServiceFeeBasisPoints()
+		providers[i].EffectiveProviderServiceFeeBasisPoints = providers[i].GlobalProviderServiceFeeBasisPoints
+		if override := providers[i].ProviderServiceFeeOverrideBasisPoints; override != nil && *override >= 0 && *override <= 10000 {
+			providers[i].EffectiveProviderServiceFeeBasisPoints = *override
 		}
+		providers[i].PlatformFeeOverrideBasisPoints = providers[i].ProviderServiceFeeOverrideBasisPoints
+		providers[i].GlobalPlatformFeeBasisPoints = providers[i].GlobalProviderServiceFeeBasisPoints
+		providers[i].EffectivePlatformFeeBasisPoints = providers[i].EffectiveProviderServiceFeeBasisPoints
 		HydrateHubProviderVerificationFields(&providers[i].HubProvider)
 	}
 	if err := populateHubProviderUpstreamUsages(providers, tenantID); err != nil {
@@ -667,9 +675,9 @@ func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {
 	return channelIDs, err
 }
 
-func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
+func UpdateHubProviderServiceFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
 	if providerID <= 0 || (override != nil && (*override < 0 || *override > 10000)) {
-		return nil, errors.New("invalid hub provider platform fee")
+		return nil, errors.New("invalid hub provider service fee")
 	}
 	updates := map[string]any{
 		"platform_fee_basis_points": override,
@@ -688,6 +696,13 @@ func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*Hu
 	}
 	refreshHubProviderRoutingCache()
 	return &provider, nil
+}
+
+// UpdateHubProviderPlatformFeeBasisPoints is kept for source compatibility
+// with older callers. The per-provider override has always been stored in the
+// legacy column, but its current meaning is the provider service fee.
+func UpdateHubProviderPlatformFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
+	return UpdateHubProviderServiceFeeBasisPoints(providerID, override)
 }
 
 func populateHubProviderUpstreamUsages(providers []HubProviderAdminListItem, tenantID *int) error {

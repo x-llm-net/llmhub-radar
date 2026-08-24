@@ -134,10 +134,11 @@ type HubRoutingSettingUpdateRequest struct {
 }
 
 type HubProviderSettlementSettingUpdateRequest struct {
-	PlatformFeeBasisPoints      int  `json:"platform_fee_basis_points"`
-	MinimumWithdrawalQuota      int  `json:"minimum_withdrawal_quota"`
-	FallbackReferralEnabled     bool `json:"fallback_referral_enabled"`
-	FallbackReferralBasisPoints int  `json:"fallback_referral_basis_points"`
+	PlatformFeeBasisPoints        int  `json:"platform_fee_basis_points"`
+	ProviderServiceFeeBasisPoints int  `json:"provider_service_fee_basis_points"`
+	MinimumWithdrawalQuota        int  `json:"minimum_withdrawal_quota"`
+	FallbackReferralEnabled       bool `json:"fallback_referral_enabled"`
+	FallbackReferralBasisPoints   int  `json:"fallback_referral_basis_points"`
 }
 
 func UpdateHubProviderSettlementSetting(c *gin.Context) {
@@ -147,10 +148,11 @@ func UpdateHubProviderSettlementSetting(c *gin.Context) {
 		return
 	}
 	values := map[string]string{
-		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:      strconv.Itoa(request.PlatformFeeBasisPoints),
-		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:      strconv.Itoa(request.MinimumWithdrawalQuota),
-		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:     strconv.FormatBool(request.FallbackReferralEnabled),
-		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints: strconv.Itoa(request.FallbackReferralBasisPoints),
+		hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints:        strconv.Itoa(request.PlatformFeeBasisPoints),
+		hub_provider_settlement_setting.OptionKeyProviderServiceFeeBasisPoints: strconv.Itoa(request.ProviderServiceFeeBasisPoints),
+		hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota:        strconv.Itoa(request.MinimumWithdrawalQuota),
+		hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled:       strconv.FormatBool(request.FallbackReferralEnabled),
+		hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints:   strconv.Itoa(request.FallbackReferralBasisPoints),
 	}
 	if err := model.UpdateOptionsBulk(values); err != nil {
 		common.ApiError(c, err)
@@ -159,6 +161,7 @@ func UpdateHubProviderSettlementSetting(c *gin.Context) {
 	recordManageAudit(c, "option.hub_provider_settlement.update", map[string]interface{}{
 		"keys": []string{
 			hub_provider_settlement_setting.OptionKeyPlatformFeeBasisPoints,
+			hub_provider_settlement_setting.OptionKeyProviderServiceFeeBasisPoints,
 			hub_provider_settlement_setting.OptionKeyMinimumWithdrawalQuota,
 			hub_provider_settlement_setting.OptionKeyFallbackReferralEnabled,
 			hub_provider_settlement_setting.OptionKeyFallbackReferralBasisPoints,

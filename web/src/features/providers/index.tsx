@@ -34,6 +34,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { ProviderCreateDialog } from './provider-create-dialog'
 import { ProviderWithdrawals } from './provider-withdrawals'
 import { ProvidersTable } from './providers-table'
+import { TenantWithdrawals } from './tenant-withdrawals'
 
 export function Providers() {
   const { t } = useTranslation()
@@ -63,12 +64,18 @@ export function Providers() {
               <TabsTrigger value='withdrawals'>
                 {t('Withdrawal requests')}
               </TabsTrigger>
+              <TabsTrigger value='tenant-withdrawals'>
+                {t('Tenant withdrawals')}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value='providers' className='min-h-0'>
               <ProvidersTable />
             </TabsContent>
             <TabsContent value='withdrawals' className='min-h-0'>
               <ProviderWithdrawals />
+            </TabsContent>
+            <TabsContent value='tenant-withdrawals' className='min-h-0'>
+              <TenantWithdrawals />
             </TabsContent>
           </Tabs>
         </SectionPageLayout.Content>

@@ -199,6 +199,10 @@ const BILLING_SECTIONS = [
             settings[
               'hub_provider_settlement_setting.platform_fee_basis_points'
             ],
+          providerServiceFeeBasisPoints:
+            settings[
+              'hub_provider_settlement_setting.provider_service_fee_basis_points'
+            ],
           minimumWithdrawalQuota:
             settings[
               'hub_provider_settlement_setting.minimum_withdrawal_quota'

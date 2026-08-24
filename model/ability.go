@@ -138,7 +138,11 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 		}
 	}
 	abilities = filterAbilitiesByProvider(abilities, providerFilter)
-	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	var filterErr error
+	abilities, filterErr = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	if filterErr != nil {
+		return nil, filterErr
+	}
 	if len(abilities) == 0 {
 		return nil, nil
 	}
@@ -262,9 +266,9 @@ func filterAbilitiesByProvider(abilities []Ability, providerFilter ChannelProvid
 
 // filterAbilitiesByRequestPathAndModel applies Hub probe-kind eligibility and
 // Advanced Custom path rules to the DB (non-memory-cache) selection path.
-func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
+func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) ([]Ability, error) {
 	if len(abilities) == 0 {
-		return abilities
+		return abilities, nil
 	}
 
 	channelIds := make([]int, 0, len(abilities))
@@ -279,12 +283,11 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		// On error, fall back to unfiltered candidates to avoid blocking selection
-		return abilities
+		return nil, fmt.Errorf("load channels for route eligibility: %w", err)
 	}
 	supplyAvailability, _, err := loadHubSupplyChannelProbeKinds(DB, channelIds)
 	if err != nil {
-		return abilities
+		return nil, fmt.Errorf("load supply route eligibility: %w", err)
 	}
 
 	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
@@ -311,7 +314,7 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 			filtered = append(filtered, ability)
 		}
 	}
-	return filtered
+	return filtered, nil
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
