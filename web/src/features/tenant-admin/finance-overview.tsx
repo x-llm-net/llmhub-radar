@@ -70,6 +70,7 @@ export function TenantFinanceOverview() {
                 <TableHead>{t('Settled earnings')}</TableHead>
                 <TableHead>{t('Pending tenant earnings')}</TableHead>
                 <TableHead>{t('Withdrawable')}</TableHead>
+                <TableHead>{t('Reserved for payout')}</TableHead>
                 <TableHead>{t('Transferred to balance')}</TableHead>
                 <TableHead>{t('Total withdrawn')}</TableHead>
                 <TableHead>{t('Platform fee')}</TableHead>
@@ -79,7 +80,7 @@ export function TenantFinanceOverview() {
             <TableBody>
               {financeQuery.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={9} className='h-24 text-center'>
+                  <TableCell colSpan={10} className='h-24 text-center'>
                     <Loader2 className='mx-auto animate-spin' />
                   </TableCell>
                 </TableRow>
@@ -87,7 +88,7 @@ export function TenantFinanceOverview() {
               {!financeQuery.isLoading && items.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={10}
                     className='text-muted-foreground h-24 text-center'
                   >
                     {t('No tenants found')}
@@ -123,6 +124,9 @@ export function TenantFinanceOverview() {
                   </TableCell>
                   <TableCell className='font-medium whitespace-nowrap tabular-nums'>
                     {formatQuota(item.summary.withdrawable_quota)}
+                  </TableCell>
+                  <TableCell className='whitespace-nowrap tabular-nums'>
+                    {formatQuota(item.summary.reserved_withdrawal_quota)}
                   </TableCell>
                   <TableCell className='whitespace-nowrap tabular-nums'>
                     {formatQuota(item.summary.transferred_balance_quota)}

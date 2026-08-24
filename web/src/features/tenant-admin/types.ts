@@ -76,6 +76,7 @@ export type TenantAdminFinanceSummary = {
     platform_fee_quota: number
     settled_income_quota: number
     pending_income_quota: number
+    reserved_withdrawal_quota: number
     transferred_balance_quota: number
     paid_withdrawal_quota: number
     withdrawable_quota: number

@@ -153,9 +153,9 @@ func TestHubTenantWithdrawalReservesOnlyTenantIncome(t *testing.T) {
 	assert.Equal(t, 0, summary.PaidWithdrawalQuota)
 	assert.Equal(t, 40, summary.WithdrawableQuota)
 
-	_, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusApproved, 1, "approved", nil)
+	_, _, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusApproved, 1, "approved", nil)
 	require.NoError(t, err)
-	_, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusRejected, 1, "rejected for test", nil)
+	_, _, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusRejected, 1, "rejected for test", nil)
 	require.NoError(t, err)
 	summary, err = GetHubTenantSettlementSummary(tenant.Id)
 	require.NoError(t, err)
@@ -164,10 +164,20 @@ func TestHubTenantWithdrawalReservesOnlyTenantIncome(t *testing.T) {
 
 	withdrawal, err = CreateHubTenantWithdrawal(tenant.Id, owner.Id, 50, account.Id)
 	require.NoError(t, err)
-	_, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusPaid, 1, "paid for test", &HubProviderWithdrawalPayment{
+	_, changed, err := UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusPaid, 1, "paid for test", &HubProviderWithdrawalPayment{
 		Currency: "CNY", AmountMinor: 5000, ExchangeRate: "1",
 	})
 	require.NoError(t, err)
+	assert.True(t, changed)
+	_, changed, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusPaid, 1, "idempotent retry", &HubProviderWithdrawalPayment{
+		Currency: "CNY", AmountMinor: 5000, ExchangeRate: "1",
+	})
+	require.NoError(t, err)
+	assert.False(t, changed)
+	_, _, err = UpdateHubTenantWithdrawalStatus(withdrawal.Id, HubTenantWithdrawalStatusPaid, 1, "conflicting retry", &HubProviderWithdrawalPayment{
+		Currency: "CNY", AmountMinor: 4900, ExchangeRate: "1",
+	})
+	assert.ErrorIs(t, err, ErrHubTenantWithdrawalPaymentInvalid)
 	summary, err = GetHubTenantSettlementSummary(tenant.Id)
 	require.NoError(t, err)
 	assert.Equal(t, 50, summary.PaidWithdrawalQuota)
@@ -188,4 +198,17 @@ func TestHubTenantFinanceRequiresActiveOwner(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, ErrHubTenantFinanceOwnerRequired)
 	assert.False(t, errors.Is(err, ErrHubProviderPayoutAccountInvalid))
+}
+
+func TestHubTenantReconciliationRequiresEnabledOwnerUser(t *testing.T) {
+	tenant, owner := seedHubTenantFinance(t)
+	createHubTenantUsageEarning(t, tenant.Id, 7, 1, 100)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", owner.Id).Update("status", common.UserStatusDisabled).Error)
+
+	summary, err := GetHubTenantSettlementSummary(tenant.Id)
+	require.NoError(t, err)
+	reconciliation, err := GetHubTenantSettlementReconciliation(tenant.Id, tenant.Status, summary)
+	require.NoError(t, err)
+	assert.False(t, reconciliation.Reconciled)
+	assert.Contains(t, reconciliation.Issues, HubTenantReconciliationIssueActiveOwnerMissing)
 }

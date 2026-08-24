@@ -10,11 +10,13 @@ package controller
 
 import (
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,4 +82,35 @@ func TestHubTenantFinanceControllerSeparatesReadAndOperatePermissions(t *testing
 	var updatedOwner model.User
 	require.NoError(t, model.DB.First(&updatedOwner, owner.Id).Error)
 	assert.Equal(t, 20, updatedOwner.Quota)
+}
+
+func TestAdminUpdateHubTenantWithdrawalStatusRequiresPlatformAdmin(t *testing.T) {
+	tenant, owner, admin := setupHubTenantSettlementControllerTestDB(t)
+	withdrawal := &model.HubTenantWithdrawal{
+		TenantId:              tenant.Id,
+		OwnerUserId:           owner.Id,
+		AmountQuota:           50,
+		Status:                model.HubTenantWithdrawalStatusApproved,
+		PayoutMethod:          model.HubProviderPayoutMethodAlipay,
+		PayoutAccountSnapshot: "{}",
+	}
+	require.NoError(t, model.DB.Create(withdrawal).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/tenant-withdrawals/1/status", map[string]any{
+		"status":       model.HubTenantWithdrawalStatusRejected,
+		"admin_remark": "must be rejected by the platform",
+	}, admin.Id)
+	ctx.Params = append(ctx.Params, gin.Param{Key: "withdrawal_id", Value: strconv.Itoa(withdrawal.Id)})
+	ctx.Set("role", common.RoleCommonUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+
+	AdminUpdateHubTenantWithdrawalStatus(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success, recorder.Body.String())
+	require.NoError(t, model.DB.First(withdrawal, withdrawal.Id).Error)
+	assert.Equal(t, model.HubTenantWithdrawalStatusApproved, withdrawal.Status)
 }

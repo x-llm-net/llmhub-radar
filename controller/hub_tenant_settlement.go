@@ -420,6 +420,10 @@ func AdminGetHubTenantWithdrawals(c *gin.Context) {
 }
 
 func AdminUpdateHubTenantWithdrawalStatus(c *gin.Context) {
+	if !isPlatformAdmin(c) {
+		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
+		return
+	}
 	withdrawalID, err := strconv.Atoi(c.Param("withdrawal_id"))
 	if err != nil || withdrawalID <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -454,9 +458,13 @@ func AdminUpdateHubTenantWithdrawalStatus(c *gin.Context) {
 	if request.Status == model.HubTenantWithdrawalStatusPaid {
 		payment = &model.HubProviderWithdrawalPayment{Currency: request.PayoutCurrency, AmountMinor: request.PayoutAmountMinor, ExchangeRate: request.ExchangeRate}
 	}
-	withdrawal, err = model.UpdateHubTenantWithdrawalStatus(withdrawalID, request.Status, c.GetInt("id"), request.AdminRemark, payment)
+	withdrawal, statusChanged, err := model.UpdateHubTenantWithdrawalStatus(withdrawalID, request.Status, c.GetInt("id"), request.AdminRemark, payment)
 	if err != nil {
 		tenantWithdrawalError(c, err)
+		return
+	}
+	if !statusChanged {
+		common.ApiSuccess(c, withdrawal)
 		return
 	}
 	auditAction := "hub_tenant.withdrawal_approve"

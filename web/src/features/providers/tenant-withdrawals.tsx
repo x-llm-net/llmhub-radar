@@ -67,7 +67,7 @@ function getStatusMeta(status: HubProviderWithdrawalStatus): {
   return { label: 'Rejected', variant: 'danger' }
 }
 
-export function TenantWithdrawals() {
+export function TenantWithdrawals(props: { canReview: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -127,7 +127,11 @@ export function TenantWithdrawals() {
         <div>
           <h2 className='font-medium'>{t('Tenant withdrawals')}</h2>
           <p className='text-muted-foreground text-sm'>
-            {t('Review tenant withdrawals and confirm payouts after transfer.')}
+            {props.canReview
+              ? t(
+                  'Review tenant withdrawals and confirm payouts after transfer.'
+                )
+              : t('View tenant withdrawals and their payout status.')}
           </p>
         </div>
         <NativeSelect
@@ -163,13 +167,18 @@ export function TenantWithdrawals() {
               <TableHead>{t('Payout account')}</TableHead>
               <TableHead>{t('Paid amount')}</TableHead>
               <TableHead>{t('Administrator note')}</TableHead>
-              <TableHead className='text-right'>{t('Actions')}</TableHead>
+              {props.canReview && (
+                <TableHead className='text-right'>{t('Actions')}</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {withdrawals.isLoading && (
               <TableRow>
-                <TableCell colSpan={9} className='h-32 text-center'>
+                <TableCell
+                  colSpan={props.canReview ? 9 : 8}
+                  className='h-32 text-center'
+                >
                   <Loader2 className='mx-auto animate-spin' />
                 </TableCell>
               </TableRow>
@@ -177,7 +186,7 @@ export function TenantWithdrawals() {
             {!withdrawals.isLoading && items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={props.canReview ? 9 : 8}
                   className='text-muted-foreground h-32 text-center'
                 >
                   {t('No withdrawal requests found')}
@@ -237,55 +246,57 @@ export function TenantWithdrawals() {
                     <TableCell className='max-w-64 truncate'>
                       {item.admin_remark || '-'}
                     </TableCell>
-                    <TableCell>
-                      <div className='flex justify-end gap-1'>
-                        {(item.status === 'pending' ||
-                          item.status === 'approved') && (
-                          <>
-                            <Tooltip>
-                              <TooltipTrigger
-                                render={
-                                  <Button
-                                    variant='ghost'
-                                    size='icon-sm'
-                                    onClick={() => {
-                                      setSelected(item)
-                                      setTargetStatus('paid')
-                                    }}
-                                    aria-label={t('Confirm payout')}
-                                  />
-                                }
-                              >
-                                <BadgeCheck />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {t('Confirm payout')}
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger
-                                render={
-                                  <Button
-                                    variant='ghost'
-                                    size='icon-sm'
-                                    onClick={() => {
-                                      setSelected(item)
-                                      setTargetStatus('rejected')
-                                    }}
-                                    aria-label={t('Reject withdrawal')}
-                                  />
-                                }
-                              >
-                                <Ban />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {t('Reject withdrawal')}
-                              </TooltipContent>
-                            </Tooltip>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
+                    {props.canReview && (
+                      <TableCell>
+                        <div className='flex justify-end gap-1'>
+                          {(item.status === 'pending' ||
+                            item.status === 'approved') && (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <Button
+                                      variant='ghost'
+                                      size='icon-sm'
+                                      onClick={() => {
+                                        setSelected(item)
+                                        setTargetStatus('paid')
+                                      }}
+                                      aria-label={t('Confirm payout')}
+                                    />
+                                  }
+                                >
+                                  <BadgeCheck />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {t('Confirm payout')}
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <Button
+                                      variant='ghost'
+                                      size='icon-sm'
+                                      onClick={() => {
+                                        setSelected(item)
+                                        setTargetStatus('rejected')
+                                      }}
+                                      aria-label={t('Reject withdrawal')}
+                                    />
+                                  }
+                                >
+                                  <Ban />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {t('Reject withdrawal')}
+                                </TooltipContent>
+                              </Tooltip>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}

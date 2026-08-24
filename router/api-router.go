@@ -229,7 +229,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderAdminRoute.PUT("/withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubProviderWithdrawalStatus)
 			hubProviderAdminRoute.GET("/tenant-withdrawals", controller.AdminGetHubTenantWithdrawals)
 			hubProviderAdminRoute.GET("/tenant-payout-assets/:asset_id", middleware.DisableCache(), controller.AdminGetHubTenantPayoutAsset)
-			hubProviderAdminRoute.PUT("/tenant-withdrawals/:withdrawal_id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantWithdrawalStatus)
+			hubProviderAdminRoute.PUT("/tenant-withdrawals/:withdrawal_id/status", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantWithdrawalStatus)
 			hubProviderAdminRoute.GET("/:id/earnings/summary", controller.AdminGetHubProviderEarningSummary)
 			hubProviderAdminRoute.GET("/:id/earnings", controller.AdminGetHubProviderEarnings)
 			hubProviderAdminRoute.POST("/:id/earnings/adjustments", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubProviderEarningAdjustment)

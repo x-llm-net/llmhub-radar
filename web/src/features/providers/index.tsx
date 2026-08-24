@@ -75,7 +75,7 @@ export function Providers() {
               <ProviderWithdrawals />
             </TabsContent>
             <TabsContent value='tenant-withdrawals' className='min-h-0'>
-              <TenantWithdrawals />
+              <TenantWithdrawals canReview={isPlatformAdmin} />
             </TabsContent>
           </Tabs>
         </SectionPageLayout.Content>

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -317,7 +318,14 @@ func tenantSettlementIncomeTx(tx *gorm.DB, tenantID int) (settled, transferred, 
 	return
 }
 
-func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, error) {
+func hubTenantFinanceReadTransaction(fn func(tx *gorm.DB) error) error {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		return DB.Transaction(fn)
+	}
+	return DB.Transaction(fn, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+}
+
+func getHubTenantSettlementSummaryTx(tx *gorm.DB, tenantID int) (HubTenantSettlementSummary, error) {
 	summary := HubTenantSettlementSummary{
 		TenantId:               tenantID,
 		PlatformFeeBasisPoints: hub_provider_settlement_setting.PlatformFeeBasisPoints(),
@@ -334,7 +342,7 @@ func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, er
 		PendingIncomeQuota     int `gorm:"column:pending_income_quota"`
 	}
 	var earnings earningSums
-	if err := DB.Model(&HubProviderEarning{}).
+	if err := tx.Model(&HubProviderEarning{}).
 		Select(
 			"COALESCE(SUM(CASE WHEN status = ? AND entry_type = ? AND settlement_version >= 2 THEN gross_quota ELSE 0 END), 0) AS gross_quota, "+
 				"COALESCE(SUM(CASE WHEN status = ? AND entry_type = ? AND settlement_version >= 2 THEN platform_fee_quota ELSE 0 END), 0) AS platform_fee_quota, "+
@@ -351,7 +359,7 @@ func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, er
 		Scan(&earnings).Error; err != nil {
 		return summary, err
 	}
-	settled, transferred, unavailable, err := tenantSettlementIncomeTx(DB, tenantID)
+	settled, transferred, unavailable, err := tenantSettlementIncomeTx(tx, tenantID)
 	if err != nil {
 		return summary, err
 	}
@@ -363,7 +371,7 @@ func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, er
 	summary.PendingIncomeQuota = earnings.PendingIncomeQuota
 	summary.TransferredBalanceQuota = transferred
 	var paid int
-	if err := DB.Model(&HubTenantWithdrawal{}).
+	if err := tx.Model(&HubTenantWithdrawal{}).
 		Select("COALESCE(SUM(amount_quota), 0)").
 		Where("tenant_id = ? AND status = ?", tenantID, HubTenantWithdrawalStatusPaid).
 		Scan(&paid).Error; err != nil {
@@ -381,6 +389,16 @@ func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, er
 	return summary, nil
 }
 
+func GetHubTenantSettlementSummary(tenantID int) (HubTenantSettlementSummary, error) {
+	var summary HubTenantSettlementSummary
+	err := hubTenantFinanceReadTransaction(func(tx *gorm.DB) error {
+		var err error
+		summary, err = getHubTenantSettlementSummaryTx(tx, tenantID)
+		return err
+	})
+	return summary, err
+}
+
 // AdminListHubTenantSettlementSummaries is intentionally read-only and
 // platform-scoped. Keep the per-tenant summary calculation in one place so
 // this report cannot drift from the tenant finance page's balance rules.
@@ -391,12 +409,17 @@ func AdminListHubTenantSettlementSummaries() ([]HubTenantSettlementAdminItem, er
 	}
 	items := make([]HubTenantSettlementAdminItem, 0, len(tenants))
 	for _, tenant := range tenants {
-		summary, err := GetHubTenantSettlementSummary(tenant.Id)
-		if err != nil {
-			return nil, err
-		}
-		reconciliation, err := GetHubTenantSettlementReconciliation(tenant.Id, tenant.Status, summary)
-		if err != nil {
+		var summary HubTenantSettlementSummary
+		var reconciliation HubTenantSettlementReconciliation
+		if err := hubTenantFinanceReadTransaction(func(tx *gorm.DB) error {
+			var err error
+			summary, err = getHubTenantSettlementSummaryTx(tx, tenant.Id)
+			if err != nil {
+				return err
+			}
+			reconciliation, err = getHubTenantSettlementReconciliationTx(tx, tenant.Id, tenant.Status, summary)
+			return err
+		}); err != nil {
 			return nil, err
 		}
 		items = append(items, HubTenantSettlementAdminItem{
@@ -411,14 +434,14 @@ func AdminListHubTenantSettlementSummaries() ([]HubTenantSettlementAdminItem, er
 	return items, nil
 }
 
-func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, summary HubTenantSettlementSummary) (HubTenantSettlementReconciliation, error) {
+func getHubTenantSettlementReconciliationTx(tx *gorm.DB, tenantID int, tenantStatus string, summary HubTenantSettlementSummary) (HubTenantSettlementReconciliation, error) {
 	reconciliation := HubTenantSettlementReconciliation{Issues: make([]string, 0)}
 	if tenantID <= 0 {
 		return reconciliation, ErrTenantNotFound
 	}
 
 	usageQuery := func() *gorm.DB {
-		return DB.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeUsage)
+		return tx.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeUsage)
 	}
 	var usageCount, settledUsageCount, pendingUsageCount int64
 	if err := usageQuery().Count(&usageCount).Error; err != nil {
@@ -432,7 +455,7 @@ func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, sum
 	}
 
 	transferQuery := func() *gorm.DB {
-		return DB.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeBalanceTransfer)
+		return tx.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeBalanceTransfer)
 	}
 	var transferCount, invalidTransferCount int64
 	if err := transferQuery().Count(&transferCount).Error; err != nil {
@@ -443,7 +466,7 @@ func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, sum
 	}
 
 	withdrawalQuery := func() *gorm.DB {
-		return DB.Model(&HubTenantWithdrawal{}).Where("tenant_id = ?", tenantID)
+		return tx.Model(&HubTenantWithdrawal{}).Where("tenant_id = ?", tenantID)
 	}
 	var withdrawalCount, openWithdrawalCount, paidWithdrawalCount int64
 	if err := withdrawalQuery().Count(&withdrawalCount).Error; err != nil {
@@ -457,10 +480,13 @@ func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, sum
 	}
 
 	var ownerCount int64
-	if err := DB.Model(&TenantMember{}).Where(
-		"tenant_id = ? AND role = ? AND status = ?",
-		tenantID, TenantMemberRoleOwner, TenantMemberStatusActive,
-	).Count(&ownerCount).Error; err != nil {
+	if err := tx.Model(&TenantMember{}).
+		Joins("JOIN users ON users.id = tenant_members.user_id").
+		Where(
+			"tenant_members.tenant_id = ? AND tenant_members.role = ? AND tenant_members.status = ?",
+			tenantID, TenantMemberRoleOwner, TenantMemberStatusActive,
+		).Where("users.status = ? AND users.deleted_at IS NULL", common.UserStatusEnabled).
+		Count(&ownerCount).Error; err != nil {
 		return reconciliation, err
 	}
 
@@ -535,6 +561,10 @@ func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, sum
 	}
 	reconciliation.Reconciled = len(reconciliation.Issues) == 0
 	return reconciliation, nil
+}
+
+func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, summary HubTenantSettlementSummary) (HubTenantSettlementReconciliation, error) {
+	return getHubTenantSettlementReconciliationTx(DB, tenantID, tenantStatus, summary)
 }
 
 func ListHubTenantEarnings(tenantID, offset, limit int) ([]HubProviderEarning, int64, error) {
@@ -999,23 +1029,24 @@ func AdminListHubTenantWithdrawalsInTenant(status string, offset, limit, tenantI
 	return listAdminHubTenantWithdrawals(status, offset, limit, &tenantID)
 }
 
-func UpdateHubTenantWithdrawalStatus(id int, status string, adminUserID int, adminRemark string, payment *HubProviderWithdrawalPayment) (*HubTenantWithdrawal, error) {
+func UpdateHubTenantWithdrawalStatus(id int, status string, adminUserID int, adminRemark string, payment *HubProviderWithdrawalPayment) (*HubTenantWithdrawal, bool, error) {
 	if id <= 0 || adminUserID <= 0 || !IsValidHubTenantWithdrawalStatus(status) || status == HubTenantWithdrawalStatusPending {
-		return nil, errors.New("invalid hub tenant withdrawal update")
+		return nil, false, errors.New("invalid hub tenant withdrawal update")
 	}
 	adminRemark = strings.TrimSpace(adminRemark)
 	var normalizedPayment HubProviderWithdrawalPayment
 	if status == HubTenantWithdrawalStatusPaid {
 		if payment == nil {
-			return nil, ErrHubTenantWithdrawalPaymentInvalid
+			return nil, false, ErrHubTenantWithdrawalPaymentInvalid
 		}
 		var err error
 		normalizedPayment, err = normalizeHubProviderWithdrawalPayment(*payment)
 		if err != nil {
-			return nil, ErrHubTenantWithdrawalPaymentInvalid
+			return nil, false, ErrHubTenantWithdrawalPaymentInvalid
 		}
 	}
 	var updated HubTenantWithdrawal
+	statusChanged := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(tx).First(&updated, id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1024,6 +1055,12 @@ func UpdateHubTenantWithdrawalStatus(id int, status string, adminUserID int, adm
 			return err
 		}
 		if updated.Status == status {
+			if status == HubTenantWithdrawalStatusPaid &&
+				(updated.PayoutCurrency != normalizedPayment.Currency ||
+					updated.PayoutAmountMinor != normalizedPayment.AmountMinor ||
+					updated.ExchangeRate != normalizedPayment.ExchangeRate) {
+				return ErrHubTenantWithdrawalPaymentInvalid
+			}
 			return nil
 		}
 		if (status == HubTenantWithdrawalStatusPaid || status == HubTenantWithdrawalStatusRejected) && adminRemark == "" {
@@ -1048,13 +1085,14 @@ func UpdateHubTenantWithdrawalStatus(id int, status string, adminUserID int, adm
 		if err := tx.Model(&HubTenantWithdrawal{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
 		}
+		statusChanged = true
 		return tx.First(&updated, id).Error
 	})
 	if err != nil {
-		return nil, fmt.Errorf("update hub tenant withdrawal: %w", err)
+		return nil, false, fmt.Errorf("update hub tenant withdrawal: %w", err)
 	}
 	if err := hydrateHubTenantWithdrawal(&updated); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return &updated, nil
+	return &updated, statusChanged, nil
 }
