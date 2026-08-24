@@ -138,12 +138,37 @@ type HubTenantSettlementSummary struct {
 	MinimumWithdrawalQuota  int `json:"minimum_withdrawal_quota"`
 }
 
+const (
+	HubTenantReconciliationIssueActiveOwnerMissing       = "active_owner_missing"
+	HubTenantReconciliationIssueMultipleActiveOwners     = "multiple_active_owners"
+	HubTenantReconciliationIssueInvalidBalanceTransfer   = "invalid_balance_transfer"
+	HubTenantReconciliationIssueInvalidWithdrawalStatus  = "invalid_withdrawal_status"
+	HubTenantReconciliationIssueInvalidWithdrawalAmount  = "invalid_withdrawal_amount"
+	HubTenantReconciliationIssueMissingPayoutSnapshot    = "missing_payout_snapshot"
+	HubTenantReconciliationIssuePaidWithdrawalIncomplete = "paid_withdrawal_incomplete"
+	HubTenantReconciliationIssueMultipleOpenWithdrawals  = "multiple_open_withdrawals"
+	HubTenantReconciliationIssueDebitsExceedIncome       = "debits_exceed_settled_income"
+)
+
+type HubTenantSettlementReconciliation struct {
+	UsageEntryCount        int      `json:"usage_entry_count"`
+	SettledUsageEntryCount int      `json:"settled_usage_entry_count"`
+	PendingUsageEntryCount int      `json:"pending_usage_entry_count"`
+	BalanceTransferCount   int      `json:"balance_transfer_count"`
+	WithdrawalCount        int      `json:"withdrawal_count"`
+	OpenWithdrawalCount    int      `json:"open_withdrawal_count"`
+	PaidWithdrawalCount    int      `json:"paid_withdrawal_count"`
+	Reconciled             bool     `json:"reconciled"`
+	Issues                 []string `json:"issues"`
+}
+
 type HubTenantSettlementAdminItem struct {
-	TenantId     int                        `json:"tenant_id"`
-	TenantName   string                     `json:"tenant_name"`
-	TenantSlug   string                     `json:"tenant_slug"`
-	TenantStatus string                     `json:"tenant_status"`
-	Summary      HubTenantSettlementSummary `json:"summary"`
+	TenantId       int                               `json:"tenant_id"`
+	TenantName     string                            `json:"tenant_name"`
+	TenantSlug     string                            `json:"tenant_slug"`
+	TenantStatus   string                            `json:"tenant_status"`
+	Summary        HubTenantSettlementSummary        `json:"summary"`
+	Reconciliation HubTenantSettlementReconciliation `json:"reconciliation"`
 }
 
 type HubTenantWithdrawalAdminItem struct {
@@ -309,15 +334,146 @@ func AdminListHubTenantSettlementSummaries() ([]HubTenantSettlementAdminItem, er
 		if err != nil {
 			return nil, err
 		}
+		reconciliation, err := GetHubTenantSettlementReconciliation(tenant.Id, tenant.Status, summary)
+		if err != nil {
+			return nil, err
+		}
 		items = append(items, HubTenantSettlementAdminItem{
-			TenantId:     tenant.Id,
-			TenantName:   tenant.Name,
-			TenantSlug:   tenant.Slug,
-			TenantStatus: tenant.Status,
-			Summary:      summary,
+			TenantId:       tenant.Id,
+			TenantName:     tenant.Name,
+			TenantSlug:     tenant.Slug,
+			TenantStatus:   tenant.Status,
+			Summary:        summary,
+			Reconciliation: reconciliation,
 		})
 	}
 	return items, nil
+}
+
+func GetHubTenantSettlementReconciliation(tenantID int, tenantStatus string, summary HubTenantSettlementSummary) (HubTenantSettlementReconciliation, error) {
+	reconciliation := HubTenantSettlementReconciliation{Issues: make([]string, 0)}
+	if tenantID <= 0 {
+		return reconciliation, ErrTenantNotFound
+	}
+
+	usageQuery := func() *gorm.DB {
+		return DB.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeUsage)
+	}
+	var usageCount, settledUsageCount, pendingUsageCount int64
+	if err := usageQuery().Count(&usageCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := usageQuery().Where("status = ? AND settlement_version >= 2", HubProviderEarningStatusSettled).Count(&settledUsageCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := usageQuery().Where("status = ?", HubProviderEarningStatusPending).Count(&pendingUsageCount).Error; err != nil {
+		return reconciliation, err
+	}
+
+	transferQuery := func() *gorm.DB {
+		return DB.Model(&HubProviderEarning{}).Where("tenant_id = ? AND entry_type = ?", tenantID, HubProviderEarningTypeBalanceTransfer)
+	}
+	var transferCount, invalidTransferCount int64
+	if err := transferQuery().Count(&transferCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := transferQuery().Where("status <> ? OR reseller_net_income_quota >= 0", HubProviderEarningStatusSettled).Count(&invalidTransferCount).Error; err != nil {
+		return reconciliation, err
+	}
+
+	withdrawalQuery := func() *gorm.DB {
+		return DB.Model(&HubTenantWithdrawal{}).Where("tenant_id = ?", tenantID)
+	}
+	var withdrawalCount, openWithdrawalCount, paidWithdrawalCount int64
+	if err := withdrawalQuery().Count(&withdrawalCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := withdrawalQuery().Where("status IN ?", []string{HubTenantWithdrawalStatusPending, HubTenantWithdrawalStatusApproved}).Count(&openWithdrawalCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := withdrawalQuery().Where("status = ?", HubTenantWithdrawalStatusPaid).Count(&paidWithdrawalCount).Error; err != nil {
+		return reconciliation, err
+	}
+
+	var ownerCount int64
+	if err := DB.Model(&TenantMember{}).Where(
+		"tenant_id = ? AND role = ? AND status = ?",
+		tenantID, TenantMemberRoleOwner, TenantMemberStatusActive,
+	).Count(&ownerCount).Error; err != nil {
+		return reconciliation, err
+	}
+
+	reconciliation.UsageEntryCount = int(usageCount)
+	reconciliation.SettledUsageEntryCount = int(settledUsageCount)
+	reconciliation.PendingUsageEntryCount = int(pendingUsageCount)
+	reconciliation.BalanceTransferCount = int(transferCount)
+	reconciliation.WithdrawalCount = int(withdrawalCount)
+	reconciliation.OpenWithdrawalCount = int(openWithdrawalCount)
+	reconciliation.PaidWithdrawalCount = int(paidWithdrawalCount)
+
+	addIssue := func(issue string) {
+		for _, existing := range reconciliation.Issues {
+			if existing == issue {
+				return
+			}
+		}
+		reconciliation.Issues = append(reconciliation.Issues, issue)
+	}
+	if tenantStatus == TenantStatusActive && ownerCount == 0 {
+		addIssue(HubTenantReconciliationIssueActiveOwnerMissing)
+	}
+	if ownerCount > 1 {
+		addIssue(HubTenantReconciliationIssueMultipleActiveOwners)
+	}
+	if invalidTransferCount > 0 {
+		addIssue(HubTenantReconciliationIssueInvalidBalanceTransfer)
+	}
+
+	validStatuses := []string{
+		HubTenantWithdrawalStatusPending,
+		HubTenantWithdrawalStatusApproved,
+		HubTenantWithdrawalStatusPaid,
+		HubTenantWithdrawalStatusRejected,
+	}
+	var invalidWithdrawalStatusCount, invalidWithdrawalAmountCount, missingPayoutSnapshotCount, incompletePaidCount int64
+	if err := withdrawalQuery().Where("status NOT IN ?", validStatuses).Count(&invalidWithdrawalStatusCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := withdrawalQuery().Where("amount_quota <= 0").Count(&invalidWithdrawalAmountCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := withdrawalQuery().Where(
+		"status IN ? AND (payout_account_snapshot IS NULL OR payout_account_snapshot = '')",
+		[]string{HubTenantWithdrawalStatusPending, HubTenantWithdrawalStatusApproved, HubTenantWithdrawalStatusPaid},
+	).Count(&missingPayoutSnapshotCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if err := withdrawalQuery().Where(
+		"status = ? AND (paid_at <= 0 OR payout_currency = '' OR payout_amount_minor <= 0)",
+		HubTenantWithdrawalStatusPaid,
+	).Count(&incompletePaidCount).Error; err != nil {
+		return reconciliation, err
+	}
+	if invalidWithdrawalStatusCount > 0 {
+		addIssue(HubTenantReconciliationIssueInvalidWithdrawalStatus)
+	}
+	if invalidWithdrawalAmountCount > 0 {
+		addIssue(HubTenantReconciliationIssueInvalidWithdrawalAmount)
+	}
+	if missingPayoutSnapshotCount > 0 {
+		addIssue(HubTenantReconciliationIssueMissingPayoutSnapshot)
+	}
+	if incompletePaidCount > 0 {
+		addIssue(HubTenantReconciliationIssuePaidWithdrawalIncomplete)
+	}
+	if openWithdrawalCount > 1 {
+		addIssue(HubTenantReconciliationIssueMultipleOpenWithdrawals)
+	}
+	if summary.TransferredBalanceQuota+summary.ReservedWithdrawalQuota+summary.PaidWithdrawalQuota > summary.SettledIncomeQuota {
+		addIssue(HubTenantReconciliationIssueDebitsExceedIncome)
+	}
+	reconciliation.Reconciled = len(reconciliation.Issues) == 0
+	return reconciliation, nil
 }
 
 func ListHubTenantEarnings(tenantID, offset, limit int) ([]HubProviderEarning, int64, error) {

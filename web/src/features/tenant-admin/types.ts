@@ -80,6 +80,17 @@ export type TenantAdminFinanceSummary = {
     paid_withdrawal_quota: number
     withdrawable_quota: number
   }
+  reconciliation: {
+    usage_entry_count: number
+    settled_usage_entry_count: number
+    pending_usage_entry_count: number
+    balance_transfer_count: number
+    withdrawal_count: number
+    open_withdrawal_count: number
+    paid_withdrawal_count: number
+    reconciled: boolean
+    issues: string[]
+  }
 }
 
 export type TenantAdminFinanceResponse = TenantAdminResponse<{

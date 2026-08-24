@@ -104,6 +104,29 @@ func TestAdminListHubTenantSettlementSummariesUsesTenantScopedBalances(t *testin
 	assert.Equal(t, tenant.Slug, items[0].TenantSlug)
 	assert.Equal(t, 75, items[0].Summary.SettledIncomeQuota)
 	assert.Equal(t, 75, items[0].Summary.WithdrawableQuota)
+	assert.True(t, items[0].Reconciliation.Reconciled)
+	assert.Empty(t, items[0].Reconciliation.Issues)
+}
+
+func TestHubTenantSettlementReconciliationDetectsWithdrawalLedgerProblems(t *testing.T) {
+	tenant, owner := seedHubTenantFinance(t)
+	createHubTenantUsageEarning(t, tenant.Id, 6, 1, 100)
+	for _, amount := range []int{75, 35} {
+		require.NoError(t, DB.Create(&HubTenantWithdrawal{
+			TenantId: tenant.Id, OwnerUserId: owner.Id, AmountQuota: amount,
+			Status: HubTenantWithdrawalStatusPending,
+		}).Error)
+	}
+
+	summary, err := GetHubTenantSettlementSummary(tenant.Id)
+	require.NoError(t, err)
+	reconciliation, err := GetHubTenantSettlementReconciliation(tenant.Id, tenant.Status, summary)
+	require.NoError(t, err)
+	assert.False(t, reconciliation.Reconciled)
+	assert.Equal(t, 2, reconciliation.OpenWithdrawalCount)
+	assert.Contains(t, reconciliation.Issues, HubTenantReconciliationIssueMissingPayoutSnapshot)
+	assert.Contains(t, reconciliation.Issues, HubTenantReconciliationIssueMultipleOpenWithdrawals)
+	assert.Contains(t, reconciliation.Issues, HubTenantReconciliationIssueDebitsExceedIncome)
 }
 
 func TestHubTenantWithdrawalReservesOnlyTenantIncome(t *testing.T) {
