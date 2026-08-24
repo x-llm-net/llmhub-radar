@@ -140,6 +140,7 @@ export type HubProviderOwnerCandidatesResponse = {
 export type HubAdminAccess = {
   can_manage_providers: boolean
   can_view_channels: boolean
+  can_manage_brand: boolean
   tenant_scoped: boolean
   tenant_id?: number
 }

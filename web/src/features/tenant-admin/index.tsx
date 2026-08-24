@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Globe2, Plus, Power, ShieldCheck, UserPlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -18,6 +37,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { TenantBrandEditor } from '@/features/tenant-brand/brand-editor'
+import type { TenantBrand } from '@/features/tenant-brand/types'
 import { searchUsers } from '@/features/users/api'
 import type { User } from '@/features/users/types'
 
@@ -29,6 +50,7 @@ import {
   updateHubAdminTenantDomain,
   updateHubAdminTenantMember,
   updateHubAdminTenantStatus,
+  updateHubAdminTenantBrand,
   upsertHubAdminTenantMember,
 } from './api'
 import type { TenantAdminTenant } from './types'
@@ -116,6 +138,25 @@ export function TenantAdmin() {
       }
       await refresh()
       toast.success(t('Tenant status updated'))
+    },
+    onError: (error) => toast.error(error.message || t('Request failed')),
+  })
+
+  const updateTenantBrandMutation = useMutation({
+    mutationFn: ({
+      tenantId,
+      brand,
+    }: {
+      tenantId: number
+      brand: TenantBrand
+    }) => updateHubAdminTenantBrand(tenantId, brand),
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(response.message || t('Request failed'))
+        return
+      }
+      await refresh()
+      toast.success(t('Brand saved'))
     },
     onError: (error) => toast.error(error.message || t('Request failed')),
   })
@@ -212,6 +253,7 @@ export function TenantAdmin() {
   const isBusy =
     createTenantMutation.isPending ||
     updateTenantStatusMutation.isPending ||
+    updateTenantBrandMutation.isPending ||
     createDomainMutation.isPending ||
     updateDomainMutation.isPending ||
     upsertMemberMutation.isPending ||
@@ -391,6 +433,12 @@ export function TenantAdmin() {
                       input,
                     })
                   }
+                  onUpdateBrand={(brand) =>
+                    updateTenantBrandMutation.mutate({
+                      tenantId: selectedTenant.id,
+                      brand,
+                    })
+                  }
                 />
               ) : (
                 <Card className='flex min-h-60 items-center justify-center'>
@@ -433,10 +481,16 @@ function TenantDetails(props: {
     userId: number,
     input: { status?: string; role?: string }
   ) => void
+  onUpdateBrand: (brand: TenantBrand) => void
 }) {
   const { t } = useTranslation()
   return (
     <div className='grid gap-4'>
+      <TenantBrandEditor
+        brand={props.tenant.brand}
+        saving={props.isBusy}
+        onSave={props.onUpdateBrand}
+      />
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>

@@ -25,6 +25,7 @@ import {
   type CurrencyConfig,
   type CurrencyDisplayType,
   type SystemConfig,
+  type TenantBrandConfig,
   DEFAULT_CURRENCY_CONFIG,
 } from '@/stores/system-config-store'
 
@@ -47,6 +48,14 @@ interface StatusApiResponse {
     usd_exchange_rate?: number
     custom_currency_symbol?: string
     custom_currency_exchange_rate?: number
+  }
+}
+
+interface TenantBrandApiResponse {
+  success: boolean
+  data?: {
+    is_tenant_host?: boolean
+    brand?: TenantBrandConfig
   }
 }
 
@@ -113,6 +122,15 @@ async function fetchSystemConfig(): Promise<Partial<SystemConfig>> {
   return mapStatusDataToConfig(data.data)
 }
 
+async function fetchTenantBrand(): Promise<TenantBrandConfig | null> {
+  const response = await fetch('/api/hub/public/brand')
+  if (!response.ok) throw new Error('Failed to fetch tenant brand')
+
+  const result: TenantBrandApiResponse = await response.json()
+  if (!result.success || !result.data?.is_tenant_host) return null
+  return result.data.brand ?? null
+}
+
 // Preload image and return cleanup function
 function preloadImage(
   src: string,
@@ -145,35 +163,56 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
   const { autoLoad = false } = options
   const {
     config,
+    tenantBrand,
     loading,
     loadedLogoUrl,
     setConfig,
+    setTenantBrand,
     setLoadedLogoUrl,
     setLoading,
   } = useSystemConfigStore()
 
   // Load config from backend
   const loadConfig = useCallback(async () => {
-    try {
-      setLoading(true)
-      const newConfig = await fetchSystemConfig()
-      setConfig(newConfig)
-    } catch (error) {
+    setLoading(true)
+    const [systemResult, brandResult] = await Promise.allSettled([
+      fetchSystemConfig(),
+      fetchTenantBrand(),
+    ])
+    if (systemResult.status === 'fulfilled') {
+      setConfig(systemResult.value)
+    } else {
       // eslint-disable-next-line no-console
-      console.error('Failed to load system config:', error)
-    } finally {
-      setLoading(false)
+      console.error('Failed to load system config:', systemResult.reason)
     }
-  }, [setConfig, setLoading])
+    if (brandResult.status === 'fulfilled') {
+      setTenantBrand(brandResult.value)
+    } else {
+      setTenantBrand(null)
+      // eslint-disable-next-line no-console
+      console.error('Failed to load tenant brand:', brandResult.reason)
+    }
+    setLoading(false)
+  }, [setConfig, setLoading, setTenantBrand])
 
   useEffect(() => {
     if (autoLoad) loadConfig()
   }, [autoLoad, loadConfig])
 
+  const systemName = tenantBrand?.name?.trim() || config.systemName
+  const logo = tenantBrand?.logo_url?.trim() || config.logo
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.title = systemName
+    const metaTitle = document.querySelector(
+      'meta[name="title"]'
+    ) as HTMLMetaElement | null
+    if (metaTitle) metaTitle.setAttribute('content', systemName)
+  }, [systemName])
+
   // Preload logo image when URL changes
   useEffect(() => {
-    const { logo } = config
-
     // Skip if logo is already loaded
     if (!logo || logo === loadedLogoUrl) return
 
@@ -194,11 +233,16 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
       }
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.logo, loadedLogoUrl, setLoadedLogoUrl])
+  }, [logo, loadedLogoUrl, setLoadedLogoUrl])
 
   return {
     ...config,
+    systemName,
+    logo,
+    platformSystemName: config.systemName,
+    platformLogo: config.logo,
+    tenantBrand,
     loading,
-    logoLoaded: config.logo === loadedLogoUrl && !!loadedLogoUrl,
+    logoLoaded: logo === loadedLogoUrl && !!loadedLogoUrl,
   }
 }

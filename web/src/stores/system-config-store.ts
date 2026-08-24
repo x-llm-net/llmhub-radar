@@ -47,6 +47,11 @@ export interface SystemConfig {
   currency: CurrencyConfig
 }
 
+export interface TenantBrandConfig {
+  name: string
+  logo_url: string
+}
+
 export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
   displayInCurrency: true,
   quotaDisplayType: 'USD',
@@ -58,9 +63,11 @@ export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
 
 interface SystemConfigState {
   config: SystemConfig
+  tenantBrand: TenantBrandConfig | null
   loading: boolean
   loadedLogoUrl: string
   setConfig: (config: Partial<SystemConfig>) => void
+  setTenantBrand: (brand: TenantBrandConfig | null) => void
   setLoadedLogoUrl: (url: string) => void
   setLoading: (loading: boolean) => void
 }
@@ -77,6 +84,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         logo: DEFAULT_LOGO,
         currency: { ...DEFAULT_CURRENCY_CONFIG },
       },
+      tenantBrand: null,
       loading: true,
       loadedLogoUrl: DEFAULT_LOGO,
       setConfig: (newConfig) =>
@@ -90,6 +98,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
             },
           },
         })),
+      setTenantBrand: (tenantBrand) => set({ tenantBrand }),
       setLoadedLogoUrl: (url) => set({ loadedLogoUrl: url }),
       setLoading: (loading) => set({ loading }),
     }),

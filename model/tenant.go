@@ -51,12 +51,13 @@ const (
 // A nil HubProvider.TenantId is a migration-compatibility state whose actual
 // historical ownership still needs to be confirmed.
 type Tenant struct {
-	Id        int    `json:"id" gorm:"primaryKey"`
-	Name      string `json:"name" gorm:"type:varchar(120);not null"`
-	Slug      string `json:"slug" gorm:"type:varchar(63);not null;uniqueIndex:idx_tenants_slug"`
-	Status    string `json:"status" gorm:"type:varchar(24);not null"`
-	CreatedAt int64  `json:"created_at" gorm:"bigint;not null"`
-	UpdatedAt int64  `json:"updated_at" gorm:"bigint;not null"`
+	Id          int    `json:"id" gorm:"primaryKey"`
+	Name        string `json:"name" gorm:"type:varchar(120);not null"`
+	Slug        string `json:"slug" gorm:"type:varchar(63);not null;uniqueIndex:idx_tenants_slug"`
+	Status      string `json:"status" gorm:"type:varchar(24);not null"`
+	BrandConfig string `json:"-" gorm:"type:varchar(2048);not null;default:'{}'"`
+	CreatedAt   int64  `json:"created_at" gorm:"bigint;not null"`
+	UpdatedAt   int64  `json:"updated_at" gorm:"bigint;not null"`
 }
 
 func (Tenant) TableName() string {

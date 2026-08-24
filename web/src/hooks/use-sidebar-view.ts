@@ -65,6 +65,12 @@ export function useSidebarView(): ResolvedSidebarView {
       )
       .map((group) => {
         const items = group.items.filter((item) => {
+          if (
+            item.requiresTenantHost &&
+            hubAdminAccess.data?.can_manage_brand !== true
+          ) {
+            return false
+          }
           if (item.requiredRole !== undefined && role < item.requiredRole) {
             return false
           }

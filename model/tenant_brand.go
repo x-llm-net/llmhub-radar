@@ -16,23 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-package controller
+package model
 
-import (
-	"github.com/QuantumNous/new-api/common"
-	"github.com/gin-gonic/gin"
-)
+import "encoding/json"
 
-func GetHubAdminAccess(c *gin.Context) {
-	tenantID := hubProviderAdminTenantID(c)
-	data := gin.H{
-		"can_manage_providers": true,
-		"can_view_channels":    true,
-		"can_manage_brand":     tenantID != nil,
-		"tenant_scoped":        tenantID != nil,
+type TenantBrandConfig struct {
+	Name    string `json:"name"`
+	LogoURL string `json:"logo_url"`
+}
+
+func (tenant Tenant) Brand() TenantBrandConfig {
+	var brand TenantBrandConfig
+	if tenant.BrandConfig == "" {
+		return brand
 	}
-	if tenantID != nil {
-		data["tenant_id"] = *tenantID
+	if err := json.Unmarshal([]byte(tenant.BrandConfig), &brand); err != nil {
+		return TenantBrandConfig{}
 	}
-	common.ApiSuccess(c, data)
+	return brand
+}
+
+func EncodeTenantBrandConfig(brand TenantBrandConfig) (string, error) {
+	data, err := json.Marshal(brand)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

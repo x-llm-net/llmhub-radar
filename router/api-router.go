@@ -57,6 +57,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 		apiRouter.GET("/hub/public/home", controller.GetPublicHubHome)
+		apiRouter.GET("/hub/public/brand", controller.GetPublicHubTenantBrand)
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
@@ -226,6 +227,8 @@ func SetApiRouter(router *gin.Engine) {
 		hubAdminRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
 		{
 			hubAdminRoute.GET("/access", controller.GetHubAdminAccess)
+			hubAdminRoute.GET("/brand", controller.GetCurrentHubTenantBrand)
+			hubAdminRoute.PUT("/brand", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateCurrentHubTenantBrand)
 			hubAdminRoute.GET("/routing-health", controller.AdminListHubRoutingHealth)
 			hubAdminRoute.GET("/routing-metrics", controller.AdminListHubRoutingMetrics)
 			hubAdminRoute.PUT("/channels/publication/batch", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.BatchUpdateHubChannelPublication)
@@ -244,6 +247,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubTenantAdminRoute.GET("", controller.AdminListHubTenants)
 			hubTenantAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenant)
 			hubTenantAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantStatus)
+			hubTenantAdminRoute.PUT("/:id/brand", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantBrand)
 			hubTenantAdminRoute.POST("/:id/domains", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenantDomain)
 			hubTenantAdminRoute.PUT("/:id/domains/:domain_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantDomain)
 			hubTenantAdminRoute.POST("/:id/members", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpsertHubTenantMember)

@@ -26,6 +26,7 @@ func TestGetHubAdminAccessReportsTenantScope(t *testing.T) {
 		Data    struct {
 			CanManageProviders bool `json:"can_manage_providers"`
 			CanViewChannels    bool `json:"can_view_channels"`
+			CanManageBrand     bool `json:"can_manage_brand"`
 			TenantScoped       bool `json:"tenant_scoped"`
 			TenantID           int  `json:"tenant_id"`
 		} `json:"data"`
@@ -34,6 +35,7 @@ func TestGetHubAdminAccessReportsTenantScope(t *testing.T) {
 	assert.True(t, response.Success, recorder.Body.String())
 	assert.True(t, response.Data.CanManageProviders)
 	assert.True(t, response.Data.CanViewChannels)
+	assert.True(t, response.Data.CanManageBrand)
 	assert.True(t, response.Data.TenantScoped)
 	assert.Equal(t, tenant.Id, response.Data.TenantID)
 }
@@ -47,10 +49,12 @@ func TestGetHubAdminAccessReportsPlatformScope(t *testing.T) {
 	var response struct {
 		Success bool `json:"success"`
 		Data    struct {
-			TenantScoped bool `json:"tenant_scoped"`
+			TenantScoped   bool `json:"tenant_scoped"`
+			CanManageBrand bool `json:"can_manage_brand"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.True(t, response.Success, recorder.Body.String())
 	assert.False(t, response.Data.TenantScoped)
+	assert.False(t, response.Data.CanManageBrand)
 }

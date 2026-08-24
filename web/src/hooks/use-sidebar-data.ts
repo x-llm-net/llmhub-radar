@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  Palette,
   Radio,
   ServerCog,
   Settings,
@@ -154,6 +155,13 @@ export function useSidebarData(): SidebarData {
             url: '/channels',
             icon: Radio,
             tenantAdminAllowed: true,
+          },
+          {
+            title: t('Brand Settings'),
+            url: '/tenant-brand',
+            icon: Palette,
+            tenantAdminAllowed: true,
+            requiresTenantHost: true,
           },
           {
             title: t('Models'),

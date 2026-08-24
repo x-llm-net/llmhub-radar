@@ -81,6 +81,7 @@ type hubAdminTenantItem struct {
 	model.Tenant
 	Domains []model.TenantDomain       `json:"domains"`
 	Members []hubAdminTenantMemberItem `json:"members"`
+	Brand   model.TenantBrandConfig    `json:"brand"`
 }
 
 func normalizeTenantSlug(slug string) (string, error) {
@@ -117,7 +118,7 @@ func adminTenantMembers(tenantID int) ([]hubAdminTenantMemberItem, error) {
 }
 
 func adminTenantItem(tenant model.Tenant) (hubAdminTenantItem, error) {
-	item := hubAdminTenantItem{Tenant: tenant, Domains: make([]model.TenantDomain, 0), Members: make([]hubAdminTenantMemberItem, 0)}
+	item := hubAdminTenantItem{Tenant: tenant, Domains: make([]model.TenantDomain, 0), Members: make([]hubAdminTenantMemberItem, 0), Brand: tenant.Brand()}
 	if err := model.DB.Where("tenant_id = ?", tenant.Id).Order("id ASC").Find(&item.Domains).Error; err != nil {
 		return item, err
 	}
