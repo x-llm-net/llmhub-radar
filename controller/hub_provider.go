@@ -345,7 +345,31 @@ func AdminListHubProviders(c *gin.Context) {
 	var providers []model.HubProviderAdminListItem
 	var total int64
 	var err error
-	if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
+	if isPlatformAdmin(c) {
+		tenantFilter := strings.TrimSpace(c.Query("tenant_id"))
+		switch tenantFilter {
+		case "", "all":
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), nil, false,
+			)
+		case "platform":
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), nil, true,
+			)
+		default:
+			parsedTenantID, parseErr := strconv.Atoi(tenantFilter)
+			if parseErr != nil || parsedTenantID <= 0 {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			providers, total, err = model.ListHubProvidersForOverview(
+				c.Query("keyword"), c.Query("status"),
+				pageInfo.GetStartIdx(), pageInfo.GetPageSize(), &parsedTenantID, false,
+			)
+		}
+	} else if tenantID := hubProviderAdminTenantID(c); tenantID != nil {
 		providers, total, err = model.ListHubProvidersInTenant(
 			c.Query("keyword"), c.Query("status"),
 			pageInfo.GetStartIdx(), pageInfo.GetPageSize(), *tenantID,

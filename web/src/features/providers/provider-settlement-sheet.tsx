@@ -54,11 +54,13 @@ interface ProviderSettlementSheetProps {
   provider: HubProviderAdminItem | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  allowAdjustment?: boolean
 }
 
 export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const allowAdjustment = props.allowAdjustment ?? true
   const [adjustmentOpen, setAdjustmentOpen] = useState(false)
   const providerId = props.provider?.id ?? 0
   const queryKey = adminProviderEarningsQueryKey(providerId)
@@ -125,10 +127,12 @@ export function ProviderSettlementSheet(props: ProviderSettlementSheetProps) {
             </div>
             <div className='flex items-center justify-between'>
               <h3 className='font-medium'>{t('Earning details')}</h3>
-              <Button size='sm' onClick={() => setAdjustmentOpen(true)}>
-                <CirclePlus />
-                {t('Manual adjustment')}
-              </Button>
+              {allowAdjustment && (
+                <Button size='sm' onClick={() => setAdjustmentOpen(true)}>
+                  <CirclePlus />
+                  {t('Manual adjustment')}
+                </Button>
+              )}
             </div>
             <div className='overflow-hidden rounded-lg border'>
               <Table>

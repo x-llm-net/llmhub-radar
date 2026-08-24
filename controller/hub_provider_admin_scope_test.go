@@ -33,7 +33,7 @@ func TestAdminProviderManagementUsesTenantScope(t *testing.T) {
 	require.NoError(t, model.DB.Create(providerA).Error)
 	require.NoError(t, model.DB.Create(providerB).Error)
 
-	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers", nil, 7)
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers?tenant_id="+strconv.Itoa(tenantB.Id), nil, 7)
 	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantA.Id)
 	AdminListHubProviders(ctx)
 	var listResponse struct {
@@ -63,6 +63,75 @@ func TestAdminProviderManagementUsesTenantScope(t *testing.T) {
 	var stored model.HubProvider
 	require.NoError(t, model.DB.First(&stored, providerB.Id).Error)
 	assert.Nil(t, stored.PlatformFeeBasisPoints)
+}
+
+func TestPlatformAdminUsesGlobalProviderScopeOnAnyHost(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Tenant{}))
+	for _, user := range []model.User{
+		{Id: 42, Username: "tenant-owner", DisplayName: "Tenant Owner", Status: common.UserStatusEnabled, AffCode: "tenant-owner"},
+		{Id: 43, Username: "platform-owner", DisplayName: "Platform Owner", Status: common.UserStatusEnabled, AffCode: "platform-owner"},
+	} {
+		require.NoError(t, model.DB.Create(&user).Error)
+	}
+	tenant := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+	tenantProvider := &model.HubProvider{
+		OwnerUserId: 42, TenantId: &tenant.Id, Slot: 1, Name: "Tenant Provider", Slug: "tenant-provider",
+	}
+	platformProvider := &model.HubProvider{
+		OwnerUserId: 43, Slot: 1, Name: "Platform Provider", Slug: "platform-provider",
+	}
+	require.NoError(t, model.DB.Create(tenantProvider).Error)
+	require.NoError(t, model.DB.Create(platformProvider).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers", nil, 1)
+	ctx.Request.Host = "343246113.xyz"
+	ctx.Set("role", common.RoleRootUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	AdminListHubProviders(ctx)
+	var listResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.HubProviderAdminListItem `json:"items"`
+			Total int                              `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &listResponse))
+	require.True(t, listResponse.Success, recorder.Body.String())
+	assert.Equal(t, 2, listResponse.Data.Total)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers?tenant_id="+strconv.Itoa(tenant.Id), nil, 1)
+	ctx.Request.Host = "343246113.xyz"
+	ctx.Set("role", common.RoleRootUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	AdminListHubProviders(ctx)
+	var tenantListResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.HubProviderAdminListItem `json:"items"`
+			Total int                              `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &tenantListResponse))
+	require.True(t, tenantListResponse.Success, recorder.Body.String())
+	assert.Equal(t, 1, tenantListResponse.Data.Total)
+	require.Len(t, tenantListResponse.Data.Items, 1)
+	assert.Equal(t, tenantProvider.Id, tenantListResponse.Data.Items[0].Id)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers/"+strconv.Itoa(platformProvider.Id), nil, 1)
+	ctx.Request.Host = "343246113.xyz"
+	ctx.Set("role", common.RoleRootUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(platformProvider.Id)}}
+	AdminGetHubProvider(ctx)
+	var detailResponse struct {
+		Success bool                           `json:"success"`
+		Data    model.HubProviderAdminListItem `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &detailResponse))
+	assert.True(t, detailResponse.Success, recorder.Body.String())
+	assert.Equal(t, platformProvider.Id, detailResponse.Data.Id)
 }
 
 func TestAdminProviderOverviewIgnoresTenantHostScope(t *testing.T) {

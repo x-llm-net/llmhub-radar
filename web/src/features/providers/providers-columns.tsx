@@ -43,6 +43,17 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
   const { t } = useTranslation()
   return [
     {
+      accessorKey: 'tenant_id',
+      header: t('Reseller'),
+      cell: () => null,
+      enableSorting: false,
+      enableHiding: false,
+      size: 0,
+      minSize: 0,
+      maxSize: 0,
+      meta: { mobileHidden: true },
+    },
+    {
       accessorKey: 'id',
       header: t('ID'),
       cell: ({ row }) => <TableId value={row.original.id} />,
@@ -60,8 +71,8 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
             <div className='min-w-0'>
               <LongText className='max-w-[220px] font-medium'>
                 <Link
-                  to='/channels'
-                  search={{ ownership: [`provider:${provider.id}`] }}
+                  to='/provider/$providerId'
+                  params={{ providerId: String(provider.id) }}
                   className='hover:text-primary hover:underline'
                 >
                   {provider.name}

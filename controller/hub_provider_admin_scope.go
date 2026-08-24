@@ -12,13 +12,21 @@ import (
 
 // hubProviderAdminTenantID returns the tenant resolved by TenantHostContext.
 // A nil result means the request is using the platform-wide administration
-// scope, which is preserved for existing platform administrators.
+// scope. Super administrators are global on every host; a tenant domain only
+// scopes regular tenant administrators.
 func hubProviderAdminTenantID(c *gin.Context) *int {
+	if isPlatformAdmin(c) {
+		return nil
+	}
 	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
 	if tenantID <= 0 {
 		return nil
 	}
 	return &tenantID
+}
+
+func isPlatformAdmin(c *gin.Context) bool {
+	return c != nil && c.GetInt("role") >= common.RoleRootUser
 }
 
 // hubProviderAdminChannelIDs resolves the tenant's channels in the main DB

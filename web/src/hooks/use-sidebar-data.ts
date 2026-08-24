@@ -150,12 +150,6 @@ export function useSidebarData(): SidebarData {
             tenantAdminAllowed: true,
           },
           {
-            title: t('Provider Overview'),
-            url: '/provider-overview',
-            icon: Building2,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,

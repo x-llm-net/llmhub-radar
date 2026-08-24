@@ -27,8 +27,11 @@ import {
   DISABLED_ROW_MOBILE,
   useDataTable,
 } from '@/components/data-table'
+import { getHubAdminTenants, tenantAdminQueryKey } from '@/features/tenant-admin/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { adminProvidersQueryKey, getAdminProviders } from './api'
 import { useProvidersColumns } from './providers-columns'
@@ -45,6 +48,9 @@ const PROVIDER_STATUS_OPTIONS = [
 export function ProvidersTable() {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const isRoot = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const {
     globalFilter = '',
     onGlobalFilterChange,
@@ -58,16 +64,30 @@ export function ProvidersTable() {
     navigate: route.useNavigate(),
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 10 : 20 },
     globalFilter: { enabled: true, key: 'filter' },
-    columnFilters: [{ columnId: 'status', searchKey: 'status', type: 'array' }],
+    columnFilters: [
+      { columnId: 'status', searchKey: 'status', type: 'array' },
+      { columnId: 'tenant_id', searchKey: 'tenant_id', type: 'array' },
+    ],
   })
   const statusFilter =
     (columnFilters.find((filter) => filter.id === 'status')?.value as
       | string[]
       | undefined) ?? []
   const status = statusFilter.find((value) => value !== 'all')
+  const tenantFilter =
+    (columnFilters.find((filter) => filter.id === 'tenant_id')?.value as
+      | string[]
+      | undefined) ?? []
+  const tenantID = tenantFilter.find((value) => value !== 'all')
+  const tenantsQuery = useQuery({
+    queryKey: tenantAdminQueryKey,
+    queryFn: getHubAdminTenants,
+    enabled: isRoot,
+  })
   const params = {
     keyword: globalFilter,
     status,
+    tenant_id: isRoot ? tenantID : undefined,
     p: pagination.pageIndex + 1,
     page_size: pagination.pageSize,
   }
@@ -83,6 +103,7 @@ export function ProvidersTable() {
     placeholderData: (previousData) => previousData,
   })
   const providers = data?.data?.items || []
+  const tenantOptions = tenantsQuery.data?.data?.items ?? []
   const columns = useProvidersColumns()
   const { table } = useDataTable({
     data: providers,
@@ -96,6 +117,7 @@ export function ProvidersTable() {
     onGlobalFilterChange,
     manualPagination: true,
     manualFiltering: true,
+    initialColumnVisibility: { tenant_id: false },
     enableColumnResizing: !isMobile,
     ensurePageInRange,
   })
@@ -116,6 +138,23 @@ export function ProvidersTable() {
         searchPlaceholder: t('Filter by provider, owner, email or website...'),
         searchDebounceMs: 500,
         filters: [
+          ...(isRoot
+            ? [
+                {
+                  columnId: 'tenant_id',
+                  title: t('Reseller'),
+                  options: [
+                    { value: 'all', label: t('All tenants') },
+                    { value: 'platform', label: t('Platform public pool') },
+                    ...tenantOptions.map((tenant) => ({
+                      value: String(tenant.id),
+                      label: tenant.name,
+                    })),
+                  ],
+                  singleSelect: true,
+                },
+              ]
+            : []),
           {
             columnId: 'status',
             title: t('Status'),

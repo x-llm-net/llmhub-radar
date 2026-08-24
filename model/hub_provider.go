@@ -482,7 +482,7 @@ func IsValidHubProviderStatus(status string) bool {
 		status == HubProviderStatusDisabled
 }
 
-func listHubProviders(keyword, status string, offset, limit int, tenantID *int, tenantFilterSet, platformOnly, includeTenantMetadata bool) ([]HubProviderAdminListItem, int64, error) {
+func listHubProviders(keyword, status string, offset, limit int, tenantID *int, tenantFilterSet, platformOnly, includeTenantMetadata bool, providerID *int) ([]HubProviderAdminListItem, int64, error) {
 	query := DB.Table("hub_providers AS providers").
 		Joins("JOIN users ON users.id = providers.owner_user_id")
 	if includeTenantMetadata {
@@ -492,6 +492,9 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int, 
 		query = query.Where("providers.tenant_id IS NULL")
 	} else if tenantFilterSet && tenantID != nil {
 		query = query.Where("providers.tenant_id = ?", *tenantID)
+	}
+	if providerID != nil {
+		query = query.Where("providers.id = ?", *providerID)
 	}
 	keyword = strings.TrimSpace(keyword)
 	if keyword != "" {
@@ -580,21 +583,39 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int, 
 }
 
 func ListHubProviders(keyword, status string, offset, limit int) ([]HubProviderAdminListItem, int64, error) {
-	return listHubProviders(keyword, status, offset, limit, nil, false, false, false)
+	return listHubProviders(keyword, status, offset, limit, nil, false, false, false, nil)
 }
 
 func ListHubProvidersInTenant(keyword, status string, offset, limit, tenantID int) ([]HubProviderAdminListItem, int64, error) {
 	if tenantID <= 0 {
 		return nil, 0, ErrTenantNotFound
 	}
-	return listHubProviders(keyword, status, offset, limit, &tenantID, true, false, false)
+	return listHubProviders(keyword, status, offset, limit, &tenantID, true, false, false, nil)
 }
 
 // ListHubProvidersForOverview is the platform-wide read scope for super
 // administrators. A nil tenant ID with platformOnly=true selects providers
 // that have not been assigned to a tenant yet.
 func ListHubProvidersForOverview(keyword, status string, offset, limit int, tenantID *int, platformOnly bool) ([]HubProviderAdminListItem, int64, error) {
-	return listHubProviders(keyword, status, offset, limit, tenantID, platformOnly || tenantID != nil, platformOnly, true)
+	return listHubProviders(keyword, status, offset, limit, tenantID, platformOnly || tenantID != nil, platformOnly, true, nil)
+}
+
+// GetHubProviderAdminByID returns one provider with the same metrics and
+// tenant metadata used by administrator provider lists.
+func GetHubProviderAdminByID(providerID int, tenantID *int) (*HubProviderAdminListItem, error) {
+	if providerID <= 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	providers, total, err := listHubProviders(
+		"", "", 0, 1, tenantID, tenantID != nil, false, true, &providerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 || len(providers) == 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	return &providers[0], nil
 }
 
 func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {

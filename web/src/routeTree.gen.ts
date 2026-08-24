@@ -47,6 +47,7 @@ import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedProviderOverviewIndexRouteImport } from './routes/_authenticated/provider-overview/index'
 import { Route as AuthenticatedProviderIndexRouteImport } from './routes/_authenticated/provider/index'
+import { Route as AuthenticatedProviderProviderIdRouteImport } from './routes/_authenticated/provider/$providerId'
 import { Route as AuthenticatedProviderOnboardingRouteImport } from './routes/_authenticated/provider/onboarding'
 import { Route as AuthenticatedProvidersIndexRouteImport } from './routes/_authenticated/providers/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
@@ -273,6 +274,12 @@ const AuthenticatedProviderIndexRoute =
     path: '/provider/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedProviderProviderIdRoute =
+  AuthenticatedProviderProviderIdRouteImport.update({
+    id: '/provider/$providerId',
+    path: '/provider/$providerId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProviderOnboardingRoute =
   AuthenticatedProviderOnboardingRouteImport.update({
     id: '/provider/onboarding',
@@ -457,6 +464,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/provider/$providerId': typeof AuthenticatedProviderProviderIdRoute
   '/provider/onboarding': typeof AuthenticatedProviderOnboardingRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
@@ -520,6 +528,7 @@ export interface FileRoutesByTo {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/provider/$providerId': typeof AuthenticatedProviderProviderIdRoute
   '/provider/onboarding': typeof AuthenticatedProviderOnboardingRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
@@ -587,6 +596,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/_authenticated/provider/$providerId': typeof AuthenticatedProviderProviderIdRoute
   '/_authenticated/provider/onboarding': typeof AuthenticatedProviderOnboardingRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
@@ -653,6 +663,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/provider/$providerId'
     | '/provider/onboarding'
     | '/usage-logs/$section'
     | '/channels/'
@@ -716,6 +727,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/provider/$providerId'
     | '/provider/onboarding'
     | '/usage-logs/$section'
     | '/channels'
@@ -782,6 +794,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
     | '/_authenticated/models/$section'
+    | '/_authenticated/provider/$providerId'
     | '/_authenticated/provider/onboarding'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/channels/'
@@ -1106,6 +1119,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProviderIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/provider/$providerId': {
+      id: '/_authenticated/provider/$providerId'
+      path: '/provider/$providerId'
+      fullPath: '/provider/$providerId'
+      preLoaderRoute: typeof AuthenticatedProviderProviderIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/provider/onboarding': {
       id: '/_authenticated/provider/onboarding'
       path: '/provider/onboarding'
@@ -1381,6 +1401,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
+  AuthenticatedProviderProviderIdRoute: typeof AuthenticatedProviderProviderIdRoute
   AuthenticatedProviderOnboardingRoute: typeof AuthenticatedProviderOnboardingRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
@@ -1409,6 +1430,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
+  AuthenticatedProviderProviderIdRoute: AuthenticatedProviderProviderIdRoute,
   AuthenticatedProviderOnboardingRoute: AuthenticatedProviderOnboardingRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,

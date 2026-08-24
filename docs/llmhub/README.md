@@ -161,7 +161,7 @@ llm-hub.store/v1
 生产接入和后续产品项遵守以下边界：
 
 - **生产域名接入**：应用层已支持 `{slug}.llm-hub.store`。生产发布前配置 `*.llm-hub.store` 通配 DNS 和 TLS，设置 `HUB_PROVIDER_ROOT_DOMAIN=llm-hub.store`、`SESSION_COOKIE_DOMAIN=llm-hub.store`，并把 `TRUSTED_PROXIES` 收紧为应用直接连接的反向代理 IP 或网段；反向代理必须使用 `proxy_set_header Host $host` 保留原始 Host。Cloudflare 使用一条代理状态开启的 `* -> 源站` 通配记录即可自动承接新增 slug，无需逐个调用 DNS API。应用保留 `www`、`api`、`app`、`admin`、`status` 等系统 slug，渠道商 slug 全局唯一且不会随名称自动变化。
-- **登录与 OAuth**：Refresh Cookie 共享到根域和渠道商子域；OAuth state 保存原始 origin 与路径，由根域完成第三方回调后再返回原渠道商子域。仅当请求直接来自配置的可信反向代理时，后端才接受 `X-Forwarded-Proto`，避免客户端伪造该头绕过 Origin 校验。
+- **登录与 OAuth**：Refresh Cookie 在平台根域和渠道商子域之间共享；访问独立自定义域名时使用仅当前主机有效的 Cookie，避免浏览器因 Cookie Domain 与请求 Host 不匹配而丢弃登录状态。OAuth state 保存原始 origin 与路径，由根域完成第三方回调后再返回原渠道商子域。仅当请求直接来自配置的可信反向代理时，后端才接受 `X-Forwarded-Proto`，避免客户端伪造该头绕过 Origin 校验。
 - **回退计费**：每次请求按最终实际命中的 Channel 及供给倍率正常扣费和结算。命中公共池其他渠道商时，收益归实际提供服务的渠道商，不归入口子域对应渠道商；首版不引入差价补贴、渠道商预算或二次分佣。
 - **自定义程度**：首版只支持 Logo、名称、官网和简介；模型排序、主题色、营销区块和自定义域名暂不开放，避免把公开页变成不可审计的独立站点。
 - **SEO 发布条件**：动态页面先验证真实访问和稳定性数据，再补 slug、canonical、站点地图、结构化数据和抓取策略，避免把未稳定的 URL 体系提前固化。

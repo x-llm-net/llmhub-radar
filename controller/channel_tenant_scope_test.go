@@ -102,6 +102,28 @@ func TestTenantAdminChannelListSearchAndDetailStayInTenant(t *testing.T) {
 	assert.False(t, detailResponse.Success)
 }
 
+func TestPlatformAdminChannelListUsesGlobalScopeOnAnyHost(t *testing.T) {
+	fixture := setupTenantChannelScopeFixture(t)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/channel/?p=1&page_size=100", nil, 1)
+	ctx.Request.Host = "343246113.xyz"
+	ctx.Set("role", common.RoleRootUser)
+	setTenantChannelContext(ctx, fixture.tenant.Id)
+	GetAllChannels(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []model.Channel `json:"items"`
+			Total int             `json:"total"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, 2, response.Data.Total)
+	assert.Len(t, response.Data.Items, 2)
+}
+
 func TestTenantAdminChannelStatusRejectsForeignAndAllowsOwn(t *testing.T) {
 	fixture := setupTenantChannelScopeFixture(t)
 

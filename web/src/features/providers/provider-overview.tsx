@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -220,7 +221,13 @@ function ProviderOverviewRow({
         <div className='flex min-w-[180px] items-center gap-3'>
           <ProviderLogoAvatar provider={provider} />
           <div className='min-w-0'>
-            <p className='font-medium'>{provider.name}</p>
+            <Link
+              to='/provider/$providerId'
+              params={{ providerId: String(provider.id) }}
+              className='hover:text-primary font-medium hover:underline'
+            >
+              {provider.name}
+            </Link>
             {provider.website && (
               <a
                 href={provider.website}

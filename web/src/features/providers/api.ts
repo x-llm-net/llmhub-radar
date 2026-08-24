@@ -23,6 +23,9 @@ import type {
   HubProviderOverviewListParams,
   HubProviderAdminListResponse,
   HubProviderAdminItem,
+  HubProviderAdminDetailResponse,
+  HubProviderAdminChannelListParams,
+  HubProviderAdminChannelListResponse,
   HubAdminAccessResponse,
   HubProviderEarning,
   HubProviderSettlementSummary,
@@ -48,6 +51,38 @@ export async function getAdminProviders(
 ): Promise<HubProviderAdminListResponse> {
   const response = await api.get('/api/hub/admin/providers', { params })
   return response.data
+}
+
+export const adminProviderDetailQueryKey = (providerId: number) =>
+  ['hub-admin', 'providers', providerId, 'detail'] as const
+
+export const adminProviderChannelsQueryKey = (providerId: number) =>
+  ['hub-admin', 'providers', providerId, 'channels'] as const
+
+export async function getAdminProvider(
+  providerId: number
+): Promise<HubProviderAdminDetailResponse> {
+  const response = await api.get(`/api/hub/admin/providers/${providerId}`)
+  const result = response.data as HubProviderAdminDetailResponse
+  if (!result.success || !result.data) {
+    throw new Error(result.message || 'Failed to load provider')
+  }
+  return result
+}
+
+export async function getAdminProviderChannels(
+  providerId: number,
+  params: HubProviderAdminChannelListParams = {}
+): Promise<HubProviderAdminChannelListResponse> {
+  const response = await api.get(
+    `/api/hub/admin/providers/${providerId}/channels`,
+    { params }
+  )
+  const result = response.data as HubProviderAdminChannelListResponse
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to load supply channels')
+  }
+  return result
 }
 
 export async function getAdminProviderOverview(
