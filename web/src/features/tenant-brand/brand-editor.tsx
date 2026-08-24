@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { Save } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Save, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -38,22 +38,54 @@ import type { TenantBrand } from './types'
 type TenantBrandEditorProps = {
   brand: TenantBrand
   saving: boolean
-  onSave: (brand: TenantBrand) => void
+  onSave: (brand: TenantBrand, logoFile?: File) => void
+}
+
+const tenantBrandAssetPrefix = '/api/hub/public/brand-assets/'
+
+function isUploadedLogo(logoURL: string): boolean {
+  return logoURL.startsWith(tenantBrandAssetPrefix)
 }
 
 export function TenantBrandEditor(props: TenantBrandEditorProps) {
   const { t } = useTranslation()
   const { platformSystemName, platformLogo } = useSystemConfig()
+  const logoInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(props.brand.name)
-  const [logoURL, setLogoURL] = useState(props.brand.logo_url)
+  const [logoURL, setLogoURL] = useState(
+    isUploadedLogo(props.brand.logo_url) ? '' : props.brand.logo_url
+  )
+  const [keepUploadedLogo, setKeepUploadedLogo] = useState(
+    isUploadedLogo(props.brand.logo_url)
+  )
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [filePreview, setFilePreview] = useState('')
 
   useEffect(() => {
     setName(props.brand.name)
-    setLogoURL(props.brand.logo_url)
+    setLogoURL(isUploadedLogo(props.brand.logo_url) ? '' : props.brand.logo_url)
+    setKeepUploadedLogo(isUploadedLogo(props.brand.logo_url))
+    setLogoFile(null)
+    if (logoInputRef.current) logoInputRef.current.value = ''
   }, [props.brand.logo_url, props.brand.name])
 
+  useEffect(() => {
+    if (!logoFile) {
+      setFilePreview('')
+      return
+    }
+    const previewURL = URL.createObjectURL(logoFile)
+    setFilePreview(previewURL)
+    return () => URL.revokeObjectURL(previewURL)
+  }, [logoFile])
+
   const previewName = name.trim() || platformSystemName
-  const previewLogo = logoURL.trim() || platformLogo
+  const previewLogo =
+    filePreview ||
+    (keepUploadedLogo ? props.brand.logo_url : logoURL.trim()) ||
+    platformLogo
+  const hasCustomLogo =
+    logoFile !== null || keepUploadedLogo || logoURL.trim() !== ''
 
   return (
     <Card>
@@ -70,7 +102,16 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
           className='grid gap-5'
           onSubmit={(event) => {
             event.preventDefault()
-            props.onSave({ name: name.trim(), logo_url: logoURL.trim() })
+            let submittedLogoURL = logoURL.trim()
+            if (keepUploadedLogo) submittedLogoURL = props.brand.logo_url
+            if (logoFile) submittedLogoURL = ''
+            props.onSave(
+              {
+                name: name.trim(),
+                logo_url: submittedLogoURL,
+              },
+              logoFile ?? undefined
+            )
           }}
         >
           <div className='flex min-w-0 items-center gap-3 rounded-md border p-3'>
@@ -78,7 +119,7 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
               <img
                 src={previewLogo}
                 alt={t('Logo')}
-                className='size-full object-cover'
+                className='size-full object-contain p-1'
               />
             </div>
             <div className='min-w-0'>
@@ -101,20 +142,66 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
           </div>
 
           <div className='grid gap-2'>
-            <Label htmlFor='tenant-brand-logo'>{t('Logo URL')}</Label>
+            <div className='flex items-center justify-between gap-3'>
+              <Label htmlFor='tenant-brand-logo-file'>{t('Upload logo')}</Label>
+              {hasCustomLogo && (
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  title={t('Remove logo')}
+                  aria-label={t('Remove logo')}
+                  disabled={props.saving}
+                  onClick={() => {
+                    setLogoFile(null)
+                    setKeepUploadedLogo(false)
+                    setLogoURL('')
+                    if (logoInputRef.current) logoInputRef.current.value = ''
+                  }}
+                >
+                  <Trash2 />
+                </Button>
+              )}
+            </div>
+            <Input
+              ref={logoInputRef}
+              id='tenant-brand-logo-file'
+              type='file'
+              accept='image/png,image/jpeg,image/webp'
+              disabled={props.saving}
+              onChange={(event) => {
+                setLogoFile(event.target.files?.item(0) ?? null)
+                setKeepUploadedLogo(false)
+              }}
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t('PNG, JPEG, or WebP, up to 512 KB. Optional.')}
+            </p>
+          </div>
+
+          <div className='grid gap-2'>
+            <Label htmlFor='tenant-brand-logo'>
+              {t('Logo URL (optional)')}
+            </Label>
             <Input
               id='tenant-brand-logo'
               type='url'
               value={logoURL}
               maxLength={1024}
               placeholder={platformLogo}
-              onChange={(event) => setLogoURL(event.target.value)}
+              disabled={props.saving}
+              onChange={(event) => {
+                setLogoURL(event.target.value)
+                setKeepUploadedLogo(false)
+                setLogoFile(null)
+                if (logoInputRef.current) logoInputRef.current.value = ''
+              }}
             />
           </div>
 
           <div>
             <Button type='submit' disabled={props.saving}>
-              <Save />
+              <Save className={props.saving ? 'animate-pulse' : undefined} />
               {props.saving ? t('Saving...') : t('Save brand')}
             </Button>
           </div>

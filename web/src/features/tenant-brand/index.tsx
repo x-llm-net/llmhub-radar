@@ -32,6 +32,7 @@ import {
   updateCurrentTenantBrand,
 } from './api'
 import { TenantBrandEditor } from './brand-editor'
+import type { TenantBrand } from './types'
 
 export function TenantBrandSettings() {
   const { t } = useTranslation()
@@ -42,7 +43,8 @@ export function TenantBrandSettings() {
     queryFn: getCurrentTenantBrand,
   })
   const updateMutation = useMutation({
-    mutationFn: updateCurrentTenantBrand,
+    mutationFn: (input: { brand: TenantBrand; logoFile?: File }) =>
+      updateCurrentTenantBrand(input.brand, input.logoFile),
     onSuccess: async (response) => {
       if (!response.success || !response.data) {
         toast.error(response.message || t('Request failed'))
@@ -71,7 +73,9 @@ export function TenantBrandSettings() {
       <TenantBrandEditor
         brand={brand}
         saving={updateMutation.isPending}
-        onSave={(input) => updateMutation.mutate(input)}
+        onSave={(input, logoFile) =>
+          updateMutation.mutate({ brand: input, logoFile })
+        }
       />
     )
   }

@@ -55,8 +55,19 @@ export async function updateHubAdminTenantStatus(
 
 export async function updateHubAdminTenantBrand(
   tenantId: number,
-  brand: TenantBrand
+  brand: TenantBrand,
+  logoFile?: File
 ): Promise<TenantBrandResponse> {
+  if (logoFile) {
+    const formData = new FormData()
+    formData.append('brand', JSON.stringify(brand))
+    formData.append('logo', logoFile)
+    const response = await api.put(
+      `/api/hub/admin/tenants/${tenantId}/brand`,
+      formData
+    )
+    return response.data
+  }
   const response = await api.put(
     `/api/hub/admin/tenants/${tenantId}/brand`,
     brand

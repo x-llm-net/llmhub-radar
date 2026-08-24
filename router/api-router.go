@@ -58,6 +58,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 		apiRouter.GET("/hub/public/home", controller.GetPublicHubHome)
 		apiRouter.GET("/hub/public/brand", controller.GetPublicHubTenantBrand)
+		apiRouter.GET("/hub/public/brand-assets/:asset_id", controller.GetPublicHubTenantBrandAsset)
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)

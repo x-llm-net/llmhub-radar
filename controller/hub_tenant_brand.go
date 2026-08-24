@@ -20,6 +20,8 @@ package controller
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +29,10 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+const tenantBrandAssetPathPrefix = "/api/hub/public/brand-assets/"
 
 type tenantBrandRequest struct {
 	Name    string `json:"name"`
@@ -47,10 +52,32 @@ func normalizeTenantBrand(request tenantBrandRequest) (model.TenantBrandConfig, 
 	if len([]rune(brand.Name)) > 120 {
 		return brand, errors.New("brand name must be at most 120 characters")
 	}
-	if len(brand.LogoURL) > 1024 || !isHubProviderHTTPURL(brand.LogoURL) {
+	if len(brand.LogoURL) > 1024 || !isTenantBrandLogoURL(brand.LogoURL) {
 		return brand, errors.New("brand logo must be an HTTP or HTTPS URL")
 	}
 	return brand, nil
+}
+
+func tenantBrandAssetPath(assetID int) string {
+	return tenantBrandAssetPathPrefix + strconv.Itoa(assetID)
+}
+
+func tenantBrandAssetID(logoURL string) int {
+	if !strings.HasPrefix(logoURL, tenantBrandAssetPathPrefix) {
+		return 0
+	}
+	assetID, err := strconv.Atoi(strings.TrimPrefix(logoURL, tenantBrandAssetPathPrefix))
+	if err != nil || assetID <= 0 {
+		return 0
+	}
+	return assetID
+}
+
+func isTenantBrandLogoURL(logoURL string) bool {
+	if tenantBrandAssetID(logoURL) > 0 {
+		return true
+	}
+	return isHubProviderHTTPURL(logoURL)
 }
 
 func tenantBrandData(tenant *model.Tenant) tenantBrandResponse {
@@ -60,32 +87,88 @@ func tenantBrandData(tenant *model.Tenant) tenantBrandResponse {
 	return tenantBrandResponse{IsTenantHost: true, Brand: tenant.Brand()}
 }
 
-func updateTenantBrand(c *gin.Context, tenant *model.Tenant) {
+func decodeTenantBrandRequest(c *gin.Context) (tenantBrandRequest, string, []byte, error) {
 	var request tenantBrandRequest
-	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+		return request, "", nil, common.DecodeJson(c.Request.Body, &request)
+	}
+	if c.Request.ContentLength > hubProviderLogoMaxBytes+64*1024 {
+		return request, "", nil, model.ErrHubProviderLogoInvalid
+	}
+	if err := common.Unmarshal([]byte(c.PostForm("brand")), &request); err != nil {
+		return request, "", nil, err
+	}
+	contentType, data, err := readHubProviderLogo(c)
+	return request, contentType, data, err
+}
+
+func updateTenantBrand(c *gin.Context, tenant *model.Tenant) {
+	request, logoContentType, logoData, err := decodeTenantBrandRequest(c)
+	if errors.Is(err, model.ErrHubProviderLogoInvalid) {
+		hubProviderLogoError(c, err)
+		return
+	}
+	if err != nil {
 		common.ApiError(c, errors.New("invalid tenant brand payload"))
 		return
+	}
+	if len(logoData) > 0 {
+		request.LogoURL = ""
 	}
 	brand, err := normalizeTenantBrand(request)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	encoded, err := model.EncodeTenantBrandConfig(brand)
+	previousAssetID := tenantBrandAssetID(tenant.Brand().LogoURL)
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if len(logoData) > 0 {
+			asset, createErr := model.CreateTenantBrandAssetTx(tx, tenant.Id, logoContentType, logoData)
+			if createErr != nil {
+				return createErr
+			}
+			brand.LogoURL = tenantBrandAssetPath(asset.Id)
+		}
+		encoded, encodeErr := model.EncodeTenantBrandConfig(brand)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		tenant.BrandConfig = encoded
+		tenant.UpdatedAt = time.Now().Unix()
+		if updateErr := tx.Model(tenant).Updates(map[string]any{
+			"brand_config": tenant.BrandConfig,
+			"updated_at":   tenant.UpdatedAt,
+		}).Error; updateErr != nil {
+			return updateErr
+		}
+		newAssetID := tenantBrandAssetID(brand.LogoURL)
+		if previousAssetID > 0 && previousAssetID != newAssetID {
+			return tx.Where("id = ? AND tenant_id = ?", previousAssetID, tenant.Id).
+				Delete(&model.TenantBrandAsset{}).Error
+		}
+		return nil
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	tenant.BrandConfig = encoded
-	tenant.UpdatedAt = time.Now().Unix()
-	if err := model.DB.Model(tenant).Updates(map[string]any{
-		"brand_config": tenant.BrandConfig,
-		"updated_at":   tenant.UpdatedAt,
-	}).Error; err != nil {
-		common.ApiError(c, err)
+	common.ApiSuccess(c, tenantBrandData(tenant))
+}
+
+func GetPublicHubTenantBrandAsset(c *gin.Context) {
+	assetID, err := strconv.Atoi(c.Param("asset_id"))
+	if err != nil || assetID <= 0 {
+		c.Status(http.StatusNotFound)
 		return
 	}
-	common.ApiSuccess(c, tenantBrandData(tenant))
+	asset, err := model.GetActiveTenantBrandAsset(assetID)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, asset.ContentType, asset.Data)
 }
 
 func GetPublicHubTenantBrand(c *gin.Context) {

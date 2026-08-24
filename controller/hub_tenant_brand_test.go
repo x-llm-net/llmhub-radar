@@ -1,7 +1,11 @@
 package controller
 
 import (
+	"bytes"
+	"encoding/base64"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -42,6 +46,27 @@ func decodeTenantBrandResponse(t *testing.T, body []byte) struct {
 	}
 	require.NoError(t, common.Unmarshal(body, &response))
 	return response
+}
+
+func newTenantBrandLogoMultipartContext(t *testing.T, brand map[string]string, logo []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	brandJSON, err := common.Marshal(brand)
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteField("brand", string(brandJSON)))
+	part, err := writer.CreateFormFile("logo", "logo.png")
+	require.NoError(t, err)
+	_, err = part.Write(logo)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/hub/admin/brand", &body)
+	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Set("id", 42)
+	return ctx, recorder
 }
 
 func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
@@ -119,4 +144,42 @@ func TestTenantBrandRejectsInvalidLogoAndRootCanUpdateSelectedTenant(t *testing.
 	response = decodeTenantBrandResponse(t, recorder.Body.Bytes())
 	require.True(t, response.Success, recorder.Body.String())
 	assert.Equal(t, "Root updated", response.Data.Brand.Name)
+}
+
+func TestTenantBrandAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(
+		&model.Tenant{},
+		&model.TenantDomain{},
+		&model.TenantBrandAsset{},
+	))
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example.com", model.TenantBrandConfig{Name: "Before"})
+	png, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	)
+	require.NoError(t, err)
+	ctx, recorder := newTenantBrandLogoMultipartContext(t, map[string]string{
+		"name":     "Uploaded brand",
+		"logo_url": "",
+	}, png)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+
+	UpdateCurrentHubTenantBrand(ctx)
+
+	response := decodeTenantBrandResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, "Uploaded brand", response.Data.Brand.Name)
+	assetID := tenantBrandAssetID(response.Data.Brand.LogoURL)
+	require.Positive(t, assetID)
+	asset, err := model.GetActiveTenantBrandAsset(assetID)
+	require.NoError(t, err)
+	assert.Equal(t, tenant.Id, asset.TenantId)
+	assert.Equal(t, png, asset.Data)
+
+	assetContext, assetRecorder := newAuthenticatedContext(t, http.MethodGet, response.Data.Brand.LogoURL, nil, 0)
+	assetContext.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(assetID)}}
+	GetPublicHubTenantBrandAsset(assetContext)
+	assert.Equal(t, http.StatusOK, assetRecorder.Code)
+	assert.Equal(t, "image/png", assetRecorder.Header().Get("Content-Type"))
+	assert.Equal(t, png, assetRecorder.Body.Bytes())
 }

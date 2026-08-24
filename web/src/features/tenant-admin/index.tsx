@@ -146,10 +146,12 @@ export function TenantAdmin() {
     mutationFn: ({
       tenantId,
       brand,
+      logoFile,
     }: {
       tenantId: number
       brand: TenantBrand
-    }) => updateHubAdminTenantBrand(tenantId, brand),
+      logoFile?: File
+    }) => updateHubAdminTenantBrand(tenantId, brand, logoFile),
     onSuccess: async (response) => {
       if (!response.success) {
         toast.error(response.message || t('Request failed'))
@@ -433,10 +435,11 @@ export function TenantAdmin() {
                       input,
                     })
                   }
-                  onUpdateBrand={(brand) =>
+                  onUpdateBrand={(brand, logoFile) =>
                     updateTenantBrandMutation.mutate({
                       tenantId: selectedTenant.id,
                       brand,
+                      logoFile,
                     })
                   }
                 />
@@ -481,7 +484,7 @@ function TenantDetails(props: {
     userId: number,
     input: { status?: string; role?: string }
   ) => void
-  onUpdateBrand: (brand: TenantBrand) => void
+  onUpdateBrand: (brand: TenantBrand, logoFile?: File) => void
 }) {
   const { t } = useTranslation()
   return (

@@ -29,8 +29,16 @@ export async function getCurrentTenantBrand(): Promise<TenantBrandResponse> {
 }
 
 export async function updateCurrentTenantBrand(
-  brand: TenantBrand
+  brand: TenantBrand,
+  logoFile?: File
 ): Promise<TenantBrandResponse> {
+  if (logoFile) {
+    const formData = new FormData()
+    formData.append('brand', JSON.stringify(brand))
+    formData.append('logo', logoFile)
+    const response = await api.put('/api/hub/admin/brand', formData)
+    return response.data
+  }
   const response = await api.put('/api/hub/admin/brand', brand)
   return response.data
 }
