@@ -58,3 +58,27 @@ func TestGetHubAdminAccessReportsPlatformScope(t *testing.T) {
 	assert.False(t, response.Data.TenantScoped)
 	assert.False(t, response.Data.CanManageBrand)
 }
+
+func TestGetHubAdminAccessAllowsRootToManageCurrentHostBrand(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}))
+	tenant := model.Tenant{Name: "Root host tenant", Slug: "root-host-tenant", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/access", nil, 1)
+	ctx.Set("role", common.RoleRootUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	GetHubAdminAccess(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TenantScoped   bool `json:"tenant_scoped"`
+			CanManageBrand bool `json:"can_manage_brand"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success, recorder.Body.String())
+	assert.False(t, response.Data.TenantScoped)
+	assert.True(t, response.Data.CanManageBrand)
+}

@@ -20,15 +20,17 @@ package controller
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/gin-gonic/gin"
 )
 
 func GetHubAdminAccess(c *gin.Context) {
 	tenantID := hubProviderAdminTenantID(c)
+	hostTenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
 	data := gin.H{
 		"can_manage_providers": true,
 		"can_view_channels":    true,
-		"can_manage_brand":     tenantID != nil,
+		"can_manage_brand":     hostTenantID > 0,
 		"tenant_scoped":        tenantID != nil,
 	}
 	if tenantID != nil {
