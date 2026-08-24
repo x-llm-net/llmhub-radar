@@ -75,6 +75,7 @@ export type CreateAdminProviderInput = {
   contact_value: string
   support_type: string
   support_value: string
+  use_provisional_slug?: boolean
 }
 
 export async function createAdminProvider(

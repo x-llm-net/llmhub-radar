@@ -8,7 +8,7 @@ License, or (at your option) any later version.
 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -37,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { TenantAdminTenant } from '@/features/tenant-admin/types'
 import { cn } from '@/lib/utils'
@@ -65,6 +66,7 @@ type ProviderFormState = {
   contact_value: string
   support_type: string
   support_value: string
+  use_provisional_slug: boolean
 }
 
 const initialForm: ProviderFormState = {
@@ -76,6 +78,7 @@ const initialForm: ProviderFormState = {
   contact_value: '',
   support_type: 'community',
   support_value: '',
+  use_provisional_slug: true,
 }
 
 function slugFromName(value: string) {
@@ -243,13 +246,36 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
   const setField = (field: keyof ProviderFormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
   }
-  const canSubmit = Boolean(
-    owner &&
-    form.name.trim() &&
-    form.slug.trim() &&
-    form.contact_value.trim() &&
-    (!props.isPlatformAdmin || tenantId)
-  )
+
+  const validateForm = () => {
+    if (props.isPlatformAdmin && !tenantId) {
+      toast.error(t('Tenant is required'))
+      return false
+    }
+    if (!owner) {
+      toast.error(t('Owner user is required'))
+      return false
+    }
+    if (!form.name.trim()) {
+      toast.error(t('Provider name is required'))
+      return false
+    }
+    if (!form.slug.trim()) {
+      toast.error(t('Provider subdomain is required'))
+      return false
+    }
+    if (!form.contact_value.trim()) {
+      toast.error(t('Review contact is required'))
+      return false
+    }
+    return true
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!validateForm() || mutation.isPending) return
+    mutation.mutate()
+  }
 
   return (
     <Dialog
@@ -271,9 +297,9 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
-            type='button'
-            disabled={!canSubmit || mutation.isPending}
-            onClick={() => mutation.mutate()}
+            type='submit'
+            form='admin-provider-create-form'
+            disabled={mutation.isPending}
           >
             {mutation.isPending && <Loader2 className='animate-spin' />}
             {t('Create provider')}
@@ -281,7 +307,11 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
         </>
       }
     >
-      <div className='grid gap-5'>
+      <form
+        id='admin-provider-create-form'
+        className='grid gap-5'
+        onSubmit={handleSubmit}
+      >
         {props.isPlatformAdmin && (
           <div className='grid gap-2'>
             <Label htmlFor='admin-provider-tenant'>{t('Tenant')}</Label>
@@ -352,11 +382,43 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
               spellCheck={false}
             />
             <p className='text-muted-foreground text-xs'>
-              {t(
-                'The platform appends a short code until website ownership is verified.'
-              )}
+              {form.use_provisional_slug
+                ? t(
+                    'The platform appends a short code until website ownership is verified.'
+                  )
+                : t(
+                    'The clean subdomain is used when the requested name is available.'
+                  )}
             </p>
           </div>
+        </div>
+
+        <div className='flex items-start justify-between gap-4 rounded-lg border p-3'>
+          <div className='grid gap-1'>
+            <Label htmlFor='admin-provider-provisional-slug'>
+              {t('Use a short-code subdomain')}
+            </Label>
+            <p className='text-muted-foreground text-xs'>
+              {form.use_provisional_slug
+                ? t(
+                    'The platform adds a short code to make this subdomain safer to allocate.'
+                  )
+                : t(
+                    'Use the clean subdomain when the requested name is available.'
+                  )}
+            </p>
+          </div>
+          <Switch
+            id='admin-provider-provisional-slug'
+            checked={form.use_provisional_slug}
+            onCheckedChange={(checked) =>
+              setForm((current) => ({
+                ...current,
+                use_provisional_slug: checked,
+              }))
+            }
+            aria-label={t('Use a short-code subdomain')}
+          />
         </div>
 
         <div className='grid gap-2'>
@@ -487,7 +549,7 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
             />
           </div>
         </div>
-      </div>
+      </form>
     </Dialog>
   )
 }

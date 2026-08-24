@@ -79,6 +79,55 @@ func TestAdminCreateHubProviderBindsCurrentTenantAndActivates(t *testing.T) {
 	assert.Equal(t, tenant.Id, *stored.TenantId)
 }
 
+func TestAdminCreateHubProviderCanUseCleanSlugForTenantAdmin(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Tenant{}, &model.HubProvider{}))
+	seedHubProviderAdminCreateUser(t, 42, "provider-owner")
+	tenant := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&tenant).Error)
+
+	payload := hubProviderAdminCreatePayload(42, nil)
+	payload["use_provisional_slug"] = false
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/providers", payload, 7)
+	ctx.Set("role", common.RoleAdminUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	AdminCreateHubProvider(ctx)
+
+	var response struct {
+		Success bool               `json:"success"`
+		Data    *model.HubProvider `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	assert.Equal(t, "managed-provider", response.Data.Slug)
+	assert.Equal(t, "managed-provider", response.Data.SlugBase)
+}
+
+func TestAdminCreateHubProviderCanUseCleanSlugForPlatformAdmin(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Tenant{}, &model.HubProvider{}))
+	seedHubProviderAdminCreateUser(t, 42, "provider-owner")
+	tenant := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&tenant).Error)
+
+	payload := hubProviderAdminCreatePayload(42, &tenant.Id)
+	payload["use_provisional_slug"] = false
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/providers", payload, 1)
+	ctx.Set("role", common.RoleRootUser)
+	AdminCreateHubProvider(ctx)
+
+	var response struct {
+		Success bool               `json:"success"`
+		Data    *model.HubProvider `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data)
+	assert.Equal(t, "managed-provider", response.Data.Slug)
+	assert.Equal(t, "managed-provider", response.Data.SlugBase)
+}
+
 func TestAdminCreateHubProviderRejectsTenantOverrideForTenantAdmin(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Tenant{}, &model.HubProvider{}))

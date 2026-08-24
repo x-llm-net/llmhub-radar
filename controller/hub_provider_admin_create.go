@@ -27,16 +27,17 @@ import (
 )
 
 type hubProviderAdminCreateRequest struct {
-	OwnerUserID  int    `json:"owner_user_id"`
-	TenantID     *int   `json:"tenant_id"`
-	Name         string `json:"name"`
-	Slug         string `json:"slug"`
-	Website      string `json:"website"`
-	Description  string `json:"description"`
-	ContactType  string `json:"contact_type"`
-	ContactValue string `json:"contact_value"`
-	SupportType  string `json:"support_type"`
-	SupportValue string `json:"support_value"`
+	OwnerUserID        int    `json:"owner_user_id"`
+	TenantID           *int   `json:"tenant_id"`
+	Name               string `json:"name"`
+	Slug               string `json:"slug"`
+	Website            string `json:"website"`
+	Description        string `json:"description"`
+	ContactType        string `json:"contact_type"`
+	ContactValue       string `json:"contact_value"`
+	SupportType        string `json:"support_type"`
+	SupportValue       string `json:"support_value"`
+	UseProvisionalSlug *bool  `json:"use_provisional_slug"`
 }
 
 func (request *hubProviderAdminCreateRequest) profileRequest() hubProviderProfileRequest {
@@ -118,6 +119,10 @@ func AdminCreateHubProvider(c *gin.Context) {
 		common.ApiError(c, errors.New("owner user must be an enabled user"))
 		return
 	}
+	useProvisionalSlug := true
+	if request.UseProvisionalSlug != nil {
+		useProvisionalSlug = *request.UseProvisionalSlug
+	}
 	provider := &model.HubProvider{
 		OwnerUserId:        request.OwnerUserID,
 		TenantId:           tenantID,
@@ -130,7 +135,7 @@ func AdminCreateHubProvider(c *gin.Context) {
 		SupportType:        profile.SupportType,
 		SupportValue:       profile.SupportValue,
 		Status:             model.HubProviderStatusActive,
-		UseProvisionalSlug: true,
+		UseProvisionalSlug: useProvisionalSlug,
 	}
 	if err := model.CreateHubProvider(provider); err != nil {
 		switch {
