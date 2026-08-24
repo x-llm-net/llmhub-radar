@@ -208,14 +208,75 @@ func lockHubTenantFinanceTx(tx *gorm.DB, tenantID int) error {
 
 func requireActiveTenantOwnerTx(tx *gorm.DB, tenantID, ownerUserID int) error {
 	var member TenantMember
-	err := tx.Where(
-		"tenant_id = ? AND user_id = ? AND role = ? AND status = ?",
+	err := tx.Joins("JOIN users ON users.id = tenant_members.user_id").Where(
+		"tenant_members.tenant_id = ? AND tenant_members.user_id = ? AND tenant_members.role = ? AND tenant_members.status = ?",
 		tenantID, ownerUserID, TenantMemberRoleOwner, TenantMemberStatusActive,
-	).First(&member).Error
+	).Where("users.status = ? AND users.deleted_at IS NULL", common.UserStatusEnabled).
+		First(&member).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrHubTenantFinanceOwnerRequired
 	}
 	return err
+}
+
+func autoApproveHubTenantWithdrawal(withdrawal *HubTenantWithdrawal, now int64) {
+	withdrawal.Status = HubTenantWithdrawalStatusApproved
+	withdrawal.ReviewedAt = now
+	// AdminUserId remains zero because this is a system pre-check, not a
+	// human approval. The platform still records the actual payout manually.
+	withdrawal.AdminUserId = 0
+	withdrawal.AdminRemark = ""
+	withdrawal.UpdatedAt = now
+}
+
+func createHubTenantWithdrawalRecord(
+	tx *gorm.DB,
+	tenantID, ownerUserID, amountQuota, payoutAccountID int,
+) (HubTenantWithdrawal, error) {
+	var created HubTenantWithdrawal
+	if err := lockHubTenantFinanceTx(tx, tenantID); err != nil {
+		return created, err
+	}
+	if err := requireActiveTenantOwnerTx(tx, tenantID, ownerUserID); err != nil {
+		return created, err
+	}
+	if amountQuota < hub_provider_settlement_setting.MinimumWithdrawalQuota() {
+		return created, ErrHubTenantWithdrawalBelowMinimum
+	}
+	var openCount int64
+	if err := tx.Model(&HubTenantWithdrawal{}).Where("tenant_id = ? AND status IN ?", tenantID, []string{HubTenantWithdrawalStatusPending, HubTenantWithdrawalStatusApproved}).Count(&openCount).Error; err != nil {
+		return created, err
+	}
+	if openCount > 0 {
+		return created, ErrHubTenantWithdrawalPending
+	}
+	settled, transferred, unavailable, err := tenantSettlementIncomeTx(tx, tenantID)
+	if err != nil {
+		return created, err
+	}
+	if amountQuota > settled-transferred-unavailable {
+		return created, ErrHubTenantWithdrawalInsufficient
+	}
+	account, err := getHubTenantPayoutAccountTx(tx, tenantID, payoutAccountID)
+	if err != nil {
+		return created, err
+	}
+	snapshot, err := snapshotHubTenantPayoutAccount(account)
+	if err != nil {
+		return created, err
+	}
+	now := common.GetTimestamp()
+	created = HubTenantWithdrawal{
+		TenantId: tenantID, OwnerUserId: ownerUserID, AmountQuota: amountQuota,
+		Status: HubTenantWithdrawalStatusPending, PayoutAccountId: account.Id,
+		PayoutMethod: account.Method, PayoutAccountSnapshot: snapshot,
+		ApplicantNote: account.MaskedSummary,
+	}
+	autoApproveHubTenantWithdrawal(&created, now)
+	if err := tx.Create(&created).Error; err != nil {
+		return HubTenantWithdrawal{}, err
+	}
+	return created, nil
 }
 
 func tenantSettlementIncomeTx(tx *gorm.DB, tenantID int) (settled, transferred, unavailable int, err error) {
@@ -825,44 +886,9 @@ func CreateHubTenantWithdrawal(tenantID, ownerUserID, amountQuota, payoutAccount
 	}
 	var created HubTenantWithdrawal
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := lockHubTenantFinanceTx(tx, tenantID); err != nil {
-			return err
-		}
-		if err := requireActiveTenantOwnerTx(tx, tenantID, ownerUserID); err != nil {
-			return err
-		}
-		if amountQuota < hub_provider_settlement_setting.MinimumWithdrawalQuota() {
-			return ErrHubTenantWithdrawalBelowMinimum
-		}
-		var openCount int64
-		if err := tx.Model(&HubTenantWithdrawal{}).Where("tenant_id = ? AND status IN ?", tenantID, []string{HubTenantWithdrawalStatusPending, HubTenantWithdrawalStatusApproved}).Count(&openCount).Error; err != nil {
-			return err
-		}
-		if openCount > 0 {
-			return ErrHubTenantWithdrawalPending
-		}
-		settled, transferred, unavailable, err := tenantSettlementIncomeTx(tx, tenantID)
-		if err != nil {
-			return err
-		}
-		if amountQuota > settled-transferred-unavailable {
-			return ErrHubTenantWithdrawalInsufficient
-		}
-		account, err := getHubTenantPayoutAccountTx(tx, tenantID, payoutAccountID)
-		if err != nil {
-			return err
-		}
-		snapshot, err := snapshotHubTenantPayoutAccount(account)
-		if err != nil {
-			return err
-		}
-		created = HubTenantWithdrawal{
-			TenantId: tenantID, OwnerUserId: ownerUserID, AmountQuota: amountQuota,
-			Status: HubTenantWithdrawalStatusPending, PayoutAccountId: account.Id,
-			PayoutMethod: account.Method, PayoutAccountSnapshot: snapshot,
-			ApplicantNote: account.MaskedSummary,
-		}
-		return tx.Create(&created).Error
+		var err error
+		created, err = createHubTenantWithdrawalRecord(tx, tenantID, ownerUserID, amountQuota, payoutAccountID)
+		return err
 	})
 	if err != nil {
 		return nil, err

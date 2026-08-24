@@ -60,7 +60,9 @@ function getStatusMeta(status: HubProviderWithdrawalStatus): {
   variant: StatusVariant
 } {
   if (status === 'paid') return { label: 'Paid', variant: 'success' }
-  if (status === 'approved') return { label: 'Approved', variant: 'info' }
+  if (status === 'approved') {
+    return { label: 'Awaiting platform payout', variant: 'info' }
+  }
   if (status === 'pending') return { label: 'Pending', variant: 'warning' }
   return { label: 'Rejected', variant: 'danger' }
 }
@@ -141,7 +143,7 @@ export function TenantWithdrawals() {
             {t('Pending')}
           </NativeSelectOption>
           <NativeSelectOption value='approved'>
-            {t('Approved')}
+            {t('Awaiting platform payout')}
           </NativeSelectOption>
           <NativeSelectOption value='paid'>{t('Paid')}</NativeSelectOption>
           <NativeSelectOption value='rejected'>

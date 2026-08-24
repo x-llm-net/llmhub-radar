@@ -142,7 +142,8 @@ func TestHubTenantWithdrawalReservesOnlyTenantIncome(t *testing.T) {
 
 	withdrawal, err := CreateHubTenantWithdrawal(tenant.Id, owner.Id, 60, account.Id)
 	require.NoError(t, err)
-	assert.Equal(t, HubTenantWithdrawalStatusPending, withdrawal.Status)
+	assert.Equal(t, HubTenantWithdrawalStatusApproved, withdrawal.Status)
+	assert.NotZero(t, withdrawal.ReviewedAt)
 	_, err = CreateHubTenantWithdrawal(tenant.Id, owner.Id, 1, account.Id)
 	assert.ErrorIs(t, err, ErrHubTenantWithdrawalPending)
 
