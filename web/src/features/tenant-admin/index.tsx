@@ -267,7 +267,7 @@ export function TenantAdmin() {
         {t('Tenant Administration')}
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='min-h-0 flex-1 overflow-y-auto'>
+        <div className='h-full min-h-0 overflow-y-auto'>
           <div className='mx-auto grid max-w-7xl gap-4 pb-6'>
             <Alert>
               <ShieldCheck />
