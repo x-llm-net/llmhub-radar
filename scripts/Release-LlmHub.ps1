@@ -137,7 +137,7 @@ function Assert-ReleaseTag {
 }
 
 function Assert-RemoteIdentity {
-  $probeCommand = 'set -- $SSH_CONNECTION; printf "host=%s deployment=%s remote=%s\n" "$(hostname)" "$(cat /opt/llm-hub/.deployment-id 2>/dev/null)" "$3"'
+  $probeCommand = 'set -- $SSH_CONNECTION; printf ''host=%s deployment=%s remote=%s\n'' "$(hostname)" "$(cat /opt/llm-hub/.deployment-id 2>/dev/null)" "$3"'
   $probe = Invoke-Ssh -Command $probeCommand
   $expectedProbe = "host=$($target.remoteHostname) deployment=$($target.deploymentId) remote=$($target.remoteAddress)"
   if ($probe.Trim() -ne $expectedProbe) {
