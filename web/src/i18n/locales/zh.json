@@ -5709,6 +5709,8 @@
     "Failed to load provider earnings": "加载渠道商收益失败",
     "Provider earnings overview": "收益概览",
     "Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.": "你的供给渠道产生的成功扣费会自动结算，当前平台服务费为 {{percent}}%。",
+    "Successful charges from your supply channels are settled automatically. The current provider service fee is {{percent}}%.": "你的供给渠道产生的成功扣费会自动结算，当前渠道商服务费为 {{percent}}%。",
+    "Successful user charges are settled automatically. The current provider service fee is {{percent}}%.": "用户成功扣费后自动结算，当前渠道商服务费为 {{percent}}%。",
     "View earning details": "查看收益明细",
     "Filter channels by name or URL...": "按名称或 URL 筛选渠道...",
     "Supply status": "供给状态",

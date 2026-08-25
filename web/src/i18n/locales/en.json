@@ -5698,6 +5698,8 @@
     "Failed to load provider earnings": "Failed to load provider earnings",
     "Provider earnings overview": "Provider earnings overview",
     "Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.": "Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.",
+    "Successful charges from your supply channels are settled automatically. The current provider service fee is {{percent}}%.": "Successful charges from your supply channels are settled automatically. The current provider service fee is {{percent}}%.",
+    "Successful user charges are settled automatically. The current provider service fee is {{percent}}%.": "Successful user charges are settled automatically. The current provider service fee is {{percent}}%.",
     "View earning details": "View earning details",
     "Filter channels by name or URL...": "Filter channels by name or URL...",
     "Supply status": "Supply status",

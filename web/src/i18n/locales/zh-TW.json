@@ -5669,6 +5669,8 @@
     "Failed to load provider earnings": "Failed to load provider earnings",
     "Provider earnings overview": "Provider earnings overview",
     "Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.": "Successful charges from your supply channels are settled automatically. The current platform fee is {{percent}}%.",
+    "Successful charges from your supply channels are settled automatically. The current provider service fee is {{percent}}%.": "你的供給渠道產生的成功扣費會自動結算，目前渠道商服務費為 {{percent}}%。",
+    "Successful user charges are settled automatically. The current provider service fee is {{percent}}%.": "使用者成功扣費後自動結算，目前渠道商服務費為 {{percent}}%。",
     "View earning details": "View earning details",
     "Filter channels by name or URL...": "Filter channels by name or URL...",
     "Supply status": "Supply status",
