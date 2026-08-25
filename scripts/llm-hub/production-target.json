@@ -1,16 +1,23 @@
 {
-  "deploymentId": "llm-hub-store-production-v1",
+  "deploymentId": "llm-hub-store-production-v2",
   "gitRemotes": [
     "git@github.com:x-llm-net/llmhub-radar.git",
     "https://github.com/x-llm-net/llmhub-radar.git"
   ],
   "sshTarget": "llm-hub",
-  "remoteHostname": "ser8272651662",
+  "remoteHostname": "llm-hub",
+  "remoteAddress": "159.195.18.119",
   "composeDir": "/opt/llm-hub",
   "composeFile": "/opt/llm-hub/compose.yml",
   "composeProject": "llm-hub",
   "service": "new-api",
   "container": "llm-hub-new-api",
   "imageRepository": "llm-hub/new-api",
-  "publicBaseUrl": "https://llm-hub.store"
+  "publicBaseUrl": "https://llm-hub.store",
+  "publicHealthUrls": [
+    "https://llm-hub.store",
+    "https://app.llm-hub.store",
+    "https://zz-infra-check.llm-hub.store",
+    "https://343246113.xyz"
+  ]
 }

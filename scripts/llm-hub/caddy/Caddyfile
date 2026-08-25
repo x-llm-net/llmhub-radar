@@ -1,7 +1,8 @@
 # LLM-Hub production reverse proxy.
 # Access logs are intentionally metadata-only: no request body or credentials.
 
-llm-hub.store, app.llm-hub.store, 343246113.xyz {
+# Direct and custom domains use publicly trusted certificates managed by Caddy.
+llm-hub.store, 343246113.xyz {
 	log {
 		output file /var/log/caddy/llm-hub-access.json {
 			roll_size 100MiB
@@ -25,9 +26,12 @@ llm-hub.store, app.llm-hub.store, 343246113.xyz {
 		}
 	}
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:3100
+	reverse_proxy new-api:3000 {
+		flush_interval -1
+	}
 }
 
+# Cloudflare-proxied subdomains use the wildcard Origin Certificate.
 *.llm-hub.store {
 	log {
 		output file /var/log/caddy/llm-hub-access.json {
@@ -53,5 +57,7 @@ llm-hub.store, app.llm-hub.store, 343246113.xyz {
 	}
 	encode zstd gzip
 	tls /etc/caddy/certs/llm-hub.store.pem /etc/caddy/certs/llm-hub.store.key
-	reverse_proxy 127.0.0.1:3100
+	reverse_proxy new-api:3000 {
+		flush_interval -1
+	}
 }

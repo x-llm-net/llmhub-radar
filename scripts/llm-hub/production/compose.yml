@@ -1,0 +1,153 @@
+name: llm-hub
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  mysql:
+    image: mysql@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    container_name: llm-hub-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=300
+      - --innodb-buffer-pool-size=768M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - backend
+    logging: *default-logging
+
+  redis:
+    image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    container_name: llm-hub-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - backend
+    logging: *default-logging
+
+  new-api:
+    image: llm-hub/new-api:${LLMHUB_IMAGE_TAG}
+    container_name: llm-hub-new-api
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3100:3000"
+    environment:
+      SQL_DSN: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE}?charset=utf8mb4&parseTime=True&loc=Local
+      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_TRUSTED_URL: ${SESSION_COOKIE_TRUSTED_URL}
+      SESSION_COOKIE_DOMAIN: llm-hub.store
+      HUB_PROVIDER_ROOT_DOMAIN: llm-hub.store
+      TRUSTED_PROXIES: 172.28.10.0/24
+      ERROR_LOG_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+      SQL_MAX_OPEN_CONNS: "100"
+      SQL_MAX_IDLE_CONNS: "20"
+      SQL_MAX_LIFETIME: "60"
+      RELAY_IDLE_CONN_TIMEOUT: "90"
+      STREAMING_TIMEOUT: "300"
+      NODE_NAME: llm-hub-1
+      TZ: ${TZ}
+    volumes:
+      - ./data:/data
+      - ./logs/app:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/status | grep -q '\"success\":true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+      - edge
+    logging: *default-logging
+
+  caddy:
+    image: caddy@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+    container_name: llm-hub-caddy
+    restart: unless-stopped
+    profiles: ["edge"]
+    depends_on:
+      new-api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - ./logs/caddy:/var/log/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:2019/config/ >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - edge
+    logging: *default-logging
+
+volumes:
+  mysql_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: 172.28.11.0/24
+  edge:
+    ipam:
+      config:
+        - subnet: 172.28.10.0/24

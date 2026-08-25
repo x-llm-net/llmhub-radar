@@ -22,9 +22,10 @@ $target = Get-Content -Raw -LiteralPath $targetPath | ConvertFrom-Json
 
 function Assert-TargetManifest {
   $expected = [ordered]@{
-    deploymentId = 'llm-hub-store-production-v1'
+    deploymentId = 'llm-hub-store-production-v2'
     sshTarget = 'llm-hub'
-    remoteHostname = 'ser8272651662'
+    remoteHostname = 'llm-hub'
+    remoteAddress = '159.195.18.119'
     composeDir = '/opt/llm-hub'
     composeFile = '/opt/llm-hub/compose.yml'
     composeProject = 'llm-hub'
@@ -38,6 +39,16 @@ function Assert-TargetManifest {
     if ([string]$target.($entry.Key) -ne $entry.Value) {
       throw "Production target manifest mismatch for $($entry.Key). Expected '$($entry.Value)'."
     }
+  }
+
+  $expectedHealthUrls = @(
+    'https://llm-hub.store',
+    'https://app.llm-hub.store',
+    'https://zz-infra-check.llm-hub.store',
+    'https://343246113.xyz'
+  )
+  if ((@($target.publicHealthUrls) -join '|') -ne ($expectedHealthUrls -join '|')) {
+    throw 'Production public health URL manifest mismatch.'
   }
 }
 
@@ -126,25 +137,82 @@ function Assert-ReleaseTag {
 }
 
 function Assert-RemoteIdentity {
+  $probeCommand = 'set -- $SSH_CONNECTION; printf "host=%s deployment=%s remote=%s\n" "$(hostname)" "$(cat /opt/llm-hub/.deployment-id 2>/dev/null)" "$3"'
+  $probe = Invoke-Ssh -Command $probeCommand
+  $expectedProbe = "host=$($target.remoteHostname) deployment=$($target.deploymentId) remote=$($target.remoteAddress)"
+  if ($probe.Trim() -ne $expectedProbe) {
+    throw "SSH target identity mismatch. Expected '$expectedProbe', got '$($probe.Trim())'."
+  }
+
   $localScript = Join-Path $serverScriptDir 'assert-target.sh'
   $remoteScript = '/tmp/llm-hub-assert-target.sh'
   Copy-ToRemote -LocalPath $localScript -RemotePath $remoteScript
   $result = Invoke-Ssh -Command "chmod 700 $remoteScript && $remoteScript"
-  if ($result -notmatch 'TARGET_OK deployment=llm-hub-store-production-v1') {
+  if ($result -notmatch 'TARGET_OK deployment=llm-hub-store-production-v2') {
     throw "Remote target did not return the expected LLM-Hub identity:`n$result"
   }
   Write-Host $result
 }
 
+function Get-CommittedInfrastructureHashes {
+  param([Parameter(Mandatory)][string]$CommitSha)
+
+  $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "llm-hub-infra-$PID-$([guid]::NewGuid().ToString('N'))"
+  $archive = Join-Path $tempDir 'infrastructure.tar'
+  New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+  try {
+    Invoke-Git -Arguments @(
+      'archive',
+      '--format=tar',
+      "--output=$archive",
+      $CommitSha,
+      '--',
+      'scripts/llm-hub/production/compose.yml',
+      'scripts/llm-hub/caddy/Caddyfile'
+    ) | Out-Null
+    $extractOutput = & tar -xf $archive -C $tempDir 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "Unable to extract committed infrastructure files:`n$($extractOutput -join "`n")"
+    }
+
+    return [pscustomobject]@{
+      Compose = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tempDir 'scripts\llm-hub\production\compose.yml')).Hash.ToLowerInvariant()
+      Caddy = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tempDir 'scripts\llm-hub\caddy\Caddyfile')).Hash.ToLowerInvariant()
+    }
+  } finally {
+    if (Test-Path -LiteralPath $tempDir) {
+      [System.IO.Directory]::Delete($tempDir, $true)
+    }
+  }
+}
+
+function Assert-RemoteInfrastructure {
+  param([Parameter(Mandatory)][string]$CommitSha)
+
+  $committed = Get-CommittedInfrastructureHashes -CommitSha $CommitSha
+  $remote = Invoke-Ssh -Command 'sha256sum /opt/llm-hub/compose.yml /opt/llm-hub/Caddyfile'
+  $remoteComposeMatch = [regex]::Match($remote, '(?m)^([0-9a-f]{64})\s+/opt/llm-hub/compose\.yml$')
+  $remoteCaddyMatch = [regex]::Match($remote, '(?m)^([0-9a-f]{64})\s+/opt/llm-hub/Caddyfile$')
+  if (-not $remoteComposeMatch.Success -or $remoteComposeMatch.Groups[1].Value -ne $committed.Compose) {
+    throw "Remote production compose does not match commit $CommitSha."
+  }
+  if (-not $remoteCaddyMatch.Success -or $remoteCaddyMatch.Groups[1].Value -ne $committed.Caddy) {
+    throw "Remote production Caddyfile does not match commit $CommitSha."
+  }
+  Write-Host "INFRASTRUCTURE_OK commit=$CommitSha compose=$($committed.Compose) caddy=$($committed.Caddy)"
+}
+
 function Test-PublicStatus {
   param([string]$ExpectedVersion)
 
-  $status = Invoke-RestMethod -Uri "$($target.publicBaseUrl)/api/status" -Method Get -TimeoutSec 30
-  if (-not $status.success) {
-    throw 'Public /api/status did not report success.'
-  }
-  if ($ExpectedVersion -and [string]$status.data.version -ne $ExpectedVersion) {
-    throw "Public version mismatch. Expected '$ExpectedVersion', got '$($status.data.version)'."
+  foreach ($baseUrl in @($target.publicHealthUrls)) {
+    $status = Invoke-RestMethod -Uri "$baseUrl/api/status" -Method Get -TimeoutSec 30
+    if (-not $status.success) {
+      throw "Public /api/status did not report success for '$baseUrl'."
+    }
+    if ($ExpectedVersion -and [string]$status.data.version -ne $ExpectedVersion) {
+      throw "Public version mismatch for '$baseUrl'. Expected '$ExpectedVersion', got '$($status.data.version)'."
+    }
   }
 
   foreach ($path in @('/', '/provider/onboarding', '/providers')) {
@@ -154,7 +222,7 @@ function Test-PublicStatus {
     }
   }
 
-  Write-Host "PUBLIC_OK url=$($target.publicBaseUrl) version=$($status.data.version)"
+  Write-Host "PUBLIC_OK urls=$(@($target.publicHealthUrls) -join ',') version=$ExpectedVersion"
 }
 
 function Get-RemoteVersion {
@@ -184,6 +252,7 @@ function Assert-VersionedServerScripts {
 Assert-TargetManifest
 $commitSha = Assert-LocalIdentity
 Assert-RemoteIdentity
+Assert-RemoteInfrastructure -CommitSha $commitSha
 
 if ($Action -eq 'Preflight') {
   $currentVersion = Get-RemoteVersion
@@ -250,9 +319,22 @@ switch ($Action) {
       throw "Unexpected backup state: $backupState"
     }
 
-    Write-Host (Invoke-Ssh -Command "$releaseDir/tools/deploy-release.sh $ReleaseTag")
-    Write-Host (Invoke-Ssh -Command "$releaseDir/tools/verify-release.sh $ReleaseTag")
-    Test-PublicStatus -ExpectedVersion $ReleaseTag
+    try {
+      Write-Host (Invoke-Ssh -Command "$releaseDir/tools/deploy-release.sh $ReleaseTag")
+      Write-Host (Invoke-Ssh -Command "$releaseDir/tools/verify-release.sh $ReleaseTag")
+      Test-PublicStatus -ExpectedVersion $ReleaseTag
+    } catch {
+      $deploymentFailure = $_
+      try {
+        Write-Warning 'Deployment verification failed; restoring the previous production release.'
+        Write-Host (Invoke-Ssh -Command "$releaseDir/tools/rollback-release.sh $ReleaseTag")
+        $rollbackVersion = Get-RemoteVersion
+        Test-PublicStatus -ExpectedVersion $rollbackVersion
+      } catch {
+        throw "Deployment failed: $deploymentFailure`nAutomatic rollback also failed: $_"
+      }
+      throw "Deployment failed and the previous release was restored: $deploymentFailure"
+    }
     Write-Host "DEPLOY_COMPLETE release=$ReleaseTag"
   }
 
