@@ -71,7 +71,7 @@ wait_for_healthy() {
 }
 
 deploy_new() {
-  sed -i "s#^LLMHUB_IMAGE_TAG=$old_tag$#LLMHUB_IMAGE_TAG=$release_tag#" .env &&
+  sed -i "s#^LLMHUB_IMAGE_TAG=${old_tag}\$#LLMHUB_IMAGE_TAG=${release_tag}#" .env &&
     docker compose config --quiet &&
     docker compose up -d --no-deps --no-build new-api &&
     wait_for_healthy "$new_image" &&
