@@ -40,6 +40,12 @@ type hubProviderAdminCreateRequest struct {
 	UseProvisionalSlug *bool  `json:"use_provisional_slug"`
 }
 
+var (
+	errHubProviderTenantIDRequired            = errors.New(i18n.MsgHubProviderTenantIDRequired)
+	errHubProviderTrustedTenantDomainRequired = errors.New(i18n.MsgHubProviderTrustedTenantDomainRequired)
+	errHubProviderTenantIDMismatch            = errors.New(i18n.MsgHubProviderTenantIDMismatch)
+)
+
 func (request *hubProviderAdminCreateRequest) profileRequest() hubProviderProfileRequest {
 	return hubProviderProfileRequest{
 		Name:         request.Name,
@@ -56,7 +62,7 @@ func (request *hubProviderAdminCreateRequest) profileRequest() hubProviderProfil
 func adminCreateTenantID(c *gin.Context, requested *int) (*int, error) {
 	if c.GetInt("role") >= common.RoleRootUser {
 		if requested == nil || *requested <= 0 {
-			return nil, errors.New("tenant_id is required for platform administrators")
+			return nil, errHubProviderTenantIDRequired
 		}
 		if _, err := model.GetActiveTenantByID(*requested); err != nil {
 			return nil, err
@@ -66,10 +72,10 @@ func adminCreateTenantID(c *gin.Context, requested *int) (*int, error) {
 
 	current := hubProviderAdminTenantID(c)
 	if current == nil {
-		return nil, errors.New("a trusted tenant domain is required")
+		return nil, errHubProviderTrustedTenantDomainRequired
 	}
 	if requested != nil && (*requested <= 0 || *requested != *current) {
-		return nil, errors.New("tenant_id does not match the current tenant")
+		return nil, errHubProviderTenantIDMismatch
 	}
 	if _, err := model.GetActiveTenantByID(*current); err != nil {
 		return nil, err
@@ -102,7 +108,14 @@ func AdminCreateHubProvider(c *gin.Context) {
 
 	tenantID, err := adminCreateTenantID(c, request.TenantID)
 	if err != nil {
-		common.ApiError(c, err)
+		switch {
+		case errors.Is(err, errHubProviderTenantIDRequired),
+			errors.Is(err, errHubProviderTrustedTenantDomainRequired),
+			errors.Is(err, errHubProviderTenantIDMismatch):
+			common.ApiErrorI18n(c, err.Error())
+		default:
+			common.ApiError(c, err)
+		}
 		return
 	}
 	profile := request.profileRequest()

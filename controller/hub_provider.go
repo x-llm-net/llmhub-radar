@@ -168,7 +168,7 @@ func CreateHubProvider(c *gin.Context) {
 	}
 	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
 	if tenantID <= 0 {
-		common.ApiError(c, errors.New("a trusted tenant domain is required"))
+		common.ApiErrorI18n(c, i18n.MsgHubProviderTrustedTenantDomainRequired)
 		return
 	}
 
