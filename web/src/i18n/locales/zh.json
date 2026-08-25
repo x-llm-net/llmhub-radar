@@ -5388,7 +5388,7 @@
     "Provider name is required": "请输入渠道商名称",
     "Provider name must be at most 80 characters": "渠道商名称最多 80 个字符",
     "Provider subdomain": "渠道商子域名",
-    "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens": "渠道商子域名需使用 3-63 位小写字母、数字或连字符",
+    "Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens": "渠道商子域名需使用 1-63 位小写字母、数字或连字符",
     "Provider description must be at most 1000 characters": "渠道商简介最多 1000 个字符",
     "Provider profile": "渠道商资料",
     "Provider profile created": "渠道商创建成功",

@@ -35,6 +35,7 @@ func TestHubProviderSlugValidationAndUniqueness(t *testing.T) {
 		value string
 		valid bool
 	}{
+		{value: "x", valid: true},
 		{value: "llm-routers", valid: true},
 		{value: "LLM-ROUTERS", valid: true},
 		{value: "api", valid: false},

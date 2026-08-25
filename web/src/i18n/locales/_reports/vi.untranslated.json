@@ -16,7 +16,7 @@
   "Describe the services you provide": "Describe the services you provide",
   "Logo URL must be a valid HTTP or HTTPS URL": "Logo URL must be a valid HTTP or HTTPS URL",
   "Manage the services you provide.": "Manage the services you provide.",
-  "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens": "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens",
+  "Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens": "Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens",
   "Review the provider application for {{name}}.": "Review the provider application for {{name}}.",
   "Saving changes will submit the application for review again.": "Saving changes will submit the application for review again.",
   "Update the application details and submit them again for review.": "Update the application details and submit them again for review.",

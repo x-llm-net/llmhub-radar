@@ -5347,7 +5347,7 @@
     "Provider name is required": "Provider name is required",
     "Provider name must be at most 80 characters": "Provider name must be at most 80 characters",
     "Provider subdomain": "供應者子網域",
-    "Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens": "供應者子網域需使用 3-63 位小寫字母、數字或連字號",
+    "Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens": "供應者子網域需使用 1-63 位小寫字母、數字或連字號",
     "Provider description must be at most 1000 characters": "Provider description must be at most 1000 characters",
     "Provider profile": "Provider profile",
     "Provider profile created": "Provider profile created",

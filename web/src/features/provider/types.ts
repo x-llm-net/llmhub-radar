@@ -295,7 +295,7 @@ export const providerFormSchema = z.object({
     .toLowerCase()
     .refine(
       isProviderSlug,
-      'Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens'
+      'Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens'
     ),
   website: z
     .string()

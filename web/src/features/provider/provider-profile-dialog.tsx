@@ -378,7 +378,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
               <p className='text-destructive text-sm'>
                 {t(
                   form.formState.errors.slug.message ??
-                    'Provider subdomain must use 3-63 lowercase letters, numbers, or hyphens'
+                    'Provider subdomain must use 1-63 lowercase letters, numbers, or hyphens'
                 )}
               </p>
             )}

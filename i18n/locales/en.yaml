@@ -298,7 +298,7 @@ custom_oauth.provider_id_field_invalid: "Could not extract user ID from provider
 # LLM-Hub provider profile messages
 hub_provider.name_empty: "Provider name cannot be empty"
 hub_provider.name_too_long: "Provider name is too long"
-hub_provider.slug_invalid: "Use 3-63 lowercase letters, numbers, or hyphens for the provider subdomain"
+hub_provider.slug_invalid: "Use 1-63 lowercase letters, numbers, or hyphens for the provider subdomain"
 hub_provider.slug_already_exists: "This provider subdomain is already in use"
 hub_provider.website_invalid: "Website must be a valid HTTP or HTTPS URL"
 hub_provider.website_required: "Enter a valid website first"

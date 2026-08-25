@@ -35,7 +35,7 @@ const (
 	HubProviderStatusActive   = "active"
 	HubProviderStatusRejected = "rejected"
 	HubProviderStatusDisabled = "disabled"
-	hubProviderSlugMinLength  = 3
+	hubProviderSlugMinLength  = 1
 	hubProviderSlugMaxLength  = 63
 )
 

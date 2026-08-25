@@ -48,7 +48,7 @@ export function getProviderRootDomain(): string {
 export function isProviderSlug(value: string): boolean {
   const slug = value.trim().toLowerCase()
   return (
-    slug.length >= 3 &&
+    slug.length >= 1 &&
     slug.length <= 63 &&
     !slug.startsWith('xn--') &&
     !RESERVED_PROVIDER_SLUGS.has(slug) &&
