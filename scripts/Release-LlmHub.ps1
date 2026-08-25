@@ -17,8 +17,10 @@ $ProgressPreference = 'SilentlyContinue'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot '..')).Path
 $targetPath = Join-Path $scriptRoot 'llm-hub\production-target.json'
+$sourcePath = Join-Path $scriptRoot 'llm-hub\production-source.json'
 $serverScriptDir = Join-Path $scriptRoot 'llm-hub\server'
 $target = Get-Content -Raw -LiteralPath $targetPath | ConvertFrom-Json
+$source = Get-Content -Raw -LiteralPath $sourcePath | ConvertFrom-Json
 
 function Assert-TargetManifest {
   $expected = [ordered]@{
@@ -49,6 +51,21 @@ function Assert-TargetManifest {
   )
   if ((@($target.publicHealthUrls) -join '|') -ne ($expectedHealthUrls -join '|')) {
     throw 'Production public health URL manifest mismatch.'
+  }
+}
+
+function Assert-ProductionSource {
+  $expected = [ordered]@{
+    sourceId = 'llm-hub-store-production-v2'
+    repository = 'x-llm-net/llmhub-radar'
+    releaseTarget = 'llm-hub'
+    releaseScript = 'scripts/Release-LlmHub.ps1'
+  }
+
+  foreach ($entry in $expected.GetEnumerator()) {
+    if ([string]$source.($entry.Key) -ne $entry.Value) {
+      throw "Production source marker mismatch for $($entry.Key). Expected '$($entry.Value)'."
+    }
   }
 }
 
@@ -250,6 +267,7 @@ function Assert-VersionedServerScripts {
 }
 
 Assert-TargetManifest
+Assert-ProductionSource
 $commitSha = Assert-LocalIdentity
 Assert-RemoteIdentity
 Assert-RemoteInfrastructure -CommitSha $commitSha

@@ -20,6 +20,18 @@ LLM-Hub 于 2026-08-25 在 `/opt/llm-hub` 以全新 MySQL、Redis 和空业务�
 
 禁止使用 `x-llm-net`、`ghcr.io/x-llm-net/new-api`、Docker Hub 或旧 X-LLM 发布脚本部署本站。以上值的机器可读版本位于 `scripts/llm-hub/production-target.json`。
 
+### 唯一源码入口
+
+本机当前唯一允许编辑和发布 LLM-Hub 的工作树是：
+
+```text
+D:\xllm-xhs-post\projects\llmhub-loop-http400
+```
+
+`D:\code\llm-hub` 等其他副本不属于发布链路，只能作为归档或只读参考。发布脚本要求仓库内存在并匹配 `scripts/llm-hub/production-source.json`；缺少该标记的旧副本会在上传或构建前直接拒绝。修改前先确认当前路径、分支、origin 和目标清单，不凭对话记忆判断目标。
+
+旧副本要完整归档，不删除、不覆盖；归档目录需要保留日期和原路径说明。`x-llm` 仍是另一套独立生产服务，不得因为 LLM-Hub 归档或发布而修改。
+
 目标机地址、主机名、部署标识、目标清单、PowerShell 校验和服务器端校验脚本必须保持一致。发布脚本在上传任何文件前通过 SSH 连接地址、主机名和部署标识校验目标，不能通过修改 SSH 别名或绕过校验发布到其他服务器。
 
 ## 应用发布入口

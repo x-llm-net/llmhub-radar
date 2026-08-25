@@ -1,0 +1,7 @@
+{
+  "sourceId": "llm-hub-store-production-v2",
+  "repository": "x-llm-net/llmhub-radar",
+  "releaseTarget": "llm-hub",
+  "releaseScript": "scripts/Release-LlmHub.ps1",
+  "note": "This marker identifies the checkout authorized to release LLM-Hub. Do not use an archived or unrelated checkout."
+}
