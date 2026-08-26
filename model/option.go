@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/hub_provider_notification_setting"
 	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
+	"github.com/QuantumNous/new-api/setting/hub_public_home_setting"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
@@ -180,6 +181,7 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
+	common.OptionMap[hub_public_home_setting.OptionKeyModelBlacklist] = hub_public_home_setting.DefaultModelBlacklistJSON
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -232,6 +234,9 @@ func validateOptionValue(key string, value string) error {
 	}
 	if strings.HasPrefix(key, "hub_routing_setting.") {
 		return hub_routing_setting.ValidateOption(key, value)
+	}
+	if key == hub_public_home_setting.OptionKeyModelBlacklist {
+		return hub_public_home_setting.ValidateOption(key, value)
 	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)

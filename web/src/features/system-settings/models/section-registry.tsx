@@ -25,6 +25,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { HomeDisplaySection } from './home-display-section'
 import { RoutingMetricsSection } from './routing-metrics-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 import { ServiceTierRoutingSection } from './service-tier-routing-section'
@@ -65,6 +66,15 @@ const MODELS_SECTIONS = [
               settings['general_setting.ping_interval_seconds'],
           },
         }}
+      />
+    ),
+  },
+  {
+    id: 'home-display',
+    titleKey: 'Home Display',
+    build: (settings: ModelSettings) => (
+      <HomeDisplaySection
+        defaultValue={settings['hub_public_home.model_blacklist']}
       />
     ),
   },

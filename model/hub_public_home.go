@@ -20,9 +20,11 @@ package model
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_public_home_setting"
 )
 
 type HubPublicHomeProvider struct {
@@ -91,6 +93,10 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 		GeneratedAt: now,
 		Families:    make([]HubPublicHomeFamily, 0),
 	}
+	modelBlacklist := make(map[string]struct{})
+	for _, modelName := range hub_public_home_setting.GetModelBlacklist() {
+		modelBlacklist[modelName] = struct{}{}
+	}
 
 	providers := make([]HubProvider, 0)
 	if err := DB.Where("status = ?", HubProviderStatusActive).Order("id ASC").Find(&providers).Error; err != nil {
@@ -102,12 +108,17 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 	}
 
 	providerIdentities := make(map[int]HubProviderPublicIdentity, len(providers))
-	for _, provider := range providers {
+	for i := range providers {
+		provider := &providers[i]
+		HydrateHubProviderLogoURL(
+			provider,
+			"/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId),
+		)
 		providerIdentities[provider.Id] = HubProviderPublicIdentity{
 			Id:           provider.Id,
 			Name:         provider.Name,
 			Slug:         provider.Slug,
-			Website:      PublicHubProviderWebsite(provider),
+			Website:      PublicHubProviderWebsite(*provider),
 			Description:  provider.Description,
 			LogoURL:      provider.LogoURL,
 			SupportType:  provider.SupportType,
@@ -141,6 +152,9 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 		publishedSet := make(map[string]struct{}, len(publishedModels))
 		publishedByGroup[group.Id] = publishedSet
 		for _, modelName := range publishedModels {
+			if _, blacklisted := modelBlacklist[modelName]; blacklisted {
+				continue
+			}
 			publishedSet[modelName] = struct{}{}
 			key := hubPublicHomeProviderModelKey{providerID: group.ProviderId, modelName: modelName}
 			item := accumulators[key]

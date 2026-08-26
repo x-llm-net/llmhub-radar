@@ -24,6 +24,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/hub_public_home_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -106,6 +107,61 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 			assert.NotEqual(t, "gpt-private", model.ModelName)
 		}
 	}
+}
+
+func TestHubPublicHomeFiltersBlacklistedModelsAndHydratesUploadedLogo(t *testing.T) {
+	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
+	now := int64(1_800_000_000)
+
+	provider := &HubProvider{
+		OwnerUserId: 74,
+		Name:        "Public Home Provider",
+		LogoURL:     "https://old.example/logo.png",
+		LogoAssetId: 17,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+	group, channel := createHubPublicHomeTestSupply(
+		t,
+		provider.Id,
+		"public-home-blacklist",
+		"gpt-visible,codex-auto-review",
+		"gpt-visible,codex-auto-review",
+		1,
+	)
+	require.NoError(t, DB.Model(&Channel{Id: channel.Id}).Update("status", common.ChannelStatusEnabled).Error)
+	setHubPublicHomeTargetStatus(t, group.Id, "gpt-visible", HubSupplyProbeStatusAvailable, now-20)
+	setHubPublicHomeTargetStatus(t, group.Id, "codex-auto-review", HubSupplyProbeStatusAvailable, now-10)
+
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	previous, existed := common.OptionMap[hub_public_home_setting.OptionKeyModelBlacklist]
+	common.OptionMap[hub_public_home_setting.OptionKeyModelBlacklist] = `["codex-auto-review"]`
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		if existed {
+			common.OptionMap[hub_public_home_setting.OptionKeyModelBlacklist] = previous
+		} else {
+			delete(common.OptionMap, hub_public_home_setting.OptionKeyModelBlacklist)
+		}
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	home, err := GetHubPublicHome(now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, home.PublishedModelCount)
+	openAI := findHubPublicHomeFamily(t, home, "openai")
+	require.Len(t, openAI.Models, 1)
+	assert.Equal(t, "gpt-visible", openAI.Models[0].ModelName)
+	require.Len(t, openAI.Models[0].Providers, 1)
+	assert.Equal(
+		t,
+		"/api/hub/public/providers/"+provider.Slug+"/logo?v=17",
+		openAI.Models[0].Providers[0].Provider.LogoURL,
+	)
 }
 
 func TestHubSupplyPublicModelRoutableAllowsAutoProbeDisabledModel(t *testing.T) {
