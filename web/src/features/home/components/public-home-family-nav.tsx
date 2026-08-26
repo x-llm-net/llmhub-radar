@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -65,6 +65,16 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
     })
   }, [])
 
+  const scrollRail = useCallback((direction: -1 | 1) => {
+    const rail = railRef.current
+    if (!rail) return
+
+    rail.scrollBy({
+      left: direction * Math.max(240, rail.clientWidth * 0.65),
+      behavior: 'smooth',
+    })
+  }, [])
+
   const syncActiveTab = useCallback(() => {
     if (modelIds.length === 0) return
 
@@ -76,7 +86,7 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
     let nextId = modelIds[0]
 
     for (const id of modelIds) {
-      const section = document.getElementById(id)
+      const section = document.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
       if (section && section.getBoundingClientRect().top <= activationLine) {
         nextId = id
       }
@@ -99,7 +109,6 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
 
   useEffect(() => {
     const firstId = modelIds[0] || ''
-    setActiveId(firstId)
     if (firstId) revealTab(firstId, 'auto')
     scheduleSync()
 
@@ -108,7 +117,10 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
     return () => {
       window.removeEventListener('scroll', scheduleSync)
       window.removeEventListener('resize', scheduleSync)
-      if (frameRef.current) window.cancelAnimationFrame(frameRef.current)
+      if (frameRef.current) {
+        window.cancelAnimationFrame(frameRef.current)
+        frameRef.current = 0
+      }
     }
   }, [modelIds, revealTab, scheduleSync])
 
@@ -119,7 +131,7 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
         aria-labelledby='model-families-title'
       >
         <div className='hub-shell'>
-          <p className='hub-section-kicker'>MODEL FAMILIES</p>
+          <p className='hub-section-kicker'>{t('MODEL FAMILIES')}</p>
           <h2 id='model-families-title'>{t('Browse by model family')}</h2>
           <p className='hub-section-lede'>
             {t(
@@ -130,11 +142,22 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
           <div className='hub-family-grid'>
             {props.families.map((family) => {
               const meta = getFamilyMeta(family.key)
+              const firstModel = family.models[0]
+              const firstModelId = firstModel
+                ? modelAnchor(family.key, firstModel.model_name)
+                : ''
               return (
                 <a
                   key={family.key}
                   className='hub-family-card'
                   href={`#family-${family.key}`}
+                  onClick={() => {
+                    if (!firstModelId) return
+                    setActiveId(firstModelId)
+                    window.requestAnimationFrame(() =>
+                      revealTab(firstModelId, 'smooth')
+                    )
+                  }}
                 >
                   <div className='hub-family-card-meta'>
                     <span>{meta.vendor}</span>
@@ -157,34 +180,57 @@ export function PublicHomeFamilyNav(props: { families: PublicHomeFamily[] }) {
 
       <div ref={shellRef} className='hub-model-chips-shell'>
         <div className='hub-shell'>
-          <nav
-            ref={railRef}
-            className='hub-model-chips'
-            aria-label={t('Published models')}
-          >
-            {models.map(({ familyKey, model }) => {
-              const id = modelAnchor(familyKey, model.model_name)
-              const active = id === activeId
-              return (
-                <a
-                  key={`${familyKey}-${model.model_name}`}
-                  ref={(node) => {
-                    if (node) linkRefs.current.set(id, node)
-                    else linkRefs.current.delete(id)
-                  }}
-                  className={active ? 'is-active' : undefined}
-                  href={`#${id}`}
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => {
-                    setActiveId(id)
-                    window.requestAnimationFrame(() => revealTab(id, 'smooth'))
-                  }}
-                >
-                  {model.model_name}
-                </a>
-              )
-            })}
-          </nav>
+          <div className='hub-model-chips-row'>
+            <nav
+              ref={railRef}
+              className='hub-model-chips'
+              aria-label={t('Published models')}
+            >
+              {models.map(({ familyKey, model }) => {
+                const id = modelAnchor(familyKey, model.model_name)
+                const active = id === activeId
+                return (
+                  <a
+                    key={`${familyKey}-${model.model_name}`}
+                    ref={(node) => {
+                      if (node) linkRefs.current.set(id, node)
+                      else linkRefs.current.delete(id)
+                    }}
+                    className={active ? 'is-active' : undefined}
+                    href={`#${id}`}
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => {
+                      setActiveId(id)
+                      window.requestAnimationFrame(() =>
+                        revealTab(id, 'smooth')
+                      )
+                    }}
+                  >
+                    {model.model_name}
+                  </a>
+                )
+              })}
+            </nav>
+
+            <div className='hub-model-chips-controls'>
+              <button
+                type='button'
+                aria-label={t('Previous models')}
+                title={t('Previous models')}
+                onClick={() => scrollRail(-1)}
+              >
+                <ChevronLeft aria-hidden='true' />
+              </button>
+              <button
+                type='button'
+                aria-label={t('Next models')}
+                title={t('Next models')}
+                onClick={() => scrollRail(1)}
+              >
+                <ChevronRight aria-hidden='true' />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </>

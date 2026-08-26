@@ -21,9 +21,12 @@ import { ArrowRight, RefreshCw } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useSystemConfig } from '@/hooks/use-system-config'
+
 import { getPublicHome } from './api'
 import { PublicHomeFamilyNav } from './components/public-home-family-nav'
 import { PublicHomeHeader } from './components/public-home-header'
+import { PublicHomeHero } from './components/public-home-hero'
 import { PublicHomeLeaderboards } from './components/public-home-leaderboards'
 
 import './public-home.css'
@@ -79,6 +82,8 @@ function PublicHomeError(props: { onRetry: () => void }) {
 
 export function Home() {
   const { t } = useTranslation()
+  const { systemName } = useSystemConfig()
+  const brandName = systemName || 'LLMHub'
   const query = useQuery({
     queryKey: ['hub-public-home'],
     queryFn: getPublicHome,
@@ -87,7 +92,6 @@ export function Home() {
   })
 
   useEffect(() => {
-    document.title = 'LLMHub | AI API 中转站实测榜'
     let description = document.querySelector<HTMLMetaElement>(
       'meta[name="description"]'
     )
@@ -96,9 +100,10 @@ export function Home() {
       description.name = 'description'
       document.head.appendChild(description)
     }
-    description.content =
-      '持续测试不同 AI API 中转站的模型可用率、响应延迟与近期状态。'
-  }, [])
+    description.content = t(
+      'Continuously test mainstream models from different providers, comparing seven-day availability, first-token latency, and current status so every choice has evidence.'
+    )
+  }, [t])
 
   if (query.isLoading) return <PublicHomeLoading />
   if (query.isError || !query.data?.data) {
@@ -113,56 +118,7 @@ export function Home() {
       <PublicHomeHeader />
 
       <main id='top'>
-        <section className='hub-hero'>
-          <div className='hub-shell'>
-            <p className='hub-hero-eyebrow'>
-              {t('STABILITY AND LATENCY, CONTINUOUSLY TESTED')}
-            </p>
-            <h1>{t('AI API relay field-test rankings')}</h1>
-            <p className='hub-hero-lede'>
-              {t(
-                'Continuously test mainstream models from different providers, comparing seven-day availability, first-token latency, and current status so every choice has evidence.'
-              )}
-            </p>
-            <div className='hub-hero-actions'>
-              <a className='hub-primary-button' href='#model-rankings'>
-                {t('View model rankings')}
-                <ArrowRight aria-hidden='true' />
-              </a>
-              <a className='hub-secondary-button' href='#ranking-rules'>
-                {t('How rankings work')}
-              </a>
-            </div>
-
-            <dl className='hub-hero-facts'>
-              <div>
-                <dt>{t('Covered providers')}</dt>
-                <dd>
-                  {t('{{count}} providers', { count: home.provider_count })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('Published models')}</dt>
-                <dd>
-                  {t('{{count}} models', { count: home.published_model_count })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('Probe frequency')}</dt>
-                <dd>{t('10 min text · 30 min image')}</dd>
-              </div>
-            </dl>
-
-            <div className='hub-ranking-note'>
-              <strong>{t('Only real probe data is used.')}</strong>
-              <span>
-                {t(
-                  'Unpublished models are hidden. Published models remain visible when they are currently failing.'
-                )}
-              </span>
-            </div>
-          </div>
-        </section>
+        <PublicHomeHero home={home} />
 
         {hasRankings ? (
           <>
@@ -175,7 +131,7 @@ export function Home() {
         ) : (
           <section className='hub-empty-rankings'>
             <div className='hub-shell'>
-              <p className='hub-section-kicker'>MODEL LEADERBOARDS</p>
+              <p className='hub-section-kicker'>{t('MODEL LEADERBOARDS')}</p>
               <h2>{t('The first published model will appear here')}</h2>
               <p>
                 {t(
@@ -193,39 +149,39 @@ export function Home() {
         >
           <div className='hub-shell'>
             <div className='hub-rules-heading'>
-              <p className='hub-section-kicker'>HOW TO READ</p>
+              <p className='hub-section-kicker'>{t('HOW TO READ')}</p>
               <h2 id='ranking-rules-title'>{t('How to read the rankings')}</h2>
               <p>
                 {t(
-                  'A comprehensive score combines availability, first-token speed, and evidence coverage; endpoints without TTFT use availability and confidence.'
+                  'Each model is ranked independently. Start with the seven-day trend and availability, then compare first-token median and sample coverage. Different endpoint types use metrics suited to their response patterns.'
                 )}
               </p>
             </div>
             <div className='hub-rule-list'>
               <article>
                 <span>01</span>
-                <h3>{t('Compare the exact model')}</h3>
+                <h3>{t('Read the seven-day trend')}</h3>
                 <p>
                   {t(
-                    'Each model is ranked independently instead of averaging an entire provider.'
+                    'The blocks run from oldest to newest: green means successful probes, red means failures, and gray means no data.'
                   )}
                 </p>
               </article>
               <article>
                 <span>02</span>
-                <h3>{t('Comprehensive score')}</h3>
+                <h3>{t('Multidimensional quality assessment')}</h3>
                 <p>
                   {t(
-                    'Availability contributes 80%, TTFT P50 10%, TTFT P95 5%, and sample confidence 5%.'
+                    'The system evaluates recent availability, first-token response, tail latency, and sample confidence, with adjustments for insufficient data or sustained anomalies.'
                   )}
                 </p>
               </article>
               <article>
                 <span>03</span>
-                <h3>{t('Balance pauses lose rank gradually')}</h3>
+                <h3>{t('How to read first-token time')}</h3>
                 <p>
                   {t(
-                    'Insufficient-quota probes do not reduce availability; a continuous pause ramps to a 10% penalty over seven days.'
+                    'First-token time (TTFT) runs from request start to the first valid output; lower is better. P50 means half of requests are faster, while P95 reveals occasional slow responses.'
                   )}
                 </p>
               </article>
@@ -239,21 +195,49 @@ export function Home() {
           aria-labelledby='provider-onboarding-title'
         >
           <div className='hub-shell'>
-            <div>
-              <p className='hub-section-kicker'>FOR PROVIDERS</p>
+            <div className='hub-provider-cta-heading'>
+              <p className='hub-section-kicker'>{t('OPEN YOUR STORE')}</p>
               <h2 id='provider-onboarding-title'>
-                {t('Put your real service quality on the board')}
+                {t('Turn your relay or API channel into a business')}
               </h2>
               <p>
                 {t(
-                  'Create a provider profile, connect supply channels, test models, and publish only the models you want to sell.'
+                  'Already run a relay? Connect it to reach more users. Only have a reliable API channel? Open your store here without building a relay website or account pool.'
                 )}
               </p>
             </div>
-            <a href='/provider/onboarding'>
-              {t('Become a channel provider')}
-              <ArrowRight aria-hidden='true' />
-            </a>
+
+            <div className='hub-provider-cta-path'>
+              <ol>
+                <li>
+                  <span>01</span>
+                  <strong>{t('Create your store')}</strong>
+                  <small>
+                    {t('Set up your provider profile and public homepage.')}
+                  </small>
+                </li>
+                <li>
+                  <span>02</span>
+                  <strong>{t('Connect your relay or channel')}</strong>
+                  <small>
+                    {t(
+                      'Bring an existing relay service or supply a reliable API channel directly.'
+                    )}
+                  </small>
+                </li>
+                <li>
+                  <span>03</span>
+                  <strong>{t('Publish and earn')}</strong>
+                  <small>
+                    {t('Pass testing, serve users, and earn from real usage.')}
+                  </small>
+                </li>
+              </ol>
+              <a href='/provider/onboarding'>
+                {t('Open your store for free')}
+                <ArrowRight aria-hidden='true' />
+              </a>
+            </div>
           </div>
         </section>
       </main>
@@ -261,13 +245,13 @@ export function Home() {
       <footer className='hub-footer'>
         <div className='hub-shell'>
           <div>
-            <strong>LLMHub</strong>
+            <strong>{brandName}</strong>
             <span>{t('AI relay reliability rankings')}</span>
           </div>
           <nav aria-label={t('Footer navigation')}>
             <a href='#model-rankings'>{t('Model rankings')}</a>
             <a href='#ranking-rules'>{t('Ranking rules')}</a>
-            <a href='#provider-onboarding'>{t('Provider onboarding')}</a>
+            <a href='#provider-onboarding'>{t('Become a channel provider')}</a>
           </nav>
           <small>
             {t(

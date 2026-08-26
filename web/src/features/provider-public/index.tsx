@@ -53,9 +53,16 @@ import type { ProviderPublicProfile } from './types'
 
 import './provider-public.css'
 
+const providerPublicHeaderProps = {
+  authButtonClassName: 'hub-provider-public-auth-button',
+}
+
 function ProviderPublicSkeleton() {
   return (
-    <PublicLayout showMainContainer={false}>
+    <PublicLayout
+      showMainContainer={false}
+      headerProps={providerPublicHeaderProps}
+    >
       <div className='mx-auto max-w-6xl px-4 pt-20 pb-16 md:px-6'>
         <Skeleton className='h-56 w-full rounded-2xl' />
         <div className='mt-8 grid gap-4 sm:grid-cols-4'>
@@ -223,7 +230,7 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
 
   if (query.isError || !query.data?.data) {
     return (
-      <PublicLayout>
+      <PublicLayout headerProps={providerPublicHeaderProps}>
         <div className='mx-auto max-w-2xl py-16'>
           <ErrorState
             title={t('Provider homepage unavailable')}
@@ -255,7 +262,10 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
+    <PublicLayout
+      showMainContainer={false}
+      headerProps={providerPublicHeaderProps}
+    >
       <main className='llmhub-provider-page'>
         <section className='hub-provider-hero'>
           <div className='hub-provider-shell hub-provider-hero-inner'>
@@ -302,7 +312,7 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
                       {provider.support_value}
                     </span>
                   )}
-                  <a href='/#model-rankings'>
+                  <a href='#provider-models'>
                     <Network aria-hidden='true' />
                     {t('View model rankings')}
                   </a>
@@ -416,6 +426,7 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
         )}
 
         <section
+          id='provider-models'
           className='hub-provider-models'
           aria-labelledby='provider-models-title'
         >

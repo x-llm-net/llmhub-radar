@@ -59,6 +59,7 @@ export interface PublicHeaderProps {
   showAuthButtons?: boolean
   showNotifications?: boolean
   className?: string
+  authButtonClassName?: string
 }
 
 export function PublicHeader(props: PublicHeaderProps) {
@@ -71,6 +72,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     homeUrl = '/',
     showAuthButtons = true,
     showNotifications = true,
+    authButtonClassName,
   } = props
 
   const { t } = useTranslation()
@@ -276,7 +278,10 @@ export function PublicHeader(props: PublicHeaderProps) {
                   ) : (
                     <Button
                       size='sm'
-                      className='h-8 rounded-lg px-3.5 text-xs font-medium'
+                      className={cn(
+                        'h-8 rounded-lg px-3.5 text-xs font-medium',
+                        authButtonClassName
+                      )}
                       render={<Link to='/sign-in' />}
                     >
                       {t('Sign in')}

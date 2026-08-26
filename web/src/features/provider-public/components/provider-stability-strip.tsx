@@ -57,6 +57,19 @@ function bucketLabel(
   }
 }
 
+function bucketStatusClass(status: ProviderPublicBucket['status']): string {
+  switch (status) {
+    case 'available':
+      return 'text-emerald-700 dark:text-emerald-300 [&>i]:bg-emerald-500 dark:[&>i]:bg-emerald-400'
+    case 'degraded':
+      return 'text-amber-700 dark:text-amber-300 [&>i]:bg-amber-400 dark:[&>i]:bg-amber-300'
+    case 'error':
+      return 'text-rose-700 dark:text-rose-300 [&>i]:bg-rose-500 dark:[&>i]:bg-rose-400'
+    default:
+      return 'text-muted-foreground [&>i]:bg-muted-foreground/50'
+  }
+}
+
 function formatBucketStartedAt(timestamp: number): string {
   if (timestamp <= 0) return ''
   return new Date(timestamp * 1000).toLocaleString()
@@ -94,18 +107,46 @@ export function ProviderStabilityStrip(props: {
                     />
                   }
                 />
-                <TooltipContent className='font-mono text-xs'>
-                  <div>{formatBucketStartedAt(bucket.started_at)}</div>
-                  <div className='font-sans font-medium'>
-                    {bucketLabel(bucket.status, t)}
-                  </div>
-                  <div>
-                    {rate === null
-                      ? t('No probe data')
-                      : t('{{rate}}% success', { rate: rate.toFixed(1) })}
-                  </div>
-                  <div>
-                    {t('{{count}} probes', { count: bucket.sample_count })}
+                <TooltipContent
+                  sideOffset={8}
+                  className='border-border bg-popover! text-popover-foreground! [&_[data-slot=tooltip-arrow]]:bg-popover! [&_[data-slot=tooltip-arrow]]:fill-popover! overflow-hidden rounded-md border p-0 shadow-xl'
+                >
+                  <div className='w-56 max-w-[calc(100vw-24px)]'>
+                    <div className='border-border/70 flex items-center justify-between gap-3 border-b px-3 py-2'>
+                      <time className='text-muted-foreground font-mono text-[11px] whitespace-nowrap'>
+                        {formatBucketStartedAt(bucket.started_at)}
+                      </time>
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1.5 font-sans text-xs font-medium whitespace-nowrap',
+                          bucketStatusClass(bucket.status)
+                        )}
+                      >
+                        <i
+                          className='size-1.5 rounded-full'
+                          aria-hidden='true'
+                        />
+                        {bucketLabel(bucket.status, t)}
+                      </span>
+                    </div>
+                    <div className='grid grid-cols-2 gap-4 px-3 py-2.5'>
+                      <div>
+                        <span className='text-muted-foreground block font-sans text-[10px]'>
+                          {t('Success rate')}
+                        </span>
+                        <strong className='mt-0.5 block font-mono text-sm font-semibold'>
+                          {rate === null ? '--' : `${rate.toFixed(1)}%`}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className='text-muted-foreground block font-sans text-[10px]'>
+                          {t('Probe count')}
+                        </span>
+                        <strong className='mt-0.5 block font-mono text-sm font-semibold'>
+                          {bucket.sample_count}
+                        </strong>
+                      </div>
+                    </div>
                   </div>
                 </TooltipContent>
               </Tooltip>

@@ -16,6 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+.hub-provider-public-auth-button {
+  color: var(--background) !important;
+  border-color: var(--foreground) !important;
+  background: var(--foreground) !important;
+}
+
+.hub-provider-public-auth-button:hover,
+.hub-provider-public-auth-button:focus-visible {
+  color: #ffffff !important;
+  border-color: #047857 !important;
+  background: #047857 !important;
+}
+
+.dark .hub-provider-public-auth-button:hover,
+.dark .hub-provider-public-auth-button:focus-visible {
+  color: #09100d !important;
+  border-color: #6ee7b7 !important;
+  background: #6ee7b7 !important;
+}
+
 .llmhub-provider-page {
   --provider-ink: #111827;
   --provider-copy: #475569;
@@ -26,6 +46,26 @@ For commercial licensing, please contact support@quantumnous.com
   --provider-canvas: #f6f8f7;
   --provider-green: #059669;
   --provider-green-deep: #047857;
+  --provider-accent-foreground: #ffffff;
+  --provider-accent-line: color-mix(
+    in oklch,
+    var(--provider-green) 32%,
+    var(--provider-line)
+  );
+  --provider-accent-soft: color-mix(
+    in oklch,
+    var(--provider-green) 8%,
+    var(--provider-paper)
+  );
+  --provider-success: #047857;
+  --provider-success-line: #a7dfc8;
+  --provider-success-soft: #f1faf6;
+  --provider-warning: #a16207;
+  --provider-warning-line: #f5d69a;
+  --provider-warning-soft: #fffbeb;
+  --provider-danger: #b91c1c;
+  --provider-danger-line: #fecaca;
+  --provider-danger-soft: #fff7f7;
   min-height: 100svh;
   color: var(--provider-ink);
   background: var(--provider-paper);
@@ -33,6 +73,52 @@ For commercial licensing, please contact support@quantumnous.com
     Inter, 'Public Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 15px;
   line-height: 1.55;
+}
+
+.dark .llmhub-provider-page {
+  --provider-ink: #eef6f2;
+  --provider-copy: #aebdb6;
+  --provider-muted: #82938b;
+  --provider-line: #27342f;
+  --provider-line-strong: #394841;
+  --provider-paper: #0a100e;
+  --provider-canvas: #0e1613;
+  --provider-green: #34d399;
+  --provider-green-deep: #6ee7b7;
+  --provider-accent-foreground: #09100d;
+  --provider-success: #6ee7b7;
+  --provider-success-line: color-mix(
+    in oklch,
+    var(--provider-success) 34%,
+    var(--provider-line)
+  );
+  --provider-success-soft: color-mix(
+    in oklch,
+    var(--provider-success) 10%,
+    var(--provider-paper)
+  );
+  --provider-warning: #fbbf24;
+  --provider-warning-line: color-mix(
+    in oklch,
+    var(--provider-warning) 34%,
+    var(--provider-line)
+  );
+  --provider-warning-soft: color-mix(
+    in oklch,
+    var(--provider-warning) 10%,
+    var(--provider-paper)
+  );
+  --provider-danger: #fb7185;
+  --provider-danger-line: color-mix(
+    in oklch,
+    var(--provider-danger) 34%,
+    var(--provider-line)
+  );
+  --provider-danger-soft: color-mix(
+    in oklch,
+    var(--provider-danger) 10%,
+    var(--provider-paper)
+  );
 }
 
 .llmhub-provider-page * {
@@ -79,9 +165,9 @@ For commercial licensing, please contact support@quantumnous.com
   place-items: center;
   overflow: hidden;
   color: var(--provider-green-deep);
-  border: 1px solid #bfe1d2;
+  border: 1px solid var(--provider-accent-line);
   border-radius: 14px;
-  background: #eaf7f1;
+  background: var(--provider-accent-soft);
   font-size: 24px;
   font-weight: 850;
 }
@@ -176,7 +262,7 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .hub-provider-hero-actions a:first-child {
-  color: #fff;
+  color: var(--provider-accent-foreground);
   border-color: var(--provider-green);
   background: var(--provider-green);
 }
@@ -195,8 +281,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 .hub-provider-hero-actions a:last-child:hover,
 .hub-provider-hero-actions a:last-child:focus-visible {
-  border-color: #9acbb9;
-  background: #f1faf6;
+  border-color: var(--provider-accent-line);
+  background: var(--provider-accent-soft);
 }
 
 .hub-provider-hero-actions svg,
@@ -374,7 +460,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 .hub-provider-usage-step:hover {
   transform: translateY(-3px);
-  border-color: #9acbb9;
+  border-color: var(--provider-accent-line);
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.07);
 }
 
@@ -415,7 +501,7 @@ For commercial licensing, please contact support@quantumnous.com
   z-index: 30;
   min-height: 54px;
   border-bottom: 1px solid var(--provider-line);
-  background: rgba(255, 255, 255, 0.985);
+  background: color-mix(in srgb, var(--provider-paper) 98.5%, transparent);
   box-shadow: 0 5px 16px rgba(15, 23, 42, 0.05);
 }
 
@@ -480,12 +566,12 @@ For commercial licensing, please contact support@quantumnous.com
 .hub-provider-model-nav-links a.is-active {
   color: var(--provider-ink);
   border-color: var(--provider-line-strong);
-  background: #f5f8f6;
+  background: var(--provider-accent-soft);
 }
 
 .hub-provider-model-nav-links a.is-active {
-  border-color: #9acbb9;
-  background: #edf8f3;
+  border-color: var(--provider-accent-line);
+  background: var(--provider-accent-soft);
   box-shadow: inset 0 -2px 0 var(--provider-green-deep);
 }
 
@@ -501,6 +587,7 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .hub-provider-models {
+  scroll-margin-top: 132px;
   padding: 68px 0 76px;
   background: var(--provider-canvas);
 }
@@ -587,11 +674,11 @@ For commercial licensing, please contact support@quantumnous.com
 .hub-provider-view-switcher button:hover,
 .hub-provider-view-switcher button:focus-visible {
   color: var(--provider-ink);
-  background: #f1f5f3;
+  background: var(--provider-accent-soft);
 }
 
 .hub-provider-view-switcher button.is-active {
-  color: #fff;
+  color: var(--provider-paper);
   background: var(--provider-ink);
 }
 
@@ -631,7 +718,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 .hub-provider-model-compact-card:hover {
   transform: translateY(-2px);
-  border-color: #9acbb9;
+  border-color: var(--provider-accent-line);
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.065);
 }
 
@@ -708,21 +795,21 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .hub-provider-model-compact-status.is-online {
-  color: var(--provider-green-deep);
-  border-color: #a7dfc8;
-  background: #f1faf6;
+  color: var(--provider-success);
+  border-color: var(--provider-success-line);
+  background: var(--provider-success-soft);
 }
 
 .hub-provider-model-compact-status.is-partial {
-  color: #a16207;
-  border-color: #f5d69a;
-  background: #fffbeb;
+  color: var(--provider-warning);
+  border-color: var(--provider-warning-line);
+  background: var(--provider-warning-soft);
 }
 
 .hub-provider-model-compact-status.is-failing {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fff7f7;
+  color: var(--provider-danger);
+  border-color: var(--provider-danger-line);
+  background: var(--provider-danger-soft);
 }
 
 .hub-provider-model-compact-metrics {
@@ -840,7 +927,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 .hub-provider-model-card:hover {
   transform: translateY(-2px);
-  border-color: #9acbb9;
+  border-color: var(--provider-accent-line);
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.065);
 }
 
@@ -898,9 +985,9 @@ For commercial licensing, please contact support@quantumnous.com
 .hub-provider-model-timeline {
   margin-top: 20px;
   padding: 13px 14px 12px;
-  border: 1px solid #edf1f3;
+  border: 1px solid var(--provider-line);
   border-radius: 6px;
-  background: #fbfcfc;
+  background: var(--provider-canvas);
 }
 
 .hub-provider-model-timeline-label {

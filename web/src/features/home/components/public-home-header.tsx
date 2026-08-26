@@ -16,21 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ArrowUpRight, Menu, X } from 'lucide-react'
+import { ArrowUpRight, Menu, Moon, Store, Sun, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useTheme } from '@/context/theme-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
 const navigation = [
   { label: 'Homepage', href: '#top' },
   { label: 'Model rankings', href: '#model-rankings' },
   { label: 'Ranking rules', href: '#ranking-rules' },
-  { label: 'Provider onboarding', href: '#provider-onboarding' },
+  { label: 'Become a channel provider', href: '#provider-onboarding' },
 ]
 
 export function PublicHomeHeader() {
   const { t } = useTranslation()
+  const { resolvedTheme, setTheme } = useTheme()
   const { systemName, tenantBrand } = useSystemConfig()
   const [mobileOpen, setMobileOpen] = useState(false)
   const brandName = systemName || 'LLMHub'
@@ -60,21 +62,46 @@ export function PublicHomeHeader() {
         </a>
 
         <nav className='hub-desktop-nav' aria-label={t('Primary navigation')}>
-          {navigation.map((item, index) => (
-            <a
-              key={item.href}
-              className={index === 0 ? 'is-active' : undefined}
-              href={item.href}
-            >
-              {t(item.label)}
-            </a>
-          ))}
+          {navigation.map((item, index) => {
+            let className: string | undefined
+            if (item.href === '#provider-onboarding') {
+              className = 'is-provider-entry'
+            } else if (index === 0) {
+              className = 'is-active'
+            }
+
+            return (
+              <a key={item.href} className={className} href={item.href}>
+                {item.href === '#provider-onboarding' && (
+                  <Store aria-hidden='true' />
+                )}
+                {t(item.label)}
+              </a>
+            )
+          })}
         </nav>
 
-        <a className='hub-console-link' href='/dashboard/overview'>
-          {t('Open console')}
-          <ArrowUpRight aria-hidden='true' />
-        </a>
+        <div className='hub-header-actions'>
+          <button
+            className='hub-theme-toggle'
+            type='button'
+            aria-label={t('Toggle theme')}
+            title={t('Toggle theme')}
+            onClick={() =>
+              setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+            }
+          >
+            {resolvedTheme === 'dark' ? (
+              <Sun aria-hidden='true' />
+            ) : (
+              <Moon aria-hidden='true' />
+            )}
+          </button>
+          <a className='hub-console-link' href='/dashboard/overview'>
+            {t('Open console')}
+            <ArrowUpRight aria-hidden='true' />
+          </a>
+        </div>
 
         <button
           className='hub-mobile-menu-button'
@@ -96,6 +123,9 @@ export function PublicHomeHeader() {
               href={item.href}
               onClick={() => setMobileOpen(false)}
             >
+              {item.href === '#provider-onboarding' && (
+                <Store aria-hidden='true' />
+              )}
               {t(item.label)}
             </a>
           ))}

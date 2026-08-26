@@ -44,7 +44,7 @@ export function PublicHomeStabilityStrip(props: {
     <div
       className='hub-stability-strip'
       role='img'
-      aria-label={t('7-day stability timeline for {{model}}', {
+      aria-label={t('7-day availability timeline for {{model}}', {
         model: props.modelName,
       })}
     >

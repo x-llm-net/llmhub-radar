@@ -101,10 +101,10 @@ function ProviderRow(props: {
         {String(props.rank).padStart(2, '0')}
       </span>
       <a
-        className='hub-provider-identity'
+        className='hub-ranking-provider-identity'
         href={getProviderPublicURL(provider.provider.slug)}
       >
-        <span className='hub-provider-logo'>
+        <span className='hub-ranking-provider-logo'>
           <ProviderLogo provider={provider} />
         </span>
         <span>
@@ -134,7 +134,7 @@ function ProviderRow(props: {
         </div>
         <div className='hub-provider-metric'>
           <strong>{provider.min_price_multiplier.toFixed(2)}×</strong>
-          <small>{t('From multiplier')}</small>
+          <small>{t('Minimum multiplier')}</small>
         </div>
       </div>
       <ProviderStatus provider={provider} />
@@ -184,11 +184,11 @@ function ModelLeaderboard(props: {
       <div className='hub-provider-list-head' aria-hidden='true'>
         <span>#</span>
         <span>{t('Channel provider')}</span>
-        <span>{t('Recent 7 days')}</span>
+        <span>{t('7-day trend')}</span>
         <span className='hub-provider-list-metrics'>
-          <span>{t('Stability')}</span>
-          <span>{t('TTFT P50')}</span>
-          <span>{t('Price')}</span>
+          <span>{t('7-day availability')}</span>
+          <span>{t('First-token median')}</span>
+          <span>{t('Minimum multiplier')}</span>
         </span>
         <span>{t('Status')}</span>
         <span />
@@ -226,13 +226,13 @@ export function PublicHomeLeaderboards(props: {
       <div className='hub-shell'>
         <div className='hub-leaderboards-heading'>
           <div>
-            <p className='hub-section-kicker'>MODEL LEADERBOARDS</p>
+            <p className='hub-section-kicker'>{t('MODEL LEADERBOARDS')}</p>
             <h2 id='model-rankings-title'>
               {t('Reliability rankings by model')}
             </h2>
             <p>
               {t(
-                'Published providers are ranked from live probe results, not self-reported claims.'
+                'Higher ranks indicate better recent availability and response speed, based on live probe data rather than provider claims.'
               )}
             </p>
           </div>
