@@ -51,6 +51,13 @@ func TestValidateHubSupplySettingsNormalizesToRoutingPrecision(t *testing.T) {
 	assert.Equal(t, 5.556, req.PriceMultiplier)
 }
 
+func TestValidateHubSupplySettingsRequiresExplicitMultiplierOnCreate(t *testing.T) {
+	req := &hubSupplySettingsRequest{}
+	require.ErrorContains(t, validateHubSupplySettings(req, nil), "price multiplier")
+	assert.Equal(t, hubProviderChannelDefaultTextMinutes, req.TextProbeMinutes)
+	assert.Equal(t, hubProviderChannelDefaultImageMinutes, req.ImageProbeMinutes)
+}
+
 func TestHubSupplyChannelPricingFeedsBillingMultiplier(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)

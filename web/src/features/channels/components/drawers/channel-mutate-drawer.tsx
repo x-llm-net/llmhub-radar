@@ -282,6 +282,7 @@ const CHANNEL_EDITOR_MAIN_SECTION_IDS = [
   CHANNEL_EDITOR_SECTION_IDS.advanced,
 ]
 const ADVANCED_SETTINGS_SECTION_IDS = {
+  modelMapping: 'channel-section-advanced-model-mapping',
   routingStrategy: 'channel-section-advanced-routing-strategy',
   internalNotes: 'channel-section-advanced-internal-notes',
   overrideRules: 'channel-section-advanced-override-rules',
@@ -658,9 +659,9 @@ export function ChannelMutateDrawer({
   const [currentSupplySettings, setCurrentSupplySettings] =
     useState<ChannelSupplySettings>(
       supplySettings ?? {
-        price_multiplier: 1,
-        text_probe_minutes: 10,
-        image_probe_minutes: 30,
+        price_multiplier: Number.NaN,
+        text_probe_minutes: 20,
+        image_probe_minutes: 60,
       }
     )
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
@@ -757,9 +758,9 @@ export function ChannelMutateDrawer({
     if (!open || !isProviderMode) return
     setCurrentSupplySettings(
       supplySettings ?? {
-        price_multiplier: 1,
-        text_probe_minutes: 10,
-        image_probe_minutes: 30,
+        price_multiplier: Number.NaN,
+        text_probe_minutes: 20,
+        image_probe_minutes: 60,
       }
     )
   }, [channelId, isProviderMode, open, supplySettings])
@@ -1022,10 +1023,14 @@ export function ChannelMutateDrawer({
     formErrors.azure_responses_version
   )
   const modelsHaveErrors = Boolean(
-    formErrors.models || formErrors.group || formErrors.model_mapping
+    formErrors.models ||
+    formErrors.group ||
+    (!isProviderMode && formErrors.model_mapping)
   )
   const advancedHaveErrors =
-    hasAdvancedSettingsErrors(formErrors) || Boolean(formErrors.advanced_custom)
+    hasAdvancedSettingsErrors(formErrors) ||
+    Boolean(formErrors.advanced_custom) ||
+    Boolean(isProviderMode && formErrors.model_mapping)
   const providerRequiresBaseUrl = [3, 8, 36, 45].includes(currentType)
   const providerRequiresOther = [3, 18, 21, 39, 41, 49].includes(currentType)
   const identityComplete = Boolean(currentName?.trim() && currentType > 0)
@@ -1037,16 +1042,29 @@ export function ChannelMutateDrawer({
   const modelsComplete = Boolean(
     currentModelsArray.length > 0 && currentGroups?.length
   )
-  const requiredCompletedCount = [
+  const supplyComplete = Boolean(
+    Number.isFinite(currentSupplySettings.price_multiplier) &&
+    currentSupplySettings.price_multiplier >= 0.01 &&
+    currentSupplySettings.price_multiplier <= 100 &&
+    Number.isInteger(currentSupplySettings.text_probe_minutes) &&
+    Number.isInteger(currentSupplySettings.image_probe_minutes) &&
+    currentSupplySettings.text_probe_minutes >= 5 &&
+    currentSupplySettings.text_probe_minutes <= 1440 &&
+    currentSupplySettings.image_probe_minutes >= 5 &&
+    currentSupplySettings.image_probe_minutes <= 1440
+  )
+  const requiredSections = [
     identityComplete,
     credentialsComplete,
     modelsComplete,
-  ].filter(Boolean).length
+    ...(isProviderMode ? [supplyComplete] : []),
+  ]
+  const requiredCompletedCount = requiredSections.filter(Boolean).length
   const currentStatusLabel =
     CHANNEL_STATUS_LABELS[
       currentStatus as keyof typeof CHANNEL_STATUS_LABELS
     ] || 'Unknown'
-  const progressLabel = `${requiredCompletedCount}/3`
+  const progressLabel = `${requiredCompletedCount}/${requiredSections.length}`
   const identityStatus = getCompletionStatus(
     identityHasErrors,
     identityComplete
@@ -1056,6 +1074,7 @@ export function ChannelMutateDrawer({
     credentialsComplete
   )
   const modelsStatus = getCompletionStatus(modelsHaveErrors, modelsComplete)
+  const supplyStatus = getCompletionStatus(false, supplyComplete)
   const advancedStatus: ChannelEditorSectionStatus = advancedHaveErrors
     ? 'error'
     : 'idle'
@@ -1110,6 +1129,7 @@ export function ChannelMutateDrawer({
     currentUpstreamModelUpdateIgnoredModels?.trim()
   )
   const advancedConfigured = Boolean(
+    (isProviderMode && currentModelMapping?.trim()) ||
     routingStrategyConfigured ||
     internalNotesConfigured ||
     overrideRulesConfigured ||
@@ -1118,6 +1138,15 @@ export function ChannelMutateDrawer({
     upstreamModelDetectionConfigured
   )
   const advancedNavChildren: ChannelEditorNavChildItem[] = [
+    ...(isProviderMode
+      ? [
+          {
+            id: ADVANCED_SETTINGS_SECTION_IDS.modelMapping,
+            title: t('Model Mapping'),
+            configured: Boolean(currentModelMapping?.trim()),
+          },
+        ]
+      : []),
     {
       id: ADVANCED_SETTINGS_SECTION_IDS.routingStrategy,
       title: isProviderMode ? t('Test Settings') : t('Routing Strategy'),
@@ -1183,9 +1212,9 @@ export function ChannelMutateDrawer({
           {
             id: CHANNEL_EDITOR_SECTION_IDS.supply,
             title: t('Supply Settings'),
-            description: t('Configured'),
-            statusLabel: t('Configured'),
-            status: 'configured' as ChannelEditorSectionStatus,
+            description: getSectionStatusLabel(supplyStatus, t),
+            statusLabel: getSectionStatusLabel(supplyStatus, t),
+            status: supplyStatus,
             icon: <SlidersHorizontal className='h-4 w-4' aria-hidden='true' />,
           },
         ]
@@ -2221,7 +2250,7 @@ export function ChannelMutateDrawer({
                           />
                         )}
 
-                        {currentType === 1 && (
+                        {currentType === 1 && !isProviderMode && (
                           <fieldset
                             disabled={sensitiveLocked}
                             className='disabled:opacity-60'
@@ -3420,11 +3449,33 @@ export function ChannelMutateDrawer({
                                         {t(FIELD_DESCRIPTIONS.MODELS)}
                                       </FormDescription>
                                     </div>
-                                    <Badge variant='outline' className='w-fit'>
-                                      {t('Selected {{count}}', {
-                                        count: currentModelsArray.length,
-                                      })}
-                                    </Badge>
+                                    <div className='flex flex-wrap items-center gap-2'>
+                                      <Badge
+                                        variant='outline'
+                                        className='w-fit'
+                                      >
+                                        {t('Selected {{count}}', {
+                                          count: currentModelsArray.length,
+                                        })}
+                                      </Badge>
+                                      {isProviderMode &&
+                                        MODEL_FETCHABLE_TYPES.has(
+                                          currentType
+                                        ) && (
+                                          <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={handleFetchModels}
+                                          >
+                                            <Sparkles
+                                              className='mr-2 h-4 w-4'
+                                              aria-hidden='true'
+                                            />
+                                            {t('Fetch from Upstream')}
+                                          </Button>
+                                        )}
+                                    </div>
                                   </div>
                                   <FormControl>
                                     <MultiSelect
@@ -3479,9 +3530,16 @@ export function ChannelMutateDrawer({
                               )}
                             />
 
-                            <Separator className='my-4' />
+                            <Separator
+                              className={cn('my-4', isProviderMode && 'hidden')}
+                            />
 
-                            <div className='space-y-3'>
+                            <div
+                              className={cn(
+                                'space-y-3',
+                                isProviderMode && 'hidden'
+                              )}
+                            >
                               <div>
                                 <p className='text-sm font-medium'>
                                   {t('Quick actions')}
@@ -3593,7 +3651,12 @@ export function ChannelMutateDrawer({
                             </div>
                           </div>
 
-                          <div className='border-border/60 rounded-lg border p-4'>
+                          <div
+                            className={cn(
+                              'border-border/60 rounded-lg border p-4',
+                              isProviderMode && 'hidden'
+                            )}
+                          >
                             <FormField
                               control={form.control}
                               name='model_mapping'
@@ -3783,7 +3846,7 @@ export function ChannelMutateDrawer({
                           <div className='grid gap-4 sm:grid-cols-3'>
                             <div className='grid gap-2'>
                               <FormLabel htmlFor='supply-price-multiplier'>
-                                {t('Price Multiplier')}
+                                {t('Price Multiplier')} *
                               </FormLabel>
                               <Input
                                 id='supply-price-multiplier'
@@ -3791,13 +3854,21 @@ export function ChannelMutateDrawer({
                                 min='0.01'
                                 max='100'
                                 step='0.01'
-                                value={currentSupplySettings.price_multiplier}
+                                required
+                                value={
+                                  Number.isFinite(
+                                    currentSupplySettings.price_multiplier
+                                  )
+                                    ? currentSupplySettings.price_multiplier
+                                    : ''
+                                }
                                 onChange={(event) =>
                                   setCurrentSupplySettings((current) => ({
                                     ...current,
-                                    price_multiplier: Number(
-                                      event.target.value
-                                    ),
+                                    price_multiplier:
+                                      event.target.value === ''
+                                        ? Number.NaN
+                                        : Number(event.target.value),
                                   }))
                                 }
                               />
@@ -3860,6 +3931,91 @@ export function ChannelMutateDrawer({
                         onOpenChange={handleAdvancedSettingsOpenChange}
                         summary={advancedSummary}
                       >
+                        {isProviderMode && (
+                          <div
+                            id={ADVANCED_SETTINGS_SECTION_IDS.modelMapping}
+                            className={configuredAdvancedSectionClassName(
+                              'scroll-mt-4',
+                              Boolean(currentModelMapping?.trim())
+                            )}
+                          >
+                            <CardHeading
+                              title={t('Model Mapping')}
+                              icon={<ArrowRight className='h-4 w-4' />}
+                              iconTone='info'
+                            />
+                            <div className='mt-4'>
+                              <FormField
+                                control={form.control}
+                                name='model_mapping'
+                                render={({ field }) => (
+                                  <FormItem className='space-y-3'>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.MODEL_MAPPING)}
+                                    </FormDescription>
+                                    <FormControl>
+                                      <ModelMappingEditor
+                                        value={field.value || ''}
+                                        onChange={field.onChange}
+                                        disabled={isSubmitting}
+                                        sourceModelOptions={currentModelsArray}
+                                        targetModelOptions={modelOptions.map(
+                                          (option) => option.value
+                                        )}
+                                      />
+                                    </FormControl>
+                                    {modelMappingGuardrail.invalidJson && (
+                                      <Alert variant='destructive'>
+                                        <AlertDescription>
+                                          {t(
+                                            'Model Mapping must be a JSON object like'
+                                          )}{' '}
+                                          <code className='font-mono'>
+                                            {'{"gpt-4":"Azure-GPT4"}'}
+                                          </code>
+                                          {t(
+                                            '. Please fix the JSON before saving.'
+                                          )}
+                                        </AlertDescription>
+                                      </Alert>
+                                    )}
+                                    {modelMappingGuardrail.missingSourceModels
+                                      .length > 0 && (
+                                      <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                        <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                                          <span>
+                                            {t('Add')}{' '}
+                                            {formatModelNames(
+                                              modelMappingGuardrail.missingSourceModels
+                                            )}{' '}
+                                            {t(
+                                              'to the Models list so users can use them before the mapping sends traffic upstream.'
+                                            )}
+                                          </span>
+                                          <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={() => {
+                                              updateModels([
+                                                ...currentModelsArray,
+                                                ...modelMappingGuardrail.missingSourceModels,
+                                              ])
+                                            }}
+                                          >
+                                            {t('Add missing models')}
+                                          </Button>
+                                        </AlertDescription>
+                                      </Alert>
+                                    )}
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          </div>
+                        )}
+
                         {/* ── Routing & Overrides ── */}
                         <div className={sideDrawerSectionClassName()}>
                           <CardHeading

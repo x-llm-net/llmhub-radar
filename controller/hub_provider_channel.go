@@ -79,21 +79,18 @@ func validateHubSupplySettings(req *hubSupplySettingsRequest, existing *model.Hu
 	if req == nil {
 		return fmt.Errorf("supply settings are required")
 	}
-	if req.PriceMultiplier == 0 && existing == nil {
-		req.PriceMultiplier = 1
-	}
 	if req.TextProbeMinutes == 0 {
 		if existing != nil && existing.TextProbeMinutes > 0 {
 			req.TextProbeMinutes = existing.TextProbeMinutes
 		} else {
-			req.TextProbeMinutes = model.HubSupplyGroupDefaultTextProbeMinutes
+			req.TextProbeMinutes = hubProviderChannelDefaultTextMinutes
 		}
 	}
 	if req.ImageProbeMinutes == 0 {
 		if existing != nil && existing.ImageProbeMinutes > 0 {
 			req.ImageProbeMinutes = existing.ImageProbeMinutes
 		} else {
-			req.ImageProbeMinutes = model.HubSupplyGroupDefaultImageProbeMinutes
+			req.ImageProbeMinutes = hubProviderChannelDefaultImageMinutes
 		}
 	}
 	if math.IsNaN(req.PriceMultiplier) || math.IsInf(req.PriceMultiplier, 0) || req.PriceMultiplier < 0.01 || req.PriceMultiplier > 100 {

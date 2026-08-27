@@ -370,7 +370,7 @@ export const hubSupplySettingsSchema = z.object({
 export type HubSupplySettings = z.infer<typeof hubSupplySettingsSchema>
 
 export const DEFAULT_HUB_SUPPLY_SETTINGS: HubSupplySettings = {
-  price_multiplier: 1,
-  text_probe_minutes: 10,
-  image_probe_minutes: 30,
+  price_multiplier: Number.NaN,
+  text_probe_minutes: 20,
+  image_probe_minutes: 60,
 }

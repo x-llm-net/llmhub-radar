@@ -33,6 +33,8 @@ import (
 const (
 	hubProviderChannelProbeMinutesMin     = 5
 	hubProviderChannelProbeMinutesMax     = 1440
+	hubProviderChannelDefaultTextMinutes  = 20
+	hubProviderChannelDefaultImageMinutes = 60
 	hubProviderChannelPublicationBatchMax = 10000
 )
 
