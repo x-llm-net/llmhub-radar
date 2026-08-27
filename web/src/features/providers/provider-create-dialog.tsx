@@ -23,6 +23,11 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
 import {
   Popover,
@@ -40,6 +45,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { TenantAdminTenant } from '@/features/tenant-admin/types'
+import { getCurrentProviderRootDomain } from '@/lib/provider-domain'
 import { cn } from '@/lib/utils'
 
 import {
@@ -91,6 +97,19 @@ function slugFromName(value: string) {
 
 function candidateLabel(candidate: HubProviderOwnerCandidate) {
   return candidate.display_name || candidate.username
+}
+
+function tenantPrimaryDomain(tenant?: TenantAdminTenant): string {
+  const activeDomains =
+    tenant?.domains.filter(
+      (domain) =>
+        domain.status === 'active' && domain.verification_status === 'verified'
+    ) ?? []
+  return (
+    activeDomains.find((domain) => domain.is_primary)?.host ??
+    activeDomains[0]?.host ??
+    ''
+  )
 }
 
 function OwnerPicker(props: {
@@ -210,6 +229,11 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
   const [slugDirty, setSlugDirty] = useState(false)
   const [owner, setOwner] = useState<HubProviderOwnerCandidate | null>(null)
   const [tenantId, setTenantId] = useState('')
+  const selectedTenant = props.tenants.find(
+    (tenant) => String(tenant.id) === tenantId
+  )
+  const providerRootDomain =
+    tenantPrimaryDomain(selectedTenant) || getCurrentProviderRootDomain()
   const contactTypeOptions = [
     { value: 'qq', label: 'QQ' },
     { value: 'wechat', label: t('WeChat') },
@@ -401,18 +425,24 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
             <Label htmlFor='admin-provider-slug'>
               {t('Provider subdomain')}
             </Label>
-            <Input
-              id='admin-provider-slug'
-              value={form.slug}
-              onChange={(event) => {
-                setSlugDirty(true)
-                setField('slug', event.target.value)
-              }}
-              placeholder='your-name'
-              autoCapitalize='none'
-              autoCorrect='off'
-              spellCheck={false}
-            />
+            <InputGroup>
+              <InputGroupInput
+                id='admin-provider-slug'
+                value={form.slug}
+                onChange={(event) => {
+                  setSlugDirty(true)
+                  setField('slug', event.target.value)
+                }}
+                placeholder='your-name'
+                autoCapitalize='none'
+                autoCorrect='off'
+                spellCheck={false}
+              />
+              <InputGroupAddon align='inline-end'>
+                {form.use_provisional_slug ? '-xxxx.' : '.'}
+                {providerRootDomain}
+              </InputGroupAddon>
+            </InputGroup>
             <p className='text-muted-foreground text-xs'>
               {form.use_provisional_slug
                 ? t(

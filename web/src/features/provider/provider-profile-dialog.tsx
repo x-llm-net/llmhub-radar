@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { getProviderRootDomain } from '@/lib/provider-domain'
+import { getCurrentProviderRootDomain } from '@/lib/provider-domain'
 import { useProviderLogoURL } from '@/lib/provider-logo'
 
 import { updateProvider } from './api'
@@ -366,7 +366,7 @@ export function ProviderProfileDialog(props: ProviderProfileDialogProps) {
                 {...form.register('slug')}
               />
               <InputGroupAddon align='inline-end'>
-                .{getProviderRootDomain()}
+                .{getCurrentProviderRootDomain()}
               </InputGroupAddon>
             </InputGroup>
             <p className='text-muted-foreground text-xs'>

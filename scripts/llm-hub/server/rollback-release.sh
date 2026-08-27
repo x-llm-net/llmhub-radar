@@ -28,6 +28,7 @@ if [ "$current_image" = "$old_image" ]; then
   exit 0
 fi
 test "$current_image" = "$deployed_image"
+"$script_dir/assert-provider-slug-rollback-compatible.sh" "$old_image"
 
 cd "$compose_dir"
 cp -p "$backup_dir/.env" .env

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,6 +50,11 @@ func TestResolveHubProviderHostReturnsDisabledProviderForMiddlewareDecision(t *t
 }
 
 func TestResolveHubProviderHostScopesDuplicateSlugByTenantDomain(t *testing.T) {
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+	})
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Tenant{}, &TenantDomain{}, &HubProvider{}))
 	tenantA := Tenant{Name: "Tenant A", Slug: "tenant-a", Status: TenantStatusActive}
@@ -63,6 +69,7 @@ func TestResolveHubProviderHostScopesDuplicateSlugByTenantDomain(t *testing.T) {
 	providerB := &HubProvider{OwnerUserId: 95002, TenantId: &tenantB.Id, Name: "Provider B", Slug: "shared"}
 	require.NoError(t, CreateHubProvider(providerA))
 	require.NoError(t, CreateHubProvider(providerB))
+	InitChannelCache()
 
 	resolution, err := ResolveHubProviderHost("shared.routing-a.example")
 	require.NoError(t, err)

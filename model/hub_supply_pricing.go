@@ -61,6 +61,7 @@ var (
 	hubProviderRoutingBySlug  = map[hubProviderRoutingKey]HubProviderRoutingInfo{}
 	hubProviderRoutingUnique  = map[string]HubProviderRoutingInfo{}
 	hubProviderRoutingByID    = map[int]HubProviderRoutingInfo{}
+	hubTenantRoutingByHost    = map[string]TenantHostResolution{}
 )
 
 type hubSupplyPricingCacheData struct {
@@ -69,6 +70,7 @@ type hubSupplyPricingCacheData struct {
 	providerBySlug   map[hubProviderRoutingKey]HubProviderRoutingInfo
 	providerUnique   map[string]HubProviderRoutingInfo
 	providerByID     map[int]HubProviderRoutingInfo
+	tenantByHost     map[string]TenantHostResolution
 }
 
 func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
@@ -77,13 +79,28 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	providerBySlug := make(map[hubProviderRoutingKey]HubProviderRoutingInfo)
 	providerUnique := make(map[string]HubProviderRoutingInfo)
 	providerByID := make(map[int]HubProviderRoutingInfo)
-	if DB == nil || !DB.Migrator().HasTable(&HubProvider{}) {
+	tenantByHost, err := loadTenantHostRoutingCache()
+	if err != nil {
+		return nil, err
+	}
+	if DB == nil {
 		return &hubSupplyPricingCacheData{
 			pricingByChannel: pricingByChannel,
 			configuredIDs:    configuredIDs,
 			providerBySlug:   providerBySlug,
 			providerUnique:   providerUnique,
 			providerByID:     providerByID,
+			tenantByHost:     tenantByHost,
+		}, nil
+	}
+	if !DB.Migrator().HasTable(&HubProvider{}) {
+		return &hubSupplyPricingCacheData{
+			pricingByChannel: pricingByChannel,
+			configuredIDs:    configuredIDs,
+			providerBySlug:   providerBySlug,
+			providerUnique:   providerUnique,
+			providerByID:     providerByID,
+			tenantByHost:     tenantByHost,
 		}, nil
 	}
 
@@ -114,6 +131,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 			providerBySlug:   providerBySlug,
 			providerUnique:   providerUnique,
 			providerByID:     providerByID,
+			tenantByHost:     tenantByHost,
 		}, nil
 	}
 
@@ -158,6 +176,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		providerBySlug:   providerBySlug,
 		providerUnique:   providerUnique,
 		providerByID:     providerByID,
+		tenantByHost:     tenantByHost,
 	}, nil
 }
 
@@ -201,13 +220,29 @@ func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
 	// the old pricing snapshot or the new one, never a partially rebuilt map.
 	channelSyncLock.Lock()
 	hubSupplyPricingMu.Lock()
+	publishHubSupplyPricingCacheLocked(data)
+	hubSupplyPricingMu.Unlock()
+	channelSyncLock.Unlock()
+}
+
+// publishHubSupplyPricingCacheLocked publishes one complete routing generation.
+// The caller must hold hubSupplyPricingMu. When both locks are needed, acquire
+// channelSyncLock before hubSupplyPricingMu to match the channel refresh path.
+func publishHubSupplyPricingCacheLocked(data *hubSupplyPricingCacheData) {
 	hubSupplyPricingByChannel = data.pricingByChannel
 	hubSupplyConfiguredIDs = data.configuredIDs
 	hubProviderRoutingBySlug = data.providerBySlug
 	hubProviderRoutingUnique = data.providerUnique
 	hubProviderRoutingByID = data.providerByID
-	hubSupplyPricingMu.Unlock()
-	channelSyncLock.Unlock()
+	hubTenantRoutingByHost = data.tenantByHost
+}
+
+func getCachedTenantProviderRouting(hostname, slug string) (TenantHostResolution, HubProviderRoutingInfo, bool, bool) {
+	hubSupplyPricingMu.RLock()
+	tenantHost, configured := hubTenantRoutingByHost[hostname]
+	provider, providerFound := hubProviderRoutingBySlug[hubProviderRoutingKey{TenantID: tenantHost.TenantID, Slug: slug}]
+	hubSupplyPricingMu.RUnlock()
+	return tenantHost, provider, configured, providerFound
 }
 
 func RefreshHubSupplyPricingCache() error {

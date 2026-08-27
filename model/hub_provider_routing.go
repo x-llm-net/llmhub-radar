@@ -5,6 +5,8 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 const defaultHubProviderRootDomain = "llm-hub.store"
@@ -18,9 +20,17 @@ type HubProviderHostResolution struct {
 }
 
 func HubProviderRootDomain() string {
+	root := configuredHubProviderRootDomain()
+	normalized, err := NormalizeTenantRootDomain(root)
+	if err != nil {
+		return defaultHubProviderRootDomain
+	}
+	return normalized
+}
+
+func configuredHubProviderRootDomain() string {
 	root := strings.ToLower(strings.TrimSpace(os.Getenv("HUB_PROVIDER_ROOT_DOMAIN")))
-	root = strings.TrimSuffix(root, ".")
-	if root == "" || strings.ContainsAny(root, "/:\\") || net.ParseIP(root) != nil {
+	if root == "" {
 		return defaultHubProviderRootDomain
 	}
 	return root
@@ -55,15 +65,24 @@ func ResolveHubProviderHost(host string) (HubProviderHostResolution, error) {
 		if !ok || slug == "" || hostname == "" {
 			return HubProviderHostResolution{}, nil
 		}
-		tenantHost, configured, lookupErr := resolveExactTenantHostname(hostname)
-		if lookupErr != nil {
-			return HubProviderHostResolution{}, lookupErr
+		var tenantHost TenantHostResolution
+		var configured bool
+		if common.MemoryCacheEnabled {
+			tenantHost, provider, configured, ok = getCachedTenantProviderRouting(hostname, slug)
+		} else {
+			var lookupErr error
+			tenantHost, configured, lookupErr = resolveExactTenantHostname(hostname)
+			if lookupErr != nil {
+				return HubProviderHostResolution{}, lookupErr
+			}
 		}
 		if configured {
 			if !tenantHost.IsTenantHost {
 				return HubProviderHostResolution{}, ErrHubProviderHostNotFound
 			}
-			provider, ok = GetHubProviderRoutingByTenantAndSlug(tenantHost.TenantID, slug)
+			if !common.MemoryCacheEnabled {
+				provider, ok = GetHubProviderRoutingByTenantAndSlug(tenantHost.TenantID, slug)
+			}
 		} else if hostname == HubProviderRootDomain() {
 			// Compatibility for pre-tenant installations and local test data.
 			// Duplicate slugs are intentionally treated as ambiguous.

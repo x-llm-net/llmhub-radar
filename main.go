@@ -81,6 +81,10 @@ func main() {
 		common.FatalLog("failed to refresh hub supply abilities: " + err.Error())
 		return
 	}
+	if err := model.ValidateTenantRoutingConfiguration(); err != nil {
+		common.FatalLog("invalid tenant routing configuration: " + err.Error())
+		return
+	}
 
 	if common.RedisEnabled {
 		// for compatibility with old versions

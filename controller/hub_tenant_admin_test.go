@@ -56,7 +56,7 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	tenantID := createResponse.Data.Id
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/domains", map[string]any{
-		"host":       "  Test.Tenant.Example.com:443  ",
+		"host":       "  Test-Tenant.com.  ",
 		"trusted":    true,
 		"is_primary": true,
 	}, 1)
@@ -68,7 +68,7 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &domainResponse))
 	require.True(t, domainResponse.Success, recorder.Body.String())
-	assert.Equal(t, "test.tenant.example.com", domainResponse.Data.Host)
+	assert.Equal(t, "test-tenant.com", domainResponse.Data.Host)
 	assert.Equal(t, model.TenantDomainVerificationVerified, domainResponse.Data.VerificationStatus)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/members", map[string]any{
@@ -155,13 +155,18 @@ func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 }
 
 func TestAdminTenantDomainCanBeUntrustedAndTrusted(t *testing.T) {
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+	})
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
 	tenant := model.Tenant{Name: "Domain tenant", Slug: "domain-tenant", Status: model.TenantStatusActive}
 	require.NoError(t, model.DB.Create(&tenant).Error)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/domains", map[string]any{
-		"host":    "pending.example.com",
+		"host":    "pending-example.com",
 		"trusted": false,
 	}, 1)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenant.Id)}}
@@ -172,6 +177,11 @@ func TestAdminTenantDomainCanBeUntrustedAndTrusted(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &createResponse))
 	require.True(t, createResponse.Success, recorder.Body.String())
+	domainHost := createResponse.Data.Host
+	resolution, err := model.ResolveTenantHost(domainHost)
+	require.NoError(t, err)
+	assert.True(t, resolution.IsConfigured)
+	assert.False(t, resolution.IsTenantHost)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/domains/1", map[string]any{
 		"verification_status": model.TenantDomainVerificationVerified,
@@ -181,4 +191,42 @@ func TestAdminTenantDomainCanBeUntrustedAndTrusted(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &createResponse))
 	require.True(t, createResponse.Success, recorder.Body.String())
 	assert.Equal(t, model.TenantDomainVerificationVerified, createResponse.Data.VerificationStatus)
+	resolution, err = model.ResolveTenantHost(domainHost)
+	require.NoError(t, err)
+	assert.True(t, resolution.IsTenantHost)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1", map[string]any{
+		"status": model.TenantStatusDisabled,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenant.Id)}}
+	AdminUpdateHubTenantStatus(ctx)
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &createResponse))
+	require.True(t, createResponse.Success, recorder.Body.String())
+	resolution, err = model.ResolveTenantHost(domainHost)
+	require.NoError(t, err)
+	assert.True(t, resolution.IsConfigured)
+	assert.False(t, resolution.IsTenantHost)
+}
+
+func TestAdminTenantDomainRejectsNonRootHost(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
+	tenant := model.Tenant{Name: "Root only", Slug: "root-only", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(&tenant).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/admin/tenants/1/domains", map[string]any{
+		"host":    "sub.example.com",
+		"trusted": true,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenant.Id)}}
+	AdminCreateHubTenantDomain(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success, recorder.Body.String())
+	var count int64
+	require.NoError(t, model.DB.Model(&model.TenantDomain{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

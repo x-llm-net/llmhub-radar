@@ -28,6 +28,7 @@ if [ "$current_image" = "$new_image" ]; then
   exit 0
 fi
 test "$current_image" = "$old_image"
+"$script_dir/assert-provider-slug-rollback-compatible.sh" "$old_image"
 
 cd "$compose_dir"
 if ! pending_tasks="$(docker exec llm-hub-mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" --batch --skip-column-names -e "SELECT COUNT(*) FROM system_tasks WHERE status IN (\"pending\",\"running\") AND type IN (\"channel_test\",\"hub_supply_probe\");"')"; then
@@ -43,6 +44,7 @@ current_count="$(grep -c "^LLMHUB_IMAGE_TAG=$old_tag$" .env)"
 test "$current_count" = "1"
 
 restore_previous() {
+  "$script_dir/assert-provider-slug-rollback-compatible.sh" "$old_image" || return 1
   cp -p "$backup_dir/.env" .env || return 1
   cp -p "$backup_dir/compose.yml" compose.yml || return 1
   docker compose up -d --no-deps --no-build new-api || return 1

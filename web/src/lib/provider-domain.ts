@@ -42,7 +42,60 @@ export function getProviderRootDomain(): string {
   const rawConfigured = import.meta.env?.VITE_PROVIDER_ROOT_DOMAIN
   const configured =
     typeof rawConfigured === 'string' ? rawConfigured.trim() : ''
-  return (configured || DEFAULT_PROVIDER_ROOT_DOMAIN).toLowerCase()
+  const normalized = normalizeHostname(configured || DEFAULT_PROVIDER_ROOT_DOMAIN)
+  return getTenantRootDomainFromHostname(normalized) === normalized
+    ? normalized
+    : DEFAULT_PROVIDER_ROOT_DOMAIN
+}
+
+function isDomainLabel(value: string): boolean {
+  return (
+    value.length >= 1 &&
+    value.length <= 63 &&
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value)
+  )
+}
+
+function normalizeHostname(value: string): string {
+  const normalized = value.trim().toLowerCase()
+  if (normalized.endsWith('..')) return ''
+  return normalized.replace(/\.$/, '')
+}
+
+/**
+ * Returns the supported two-label tenant root for either a tenant root or one
+ * provider host. Multi-label public suffixes are intentionally unsupported.
+ */
+export function getTenantRootDomainFromHostname(
+  hostname: string
+): string | null {
+  const normalized = normalizeHostname(hostname)
+  const labels = normalized.split('.')
+  if (labels.some((label) => !label)) return null
+  if (
+    labels.length === 2 &&
+    labels.every(isDomainLabel) &&
+    /[a-z]/.test(labels[1] ?? '')
+  ) {
+    return normalized
+  }
+  if (
+    labels.length === 3 &&
+    isProviderSlug(labels[0] ?? '') &&
+    labels.slice(1).every(isDomainLabel) &&
+    /[a-z]/.test(labels[2] ?? '')
+  ) {
+    return labels.slice(1).join('.')
+  }
+  return null
+}
+
+export function getCurrentProviderRootDomain(): string {
+  if (typeof window === 'undefined') return getProviderRootDomain()
+  return (
+    getTenantRootDomainFromHostname(window.location.hostname) ??
+    getProviderRootDomain()
+  )
 }
 
 export function isProviderSlug(value: string): boolean {
@@ -97,21 +150,22 @@ export function providerSlugFromWebsite(value: string): string {
 }
 
 export function getProviderSlugFromHostname(hostname?: string): string | null {
-  const currentHostname = (hostname ?? window.location.hostname)
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, '')
+  const currentHostname = normalizeHostname(
+    hostname ?? window.location.hostname
+  )
   const localSuffix = '.localhost'
-  const productionSuffix = `.${getProviderRootDomain()}`
   let slug = ''
 
   if (currentHostname.endsWith(localSuffix)) {
     slug = currentHostname.slice(0, -localSuffix.length)
-  } else if (currentHostname.endsWith(productionSuffix)) {
-    slug = currentHostname.slice(0, -productionSuffix.length)
   } else {
     const labels = currentHostname.split('.').filter(Boolean)
-    if (labels.length >= 3) slug = labels[0] ?? ''
+    if (
+      labels.length === 3 &&
+      getTenantRootDomainFromHostname(currentHostname)
+    ) {
+      slug = labels[0] ?? ''
+    }
   }
 
   if (slug.includes('.') || !isProviderSlug(slug)) return null
@@ -133,13 +187,17 @@ export function isHubFirstPartyOrigin(
       return false
     }
     const hostname = target.hostname.toLowerCase()
-    const providerRootDomain = getProviderRootDomain()
+    const providerRootDomain =
+      getTenantRootDomainFromHostname(reference.hostname) ??
+      getProviderRootDomain()
+    const targetRootDomain = getTenantRootDomainFromHostname(hostname)
     return (
       hostname === providerRootDomain ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
       hostname === '[::1]' ||
-      hostname.endsWith(`.${providerRootDomain}`) ||
+      (targetRootDomain === providerRootDomain &&
+        getProviderSlugFromHostname(hostname) !== null) ||
       hostname.endsWith('.localhost')
     )
   } catch {
@@ -177,6 +235,10 @@ export function getProviderPublicURL(slug: string, publicURL?: string): string {
       /* Fall back to the configured platform domain. */
     }
   }
+  const tenantRootDomain = getTenantRootDomainFromHostname(hostname)
+  if (tenantRootDomain) {
+    return `${window.location.protocol}//${normalizedSlug}.${tenantRootDomain}/`
+  }
   return `https://${normalizedSlug}.${getProviderRootDomain()}/`
 }
 
@@ -191,10 +253,9 @@ export function getProviderRootURL(pathname = '/'): string {
     const port = window.location.port ? `:${window.location.port}` : ''
     return `${window.location.protocol}//localhost${port}${normalizedPath}`
   }
-  const providerSlug = getProviderSlugFromHostname(hostname)
-  if (providerSlug) {
-    const tenantHostname = hostname.slice(providerSlug.length + 1)
-    return `${window.location.protocol}//${tenantHostname}${normalizedPath}`
+  const tenantRootDomain = getTenantRootDomainFromHostname(hostname)
+  if (tenantRootDomain) {
+    return `${window.location.protocol}//${tenantRootDomain}${normalizedPath}`
   }
   return `https://${getProviderRootDomain()}${normalizedPath}`
 }

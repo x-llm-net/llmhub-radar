@@ -72,10 +72,10 @@ func newTenantBrandLogoMultipartContext(t *testing.T, brand map[string]string, l
 func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.HubProvider{}))
-	tenantA := createTenantBrandFixture(t, "Tenant A", "tenant-a", "a.example.com", model.TenantBrandConfig{
+	tenantA := createTenantBrandFixture(t, "Tenant A", "tenant-a", "tenant-a.example", model.TenantBrandConfig{
 		Name: "Brand A", LogoURL: "https://a.example.com/logo.png",
 	})
-	createTenantBrandFixture(t, "Tenant B", "tenant-b", "b.example.com", model.TenantBrandConfig{
+	createTenantBrandFixture(t, "Tenant B", "tenant-b", "tenant-b.example", model.TenantBrandConfig{
 		Name: "Brand B", LogoURL: "https://b.example.com/logo.png",
 	})
 	t.Setenv("HUB_PROVIDER_ROOT_DOMAIN", "llm-hub.store")
@@ -94,10 +94,10 @@ func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 		brandName string
 		brandLogo string
 	}{
-		{host: "a.example.com", isTenant: true, brandName: "Brand A", brandLogo: "https://a.example.com/logo.png"},
-		{host: "b.example.com:443", isTenant: true, brandName: "Brand B", brandLogo: "https://b.example.com/logo.png"},
+		{host: "tenant-a.example", isTenant: true, brandName: "Brand A", brandLogo: "https://a.example.com/logo.png"},
+		{host: "tenant-b.example:443", isTenant: true, brandName: "Brand B", brandLogo: "https://b.example.com/logo.png"},
 		{host: "tenant-a-provider.llm-hub.store", isTenant: true, brandName: "Brand A", brandLogo: "https://a.example.com/logo.png"},
-		{host: "unknown.example.com", isTenant: false},
+		{host: "unknown.example", isTenant: false},
 		{host: "localhost:3000", isTenant: false},
 	} {
 		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/brand", nil, 1)
@@ -114,8 +114,8 @@ func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 func TestTenantBrandUpdatesCurrentTenantWithoutTouchingAnother(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
-	tenantA := createTenantBrandFixture(t, "Tenant A", "tenant-a", "a.example.com", model.TenantBrandConfig{Name: "Old A"})
-	tenantB := createTenantBrandFixture(t, "Tenant B", "tenant-b", "b.example.com", model.TenantBrandConfig{Name: "Brand B"})
+	tenantA := createTenantBrandFixture(t, "Tenant A", "tenant-a", "tenant-a.example", model.TenantBrandConfig{Name: "Old A"})
+	tenantB := createTenantBrandFixture(t, "Tenant B", "tenant-b", "tenant-b.example", model.TenantBrandConfig{Name: "Brand B"})
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/brand", map[string]any{
 		"name":     "  New A  ",
@@ -136,7 +136,7 @@ func TestTenantBrandUpdatesCurrentTenantWithoutTouchingAnother(t *testing.T) {
 func TestTenantBrandRejectsInvalidLogoAndRootCanUpdateSelectedTenant(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
-	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example.com", model.TenantBrandConfig{Name: "Before"})
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{Name: "Before"})
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/brand", map[string]any{
 		"name": "After", "logo_url": "file:///tmp/logo.png",
@@ -163,7 +163,7 @@ func TestTenantBrandAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 		&model.TenantDomain{},
 		&model.TenantBrandAsset{},
 	))
-	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example.com", model.TenantBrandConfig{Name: "Before"})
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{Name: "Before"})
 	png, err := base64.StdEncoding.DecodeString(
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
 	)

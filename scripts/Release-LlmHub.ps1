@@ -246,6 +246,26 @@ function Get-RemoteVersion {
   return (Invoke-Ssh -Command "docker exec $($target.container) /new-api --version").Trim()
 }
 
+function Assert-RemoteProviderSlugRollbackCompatible {
+  param([Parameter(Mandatory)][string]$BackupDir)
+
+  $oldImage = (Invoke-Ssh -Command "test -f $BackupDir/release.txt && sed -n 's/^current_ref=//p' $BackupDir/release.txt").Trim()
+  if ($oldImage -notmatch '^llm-hub/new-api:[a-zA-Z0-9._-]+$') {
+    throw "Unexpected rollback target image '$oldImage'."
+  }
+
+  # This unversioned orchestration guard also protects historical release
+  # directories whose immutable rollback tools predate tenant-scoped slugs.
+  $localScript = Join-Path $serverScriptDir 'assert-provider-slug-rollback-compatible.sh'
+  $remoteScript = "/tmp/llm-hub-provider-slug-rollback-$PID.sh"
+  Copy-ToRemote -LocalPath $localScript -RemotePath $remoteScript
+  $result = Invoke-Ssh -Command "chmod 700 $remoteScript && $remoteScript $oldImage"
+  if ($result -notmatch 'ROLLBACK_COMPATIBLE') {
+    throw "Rollback compatibility check returned an unexpected result:`n$result"
+  }
+  Write-Host $result
+}
+
 function Copy-VersionedServerScripts {
   param(
     [Parameter(Mandatory)][string]$ReleaseDir,
@@ -337,6 +357,8 @@ switch ($Action) {
       throw "Unexpected backup state: $backupState"
     }
 
+    Assert-RemoteProviderSlugRollbackCompatible -BackupDir $backupDir
+
     try {
       Write-Host (Invoke-Ssh -Command "$releaseDir/tools/deploy-release.sh $ReleaseTag")
       Write-Host (Invoke-Ssh -Command "$releaseDir/tools/verify-release.sh $ReleaseTag")
@@ -345,6 +367,7 @@ switch ($Action) {
       $deploymentFailure = $_
       try {
         Write-Warning 'Deployment verification failed; restoring the previous production release.'
+        Assert-RemoteProviderSlugRollbackCompatible -BackupDir $backupDir
         Write-Host (Invoke-Ssh -Command "$releaseDir/tools/rollback-release.sh $ReleaseTag")
         $rollbackVersion = Get-RemoteVersion
         Test-PublicStatus -ExpectedVersion $rollbackVersion
@@ -369,6 +392,7 @@ switch ($Action) {
     }
 
     Assert-VersionedServerScripts -ReleaseDir $releaseDir
+    Assert-RemoteProviderSlugRollbackCompatible -BackupDir $backupDir
     Write-Host (Invoke-Ssh -Command "$releaseDir/tools/rollback-release.sh $ReleaseTag")
     $rollbackVersion = Get-RemoteVersion
     Test-PublicStatus -ExpectedVersion $rollbackVersion

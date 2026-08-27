@@ -77,6 +77,7 @@ docker exec "$app_container" grep -q "\"version\":\"$release_tag\"" /tmp/status.
 docker logs --tail 50 "$app_container"
 
 # A failed release must be able to start the previous image after migrations.
+provider_slugs_before="$(docker exec "$mysql_container" mysql -uroot -p"$mysql_password" llm_hub --batch --skip-column-names -e "SELECT CONCAT(id, ':', COALESCE(tenant_id, 'NULL'), ':', slug) FROM hub_providers ORDER BY id;")"
 docker rm -fv "$app_container" >/dev/null
 docker run -d \
   --name "$app_container" \
@@ -104,5 +105,10 @@ while [ "$attempt" -lt 60 ]; do
 done
 
 docker exec "$app_container" grep -q '"success":true' /tmp/status.json
+provider_slugs_after="$(docker exec "$mysql_container" mysql -uroot -p"$mysql_password" llm_hub --batch --skip-column-names -e "SELECT CONCAT(id, ':', COALESCE(tenant_id, 'NULL'), ':', slug) FROM hub_providers ORDER BY id;")"
+if [ "$provider_slugs_before" != "$provider_slugs_after" ]; then
+  printf 'MYSQL_PREFLIGHT_FAILED rollback image rewrote provider tenant or slug data\n' >&2
+  exit 1
+fi
 printf 'MYSQL_PREFLIGHT_OK image=%s rollback_image=%s attempts=%s\n' "$image" "$old_image" "$attempt"
 docker logs --tail 50 "$app_container"

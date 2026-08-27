@@ -190,7 +190,14 @@ func AdminUpdateHubTenantStatus(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	refreshHubTenantRoutingCache()
 	common.ApiSuccess(c, tenant)
+}
+
+func refreshHubTenantRoutingCache() {
+	if err := model.RefreshHubSupplyPricingCache(); err != nil {
+		common.SysError("failed to refresh tenant routing cache: " + err.Error())
+	}
 }
 
 func AdminCreateHubTenantDomain(c *gin.Context) {
@@ -203,7 +210,7 @@ func AdminCreateHubTenantDomain(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	host, err := model.NormalizeTenantHost(request.Host)
+	host, err := model.NormalizeTenantRootDomain(request.Host)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -240,6 +247,7 @@ func AdminCreateHubTenantDomain(c *gin.Context) {
 		common.ApiError(c, fmt.Errorf("failed to add domain: %w", err))
 		return
 	}
+	refreshHubTenantRoutingCache()
 	common.ApiSuccess(c, domain)
 }
 
@@ -285,6 +293,7 @@ func AdminUpdateHubTenantDomain(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	refreshHubTenantRoutingCache()
 	common.ApiSuccess(c, domain)
 }
 

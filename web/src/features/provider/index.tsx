@@ -64,7 +64,7 @@ import {
 } from '@/features/channels/components/drawers/channel-mutate-drawer'
 import {
   getProviderPublicURL,
-  getProviderRootDomain,
+  getCurrentProviderRootDomain,
   providerSlugFromName,
 } from '@/lib/provider-domain'
 import { useProviderLogoURL } from '@/lib/provider-logo'
@@ -407,7 +407,7 @@ export function ProviderOnboarding() {
                         {...form.register('slug')}
                       />
                       <InputGroupAddon align='inline-end'>
-                        -xxxx.{getProviderRootDomain()}
+                        -xxxx.{getCurrentProviderRootDomain()}
                       </InputGroupAddon>
                     </InputGroup>
                     <p className='text-muted-foreground text-xs'>
