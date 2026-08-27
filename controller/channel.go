@@ -123,6 +123,9 @@ func attachHubChannelOwnership(channels []*model.Channel, tenantScoped ...bool) 
 			channel.Ownership = "provider"
 			channel.HubProviderId = ownership.ProviderId
 			channel.HubProviderName = ownership.ProviderName
+			channel.HubTenantId = ownership.TenantId
+			channel.HubTenantName = ownership.TenantName
+			channel.HubTenantSlug = ownership.TenantSlug
 			channel.HubSupplyMultiplier = ownership.PriceMultiplier
 			channel.HubServiceTiers = model.ResolveHubSupplyServiceTiers(
 				channel.Models,

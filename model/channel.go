@@ -59,6 +59,9 @@ type Channel struct {
 	Ownership           string   `json:"ownership,omitempty" gorm:"-"`
 	HubProviderId       int      `json:"hub_provider_id,omitempty" gorm:"-"`
 	HubProviderName     string   `json:"hub_provider_name,omitempty" gorm:"-"`
+	HubTenantId         int      `json:"hub_tenant_id,omitempty" gorm:"-"`
+	HubTenantName       string   `json:"hub_tenant_name,omitempty" gorm:"-"`
+	HubTenantSlug       string   `json:"hub_tenant_slug,omitempty" gorm:"-"`
 	HubSupplyMultiplier float64  `json:"hub_supply_multiplier,omitempty" gorm:"-"`
 	HubServiceTiers     []string `json:"hub_service_tiers,omitempty" gorm:"-"`
 	HubTenantPublished  *bool    `json:"hub_tenant_published,omitempty" gorm:"-"`

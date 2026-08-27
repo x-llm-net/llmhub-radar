@@ -74,6 +74,10 @@ func TestTenantAdminChannelListSearchAndDetailStayInTenant(t *testing.T) {
 	assert.Equal(t, 1, listResponse.Data.Total)
 	require.Len(t, listResponse.Data.Items, 1)
 	assert.Equal(t, fixture.channelA.Id, listResponse.Data.Items[0].Id)
+	assert.Equal(t, "Provider A", listResponse.Data.Items[0].HubProviderName)
+	assert.Equal(t, fixture.tenant.Id, listResponse.Data.Items[0].HubTenantId)
+	assert.Equal(t, fixture.tenant.Name, listResponse.Data.Items[0].HubTenantName)
+	assert.Equal(t, fixture.tenant.Slug, listResponse.Data.Items[0].HubTenantSlug)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/channel/search?keyword=channel", nil, 42)
 	setTenantChannelContext(ctx, fixture.tenant.Id)
@@ -90,6 +94,10 @@ func TestTenantAdminChannelListSearchAndDetailStayInTenant(t *testing.T) {
 	assert.Equal(t, 1, searchResponse.Data.Total)
 	require.Len(t, searchResponse.Data.Items, 1)
 	assert.Equal(t, fixture.channelA.Id, searchResponse.Data.Items[0].Id)
+	assert.Equal(t, "Provider A", searchResponse.Data.Items[0].HubProviderName)
+	assert.Equal(t, fixture.tenant.Id, searchResponse.Data.Items[0].HubTenantId)
+	assert.Equal(t, fixture.tenant.Name, searchResponse.Data.Items[0].HubTenantName)
+	assert.Equal(t, fixture.tenant.Slug, searchResponse.Data.Items[0].HubTenantSlug)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/channel/"+strconv.Itoa(fixture.channelB.Id), nil, 42)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(fixture.channelB.Id)}}

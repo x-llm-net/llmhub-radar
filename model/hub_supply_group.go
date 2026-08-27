@@ -93,6 +93,9 @@ type HubChannelProviderOwnership struct {
 	ChannelId       int     `json:"channel_id" gorm:"column:channel_id"`
 	ProviderId      int     `json:"provider_id" gorm:"column:provider_id"`
 	ProviderName    string  `json:"provider_name" gorm:"column:provider_name"`
+	TenantId        int     `json:"tenant_id" gorm:"column:tenant_id"`
+	TenantName      string  `json:"tenant_name" gorm:"column:tenant_name"`
+	TenantSlug      string  `json:"tenant_slug" gorm:"column:tenant_slug"`
 	PriceMultiplier float64 `json:"price_multiplier" gorm:"column:price_multiplier"`
 	TenantPublished bool    `json:"tenant_published" gorm:"column:tenant_published"`
 }
@@ -147,7 +150,8 @@ func GetHubChannelProviderOwnership(channelIDs []int) (map[int]HubChannelProvide
 			"supply_groups.new_api_channel_id AS channel_id, "+
 				"supply_groups.price_multiplier AS price_multiplier, "+
 				"supply_groups.tenant_published AS tenant_published, "+
-				"providers.id AS provider_id, providers.name AS provider_name",
+				"providers.id AS provider_id, providers.name AS provider_name, "+
+				"COALESCE(providers.tenant_id, 0) AS tenant_id",
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
 		Where("supply_groups.new_api_channel_id IN ?", channelIDs).
@@ -155,7 +159,37 @@ func GetHubChannelProviderOwnership(channelIDs []int) (map[int]HubChannelProvide
 	if err != nil {
 		return nil, err
 	}
+
+	tenantByID := make(map[int]Tenant)
+	if DB.Migrator().HasTable(&Tenant{}) {
+		tenantIDs := make([]int, 0, len(rows))
+		seenTenantIDs := make(map[int]struct{}, len(rows))
+		for _, row := range rows {
+			if row.TenantId <= 0 {
+				continue
+			}
+			if _, exists := seenTenantIDs[row.TenantId]; exists {
+				continue
+			}
+			seenTenantIDs[row.TenantId] = struct{}{}
+			tenantIDs = append(tenantIDs, row.TenantId)
+		}
+		if len(tenantIDs) > 0 {
+			var tenants []Tenant
+			if err := DB.Select("id", "name", "slug").Where("id IN ?", tenantIDs).Find(&tenants).Error; err != nil {
+				return nil, err
+			}
+			for _, tenant := range tenants {
+				tenantByID[tenant.Id] = tenant
+			}
+		}
+	}
+
 	for _, row := range rows {
+		if tenant, ok := tenantByID[row.TenantId]; ok {
+			row.TenantName = tenant.Name
+			row.TenantSlug = tenant.Slug
+		}
 		result[row.ChannelId] = row
 	}
 	return result, nil

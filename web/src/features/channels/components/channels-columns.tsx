@@ -725,11 +725,11 @@ export function useChannelsColumns(
         minSize: 200,
       },
 
-      // Business ownership column
+      // Channel provider ownership column
       {
         id: 'ownership',
         accessorFn: (channel) => channel.ownership,
-        header: t('Ownership'),
+        header: t('Channel Provider'),
         cell: ({ row }) => {
           const channel = row.original
           if (channel.ownership === 'mixed') {
@@ -777,6 +777,46 @@ export function useChannelsColumns(
         enableSorting: false,
         size: 200,
         meta: { mobileOrder: 20 },
+      },
+
+      // Reseller ownership column
+      {
+        id: 'tenant',
+        accessorFn: (channel) => channel.hub_tenant_name,
+        header: t('Reseller'),
+        cell: ({ row }) => {
+          const channel = row.original
+          if (channel.hub_tenant_mixed) {
+            return (
+              <StatusBadge
+                label={t('Mixed ownership')}
+                variant='warning'
+                size='sm'
+                copyable={false}
+                showDot={false}
+              />
+            )
+          }
+          if (channel.hub_tenant_id && channel.hub_tenant_name) {
+            return (
+              <span className='flex max-w-[180px] items-center gap-1.5 text-sm'>
+                <Store className='size-3.5 shrink-0' />
+                <TruncatedText
+                  text={channel.hub_tenant_name}
+                  maxWidth='max-w-[145px]'
+                />
+              </span>
+            )
+          }
+          return (
+            <span className='text-muted-foreground text-sm'>
+              {t('Not set')}
+            </span>
+          )
+        },
+        enableSorting: false,
+        size: 200,
+        meta: { mobileOrder: 21 },
       },
 
       // Type column

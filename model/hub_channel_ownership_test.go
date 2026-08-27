@@ -95,3 +95,28 @@ func TestHubChannelOwnershipOptionsAreScopedToTenant(t *testing.T) {
 	assert.Equal(t, providerA.Id, options.Providers[0].Id)
 	assert.Equal(t, int64(1), options.Providers[0].ChannelCount)
 }
+
+func TestHubChannelOwnershipIncludesTenant(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&Channel{}, &HubProvider{}, &HubSupplyGroup{}, &Tenant{}))
+
+	tenant := Tenant{Name: "Tenant A", Slug: "tenant-a", Status: TenantStatusActive}
+	require.NoError(t, db.Create(&tenant).Error)
+	provider := HubProvider{
+		OwnerUserId: 301, TenantId: &tenant.Id, Slot: 1,
+		Name: "Provider A", Slug: "provider-a",
+	}
+	require.NoError(t, db.Create(&provider).Error)
+	channel := Channel{Name: "Supply A", Key: "supply-a-key"}
+	require.NoError(t, db.Create(&channel).Error)
+	require.NoError(t, db.Create(&HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: channel.Id,
+	}).Error)
+
+	ownership, err := GetHubChannelProviderOwnership([]int{channel.Id})
+	require.NoError(t, err)
+	require.Contains(t, ownership, channel.Id)
+	assert.Equal(t, tenant.Id, ownership[channel.Id].TenantId)
+	assert.Equal(t, tenant.Name, ownership[channel.Id].TenantName)
+	assert.Equal(t, tenant.Slug, ownership[channel.Id].TenantSlug)
+}

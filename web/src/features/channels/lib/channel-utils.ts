@@ -716,11 +716,15 @@ export function aggregateChannelsByTag(
       tagRow.status = channel.status
     }
 
-    // Preserve a provider only when every child has the same ownership.
+    // Preserve each ownership level only when every child agrees.
     if (childCount === 1) {
       tagRow.ownership = channel.ownership
       tagRow.hub_provider_id = channel.hub_provider_id
       tagRow.hub_provider_name = channel.hub_provider_name
+      tagRow.hub_tenant_id = channel.hub_tenant_id
+      tagRow.hub_tenant_name = channel.hub_tenant_name
+      tagRow.hub_tenant_slug = channel.hub_tenant_slug
+      tagRow.hub_tenant_mixed = false
     } else if (
       tagRow.ownership !== channel.ownership ||
       tagRow.hub_provider_id !== channel.hub_provider_id
@@ -728,6 +732,17 @@ export function aggregateChannelsByTag(
       tagRow.ownership = 'mixed'
       tagRow.hub_provider_id = undefined
       tagRow.hub_provider_name = undefined
+    }
+
+    if (
+      childCount > 1 &&
+      (tagRow.hub_tenant_mixed ||
+        tagRow.hub_tenant_id !== channel.hub_tenant_id)
+    ) {
+      tagRow.hub_tenant_id = undefined
+      tagRow.hub_tenant_name = undefined
+      tagRow.hub_tenant_slug = undefined
+      tagRow.hub_tenant_mixed = true
     }
   }
 
