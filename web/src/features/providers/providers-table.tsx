@@ -148,7 +148,6 @@ export function ProvidersTable() {
                   title: t('Reseller'),
                   options: [
                     { value: 'all', label: t('All tenants') },
-                    { value: 'platform', label: t('Platform public pool') },
                     ...tenantOptions.map((tenant) => ({
                       value: String(tenant.id),
                       label: tenant.name,

@@ -417,7 +417,7 @@ function ProviderProfileCard({ provider }: { provider: HubProviderAdminItem }) {
             {provider.owner_username})
           </p>
           <p className='text-muted-foreground text-sm'>
-            {t('Reseller')}: {provider.tenant_name || t('Platform public pool')}
+            {t('Reseller')}: {provider.tenant_name || t('Not set')}
           </p>
           {provider.website && (
             <a

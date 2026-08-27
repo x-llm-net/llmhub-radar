@@ -100,9 +100,6 @@ export function ProviderOverview() {
               <NativeSelectOption value='all'>
                 {t('All tenants')}
               </NativeSelectOption>
-              <NativeSelectOption value='platform'>
-                {t('Platform public pool')}
-              </NativeSelectOption>
               {tenantOptions.map((tenant) => (
                 <NativeSelectOption key={tenant.id} value={String(tenant.id)}>
                   {tenant.name}
@@ -258,7 +255,7 @@ function ProviderOverviewRow({
         </div>
       </TableCell>
       <TableCell className='min-w-36'>
-        {provider.tenant_name || t('Platform public pool')}
+        {provider.tenant_name || t('Not set')}
       </TableCell>
       <TableCell className='min-w-36'>
         <div>

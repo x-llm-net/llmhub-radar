@@ -123,9 +123,11 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
         const provider = row.original
         if (!provider.tenant_id) {
           return (
-            <span className='text-muted-foreground'>
-              {t('Platform public pool')}
-            </span>
+            <StatusBadge
+              label={t('Not set')}
+              variant='danger'
+              copyable={false}
+            />
           )
         }
         return (
