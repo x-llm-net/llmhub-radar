@@ -19,11 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 package model
 
 import (
-	"errors"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
-	"gorm.io/gorm"
 )
 
 const (
@@ -80,6 +78,7 @@ type HubProviderPublicIdentity struct {
 	LogoURL      string `json:"logo_url"`
 	SupportType  string `json:"support_type"`
 	SupportValue string `json:"support_value"`
+	PublicURL    string `json:"public_url"`
 }
 
 type HubProviderPublicProfile struct {
@@ -103,7 +102,7 @@ type hubProviderPublicGroupModelKey struct {
 	modelName string
 }
 
-func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPublicProfile, error) {
+func GetHubProviderPublicProfile(providerSlug string, tenantID *int, now int64) (*HubProviderPublicProfile, error) {
 	providerSlug, err := NormalizeHubProviderSlug(providerSlug)
 	if err != nil {
 		return nil, nil
@@ -112,12 +111,14 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 		now = common.GetTimestamp()
 	}
 
-	var provider HubProvider
-	err = DB.Where("slug = ? AND status = ?", providerSlug, HubProviderStatusActive).First(&provider).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	provider, err := GetActiveHubProviderBySlugInTenant(providerSlug, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil {
 		return nil, nil
 	}
-	if err != nil {
+	if err := HydrateHubProviderPublicURL(provider); err != nil {
 		return nil, err
 	}
 
@@ -130,17 +131,18 @@ func GetHubProviderPublicProfile(providerSlug string, now int64) (*HubProviderPu
 			Id:           provider.Id,
 			Name:         provider.Name,
 			Slug:         provider.Slug,
-			Website:      PublicHubProviderWebsite(provider),
+			Website:      PublicHubProviderWebsite(*provider),
 			Description:  provider.Description,
 			LogoURL:      provider.LogoURL,
 			SupportType:  provider.SupportType,
 			SupportValue: provider.SupportValue,
+			PublicURL:    provider.PublicURL,
 		},
 		Models: make([]HubProviderPublicModel, 0),
 	}
 	HydrateHubProviderLogoURL(
-		&provider,
-		"/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId),
+		provider,
+		hubProviderPublicAssetURL(*provider, "/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId)),
 	)
 	profile.Provider.LogoURL = provider.LogoURL
 	if len(groups) == 0 {

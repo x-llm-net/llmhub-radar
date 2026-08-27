@@ -109,6 +109,9 @@ export function getProviderSlugFromHostname(hostname?: string): string | null {
     slug = currentHostname.slice(0, -localSuffix.length)
   } else if (currentHostname.endsWith(productionSuffix)) {
     slug = currentHostname.slice(0, -productionSuffix.length)
+  } else {
+    const labels = currentHostname.split('.').filter(Boolean)
+    if (labels.length >= 3) slug = labels[0] ?? ''
   }
 
   if (slug.includes('.') || !isProviderSlug(slug)) return null
@@ -130,21 +133,31 @@ export function isHubFirstPartyOrigin(
       return false
     }
     const hostname = target.hostname.toLowerCase()
+    const providerRootDomain = getProviderRootDomain()
     return (
-      hostname === getProviderRootDomain() ||
+      hostname === providerRootDomain ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
       hostname === '[::1]' ||
-      getProviderSlugFromHostname(hostname) !== null
+      hostname.endsWith(`.${providerRootDomain}`) ||
+      hostname.endsWith('.localhost')
     )
   } catch {
     return false
   }
 }
 
-export function getProviderPublicURL(slug: string): string {
+export function getProviderPublicURL(slug: string, publicURL?: string): string {
   const normalizedSlug = slug.trim().toLowerCase()
   if (typeof window === 'undefined') {
+    if (publicURL) {
+      try {
+        const parsed = new URL(publicURL)
+        if (['http:', 'https:'].includes(parsed.protocol)) return parsed.href
+      } catch {
+        /* Fall back to the configured platform domain. */
+      }
+    }
     return `https://${normalizedSlug}.${getProviderRootDomain()}/`
   }
 
@@ -155,6 +168,14 @@ export function getProviderPublicURL(slug: string): string {
   }
   if (hostname === '127.0.0.1' || hostname === '[::1]') {
     return `/providers/${encodeURIComponent(normalizedSlug)}`
+  }
+  if (publicURL) {
+    try {
+      const parsed = new URL(publicURL)
+      if (['http:', 'https:'].includes(parsed.protocol)) return parsed.href
+    } catch {
+      /* Fall back to the configured platform domain. */
+    }
   }
   return `https://${normalizedSlug}.${getProviderRootDomain()}/`
 }
@@ -169,6 +190,11 @@ export function getProviderRootURL(pathname = '/'): string {
   if (hostname.endsWith('.localhost')) {
     const port = window.location.port ? `:${window.location.port}` : ''
     return `${window.location.protocol}//localhost${port}${normalizedPath}`
+  }
+  const providerSlug = getProviderSlugFromHostname(hostname)
+  if (providerSlug) {
+    const tenantHostname = hostname.slice(providerSlug.length + 1)
+    return `${window.location.protocol}//${tenantHostname}${normalizedPath}`
   }
   return `https://${getProviderRootDomain()}${normalizedPath}`
 }

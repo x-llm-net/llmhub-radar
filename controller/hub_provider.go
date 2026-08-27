@@ -116,6 +116,10 @@ func GetHubProviderSelf(c *gin.Context) {
 		return
 	}
 	model.HydrateHubProviderVerificationFields(provider)
+	if err := model.HydrateHubProviderPublicURL(provider); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	common.ApiSuccess(c, provider)
 }
@@ -126,7 +130,12 @@ func GetPublicHubProvider(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": i18n.T(c, i18n.MsgNotFound)})
 		return
 	}
-	profile, err := model.GetHubProviderPublicProfile(providerSlug, common.GetTimestamp())
+	tenantID, ok := publicHubProviderTenantID(c, providerSlug)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": i18n.T(c, i18n.MsgNotFound)})
+		return
+	}
+	profile, err := model.GetHubProviderPublicProfile(providerSlug, tenantID, common.GetTimestamp())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -136,6 +145,32 @@ func GetPublicHubProvider(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, profile)
+}
+
+func publicHubProviderTenantID(c *gin.Context, providerSlug string) (*int, bool) {
+	providerHost, err := model.ResolveHubProviderHost(c.Request.Host)
+	if err == nil && providerHost.IsProviderHost {
+		return providerHost.Provider.TenantId, providerHost.Provider.Slug == providerSlug
+	}
+	tenantHost, err := model.ResolveTenantHost(c.Request.Host)
+	if err == nil && tenantHost.IsTenantHost {
+		return &tenantHost.TenantID, true
+	}
+
+	host := strings.ToLower(strings.Split(c.Request.Host, ":")[0])
+	if host == model.HubProviderRootDomain() {
+		provider, found := model.GetHubProviderRoutingBySlug(providerSlug)
+		if found {
+			return provider.TenantId, true
+		}
+	}
+	if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") || strings.HasPrefix(host, "[::1]") {
+		provider, found := model.GetHubProviderRoutingBySlug(providerSlug)
+		if found {
+			return provider.TenantId, true
+		}
+	}
+	return nil, false
 }
 
 func GetPublicHubHome(c *gin.Context) {
@@ -219,6 +254,9 @@ func CreateHubProvider(c *gin.Context) {
 	}
 
 	model.HydrateHubProviderVerificationFields(provider)
+	if err := model.HydrateHubProviderPublicURL(provider); err != nil {
+		common.SysError("failed to hydrate created hub provider public URL: " + err.Error())
+	}
 	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	service.NotifyHubProviderApplication(provider)
 	common.ApiSuccess(c, provider)
@@ -289,6 +327,9 @@ func UpdateHubProviderProfile(c *gin.Context) {
 		return
 	}
 	model.HydrateHubProviderVerificationFields(provider)
+	if err := model.HydrateHubProviderPublicURL(provider); err != nil {
+		common.SysError("failed to hydrate updated hub provider public URL: " + err.Error())
+	}
 	model.HydrateHubProviderLogoURL(provider, "/api/hub/provider/logo")
 	common.ApiSuccess(c, provider)
 }

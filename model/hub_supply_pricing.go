@@ -35,6 +35,11 @@ type HubProviderRoutingInfo struct {
 	TenantId *int
 }
 
+type hubProviderRoutingKey struct {
+	TenantID int
+	Slug     string
+}
+
 type ChannelProviderFilterMode int
 
 const (
@@ -53,27 +58,31 @@ var (
 	hubSupplyPricingMu        sync.RWMutex
 	hubSupplyPricingByChannel = map[int]HubSupplyPricing{}
 	hubSupplyConfiguredIDs    = map[int]struct{}{}
-	hubProviderRoutingBySlug  = map[string]HubProviderRoutingInfo{}
+	hubProviderRoutingBySlug  = map[hubProviderRoutingKey]HubProviderRoutingInfo{}
+	hubProviderRoutingUnique  = map[string]HubProviderRoutingInfo{}
 	hubProviderRoutingByID    = map[int]HubProviderRoutingInfo{}
 )
 
 type hubSupplyPricingCacheData struct {
 	pricingByChannel map[int]HubSupplyPricing
 	configuredIDs    map[int]struct{}
-	providerBySlug   map[string]HubProviderRoutingInfo
+	providerBySlug   map[hubProviderRoutingKey]HubProviderRoutingInfo
+	providerUnique   map[string]HubProviderRoutingInfo
 	providerByID     map[int]HubProviderRoutingInfo
 }
 
 func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 	pricingByChannel := make(map[int]HubSupplyPricing)
 	configuredIDs := make(map[int]struct{})
-	providerBySlug := make(map[string]HubProviderRoutingInfo)
+	providerBySlug := make(map[hubProviderRoutingKey]HubProviderRoutingInfo)
+	providerUnique := make(map[string]HubProviderRoutingInfo)
 	providerByID := make(map[int]HubProviderRoutingInfo)
-	if DB == nil || !DB.Migrator().HasTable(&HubSupplyGroup{}) || !DB.Migrator().HasTable(&HubProvider{}) {
+	if DB == nil || !DB.Migrator().HasTable(&HubProvider{}) {
 		return &hubSupplyPricingCacheData{
 			pricingByChannel: pricingByChannel,
 			configuredIDs:    configuredIDs,
 			providerBySlug:   providerBySlug,
+			providerUnique:   providerUnique,
 			providerByID:     providerByID,
 		}, nil
 	}
@@ -86,8 +95,26 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		info := HubProviderRoutingInfo{
 			Id: provider.Id, Slug: provider.Slug, Status: provider.Status, TenantId: provider.TenantId,
 		}
-		providerBySlug[provider.Slug] = info
+		tenantID := 0
+		if provider.TenantId != nil {
+			tenantID = *provider.TenantId
+		}
+		providerBySlug[hubProviderRoutingKey{TenantID: tenantID, Slug: provider.Slug}] = info
+		if existing, found := providerUnique[provider.Slug]; !found {
+			providerUnique[provider.Slug] = info
+		} else if existing.Id != provider.Id {
+			providerUnique[provider.Slug] = HubProviderRoutingInfo{}
+		}
 		providerByID[provider.Id] = info
+	}
+	if !DB.Migrator().HasTable(&HubSupplyGroup{}) {
+		return &hubSupplyPricingCacheData{
+			pricingByChannel: pricingByChannel,
+			configuredIDs:    configuredIDs,
+			providerBySlug:   providerBySlug,
+			providerUnique:   providerUnique,
+			providerByID:     providerByID,
+		}, nil
 	}
 
 	type hubSupplyPricingRow struct {
@@ -129,6 +156,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		pricingByChannel: pricingByChannel,
 		configuredIDs:    configuredIDs,
 		providerBySlug:   providerBySlug,
+		providerUnique:   providerUnique,
 		providerByID:     providerByID,
 	}, nil
 }
@@ -176,6 +204,7 @@ func publishHubSupplyPricingCache(data *hubSupplyPricingCacheData) {
 	hubSupplyPricingByChannel = data.pricingByChannel
 	hubSupplyConfiguredIDs = data.configuredIDs
 	hubProviderRoutingBySlug = data.providerBySlug
+	hubProviderRoutingUnique = data.providerUnique
 	hubProviderRoutingByID = data.providerByID
 	hubSupplyPricingMu.Unlock()
 	channelSyncLock.Unlock()
@@ -264,7 +293,17 @@ func IsHubSupplyChannelProviderActive(channelID int) bool {
 
 func GetHubProviderRoutingBySlug(slug string) (HubProviderRoutingInfo, bool) {
 	hubSupplyPricingMu.RLock()
-	provider, ok := hubProviderRoutingBySlug[slug]
+	provider, ok := hubProviderRoutingUnique[slug]
+	hubSupplyPricingMu.RUnlock()
+	return provider, ok && provider.Id > 0
+}
+
+func GetHubProviderRoutingByTenantAndSlug(tenantID int, slug string) (HubProviderRoutingInfo, bool) {
+	if tenantID <= 0 {
+		return HubProviderRoutingInfo{}, false
+	}
+	hubSupplyPricingMu.RLock()
+	provider, ok := hubProviderRoutingBySlug[hubProviderRoutingKey{TenantID: tenantID, Slug: slug}]
 	hubSupplyPricingMu.RUnlock()
 	return provider, ok
 }

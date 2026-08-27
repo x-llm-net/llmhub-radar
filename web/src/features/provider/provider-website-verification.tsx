@@ -161,12 +161,18 @@ export function ProviderWebsiteVerification(
               {t('Public homepage')}
             </span>
             <a
-              href={getProviderPublicURL(props.provider.slug)}
+              href={getProviderPublicURL(
+                props.provider.slug,
+                props.provider.public_url
+              )}
               target='_blank'
               rel='noreferrer'
               className='font-medium break-all hover:underline'
             >
-              {getProviderPublicURL(props.provider.slug)}
+              {getProviderPublicURL(
+                props.provider.slug,
+                props.provider.public_url
+              )}
             </a>
           </div>
           {props.provider.website && (

@@ -94,14 +94,19 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
               )}
               {provider.slug && (
                 <a
-                  href={getProviderPublicURL(provider.slug)}
+                  href={getProviderPublicURL(
+                    provider.slug,
+                    provider.public_url
+                  )}
                   target='_blank'
                   rel='noreferrer'
                   title={t('Public homepage')}
-                  aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug)}`}
+                  aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug, provider.public_url)}`}
                   className='text-primary hover:text-primary/80 mt-0.5 flex max-w-[240px] items-center gap-1 text-xs'
                 >
-                  <LongText>{getProviderPublicURL(provider.slug)}</LongText>
+                  <LongText>
+                    {getProviderPublicURL(provider.slug, provider.public_url)}
+                  </LongText>
                   <ExternalLink
                     className='size-3 shrink-0'
                     aria-hidden='true'

@@ -99,8 +99,13 @@ func GetPublicHubProviderLogo(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	var provider model.HubProvider
-	if err := model.DB.Where("slug = ? AND status = ?", slug, model.HubProviderStatusActive).First(&provider).Error; err != nil {
+	tenantID, ok := publicHubProviderTenantID(c, slug)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	provider, err := model.GetActiveHubProviderBySlugInTenant(slug, tenantID)
+	if err != nil || provider == nil {
 		c.Status(http.StatusNotFound)
 		return
 	}

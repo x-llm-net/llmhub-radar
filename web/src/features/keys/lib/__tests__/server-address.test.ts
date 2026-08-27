@@ -1,12 +1,28 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getProviderRootDomain } from '../../../../lib/provider-domain.ts'
+import {
+  getProviderPublicURL,
+  getProviderRootDomain,
+  getProviderSlugFromHostname,
+} from '../../../../lib/provider-domain.ts'
 import { resolveServerAddress } from '../server-address.ts'
 
 describe('resolveServerAddress', () => {
   test('uses the production root domain when no frontend override is configured', () => {
     assert.equal(getProviderRootDomain(), 'llm-hub.store')
+  })
+
+  test('recognizes a provider below a custom tenant domain', () => {
+    assert.equal(getProviderSlugFromHostname('x.343246113.xyz'), 'x')
+    assert.equal(getProviderSlugFromHostname('343246113.xyz'), null)
+  })
+
+  test('uses the server-provided tenant URL for provider links', () => {
+    assert.equal(
+      getProviderPublicURL('x', 'https://x.343246113.xyz/'),
+      'https://x.343246113.xyz/'
+    )
   })
 
   test('uses the current origin when the default loopback address points to another port', () => {

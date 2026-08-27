@@ -56,10 +56,10 @@ var hubProviderReservedSlugs = map[string]struct{}{
 type HubProvider struct {
 	Id                           int    `json:"id" gorm:"primaryKey"`
 	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_tenant_owner,priority:2"`
-	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index;uniqueIndex:idx_hub_provider_tenant_owner,priority:1"`
+	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index;uniqueIndex:idx_hub_provider_tenant_owner,priority:1;uniqueIndex:idx_hub_provider_tenant_slug,priority:1"`
 	Slot                         int    `json:"-" gorm:"not null"`
 	Name                         string `json:"name" gorm:"type:varchar(80);not null"`
-	Slug                         string `json:"slug" gorm:"type:varchar(63)"`
+	Slug                         string `json:"slug" gorm:"type:varchar(63);uniqueIndex:idx_hub_provider_tenant_slug,priority:2"`
 	SlugBase                     string `json:"slug_base" gorm:"type:varchar(63);not null;default:''"`
 	SlugCode                     string `json:"-" gorm:"type:varchar(8);not null;default:''"`
 	Website                      string `json:"website" gorm:"type:varchar(512);not null"`
@@ -91,6 +91,7 @@ type HubProvider struct {
 	WebsiteVerificationHTTPURL   string `json:"website_verification_http_url" gorm:"-"`
 	WebsiteVerificationHTTPBody  string `json:"website_verification_http_body" gorm:"-"`
 	UseProvisionalSlug           bool   `json:"-" gorm:"-"`
+	PublicURL                    string `json:"public_url" gorm:"-"`
 }
 
 type HubProviderAdminListItem struct {
@@ -289,8 +290,8 @@ func hubProviderSlugWithSuffix(base, suffix string) string {
 	return fmt.Sprintf("%s-%s", base, suffix)
 }
 
-func hubProviderSlugTaken(slug string, excludeProviderID int) (bool, error) {
-	query := DB.Model(&HubProvider{}).Where("slug = ?", slug)
+func hubProviderSlugTaken(tenantID *int, slug string, excludeProviderID int) (bool, error) {
+	query := ApplyHubProviderTenantScope(DB.Model(&HubProvider{}), tenantID).Where("slug = ?", slug)
 	if excludeProviderID > 0 {
 		query = query.Where("id <> ?", excludeProviderID)
 	}
@@ -301,7 +302,7 @@ func hubProviderSlugTaken(slug string, excludeProviderID int) (bool, error) {
 	return count > 0, nil
 }
 
-func prepareHubProviderSlug(requestedSlug, providerName, website string, excludeProviderID int) (string, error) {
+func prepareHubProviderSlug(tenantID *int, requestedSlug, providerName, website string, excludeProviderID int) (string, error) {
 	requestedSlug = strings.TrimSpace(requestedSlug)
 	candidate := requestedSlug
 	if candidate == "" {
@@ -314,7 +315,7 @@ func prepareHubProviderSlug(requestedSlug, providerName, website string, exclude
 	if err != nil {
 		return "", err
 	}
-	taken, err := hubProviderSlugTaken(normalized, excludeProviderID)
+	taken, err := hubProviderSlugTaken(tenantID, normalized, excludeProviderID)
 	if err != nil {
 		return "", err
 	}
@@ -326,7 +327,7 @@ func prepareHubProviderSlug(requestedSlug, providerName, website string, exclude
 	}
 	for range 10 {
 		candidate = hubProviderSlugWithSuffix(normalized, strings.ToLower(common.GetRandomString(5)))
-		taken, err = hubProviderSlugTaken(candidate, excludeProviderID)
+		taken, err = hubProviderSlugTaken(tenantID, candidate, excludeProviderID)
 		if err != nil {
 			return "", err
 		}
@@ -337,7 +338,7 @@ func prepareHubProviderSlug(requestedSlug, providerName, website string, exclude
 	return "", ErrHubProviderSlugAlreadyExists
 }
 
-func prepareProvisionalHubProviderSlug(requestedSlug, providerName, website string) (string, string, string, error) {
+func prepareProvisionalHubProviderSlug(tenantID *int, requestedSlug, providerName, website string) (string, string, string, error) {
 	candidate := strings.TrimSpace(requestedSlug)
 	if candidate == "" {
 		candidate = hubProviderSlugFromWebsite(website)
@@ -352,7 +353,7 @@ func prepareProvisionalHubProviderSlug(requestedSlug, providerName, website stri
 	for range 10 {
 		code := strings.ToLower(common.GetRandomString(4))
 		slug := hubProviderSlugWithSuffix(base, code)
-		taken, lookupErr := hubProviderSlugTaken(slug, 0)
+		taken, lookupErr := hubProviderSlugTaken(tenantID, slug, 0)
 		if lookupErr != nil {
 			return "", "", "", lookupErr
 		}
@@ -378,11 +379,11 @@ func prepareHubProviderForCreate(provider *HubProvider) error {
 	var slug string
 	if provider.UseProvisionalSlug {
 		var base, code string
-		slug, base, code, err = prepareProvisionalHubProviderSlug(provider.Slug, provider.Name, provider.Website)
+		slug, base, code, err = prepareProvisionalHubProviderSlug(provider.TenantId, provider.Slug, provider.Name, provider.Website)
 		provider.SlugBase = base
 		provider.SlugCode = code
 	} else {
-		slug, err = prepareHubProviderSlug(provider.Slug, provider.Name, provider.Website, 0)
+		slug, err = prepareHubProviderSlug(provider.TenantId, provider.Slug, provider.Name, provider.Website, 0)
 		provider.SlugBase = slug
 	}
 	if err != nil {
@@ -401,7 +402,7 @@ func mapHubProviderCreateError(provider *HubProvider, createErr error) error {
 	if lookupErr == nil && existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
-	slugTaken, lookupErr := hubProviderSlugTaken(provider.Slug, 0)
+	slugTaken, lookupErr := hubProviderSlugTaken(provider.TenantId, provider.Slug, 0)
 	if lookupErr == nil && slugTaken {
 		return ErrHubProviderSlugAlreadyExists
 	}
@@ -561,6 +562,9 @@ func listHubProviders(keyword, status string, offset, limit int, tenantID *int, 
 	}
 	if len(providers) == 0 {
 		return providers, total, nil
+	}
+	if err := hydrateHubProviderAdminPublicURLs(providers); err != nil {
+		return nil, 0, err
 	}
 
 	providerIDs := make([]int, 0, len(providers))
@@ -866,7 +870,7 @@ func updateHubProviderStatus(providerID int, status string, reviewerUserID int, 
 					return err
 				}
 				var count int64
-				if err := tx.Model(&HubProvider{}).
+				if err := ApplyHubProviderTenantScope(tx.Model(&HubProvider{}), provider.TenantId).
 					Where("slug = ? AND id <> ?", cleanSlug, providerID).
 					Count(&count).Error; err != nil {
 					return err

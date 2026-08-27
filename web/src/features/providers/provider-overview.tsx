@@ -238,15 +238,15 @@ function ProviderOverviewRow({
             )}
             {provider.slug && (
               <a
-                href={getProviderPublicURL(provider.slug)}
+                href={getProviderPublicURL(provider.slug, provider.public_url)}
                 target='_blank'
                 rel='noreferrer'
                 title={t('Public homepage')}
-                aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug)}`}
+                aria-label={`${t('Public homepage')}: ${getProviderPublicURL(provider.slug, provider.public_url)}`}
                 className='text-primary hover:text-primary/80 flex max-w-[240px] items-center gap-1 truncate text-xs'
               >
                 <span className='truncate'>
-                  {getProviderPublicURL(provider.slug)}
+                  {getProviderPublicURL(provider.slug, provider.public_url)}
                 </span>
                 <ExternalLink className='size-3 shrink-0' aria-hidden='true' />
               </a>

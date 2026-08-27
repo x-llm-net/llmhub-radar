@@ -22,11 +22,14 @@ import (
 	"strconv"
 )
 
-const hubProviderSlugIndexName = "idx_hub_providers_slug"
+const (
+	hubProviderLegacySlugIndexName = "idx_hub_providers_slug"
+	hubProviderSlugIndexName       = "idx_hub_provider_tenant_slug"
+)
 
 func migrateHubProviderSlugs() error {
 	providers := make([]HubProvider, 0)
-	if err := DB.Select("id", "name", "slug").Order("id ASC").Find(&providers).Error; err != nil {
+	if err := DB.Select("id", "tenant_id", "name", "slug").Order("id ASC").Find(&providers).Error; err != nil {
 		return err
 	}
 
@@ -38,13 +41,18 @@ func migrateHubProviderSlugs() error {
 			slug = hubProviderSlugFromName(provider.Name)
 		}
 		baseSlug := slug
+		tenantScope := "legacy"
+		if provider.TenantId != nil {
+			tenantScope = strconv.Itoa(*provider.TenantId)
+		}
 		for attempt := 0; ; attempt++ {
-			if _, duplicate := used[slug]; !duplicate {
+			key := tenantScope + "\x00" + slug
+			if _, duplicate := used[key]; !duplicate {
 				break
 			}
 			slug = hubProviderSlugWithSuffix(baseSlug, strconv.Itoa(provider.Id+attempt))
 		}
-		used[slug] = struct{}{}
+		used[tenantScope+"\x00"+slug] = struct{}{}
 		if provider.Slug == slug {
 			continue
 		}
@@ -53,8 +61,13 @@ func migrateHubProviderSlugs() error {
 		}
 	}
 
+	if DB.Migrator().HasIndex(&HubProvider{}, hubProviderLegacySlugIndexName) {
+		if err := DB.Migrator().DropIndex(&HubProvider{}, hubProviderLegacySlugIndexName); err != nil {
+			return err
+		}
+	}
 	if DB.Migrator().HasIndex(&HubProvider{}, hubProviderSlugIndexName) {
 		return nil
 	}
-	return DB.Exec("CREATE UNIQUE INDEX " + hubProviderSlugIndexName + " ON hub_providers (slug)").Error
+	return DB.Exec("CREATE UNIQUE INDEX " + hubProviderSlugIndexName + " ON hub_providers (tenant_id, slug)").Error
 }

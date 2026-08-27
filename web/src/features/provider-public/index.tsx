@@ -214,7 +214,7 @@ export function ProviderPublicPage(props: { providerSlug?: string }) {
       canonical.rel = 'canonical'
       document.head.appendChild(canonical)
     }
-    canonical.href = getProviderPublicURL(provider.slug)
+    canonical.href = getProviderPublicURL(provider.slug, provider.public_url)
     return () => {
       if (!hadCanonical) {
         canonical.remove()

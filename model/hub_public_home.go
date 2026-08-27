@@ -106,13 +106,16 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 	if len(providers) == 0 {
 		return home, nil
 	}
+	if err := hydrateHubProvidersPublicURLs(providers); err != nil {
+		return nil, err
+	}
 
 	providerIdentities := make(map[int]HubProviderPublicIdentity, len(providers))
 	for i := range providers {
 		provider := &providers[i]
 		HydrateHubProviderLogoURL(
 			provider,
-			"/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId),
+			hubProviderPublicAssetURL(*provider, "/api/hub/public/providers/"+provider.Slug+"/logo?v="+strconv.Itoa(provider.LogoAssetId)),
 		)
 		providerIdentities[provider.Id] = HubProviderPublicIdentity{
 			Id:           provider.Id,
@@ -123,6 +126,7 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 			LogoURL:      provider.LogoURL,
 			SupportType:  provider.SupportType,
 			SupportValue: provider.SupportValue,
+			PublicURL:    provider.PublicURL,
 		}
 	}
 

@@ -432,13 +432,13 @@ function ProviderProfileCard({ provider }: { provider: HubProviderAdminItem }) {
           )}
           {provider.slug && (
             <a
-              href={getProviderPublicURL(provider.slug)}
+              href={getProviderPublicURL(provider.slug, provider.public_url)}
               target='_blank'
               rel='noreferrer'
               className='text-primary flex max-w-full items-center gap-1 text-sm hover:underline'
             >
               <span className='truncate'>
-                {getProviderPublicURL(provider.slug)}
+                {getProviderPublicURL(provider.slug, provider.public_url)}
               </span>
               <ExternalLink className='size-3 shrink-0' />
             </a>

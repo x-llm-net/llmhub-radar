@@ -85,6 +85,36 @@ func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *test
 	assert.Equal(t, "https://skyhope.example/admin", PublicHubProviderWebsite(*stored))
 }
 
+func TestHubProviderWebsiteApprovalScopesCleanSlugByTenant(t *testing.T) {
+	truncateTables(t)
+	tenantA, tenantB := 31, 32
+	existing := &HubProvider{
+		OwnerUserId: 7101, TenantId: &tenantA, Name: "Tenant A", Slug: "shared",
+		Status: HubProviderStatusActive,
+	}
+	require.NoError(t, CreateHubProvider(existing))
+	pending := &HubProvider{
+		OwnerUserId: 7102, TenantId: &tenantB, Name: "Tenant B", Slug: "shared",
+		Website: "https://shared.example/admin", Status: HubProviderStatusPending, UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProvider(pending))
+	asset, err := CreateHubProviderWebsiteEvidenceAsset(pending.Id, pending.OwnerUserId, "image/png", []byte("screenshot"))
+	require.NoError(t, err)
+	_, err = SubmitHubProviderWebsiteVerification(
+		pending.Id, pending.OwnerUserId, HubProviderWebsiteVerificationMethodManual, asset.Id,
+	)
+	require.NoError(t, err)
+
+	_, err = UpdateHubProviderStatusWithReviewAndWebsite(
+		pending.Id, HubProviderStatusActive, 1, "Verified", true,
+	)
+	require.NoError(t, err)
+	stored, err := GetHubProviderByOwnerUserIDInTenant(pending.OwnerUserId, tenantB)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, "shared", stored.Slug)
+}
+
 func TestHubProviderApprovalCanKeepUnverifiedWebsitePrivate(t *testing.T) {
 	truncateTables(t)
 	provider := &HubProvider{

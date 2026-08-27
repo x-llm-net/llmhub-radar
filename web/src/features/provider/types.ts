@@ -48,6 +48,7 @@ export type HubProvider = {
   id: number
   name: string
   slug: string
+  public_url: string
   slug_base: string
   website: string
   website_verified_origin: string

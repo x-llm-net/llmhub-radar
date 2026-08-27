@@ -137,7 +137,12 @@ export function PublicHomeHero(props: { home: PublicHomeData }) {
                   <span className='hub-fastest-rank'>
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <a href={getProviderPublicURL(entry.provider.provider.slug)}>
+                  <a
+                    href={getProviderPublicURL(
+                      entry.provider.provider.slug,
+                      entry.provider.provider.public_url
+                    )}
+                  >
                     <strong>{entry.modelName}</strong>
                     <small>
                       {entry.provider.provider.name} ·{' '}

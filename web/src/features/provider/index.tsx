@@ -646,7 +646,10 @@ export function ProviderWorkspace() {
                     size='lg'
                     render={
                       <a
-                        href={getProviderPublicURL(provider.slug)}
+                        href={getProviderPublicURL(
+                          provider.slug,
+                          provider.public_url
+                        )}
                         target='_blank'
                         rel='noreferrer'
                       />

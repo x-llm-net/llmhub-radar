@@ -102,7 +102,10 @@ function ProviderRow(props: {
       </span>
       <a
         className='hub-ranking-provider-identity'
-        href={getProviderPublicURL(provider.provider.slug)}
+        href={getProviderPublicURL(
+          provider.provider.slug,
+          provider.provider.public_url
+        )}
       >
         <span className='hub-ranking-provider-logo'>
           <ProviderLogo provider={provider} />
@@ -140,7 +143,10 @@ function ProviderRow(props: {
       <ProviderStatus provider={provider} />
       <a
         className='hub-provider-open'
-        href={getProviderPublicURL(provider.provider.slug)}
+        href={getProviderPublicURL(
+          provider.provider.slug,
+          provider.provider.public_url
+        )}
         aria-label={t('Open {{provider}} homepage', {
           provider: provider.provider.name,
         })}

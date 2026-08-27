@@ -46,14 +46,34 @@ func ResolveHubProviderHost(host string) (HubProviderHostResolution, error) {
 	}
 
 	var slug string
-	switch {
-	case strings.HasSuffix(hostname, ".localhost"):
+	var provider HubProviderRoutingInfo
+	var ok bool
+	if strings.HasSuffix(hostname, ".localhost") {
 		slug = strings.TrimSuffix(hostname, ".localhost")
-	case strings.HasSuffix(hostname, "."+HubProviderRootDomain()):
-		slug = strings.TrimSuffix(hostname, "."+HubProviderRootDomain())
-	default:
-		// Custom platform domains remain platform hosts unless explicitly configured.
-		return HubProviderHostResolution{}, nil
+	} else {
+		slug, hostname, ok = strings.Cut(hostname, ".")
+		if !ok || slug == "" || hostname == "" {
+			return HubProviderHostResolution{}, nil
+		}
+		tenantHost, configured, lookupErr := resolveExactTenantHostname(hostname)
+		if lookupErr != nil {
+			return HubProviderHostResolution{}, lookupErr
+		}
+		if configured {
+			if !tenantHost.IsTenantHost {
+				return HubProviderHostResolution{}, ErrHubProviderHostNotFound
+			}
+			provider, ok = GetHubProviderRoutingByTenantAndSlug(tenantHost.TenantID, slug)
+		} else if hostname == HubProviderRootDomain() {
+			// Compatibility for pre-tenant installations and local test data.
+			// Duplicate slugs are intentionally treated as ambiguous.
+			provider, ok = GetHubProviderRoutingBySlug(slug)
+		} else {
+			if strings.HasSuffix(hostname, "."+HubProviderRootDomain()) {
+				return HubProviderHostResolution{}, ErrHubProviderHostInvalid
+			}
+			return HubProviderHostResolution{}, nil
+		}
 	}
 	if strings.Contains(slug, ".") {
 		return HubProviderHostResolution{}, ErrHubProviderHostInvalid
@@ -65,7 +85,11 @@ func ResolveHubProviderHost(host string) (HubProviderHostResolution, error) {
 	if err != nil {
 		return HubProviderHostResolution{}, ErrHubProviderHostInvalid
 	}
-	provider, ok := GetHubProviderRoutingBySlug(normalizedSlug)
+	if strings.HasSuffix(normalizeRequestHostname(host), ".localhost") {
+		provider, ok = GetHubProviderRoutingBySlug(normalizedSlug)
+	} else if provider.Slug != normalizedSlug {
+		ok = false
+	}
 	if !ok {
 		return HubProviderHostResolution{}, ErrHubProviderHostNotFound
 	}

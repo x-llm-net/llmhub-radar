@@ -55,6 +55,36 @@ func TestHubProviderSlugValidationAndUniqueness(t *testing.T) {
 	assert.True(t, errors.Is(CreateHubProvider(duplicate), ErrHubProviderSlugAlreadyExists))
 }
 
+func TestHubProviderSlugUniquenessIsScopedByTenant(t *testing.T) {
+	truncateTables(t)
+	tenantA, tenantB := 101, 202
+	providerA := &HubProvider{OwnerUserId: 1101, TenantId: &tenantA, Name: "Provider A", Slug: "shared"}
+	providerB := &HubProvider{OwnerUserId: 1102, TenantId: &tenantB, Name: "Provider B", Slug: "shared"}
+	require.NoError(t, CreateHubProvider(providerA))
+	require.NoError(t, CreateHubProvider(providerB))
+
+	duplicateA := &HubProvider{OwnerUserId: 1103, TenantId: &tenantA, Name: "Duplicate A", Slug: "shared"}
+	assert.ErrorIs(t, CreateHubProvider(duplicateA), ErrHubProviderSlugAlreadyExists)
+}
+
+func TestHubProviderPublicProfileScopesDuplicateSlugByTenant(t *testing.T) {
+	truncateTables(t)
+	tenantA, tenantB := 303, 404
+	providerA := &HubProvider{OwnerUserId: 1201, TenantId: &tenantA, Name: "Provider A", Slug: "shared"}
+	providerB := &HubProvider{OwnerUserId: 1202, TenantId: &tenantB, Name: "Provider B", Slug: "shared"}
+	require.NoError(t, CreateHubProvider(providerA))
+	require.NoError(t, CreateHubProvider(providerB))
+
+	profileA, err := GetHubProviderPublicProfile("shared", &tenantA, common.GetTimestamp())
+	require.NoError(t, err)
+	require.NotNil(t, profileA)
+	assert.Equal(t, providerA.Id, profileA.Provider.Id)
+	profileB, err := GetHubProviderPublicProfile("shared", &tenantB, common.GetTimestamp())
+	require.NoError(t, err)
+	require.NotNil(t, profileB)
+	assert.Equal(t, providerB.Id, profileB.Provider.Id)
+}
+
 func TestHubProviderPublicProfileAggregatesCurrentPublishedSupply(t *testing.T) {
 	truncateTables(t)
 	resetHubRoutingSnapshotsForTest(t)
@@ -96,7 +126,7 @@ func TestHubProviderPublicProfileAggregatesCurrentPublishedSupply(t *testing.T) 
 	}
 	require.NoError(t, DB.Create(&samples).Error)
 
-	profile, err := GetHubProviderPublicProfile(provider.Slug, now)
+	profile, err := GetHubProviderPublicProfile(provider.Slug, nil, now)
 	require.NoError(t, err)
 	require.NotNil(t, profile)
 	require.Len(t, profile.Models, 2)
@@ -147,7 +177,7 @@ func TestHubProviderPublicProfileHidesDisabledProvider(t *testing.T) {
 	require.NoError(t, CreateHubProvider(provider))
 	require.NoError(t, DB.Model(&HubProvider{Id: provider.Id}).Update("status", HubProviderStatusDisabled).Error)
 
-	profile, err := GetHubProviderPublicProfile(provider.Slug, common.GetTimestamp())
+	profile, err := GetHubProviderPublicProfile(provider.Slug, nil, common.GetTimestamp())
 	require.NoError(t, err)
 	assert.Nil(t, profile)
 }

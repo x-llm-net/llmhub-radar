@@ -20,6 +20,7 @@ export type ProviderPublicIdentity = {
   id: number
   name: string
   slug: string
+  public_url: string
   website: string
   description: string
   logo_url: string

@@ -169,7 +169,7 @@ func TestCreateHubProviderBindsTrustedTenant(t *testing.T) {
 
 func TestCreateHubProviderAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 	db := openTokenControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubProviderLogoAsset{}))
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}, &model.HubProviderLogoAsset{}, &model.HubSupplyGroup{}))
 	png, err := base64.StdEncoding.DecodeString(
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
 	)
@@ -202,6 +202,7 @@ func TestCreateHubProviderAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 	require.NoError(t, db.Model(&model.HubProvider{}).Where("id = ?", response.Data.Id).
 		Update("status", model.HubProviderStatusActive).Error)
 	publicContext, publicRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/logo-provider/logo", nil, 42)
+	publicContext.Request.Host = model.HubProviderRootDomain()
 	publicContext.Params = gin.Params{{Key: "slug", Value: response.Data.Slug}}
 	GetPublicHubProviderLogo(publicContext)
 	assert.Equal(t, http.StatusOK, publicRecorder.Code)
@@ -364,7 +365,7 @@ func TestHubProviderSelfAndProfileAreScopedByTenant(t *testing.T) {
 	assert.Equal(t, "Provider B updated", providerB.Name)
 }
 
-func TestHubProviderSlugRemainsGloballyUniqueAcrossTenants(t *testing.T) {
+func TestHubProviderSlugCanRepeatAcrossTenants(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
 	tenantA, tenantB := 11, 22
@@ -374,7 +375,7 @@ func TestHubProviderSlugRemainsGloballyUniqueAcrossTenants(t *testing.T) {
 	err := model.CreateHubProvider(&model.HubProvider{
 		OwnerUserId: 42, TenantId: &tenantB, Name: "Provider B", Slug: "shared-slug",
 	})
-	assert.ErrorIs(t, err, model.ErrHubProviderSlugAlreadyExists)
+	require.NoError(t, err)
 }
 
 func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
@@ -582,6 +583,7 @@ func TestGetPublicHubProviderOnlyReturnsActiveProvider(t *testing.T) {
 	}).Error)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/"+provider.Slug, nil, 0)
+	ctx.Request.Host = model.HubProviderRootDomain()
 	ctx.Params = gin.Params{{Key: "slug", Value: provider.Slug}}
 	GetPublicHubProvider(ctx)
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -599,6 +601,7 @@ func TestGetPublicHubProviderOnlyReturnsActiveProvider(t *testing.T) {
 
 	require.NoError(t, model.DB.Model(&model.HubProvider{Id: provider.Id}).Update("status", model.HubProviderStatusDisabled).Error)
 	disabledCtx, disabledRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/providers/"+provider.Slug, nil, 0)
+	disabledCtx.Request.Host = model.HubProviderRootDomain()
 	disabledCtx.Params = gin.Params{{Key: "slug", Value: provider.Slug}}
 	GetPublicHubProvider(disabledCtx)
 	assert.Equal(t, http.StatusNotFound, disabledRecorder.Code)

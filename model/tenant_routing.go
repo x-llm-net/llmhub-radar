@@ -37,14 +37,12 @@ func NormalizeTenantHost(host string) (string, error) {
 	return normalizeTenantHost(host)
 }
 
-func ResolveTenantHost(host string) (TenantHostResolution, error) {
-	hostname, err := normalizeTenantHost(host)
-	if err != nil {
-		return TenantHostResolution{}, err
+func resolveExactTenantHostname(hostname string) (TenantHostResolution, bool, error) {
+	if DB == nil || !DB.Migrator().HasTable(&TenantDomain{}) || !DB.Migrator().HasTable(&Tenant{}) {
+		return TenantHostResolution{}, false, nil
 	}
-
 	var resolution TenantHostResolution
-	err = DB.Table("tenant_domains AS domains").
+	err := DB.Table("tenant_domains AS domains").
 		Select(
 			"domains.id AS domain_id, domains.tenant_id, domains.host, "+
 				"domains.status AS domain_status, domains.verification_status, "+
@@ -54,6 +52,31 @@ func ResolveTenantHost(host string) (TenantHostResolution, error) {
 		Where("domains.host = ?", hostname).
 		Take(&resolution).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return TenantHostResolution{}, false, nil
+	}
+	if err != nil {
+		return TenantHostResolution{}, false, err
+	}
+
+	resolution.IsConfigured = true
+	resolution.IsTenantHost = resolution.TenantID > 0 &&
+		resolution.TenantStatus == TenantStatusActive &&
+		resolution.DomainStatus == TenantDomainStatusActive &&
+		resolution.VerificationStatus == TenantDomainVerificationVerified
+	return resolution, true, nil
+}
+
+func ResolveTenantHost(host string) (TenantHostResolution, error) {
+	hostname, err := normalizeTenantHost(host)
+	if err != nil {
+		return TenantHostResolution{}, err
+	}
+
+	resolution, found, err := resolveExactTenantHostname(hostname)
+	if err != nil {
+		return TenantHostResolution{}, err
+	}
+	if !found {
 		// Provider subdomains inherit the brand and tenant scope of the
 		// provider they expose. The platform root remains resolved through
 		// tenant_domains above, while legacy platform providers stay unscoped.
@@ -80,14 +103,5 @@ func ResolveTenantHost(host string) (TenantHostResolution, error) {
 			VerificationStatus: TenantDomainVerificationVerified,
 		}, nil
 	}
-	if err != nil {
-		return TenantHostResolution{}, err
-	}
-
-	resolution.IsConfigured = true
-	resolution.IsTenantHost = resolution.TenantID > 0 &&
-		resolution.TenantStatus == TenantStatusActive &&
-		resolution.DomainStatus == TenantDomainStatusActive &&
-		resolution.VerificationStatus == TenantDomainVerificationVerified
 	return resolution, nil
 }

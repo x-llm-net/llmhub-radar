@@ -178,6 +178,9 @@ func AdminCreateHubProvider(c *gin.Context) {
 	}
 
 	model.HydrateHubProviderVerificationFields(provider)
+	if err := model.HydrateHubProviderPublicURL(provider); err != nil {
+		common.SysError("failed to hydrate admin-created hub provider public URL: " + err.Error())
+	}
 	model.HydrateHubProviderLogoURL(provider, "/api/hub/admin/providers/"+strconv.Itoa(provider.Id)+"/logo")
 	common.ApiSuccess(c, provider)
 }

@@ -47,3 +47,32 @@ func TestResolveHubProviderHostReturnsDisabledProviderForMiddlewareDecision(t *t
 	require.True(t, resolution.IsProviderHost)
 	assert.Equal(t, HubProviderStatusDisabled, resolution.Provider.Status)
 }
+
+func TestResolveHubProviderHostScopesDuplicateSlugByTenantDomain(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Tenant{}, &TenantDomain{}, &HubProvider{}))
+	tenantA := Tenant{Name: "Tenant A", Slug: "tenant-a", Status: TenantStatusActive}
+	tenantB := Tenant{Name: "Tenant B", Slug: "tenant-b", Status: TenantStatusActive}
+	require.NoError(t, DB.Create(&tenantA).Error)
+	require.NoError(t, DB.Create(&tenantB).Error)
+	require.NoError(t, DB.Create(&[]TenantDomain{
+		{TenantId: tenantA.Id, Host: "routing-a.example", IsPrimary: true, VerificationStatus: TenantDomainVerificationVerified, Status: TenantDomainStatusActive},
+		{TenantId: tenantB.Id, Host: "routing-b.example", IsPrimary: true, VerificationStatus: TenantDomainVerificationVerified, Status: TenantDomainStatusActive},
+	}).Error)
+	providerA := &HubProvider{OwnerUserId: 95001, TenantId: &tenantA.Id, Name: "Provider A", Slug: "shared"}
+	providerB := &HubProvider{OwnerUserId: 95002, TenantId: &tenantB.Id, Name: "Provider B", Slug: "shared"}
+	require.NoError(t, CreateHubProvider(providerA))
+	require.NoError(t, CreateHubProvider(providerB))
+
+	resolution, err := ResolveHubProviderHost("shared.routing-a.example")
+	require.NoError(t, err)
+	assert.Equal(t, providerA.Id, resolution.Provider.Id)
+	resolution, err = ResolveHubProviderHost("shared.routing-b.example")
+	require.NoError(t, err)
+	assert.Equal(t, providerB.Id, resolution.Provider.Id)
+
+	_, err = ResolveHubProviderHost("missing.routing-b.example")
+	assert.ErrorIs(t, err, ErrHubProviderHostNotFound)
+	_, found := GetHubProviderRoutingBySlug("shared")
+	assert.False(t, found, "a duplicate slug must be ambiguous without tenant context")
+}

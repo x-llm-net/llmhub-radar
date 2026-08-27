@@ -176,3 +176,17 @@ func GetHubProviderByIDInTenant(providerID int, tenantID *int) (*HubProvider, er
 	}
 	return &provider, nil
 }
+
+func GetActiveHubProviderBySlugInTenant(slug string, tenantID *int) (*HubProvider, error) {
+	var provider HubProvider
+	err := ApplyHubProviderTenantScope(
+		DB.Where("slug = ? AND status = ?", slug, HubProviderStatusActive), tenantID,
+	).First(&provider).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
