@@ -110,8 +110,8 @@ func TestSettleBillingAndProviderEarningCreatesOneSettledEntry(t *testing.T) {
 	require.NoError(t, model.DB.Find(&entries).Error)
 	require.Len(t, entries, 1)
 	assert.Equal(t, model.HubProviderEarningStatusSettled, entries[0].Status)
-	assert.Equal(t, 100, entries[0].PlatformFeeQuota)
-	assert.Equal(t, 900, entries[0].ProviderIncomeQuota)
+	assert.Equal(t, 300, entries[0].PlatformFeeQuota)
+	assert.Equal(t, 700, entries[0].ProviderIncomeQuota)
 }
 
 func TestFallbackReferralSettingControlsEarningPreparation(t *testing.T) {
@@ -310,7 +310,7 @@ func TestSettleTaskBillingLeavesProviderEarningPending(t *testing.T) {
 	require.NotNil(t, earning.SettlementDeferred)
 	assert.False(t, *earning.SettlementDeferred)
 	assert.Equal(t, 2100, earning.GrossQuota)
-	assert.Equal(t, 1890, earning.ProviderIncomeQuota)
+	assert.Equal(t, 1470, earning.ProviderIncomeQuota)
 }
 
 func TestRecoverReadyHubProviderEarningAfterConsumerBilling(t *testing.T) {
@@ -335,7 +335,7 @@ func TestRecoverReadyHubProviderEarningAfterConsumerBilling(t *testing.T) {
 	var earning model.HubProviderEarning
 	require.NoError(t, model.DB.Where("request_id = ?", params.RequestId).First(&earning).Error)
 	assert.Equal(t, model.HubProviderEarningStatusSettled, earning.Status)
-	assert.Equal(t, 1080, earning.ProviderIncomeQuota)
+	assert.Equal(t, 840, earning.ProviderIncomeQuota)
 }
 
 func TestCancelTaskProviderEarningCancelsPendingEntry(t *testing.T) {

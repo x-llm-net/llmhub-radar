@@ -32,6 +32,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -639,7 +640,7 @@ func TestAdminListHubProvidersFiltersOwnersAndReturnsSupplyMetrics(t *testing.T)
 	require.NotNil(t, item.ProviderServiceFeeOverrideBasisPoints)
 	assert.Zero(t, *item.ProviderServiceFeeOverrideBasisPoints)
 	assert.Zero(t, item.EffectiveProviderServiceFeeBasisPoints)
-	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, item.GlobalProviderServiceFeeBasisPoints)
+	assert.Equal(t, hub_provider_settlement_setting.DefaultProviderServiceFeeBasisPoints, item.GlobalProviderServiceFeeBasisPoints)
 	require.Len(t, item.UpstreamUsages, 1)
 	assert.Equal(t, "https://upstream.example", item.UpstreamUsages[0].Origin)
 	assert.Equal(t, int64(2), item.UpstreamUsages[0].ProviderCount)
@@ -839,6 +840,6 @@ func TestAdminUpdateHubProviderSettlementSettingsSupportsZeroAndGlobalFee(t *tes
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success, recorder.Body.String())
 	assert.Nil(t, response.Data.ProviderServiceFeeBasisPoints)
-	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, response.Data.EffectiveProviderServiceFeeBasisPoints)
-	assert.Equal(t, model.HubProviderPlatformFeeBasisPoints, response.Data.EffectivePlatformFeeBasisPoints)
+	assert.Equal(t, hub_provider_settlement_setting.DefaultProviderServiceFeeBasisPoints, response.Data.EffectiveProviderServiceFeeBasisPoints)
+	assert.Equal(t, hub_provider_settlement_setting.DefaultProviderServiceFeeBasisPoints, response.Data.EffectivePlatformFeeBasisPoints)
 }

@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidateOption(t *testing.T) {
+	assert.Equal(t, 3000, DefaultPlatformFeeBasisPoints)
 	require.NoError(t, ValidateOption(OptionKeyPlatformFeeBasisPoints, "0"))
 	require.NoError(t, ValidateOption(OptionKeyPlatformFeeBasisPoints, "10000"))
 	assert.Error(t, ValidateOption(OptionKeyPlatformFeeBasisPoints, "10001"))

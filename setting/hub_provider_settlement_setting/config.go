@@ -18,7 +18,7 @@ const (
 	OptionKeyFallbackReferralEnabled       = "hub_provider_settlement_setting.fallback_referral_enabled"
 	OptionKeyFallbackReferralBasisPoints   = "hub_provider_settlement_setting.fallback_referral_basis_points"
 
-	DefaultPlatformFeeBasisPoints        = 1000
+	DefaultPlatformFeeBasisPoints        = 3000
 	DefaultProviderServiceFeeBasisPoints = 1000
 	DefaultMinimumWithdrawalQuota        = 0
 	DefaultFallbackReferralEnabled       = true

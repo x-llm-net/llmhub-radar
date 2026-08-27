@@ -94,6 +94,7 @@ func TestCalculateHubProviderTwoLayerRevenueSplitKeepsUserChargeExact(t *testing
 		{name: "ten percent reseller and platform", gross: 100, providerFee: 1000, platformFee: 1000, wantPlatform: 1, wantProvider: 90, wantResellerGross: 10, wantResellerNet: 9},
 		{name: "five percent reseller", gross: 1000, providerFee: 500, platformFee: 1000, wantPlatform: 5, wantProvider: 950, wantResellerGross: 50, wantResellerNet: 45},
 		{name: "fallback commission comes from provider", gross: 1000, providerFee: 1000, platformFee: 1000, referralFee: 100, wantPlatform: 10, wantProvider: 890, wantReferral: 10, wantResellerGross: 100, wantResellerNet: 90},
+		{name: "default platform share with fallback commission", gross: 10000, providerFee: 1000, platformFee: 3000, referralFee: 100, wantPlatform: 300, wantProvider: 8900, wantReferral: 100, wantResellerGross: 1000, wantResellerNet: 700},
 		{name: "free reseller", gross: 1000, providerFee: 0, platformFee: 1000, wantProvider: 1000},
 	}
 	for _, test := range tests {
@@ -407,8 +408,8 @@ func TestHubProviderEarningSettlementIsIdempotentByRequest(t *testing.T) {
 	require.NoError(t, DB.Find(&entries).Error)
 	require.Len(t, entries, 1)
 	assert.Equal(t, HubProviderEarningStatusSettled, entries[0].Status)
-	assert.Equal(t, 101, entries[0].PlatformFeeQuota)
-	assert.Equal(t, 904, entries[0].ProviderIncomeQuota)
+	assert.Equal(t, 302, entries[0].PlatformFeeQuota)
+	assert.Equal(t, 703, entries[0].ProviderIncomeQuota)
 	assert.Equal(t, params.GrossQuota, entries[0].PlatformFeeQuota+entries[0].ProviderIncomeQuota)
 	assert.NotZero(t, entries[0].SettledAt)
 
@@ -579,9 +580,9 @@ func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *te
 
 	summary, err := GetHubProviderSettlementSummary(provider.Id)
 	require.NoError(t, err)
-	assert.Equal(t, 900, summary.SettledIncomeQuota)
-	assert.Equal(t, 450, summary.PendingIncomeQuota)
-	assert.Equal(t, 900, summary.WithdrawableQuota)
+	assert.Equal(t, 700, summary.SettledIncomeQuota)
+	assert.Equal(t, 350, summary.PendingIncomeQuota)
+	assert.Equal(t, 700, summary.WithdrawableQuota)
 
 	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 600, payoutAccount.Id)
 	require.NoError(t, err)
@@ -592,7 +593,7 @@ func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *te
 	summary, err = GetHubProviderSettlementSummary(provider.Id)
 	require.NoError(t, err)
 	assert.Equal(t, 600, summary.ReservedWithdrawalQuota)
-	assert.Equal(t, 300, summary.WithdrawableQuota)
+	assert.Equal(t, 100, summary.WithdrawableQuota)
 
 	approved, err := UpdateHubProviderWithdrawalStatus(
 		withdrawal.Id,
@@ -630,7 +631,7 @@ func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *te
 	require.NoError(t, err)
 	assert.Zero(t, summary.ReservedWithdrawalQuota)
 	assert.Equal(t, 600, summary.PaidWithdrawalQuota)
-	assert.Equal(t, 300, summary.WithdrawableQuota)
+	assert.Equal(t, 100, summary.WithdrawableQuota)
 }
 
 func TestHubProviderWithdrawalCanBePaidDirectly(t *testing.T) {
