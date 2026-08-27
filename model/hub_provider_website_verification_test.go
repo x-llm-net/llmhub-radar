@@ -55,9 +55,10 @@ func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *test
 	assert.Regexp(t, `^skyhope-[a-z0-9]{4}$`, provider.Slug)
 	assert.Equal(t, "skyhope", provider.SlugBase)
 
-	asset, err := CreateHubProviderWebsiteEvidenceAsset(7001, "image/png", []byte("screenshot"))
+	asset, err := CreateHubProviderWebsiteEvidenceAsset(provider.Id, 7001, "image/png", []byte("screenshot"))
 	require.NoError(t, err)
 	verification, err := SubmitHubProviderWebsiteVerification(
+		provider.Id,
 		7001,
 		HubProviderWebsiteVerificationMethodManual,
 		asset.Id,
@@ -75,7 +76,7 @@ func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *test
 	)
 	require.NoError(t, err)
 
-	stored, err := GetHubProviderByOwnerUserID(7001)
+	stored, err := GetHubProviderByOwnerUserIDWithoutTenant(7001)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, HubProviderStatusActive, stored.Status)
@@ -106,7 +107,7 @@ func TestHubProviderApprovalCanKeepUnverifiedWebsitePrivate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	stored, err := GetHubProviderByOwnerUserID(7002)
+	stored, err := GetHubProviderByOwnerUserIDWithoutTenant(7002)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, originalSlug, stored.Slug)

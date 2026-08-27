@@ -140,7 +140,7 @@ func GetHubProviderLogsStat(c *gin.Context) {
 }
 
 func hubProviderOwnerLogChannelIDs(c *gin.Context) ([]int, bool) {
-	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	provider, err := getCurrentHubProvider(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return nil, false

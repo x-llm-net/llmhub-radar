@@ -30,7 +30,7 @@ import (
 
 func seedSettlementPayoutAccount(t *testing.T, provider HubProvider) *HubProviderPayoutAccount {
 	t.Helper()
-	account, err := CreateHubProviderPayoutAccount(provider.OwnerUserId, HubProviderPayoutAccountInput{
+	account, err := CreateHubProviderPayoutAccount(provider.Id, provider.OwnerUserId, HubProviderPayoutAccountInput{
 		Method: HubProviderPayoutMethodAlipay,
 		Details: HubProviderPayoutAccountDetails{
 			RecipientName: "Alice",
@@ -225,7 +225,7 @@ func TestFallbackReferralIncomeIsSettledAndWithdrawable(t *testing.T) {
 	assert.Equal(t, 890, adminItems[0].ProviderIncomeQuota)
 	assert.Equal(t, 10, adminItems[0].ReferralIncomeQuota)
 
-	transfer, err := CreateHubProviderBalanceTransfer(referralProvider.OwnerUserId, 6, "referral-transfer")
+	transfer, err := CreateHubProviderBalanceTransfer(referralProvider.Id, referralProvider.OwnerUserId, 6, "referral-transfer")
 	require.NoError(t, err)
 	assert.Equal(t, -6, transfer.ProviderIncomeQuota)
 	require.NoError(t, DB.First(&referralOwner, referralOwner.Id).Error)
@@ -529,9 +529,9 @@ func TestHubProviderWithdrawalEnforcesConfiguredMinimum(t *testing.T) {
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)
 
-	_, err = CreateHubProviderWithdrawal(provider.OwnerUserId, 99, account.Id)
+	_, err = CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 99, account.Id)
 	assert.ErrorIs(t, err, ErrHubProviderWithdrawalBelowMinimum)
-	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 100, account.Id)
+	withdrawal, err := CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 100, account.Id)
 	require.NoError(t, err)
 	assert.Equal(t, 100, withdrawal.AmountQuota)
 }
@@ -584,10 +584,10 @@ func TestPendingEarningsAreNotWithdrawableAndOpenWithdrawalReservesBalance(t *te
 	assert.Equal(t, 350, summary.PendingIncomeQuota)
 	assert.Equal(t, 700, summary.WithdrawableQuota)
 
-	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 600, payoutAccount.Id)
+	withdrawal, err := CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 600, payoutAccount.Id)
 	require.NoError(t, err)
 	assert.Equal(t, HubProviderWithdrawalStatusPending, withdrawal.Status)
-	_, err = CreateHubProviderWithdrawal(provider.OwnerUserId, 1, payoutAccount.Id)
+	_, err = CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 1, payoutAccount.Id)
 	assert.ErrorIs(t, err, ErrHubProviderWithdrawalPending)
 
 	summary, err = GetHubProviderSettlementSummary(provider.Id)
@@ -641,7 +641,7 @@ func TestHubProviderWithdrawalCanBePaidDirectly(t *testing.T) {
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)
-	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 100, payoutAccount.Id)
+	withdrawal, err := CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 100, payoutAccount.Id)
 	require.NoError(t, err)
 
 	paid, err := UpdateHubProviderWithdrawalStatus(
@@ -671,13 +671,13 @@ func TestHubProviderWithdrawalRejectsInsufficientBalanceAndInvalidTransition(t *
 	provider := HubProvider{Id: 3, OwnerUserId: 103, Slot: 1, Name: "Provider 3", Slug: "provider-three", Status: HubProviderStatusActive}
 	require.NoError(t, DB.Create(&provider).Error)
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
-	_, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 1, payoutAccount.Id)
+	_, err := CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 1, payoutAccount.Id)
 	assert.ErrorIs(t, err, ErrHubProviderWithdrawalInsufficient)
 
 	adjustment, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)
 	assert.Equal(t, HubProviderEarningTypeAdjustment, adjustment.EntryType)
-	withdrawal, err := CreateHubProviderWithdrawal(provider.OwnerUserId, 100, payoutAccount.Id)
+	withdrawal, err := CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 100, payoutAccount.Id)
 	require.NoError(t, err)
 	_, err = UpdateHubProviderWithdrawalStatus(
 		withdrawal.Id,
@@ -714,10 +714,10 @@ func TestHubProviderBalanceTransferCreditsWalletAndReservesEarnings(t *testing.T
 	payoutAccount := seedSettlementPayoutAccount(t, provider)
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)
-	_, err = CreateHubProviderWithdrawal(owner.Id, 70, payoutAccount.Id)
+	_, err = CreateHubProviderWithdrawal(provider.Id, owner.Id, 70, payoutAccount.Id)
 	require.NoError(t, err)
 
-	transfer, err := CreateHubProviderBalanceTransfer(owner.Id, 120, "transfer-1")
+	transfer, err := CreateHubProviderBalanceTransfer(provider.Id, owner.Id, 120, "transfer-1")
 	require.NoError(t, err)
 	assert.Equal(t, HubProviderEarningTypeBalanceTransfer, transfer.EntryType)
 	assert.Equal(t, HubProviderEarningStatusSettled, transfer.Status)
@@ -734,15 +734,15 @@ func TestHubProviderBalanceTransferCreditsWalletAndReservesEarnings(t *testing.T
 	assert.Equal(t, 120, summary.TransferredBalanceQuota)
 	assert.Equal(t, 10, summary.WithdrawableQuota)
 
-	repeated, err := CreateHubProviderBalanceTransfer(owner.Id, 120, "transfer-1")
+	repeated, err := CreateHubProviderBalanceTransfer(provider.Id, owner.Id, 120, "transfer-1")
 	require.NoError(t, err)
 	assert.Equal(t, transfer.Id, repeated.Id)
 	require.NoError(t, DB.First(&updated, owner.Id).Error)
 	assert.Equal(t, 170, updated.Quota)
 
-	_, err = CreateHubProviderBalanceTransfer(owner.Id, 121, "transfer-1")
+	_, err = CreateHubProviderBalanceTransfer(provider.Id, owner.Id, 121, "transfer-1")
 	assert.ErrorIs(t, err, ErrHubProviderEarningReferenceConflict)
-	_, err = CreateHubProviderBalanceTransfer(owner.Id, 11, "transfer-2")
+	_, err = CreateHubProviderBalanceTransfer(provider.Id, owner.Id, 11, "transfer-2")
 	assert.ErrorIs(t, err, ErrHubProviderBalanceTransferInsufficient)
 }
 
@@ -753,6 +753,56 @@ func TestHubProviderWithdrawalRequiresExistingPayoutAccount(t *testing.T) {
 	_, err := CreateHubProviderManualAdjustment(provider.Id, 200, 999, "initial credit")
 	require.NoError(t, err)
 
-	_, err = CreateHubProviderWithdrawal(provider.OwnerUserId, 100, 999)
+	_, err = CreateHubProviderWithdrawal(provider.Id, provider.OwnerUserId, 100, 999)
 	assert.ErrorIs(t, err, ErrHubProviderPayoutAccountNotFound)
+}
+
+func TestHubProviderFinanceIsolatedForSameOwnerAcrossTenants(t *testing.T) {
+	truncateTables(t)
+	owner := User{Id: 105, Username: "multi-tenant-provider-owner", Quota: 10, Status: 1}
+	require.NoError(t, DB.Create(&owner).Error)
+	tenantA, tenantB := 101, 202
+	providerA := HubProvider{OwnerUserId: owner.Id, TenantId: &tenantA, Name: "Provider A", Slug: "finance-provider-a", Status: HubProviderStatusActive}
+	providerB := HubProvider{OwnerUserId: owner.Id, TenantId: &tenantB, Name: "Provider B", Slug: "finance-provider-b", Status: HubProviderStatusActive}
+	require.NoError(t, CreateHubProvider(&providerA))
+	require.NoError(t, CreateHubProvider(&providerB))
+
+	accountA := seedSettlementPayoutAccount(t, providerA)
+	accountB := seedSettlementPayoutAccount(t, providerB)
+	accountsA, err := ListHubProviderPayoutAccounts(providerA.Id, owner.Id)
+	require.NoError(t, err)
+	accountsB, err := ListHubProviderPayoutAccounts(providerB.Id, owner.Id)
+	require.NoError(t, err)
+	require.Len(t, accountsA, 1)
+	require.Len(t, accountsB, 1)
+	assert.Equal(t, accountA.Id, accountsA[0].Id)
+	assert.Equal(t, accountB.Id, accountsB[0].Id)
+
+	_, err = CreateHubProviderManualAdjustment(providerA.Id, 200, 999, "tenant A credit")
+	require.NoError(t, err)
+	_, err = CreateHubProviderManualAdjustment(providerB.Id, 300, 999, "tenant B credit")
+	require.NoError(t, err)
+	_, err = CreateHubProviderWithdrawal(providerB.Id, owner.Id, 100, accountA.Id)
+	assert.ErrorIs(t, err, ErrHubProviderPayoutAccountNotFound)
+
+	transferA, err := CreateHubProviderBalanceTransfer(providerA.Id, owner.Id, 40, "same-key")
+	require.NoError(t, err)
+	transferB, err := CreateHubProviderBalanceTransfer(providerB.Id, owner.Id, 50, "same-key")
+	require.NoError(t, err)
+	assert.NotEqual(t, transferA.RequestId, transferB.RequestId)
+	repeatedA, err := CreateHubProviderBalanceTransfer(providerA.Id, owner.Id, 40, "same-key")
+	require.NoError(t, err)
+	assert.Equal(t, transferA.Id, repeatedA.Id)
+
+	summaryA, err := GetHubProviderSettlementSummary(providerA.Id)
+	require.NoError(t, err)
+	summaryB, err := GetHubProviderSettlementSummary(providerB.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 40, summaryA.TransferredBalanceQuota)
+	assert.Equal(t, 160, summaryA.WithdrawableQuota)
+	assert.Equal(t, 50, summaryB.TransferredBalanceQuota)
+	assert.Equal(t, 250, summaryB.WithdrawableQuota)
+
+	require.NoError(t, DB.First(&owner, owner.Id).Error)
+	assert.Equal(t, 100, owner.Quota)
 }

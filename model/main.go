@@ -326,6 +326,9 @@ func migrateDB() error {
 	if err := migrateHubSupplyGroupLegacyColumns(); err != nil {
 		return err
 	}
+	if err := migrateHubProviderOwnerConstraint(); err != nil {
+		return err
+	}
 	if err := migrateHubProviderSlugs(); err != nil {
 		return err
 	}
@@ -441,6 +444,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateHubSupplyGroupLegacyColumns(); err != nil {
+		return err
+	}
+	if err := migrateHubProviderOwnerConstraint(); err != nil {
 		return err
 	}
 	if err := migrateHubProviderSlugs(); err != nil {

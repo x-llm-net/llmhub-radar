@@ -55,9 +55,9 @@ var hubProviderReservedSlugs = map[string]struct{}{
 // and their New API channels will reference this profile in later steps.
 type HubProvider struct {
 	Id                           int    `json:"id" gorm:"primaryKey"`
-	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:1"`
-	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index"`
-	Slot                         int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_owner_slot,priority:2"`
+	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_tenant_owner,priority:2"`
+	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index;uniqueIndex:idx_hub_provider_tenant_owner,priority:1"`
+	Slot                         int    `json:"-" gorm:"not null"`
 	Name                         string `json:"name" gorm:"type:varchar(80);not null"`
 	Slug                         string `json:"slug" gorm:"type:varchar(63)"`
 	SlugBase                     string `json:"slug_base" gorm:"type:varchar(63);not null;default:''"`
@@ -165,9 +165,18 @@ func (p *HubProvider) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 
-func GetHubProviderByOwnerUserID(ownerUserID int) (*HubProvider, error) {
+func getHubProviderByOwnerUserIDAndTenant(db *gorm.DB, ownerUserID int, tenantID *int) (*HubProvider, error) {
+	if ownerUserID <= 0 {
+		return nil, nil
+	}
+	query := db.Where("owner_user_id = ?", ownerUserID)
+	if tenantID == nil {
+		query = query.Where("tenant_id IS NULL")
+	} else {
+		query = query.Where("tenant_id = ?", *tenantID)
+	}
 	var provider HubProvider
-	err := DB.Where("owner_user_id = ?", ownerUserID).Order("slot asc").First(&provider).Error
+	err := query.First(&provider).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -175,6 +184,17 @@ func GetHubProviderByOwnerUserID(ownerUserID int) (*HubProvider, error) {
 		return nil, err
 	}
 	return &provider, nil
+}
+
+func GetHubProviderByOwnerUserIDInTenant(ownerUserID, tenantID int) (*HubProvider, error) {
+	if tenantID <= 0 {
+		return nil, ErrTenantNotFound
+	}
+	return getHubProviderByOwnerUserIDAndTenant(DB, ownerUserID, &tenantID)
+}
+
+func GetHubProviderByOwnerUserIDWithoutTenant(ownerUserID int) (*HubProvider, error) {
+	return getHubProviderByOwnerUserIDAndTenant(DB, ownerUserID, nil)
 }
 
 func GetHubProviderByID(providerID int) (*HubProvider, error) {
@@ -348,7 +368,7 @@ func prepareHubProviderForCreate(provider *HubProvider) error {
 		return errors.New("invalid hub provider")
 	}
 
-	existing, err := GetHubProviderByOwnerUserID(provider.OwnerUserId)
+	existing, err := getHubProviderByOwnerUserIDAndTenant(DB, provider.OwnerUserId, provider.TenantId)
 	if err != nil {
 		return err
 	}
@@ -377,7 +397,7 @@ func mapHubProviderCreateError(provider *HubProvider, createErr error) error {
 	if provider == nil {
 		return createErr
 	}
-	existing, lookupErr := GetHubProviderByOwnerUserID(provider.OwnerUserId)
+	existing, lookupErr := getHubProviderByOwnerUserIDAndTenant(DB, provider.OwnerUserId, provider.TenantId)
 	if lookupErr == nil && existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
@@ -409,16 +429,17 @@ func CreateHubProvider(provider *HubProvider) error {
 // rejected application returns to pending review when the user resubmits it.
 func updateHubProviderProfile(
 	db *gorm.DB,
+	providerID int,
 	ownerUserID int,
 	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
 ) (*HubProvider, error) {
-	if ownerUserID <= 0 {
+	if providerID <= 0 || ownerUserID <= 0 {
 		return nil, errors.New("invalid hub provider owner")
 	}
 
 	var provider HubProvider
-	if err := db.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
+	if err := db.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrHubProviderNotFound
 		}
@@ -470,12 +491,13 @@ func updateHubProviderProfile(
 }
 
 func UpdateHubProviderProfile(
+	providerID int,
 	ownerUserID int,
 	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
 ) (*HubProvider, error) {
 	provider, err := updateHubProviderProfile(
-		DB, ownerUserID, name, website, description, logoURL,
+		DB, providerID, ownerUserID, name, website, description, logoURL,
 		contactType, contactValue, supportType, supportValue,
 	)
 	if err != nil {
@@ -615,10 +637,13 @@ func ListHubProvidersForOverview(keyword, status string, offset, limit int, tena
 	return listHubProviders(keyword, status, offset, limit, tenantID, platformOnly || tenantID != nil, platformOnly, true, nil)
 }
 
-func ListHubProviderOwnerCandidates(keyword string, offset, limit int) ([]HubProviderOwnerCandidate, int64, error) {
+func ListHubProviderOwnerCandidates(keyword string, offset, limit, tenantID int) ([]HubProviderOwnerCandidate, int64, error) {
+	if tenantID <= 0 {
+		return nil, 0, ErrTenantNotFound
+	}
 	query := DB.Table("users AS users").
 		Select("users.id, users.username, users.display_name, users.email").
-		Joins("LEFT JOIN hub_providers AS providers ON providers.owner_user_id = users.id").
+		Joins("LEFT JOIN hub_providers AS providers ON providers.owner_user_id = users.id AND providers.tenant_id = ?", tenantID).
 		Where("users.status = ? AND users.deleted_at IS NULL AND providers.id IS NULL", common.UserStatusEnabled)
 	keyword = strings.TrimSpace(keyword)
 	if keyword != "" {

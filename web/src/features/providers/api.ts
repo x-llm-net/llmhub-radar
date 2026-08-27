@@ -93,10 +93,11 @@ export const adminProviderOwnerCandidatesQueryKey = [
 ] as const
 
 export async function getAdminProviderOwnerCandidates(
-  keyword = ''
+  keyword = '',
+  tenantId?: number
 ): Promise<HubProviderOwnerCandidatesResponse> {
   const response = await api.get('/api/hub/admin/providers/owner-candidates', {
-    params: { keyword, p: 1, page_size: 20 },
+    params: { keyword, tenant_id: tenantId, p: 1, page_size: 20 },
   })
   return response.data
 }

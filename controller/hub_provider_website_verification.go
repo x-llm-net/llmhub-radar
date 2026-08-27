@@ -79,7 +79,12 @@ func UploadHubProviderWebsiteEvidence(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderWebsiteEvidenceInvalid)
 		return
 	}
-	asset, err := model.CreateHubProviderWebsiteEvidenceAsset(c.GetInt("id"), contentType, data)
+	provider, err := getCurrentHubProvider(c)
+	if err != nil || provider == nil {
+		hubProviderWebsiteVerificationError(c, model.ErrHubProviderNotFound)
+		return
+	}
+	asset, err := model.CreateHubProviderWebsiteEvidenceAsset(provider.Id, c.GetInt("id"), contentType, data)
 	if err != nil {
 		hubProviderWebsiteVerificationError(c, err)
 		return
@@ -98,12 +103,9 @@ func GetHubProviderWebsiteEvidence(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	if c.GetInt("role") < common.RoleAdminUser {
-		provider, providerErr := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
-		if providerErr != nil || provider == nil || provider.Id != asset.ProviderId {
-			c.Status(http.StatusNotFound)
-			return
-		}
+	if !canReadHubProviderPrivateAsset(c, asset.ProviderId) {
+		c.Status(http.StatusNotFound)
+		return
 	}
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
@@ -116,8 +118,13 @@ func SubmitHubProviderWebsiteVerification(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	currentProvider, err := getCurrentHubProvider(c)
+	if err != nil || currentProvider == nil {
+		hubProviderWebsiteVerificationError(c, model.ErrHubProviderNotFound)
+		return
+	}
 	provider, err := model.SubmitHubProviderWebsiteVerification(
-		c.GetInt("id"), request.Method, request.EvidenceAssetID,
+		currentProvider.Id, c.GetInt("id"), request.Method, request.EvidenceAssetID,
 	)
 	if err != nil {
 		hubProviderWebsiteVerificationError(c, err)
@@ -127,7 +134,7 @@ func SubmitHubProviderWebsiteVerification(c *gin.Context) {
 }
 
 func VerifyHubProviderWebsite(c *gin.Context) {
-	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	provider, err := getCurrentHubProvider(c)
 	if err != nil || provider == nil {
 		hubProviderWebsiteVerificationError(c, model.ErrHubProviderNotFound)
 		return
@@ -151,7 +158,7 @@ func VerifyHubProviderWebsite(c *gin.Context) {
 	expectedValue := model.HubProviderWebsiteVerificationPrefix + provider.WebsiteVerificationToken
 	verificationErr := verifyHubProviderOriginClaim(c.Request.Context(), claim, expectedValue)
 	updated, updateErr := model.UpdateHubProviderWebsiteVerificationResult(
-		c.GetInt("id"), verificationErr == nil, verificationErrorMessage(verificationErr),
+		provider.Id, c.GetInt("id"), verificationErr == nil, verificationErrorMessage(verificationErr),
 	)
 	if updateErr != nil {
 		hubProviderWebsiteVerificationError(c, updateErr)

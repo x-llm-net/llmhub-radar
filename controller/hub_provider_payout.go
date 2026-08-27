@@ -60,10 +60,11 @@ func payoutAccountError(c *gin.Context, err error) {
 }
 
 func GetHubProviderPayoutAccounts(c *gin.Context) {
-	if _, ok := currentHubProviderOrError(c); !ok {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
 		return
 	}
-	items, err := model.ListHubProviderPayoutAccounts(c.GetInt("id"))
+	items, err := model.ListHubProviderPayoutAccounts(provider.Id, c.GetInt("id"))
 	if err != nil {
 		payoutAccountError(c, err)
 		return
@@ -72,7 +73,8 @@ func GetHubProviderPayoutAccounts(c *gin.Context) {
 }
 
 func CreateHubProviderPayoutAccount(c *gin.Context) {
-	if _, ok := currentHubProviderOrError(c); !ok {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
 		return
 	}
 	var request hubProviderPayoutAccountRequest
@@ -80,7 +82,7 @@ func CreateHubProviderPayoutAccount(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	account, err := model.CreateHubProviderPayoutAccount(c.GetInt("id"), request.input())
+	account, err := model.CreateHubProviderPayoutAccount(provider.Id, c.GetInt("id"), request.input())
 	if err != nil {
 		payoutAccountError(c, err)
 		return
@@ -89,6 +91,10 @@ func CreateHubProviderPayoutAccount(c *gin.Context) {
 }
 
 func UpdateHubProviderPayoutAccount(c *gin.Context) {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.Atoi(c.Param("account_id"))
 	if err != nil || id <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -99,7 +105,7 @@ func UpdateHubProviderPayoutAccount(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	account, err := model.UpdateHubProviderPayoutAccount(c.GetInt("id"), id, request.input())
+	account, err := model.UpdateHubProviderPayoutAccount(provider.Id, c.GetInt("id"), id, request.input())
 	if err != nil {
 		payoutAccountError(c, err)
 		return
@@ -108,12 +114,16 @@ func UpdateHubProviderPayoutAccount(c *gin.Context) {
 }
 
 func DeleteHubProviderPayoutAccount(c *gin.Context) {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
+		return
+	}
 	id, err := strconv.Atoi(c.Param("account_id"))
 	if err != nil || id <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	if err := model.DeleteHubProviderPayoutAccount(c.GetInt("id"), id); err != nil {
+	if err := model.DeleteHubProviderPayoutAccount(provider.Id, c.GetInt("id"), id); err != nil {
 		payoutAccountError(c, err)
 		return
 	}
@@ -121,7 +131,8 @@ func DeleteHubProviderPayoutAccount(c *gin.Context) {
 }
 
 func UploadHubProviderPayoutQRCode(c *gin.Context) {
-	if _, ok := currentHubProviderOrError(c); !ok {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
 		return
 	}
 	if c.Request.ContentLength > hubProviderPayoutQRCodeMaxBytes+256*1024 {
@@ -149,7 +160,7 @@ func UploadHubProviderPayoutQRCode(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderPayoutQRCodeInvalid)
 		return
 	}
-	asset, err := model.CreateHubProviderPayoutAsset(c.GetInt("id"), contentType, data)
+	asset, err := model.CreateHubProviderPayoutAsset(provider.Id, c.GetInt("id"), contentType, data)
 	if err != nil {
 		payoutAccountError(c, err)
 		return
@@ -168,12 +179,9 @@ func GetHubProviderPayoutAsset(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	if c.GetInt("role") < common.RoleAdminUser {
-		provider, providerErr := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
-		if providerErr != nil || provider == nil || provider.Id != asset.ProviderId {
-			c.Status(http.StatusNotFound)
-			return
-		}
+	if !canReadHubProviderPrivateAsset(c, asset.ProviderId) {
+		c.Status(http.StatusNotFound)
+		return
 	}
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")

@@ -5370,6 +5370,7 @@
     "Loading users...": "正在加载用户...",
     "No eligible users found": "没有符合条件的用户",
     "Only enabled users without an existing provider can be selected.": "只能选择已启用且尚未拥有渠道商的用户。",
+    "Only enabled users without an existing provider in this tenant can be selected.": "只能选择已启用且尚未在当前总代理下拥有渠道商的用户。",
     "The platform appends a short code until website ownership is verified.": "在官网归属验证前，平台会自动追加短标识。",
     "The clean subdomain is used when the requested name is available.": "如果名称可用，将使用无短标识的子域名。",
     "Website ownership is not verified in this form; the provider keeps the suffixed subdomain.": "此表单不会验证官网归属；渠道商会保留带短标识的子域名。",

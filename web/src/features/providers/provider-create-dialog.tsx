@@ -97,14 +97,17 @@ function OwnerPicker(props: {
   value: HubProviderOwnerCandidate | null
   onChange: (candidate: HubProviderOwnerCandidate) => void
   open: boolean
+  tenantId?: number
+  requiresTenant: boolean
 }) {
   const { t } = useTranslation()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
   const candidatesQuery = useQuery({
-    queryKey: [...adminProviderOwnerCandidatesQueryKey, search],
-    queryFn: () => getAdminProviderOwnerCandidates(search),
-    enabled: props.open && pickerOpen,
+    queryKey: [...adminProviderOwnerCandidatesQueryKey, props.tenantId, search],
+    queryFn: () => getAdminProviderOwnerCandidates(search, props.tenantId),
+    enabled:
+      props.open && pickerOpen && (!props.requiresTenant || !!props.tenantId),
   })
   const candidates = candidatesQuery.data?.data?.items ?? []
 
@@ -123,6 +126,7 @@ function OwnerPicker(props: {
             variant='outline'
             role='combobox'
             aria-expanded={pickerOpen}
+            disabled={props.requiresTenant && !props.tenantId}
             className='w-full justify-between text-start font-normal'
           />
         }
@@ -224,6 +228,7 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
     { value: 'other', label: t('Other') },
   ]
 
+  /* oxlint-disable react/set-state-in-effect -- Reset all modal state for a new create flow. */
   useEffect(() => {
     if (!props.open) return
     setForm(initialForm)
@@ -231,6 +236,7 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
     setOwner(null)
     setTenantId('')
   }, [props.open])
+  /* oxlint-enable react/set-state-in-effect */
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -333,7 +339,11 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
             <Label htmlFor='admin-provider-tenant'>{t('Tenant')}</Label>
             <Select
               value={tenantId}
-              onValueChange={(value) => value && setTenantId(value)}
+              onValueChange={(value) => {
+                if (!value) return
+                setTenantId(value)
+                setOwner(null)
+              }}
             >
               <SelectTrigger id='admin-provider-tenant' className='w-full'>
                 <SelectValue placeholder={t('Select a tenant')}>
@@ -359,10 +369,16 @@ export function ProviderCreateDialog(props: ProviderCreateDialogProps) {
 
         <div className='grid gap-2'>
           <Label htmlFor='admin-provider-owner'>{t('Provider owner')}</Label>
-          <OwnerPicker open={props.open} value={owner} onChange={setOwner} />
+          <OwnerPicker
+            open={props.open}
+            value={owner}
+            onChange={setOwner}
+            tenantId={tenantId ? Number(tenantId) : undefined}
+            requiresTenant={props.isPlatformAdmin}
+          />
           <p className='text-muted-foreground text-xs'>
             {t(
-              'Only enabled users without an existing provider can be selected.'
+              'Only enabled users without an existing provider in this tenant can be selected.'
             )}
           </p>
         </div>

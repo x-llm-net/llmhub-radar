@@ -110,7 +110,7 @@ func decodeHubProviderProfileRequest(c *gin.Context) (hubProviderProfileRequest,
 }
 
 func GetHubProviderSelf(c *gin.Context) {
-	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	provider, err := getCurrentHubProvider(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -243,17 +243,27 @@ func UpdateHubProviderProfile(c *gin.Context) {
 		return
 	}
 
+	currentProvider, err := getCurrentHubProvider(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if currentProvider == nil {
+		common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
+		return
+	}
+
 	var provider *model.HubProvider
 	if assets.VerifyWebsite || len(assets.Logo) > 0 {
 		provider, err = model.UpdateHubProviderProfileWithAssets(
-			c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
+			currentProvider.Id, c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
 			req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
 			assets.LogoContentType, assets.Logo,
 			assets.EvidenceContentType, assets.Evidence,
 		)
 	} else {
 		provider, err = model.UpdateHubProviderProfile(
-			c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
+			currentProvider.Id, c.GetInt("id"), req.Name, req.Website, req.Description, req.LogoURL,
 			req.ContactType, req.ContactValue, req.SupportType, req.SupportValue,
 		)
 	}

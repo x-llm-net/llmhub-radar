@@ -5359,6 +5359,7 @@
     "Loading users...": "Loading users...",
     "No eligible users found": "No eligible users found",
     "Only enabled users without an existing provider can be selected.": "Only enabled users without an existing provider can be selected.",
+    "Only enabled users without an existing provider in this tenant can be selected.": "Only enabled users without an existing provider in this tenant can be selected.",
     "The platform appends a short code until website ownership is verified.": "The platform appends a short code until website ownership is verified.",
     "The clean subdomain is used when the requested name is available.": "The clean subdomain is used when the requested name is available.",
     "Website ownership is not verified in this form; the provider keeps the suffixed subdomain.": "Website ownership is not verified in this form; the provider keeps the suffixed subdomain.",

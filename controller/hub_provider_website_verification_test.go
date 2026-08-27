@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -89,10 +90,107 @@ func TestHubProviderWebsiteEvidenceUploadAndPrivateRead(t *testing.T) {
 		nil,
 		1,
 	)
-	adminContext.Set("role", common.RoleAdminUser)
+	adminContext.Set("role", common.RoleRootUser)
 	adminContext.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(uploadResponse.Data.ID)}}
 	GetHubProviderWebsiteEvidence(adminContext)
 	assert.Equal(t, http.StatusOK, adminRecorder.Code)
 	assert.Equal(t, "image/png", adminRecorder.Header().Get("Content-Type"))
 	assert.Equal(t, png, adminRecorder.Body.Bytes())
+}
+
+func TestHubProviderWebsiteEvidenceCannotCrossTenantForSameOwner(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.Tenant{},
+		&model.TenantMember{},
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	tenantA, tenantB := 101, 202
+	providerA := &model.HubProvider{OwnerUserId: 42, TenantId: &tenantA, Name: "Provider A", Slug: "evidence-provider-a"}
+	providerB := &model.HubProvider{OwnerUserId: 42, TenantId: &tenantB, Name: "Provider B", Slug: "evidence-provider-b"}
+	require.NoError(t, model.CreateHubProvider(providerA))
+	require.NoError(t, model.CreateHubProvider(providerB))
+	asset, err := model.CreateHubProviderWebsiteEvidenceAsset(providerA.Id, 42, "image/png", []byte("tenant-a-evidence"))
+	require.NoError(t, err)
+
+	ctx, recorder := newAuthenticatedContext(
+		t, http.MethodGet,
+		"/api/hub/provider/website-verification/assets/"+strconv.Itoa(asset.Id),
+		nil, 42,
+	)
+	ctx.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(asset.Id)}}
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantB)
+	GetHubProviderWebsiteEvidence(ctx)
+	assert.Equal(t, http.StatusNotFound, ctx.Writer.Status())
+
+	ctx, recorder = newAuthenticatedContext(
+		t, http.MethodGet,
+		"/api/hub/provider/website-verification/assets/"+strconv.Itoa(asset.Id),
+		nil, 42,
+	)
+	ctx.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(asset.Id)}}
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantA)
+	GetHubProviderWebsiteEvidence(ctx)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, []byte("tenant-a-evidence"), recorder.Body.Bytes())
+}
+
+func TestTenantAdminCanOnlyReadWebsiteEvidenceInCurrentTenant(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&model.Tenant{},
+		&model.TenantMember{},
+		&model.HubProvider{},
+		&model.HubProviderWebsiteEvidenceAsset{},
+	))
+	tenantA := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	tenantB := model.Tenant{Name: "Tenant B", Slug: "tenant-b", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&tenantA).Error)
+	require.NoError(t, db.Create(&tenantB).Error)
+	require.NoError(t, db.Create(&model.TenantMember{
+		TenantId: tenantA.Id,
+		UserId:   77,
+		Role:     model.TenantMemberRoleAdmin,
+		Status:   model.TenantMemberStatusActive,
+	}).Error)
+	providerA := &model.HubProvider{
+		OwnerUserId: 42,
+		TenantId:    &tenantA.Id,
+		Name:        "Provider A",
+		Slug:        "tenant-admin-evidence-a",
+	}
+	providerB := &model.HubProvider{
+		OwnerUserId: 43,
+		TenantId:    &tenantB.Id,
+		Name:        "Provider B",
+		Slug:        "tenant-admin-evidence-b",
+	}
+	require.NoError(t, model.CreateHubProvider(providerA))
+	require.NoError(t, model.CreateHubProvider(providerB))
+	assetA, err := model.CreateHubProviderWebsiteEvidenceAsset(
+		providerA.Id, providerA.OwnerUserId, "image/png", []byte("tenant-a-private-evidence"),
+	)
+	require.NoError(t, err)
+
+	ctx, recorder := newAuthenticatedContext(
+		t, http.MethodGet,
+		"/api/hub/provider/website-verification/assets/"+strconv.Itoa(assetA.Id),
+		nil, 77,
+	)
+	ctx.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(assetA.Id)}}
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantA.Id)
+	GetHubProviderWebsiteEvidence(ctx)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, []byte("tenant-a-private-evidence"), recorder.Body.Bytes())
+
+	ctx, _ = newAuthenticatedContext(
+		t, http.MethodGet,
+		"/api/hub/provider/website-verification/assets/"+strconv.Itoa(assetA.Id),
+		nil, 77,
+	)
+	ctx.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(assetA.Id)}}
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantB.Id)
+	GetHubProviderWebsiteEvidence(ctx)
+	assert.Equal(t, http.StatusNotFound, ctx.Writer.Status())
 }

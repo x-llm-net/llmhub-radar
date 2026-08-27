@@ -79,19 +79,22 @@ func HydrateHubProviderVerificationFields(provider *HubProvider) {
 	provider.WebsiteVerificationHTTPBody = expectedValue
 }
 
-func CreateHubProviderWebsiteEvidenceAsset(ownerUserID int, contentType string, data []byte) (*HubProviderWebsiteEvidenceAsset, error) {
-	if ownerUserID <= 0 || len(data) == 0 || strings.TrimSpace(contentType) == "" {
+func CreateHubProviderWebsiteEvidenceAsset(providerID, ownerUserID int, contentType string, data []byte) (*HubProviderWebsiteEvidenceAsset, error) {
+	if providerID <= 0 || ownerUserID <= 0 || len(data) == 0 || strings.TrimSpace(contentType) == "" {
 		return nil, ErrHubProviderWebsiteEvidenceInvalid
 	}
-	provider, err := GetHubProviderByOwnerUserID(ownerUserID)
-	if err != nil {
+	var provider HubProvider
+	if err := DB.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrHubProviderNotFound
+		}
 		return nil, err
 	}
-	if provider == nil {
+	if provider.Id == 0 {
 		return nil, ErrHubProviderNotFound
 	}
 	asset := &HubProviderWebsiteEvidenceAsset{
-		ProviderId:  provider.Id,
+		ProviderId:  providerID,
 		ContentType: strings.TrimSpace(contentType),
 		Data:        data,
 	}
@@ -181,6 +184,7 @@ func CreateHubProviderWithAssets(
 }
 
 func UpdateHubProviderProfileWithManualWebsiteVerification(
+	providerID int,
 	ownerUserID int,
 	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
@@ -188,13 +192,14 @@ func UpdateHubProviderProfileWithManualWebsiteVerification(
 	data []byte,
 ) (*HubProvider, error) {
 	return UpdateHubProviderProfileWithAssets(
-		ownerUserID, name, website, description, logoURL,
+		providerID, ownerUserID, name, website, description, logoURL,
 		contactType, contactValue, supportType, supportValue,
 		"", nil, contentType, data,
 	)
 }
 
 func UpdateHubProviderProfileWithAssets(
+	providerID int,
 	ownerUserID int,
 	name, website, description, logoURL string,
 	contactType, contactValue, supportType, supportValue string,
@@ -223,7 +228,7 @@ func UpdateHubProviderProfileWithAssets(
 	var updated *HubProvider
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		var previous HubProvider
-		if err := tx.Where("owner_user_id = ?", ownerUserID).First(&previous).Error; err != nil {
+		if err := tx.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&previous).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrHubProviderNotFound
 			}
@@ -231,7 +236,7 @@ func UpdateHubProviderProfileWithAssets(
 		}
 
 		updated, err = updateHubProviderProfile(
-			tx, ownerUserID, name, website, description, logoURL,
+			tx, providerID, ownerUserID, name, website, description, logoURL,
 			contactType, contactValue, supportType, supportValue,
 		)
 		if err != nil {
@@ -305,15 +310,15 @@ func GetHubProviderWebsiteEvidenceAsset(assetID int) (*HubProviderWebsiteEvidenc
 	return &asset, nil
 }
 
-func SubmitHubProviderWebsiteVerification(ownerUserID int, method string, evidenceAssetID int) (*HubProvider, error) {
+func SubmitHubProviderWebsiteVerification(providerID, ownerUserID int, method string, evidenceAssetID int) (*HubProvider, error) {
 	method = strings.ToLower(strings.TrimSpace(method))
-	if ownerUserID <= 0 || !IsValidHubProviderWebsiteVerificationMethod(method) {
+	if providerID <= 0 || ownerUserID <= 0 || !IsValidHubProviderWebsiteVerificationMethod(method) {
 		return nil, ErrHubProviderWebsiteVerificationInvalid
 	}
 	var updated HubProvider
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var provider HubProvider
-		if err := tx.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
+		if err := tx.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrHubProviderNotFound
 			}
@@ -361,12 +366,12 @@ func SubmitHubProviderWebsiteVerification(ownerUserID int, method string, eviden
 	return &updated, nil
 }
 
-func UpdateHubProviderWebsiteVerificationResult(ownerUserID int, verified bool, lastError string) (*HubProvider, error) {
-	if ownerUserID <= 0 {
+func UpdateHubProviderWebsiteVerificationResult(providerID, ownerUserID int, verified bool, lastError string) (*HubProvider, error) {
+	if providerID <= 0 || ownerUserID <= 0 {
 		return nil, ErrHubProviderWebsiteVerificationInvalid
 	}
 	var provider HubProvider
-	if err := DB.Where("owner_user_id = ?", ownerUserID).First(&provider).Error; err != nil {
+	if err := DB.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
 		return nil, err
 	}
 	if provider.WebsiteVerificationStatus != HubProviderWebsiteVerificationStatusPending ||

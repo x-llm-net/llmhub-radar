@@ -5329,6 +5329,7 @@
     "Loading users...": "正在載入使用者...",
     "No eligible users found": "沒有符合條件的使用者",
     "Only enabled users without an existing provider can be selected.": "只能選擇已啟用且尚未擁有渠道商的使用者。",
+    "Only enabled users without an existing provider in this tenant can be selected.": "只能選擇已啟用且尚未在目前總代理下擁有渠道商的使用者。",
     "The platform appends a short code until website ownership is verified.": "在官網歸屬驗證前，平台會自動附加短識別碼。",
     "The clean subdomain is used when the requested name is available.": "如果名稱可用，將使用無短識別碼的子網域。",
     "Website ownership is not verified in this form; the provider keeps the suffixed subdomain.": "此表單不會驗證官網歸屬；渠道商會保留帶短識別碼的子網域。",

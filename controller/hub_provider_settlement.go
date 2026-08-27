@@ -109,7 +109,8 @@ func GetHubProviderWithdrawals(c *gin.Context) {
 }
 
 func CreateHubProviderWithdrawal(c *gin.Context) {
-	if _, ok := currentHubProviderOrError(c); !ok {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
 		return
 	}
 	var req hubProviderWithdrawalCreateRequest
@@ -121,7 +122,7 @@ func CreateHubProviderWithdrawal(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderWithdrawalInvalid)
 		return
 	}
-	withdrawal, err := model.CreateHubProviderWithdrawal(c.GetInt("id"), req.AmountQuota, req.PayoutAccountId)
+	withdrawal, err := model.CreateHubProviderWithdrawal(provider.Id, c.GetInt("id"), req.AmountQuota, req.PayoutAccountId)
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrHubProviderWithdrawalPending):
@@ -142,7 +143,8 @@ func CreateHubProviderWithdrawal(c *gin.Context) {
 }
 
 func CreateHubProviderBalanceTransfer(c *gin.Context) {
-	if _, ok := currentHubProviderOrError(c); !ok {
+	provider, ok := currentHubProviderOrError(c)
+	if !ok {
 		return
 	}
 	var req hubProviderBalanceTransferRequest
@@ -155,7 +157,7 @@ func CreateHubProviderBalanceTransfer(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgHubProviderBalanceTransferInvalid)
 		return
 	}
-	transfer, err := model.CreateHubProviderBalanceTransfer(c.GetInt("id"), req.AmountQuota, req.IdempotencyKey)
+	transfer, err := model.CreateHubProviderBalanceTransfer(provider.Id, c.GetInt("id"), req.AmountQuota, req.IdempotencyKey)
 	if err != nil {
 		if errors.Is(err, model.ErrHubProviderBalanceTransferInsufficient) {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderBalanceTransferInsufficient)

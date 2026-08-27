@@ -747,16 +747,16 @@ func CreateHubProviderManualAdjustment(providerId, amountQuota, operatorUserId i
 	return earning, nil
 }
 
-func CreateHubProviderBalanceTransfer(ownerUserId, amountQuota int, idempotencyKey string) (*HubProviderEarning, error) {
+func CreateHubProviderBalanceTransfer(providerId, ownerUserId, amountQuota int, idempotencyKey string) (*HubProviderEarning, error) {
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
-	if ownerUserId <= 0 || amountQuota <= 0 || idempotencyKey == "" || len(idempotencyKey) > 48 {
+	if providerId <= 0 || ownerUserId <= 0 || amountQuota <= 0 || idempotencyKey == "" || len(idempotencyKey) > 48 {
 		return nil, errors.New("invalid hub provider balance transfer")
 	}
-	requestId := fmt.Sprintf("balance-transfer:%d:%s", ownerUserId, idempotencyKey)
+	requestId := fmt.Sprintf("balance-transfer:%d:%d:%s", providerId, ownerUserId, idempotencyKey)
 	var transfer HubProviderEarning
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var provider HubProvider
-		if err := lockForUpdate(tx).Where("owner_user_id = ?", ownerUserId).Order("slot ASC").First(&provider).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND owner_user_id = ?", providerId, ownerUserId).First(&provider).Error; err != nil {
 			return err
 		}
 
@@ -996,14 +996,14 @@ func GetHubProviderSettlementSummary(providerId int) (HubProviderSettlementSumma
 	return summary, nil
 }
 
-func CreateHubProviderWithdrawal(ownerUserId, amountQuota, payoutAccountId int) (*HubProviderWithdrawal, error) {
-	if ownerUserId <= 0 || amountQuota <= 0 || payoutAccountId <= 0 {
+func CreateHubProviderWithdrawal(providerId, ownerUserId, amountQuota, payoutAccountId int) (*HubProviderWithdrawal, error) {
+	if providerId <= 0 || ownerUserId <= 0 || amountQuota <= 0 || payoutAccountId <= 0 {
 		return nil, errors.New("invalid hub provider withdrawal")
 	}
 	var created HubProviderWithdrawal
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var provider HubProvider
-		if err := lockForUpdate(tx).Where("owner_user_id = ?", ownerUserId).Order("slot ASC").First(&provider).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND owner_user_id = ?", providerId, ownerUserId).First(&provider).Error; err != nil {
 			return err
 		}
 		if amountQuota < hub_provider_settlement_setting.MinimumWithdrawalQuota() {

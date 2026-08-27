@@ -72,7 +72,7 @@ func TestAdminCreateHubProviderBindsCurrentTenantAndActivates(t *testing.T) {
 	assert.Equal(t, model.HubProviderStatusActive, response.Data.Status)
 	assert.Regexp(t, `^managed-provider-[a-z0-9]{4}$`, response.Data.Slug)
 
-	stored, err := model.GetHubProviderByOwnerUserID(42)
+	stored, err := model.GetHubProviderByOwnerUserIDInTenant(42, tenant.Id)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, model.HubProviderStatusActive, stored.Status)
@@ -196,15 +196,22 @@ func TestAdminCreateHubProviderRejectsDisabledOrDuplicateOwners(t *testing.T) {
 
 func TestAdminListHubProviderOwnerCandidatesOnlyReturnsEnabledUnownedUsers(t *testing.T) {
 	db := openTokenControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.HubProvider{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Tenant{}, &model.HubProvider{}))
+	tenant := model.Tenant{Name: "Tenant A", Slug: "tenant-a", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&tenant).Error)
 	seedHubProviderAdminCreateUser(t, 42, "available-owner")
 	seedHubProviderAdminCreateUser(t, 43, "existing-owner")
 	seedHubProviderAdminCreateUser(t, 44, "disabled-owner")
+	seedHubProviderAdminCreateUser(t, 45, "other-tenant-owner")
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 44).Update("status", common.UserStatusDisabled).Error)
-	require.NoError(t, db.Create(&model.HubProvider{OwnerUserId: 43, Name: "Existing", Slug: "existing-provider"}).Error)
+	require.NoError(t, db.Create(&model.HubProvider{OwnerUserId: 43, TenantId: &tenant.Id, Name: "Existing", Slug: "existing-provider"}).Error)
+	otherTenant := model.Tenant{Name: "Tenant B", Slug: "tenant-b", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&otherTenant).Error)
+	require.NoError(t, db.Create(&model.HubProvider{OwnerUserId: 45, TenantId: &otherTenant.Id, Name: "Other tenant", Slug: "other-tenant-provider"}).Error)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/providers/owner-candidates?p=1&page_size=20", nil, 7)
 	ctx.Set("role", common.RoleAdminUser)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
 	AdminListHubProviderOwnerCandidates(ctx)
 	var response struct {
 		Success bool `json:"success"`
@@ -215,7 +222,7 @@ func TestAdminListHubProviderOwnerCandidatesOnlyReturnsEnabledUnownedUsers(t *te
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success, recorder.Body.String())
-	require.Len(t, response.Data.Items, 1)
-	assert.Equal(t, 42, response.Data.Items[0].Id)
-	assert.Equal(t, 1, response.Data.Total)
+	require.Len(t, response.Data.Items, 2)
+	assert.ElementsMatch(t, []int{42, 45}, []int{response.Data.Items[0].Id, response.Data.Items[1].Id})
+	assert.Equal(t, 2, response.Data.Total)
 }

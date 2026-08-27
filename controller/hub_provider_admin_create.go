@@ -84,11 +84,26 @@ func adminCreateTenantID(c *gin.Context, requested *int) (*int, error) {
 }
 
 func AdminListHubProviderOwnerCandidates(c *gin.Context) {
+	var requestedTenantID *int
+	if rawTenantID := c.Query("tenant_id"); rawTenantID != "" {
+		parsedTenantID, err := strconv.Atoi(rawTenantID)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		requestedTenantID = &parsedTenantID
+	}
+	tenantID, err := adminCreateTenantID(c, requestedTenantID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	candidates, total, err := model.ListHubProviderOwnerCandidates(
 		c.Query("keyword"),
 		pageInfo.GetStartIdx(),
 		pageInfo.GetPageSize(),
+		*tenantID,
 	)
 	if err != nil {
 		common.ApiError(c, err)

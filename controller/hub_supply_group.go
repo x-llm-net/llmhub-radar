@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -505,7 +506,11 @@ func normalizeHubProviderChannelPublicationModels(modelNames []string) ([]string
 }
 
 func getCurrentHubProvider(c *gin.Context) (*model.HubProvider, error) {
-	return model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	if tenantID <= 0 {
+		return model.GetHubProviderByOwnerUserIDWithoutTenant(c.GetInt("id"))
+	}
+	return model.GetHubProviderByOwnerUserIDInTenant(c.GetInt("id"), tenantID)
 }
 
 func requireActiveHubProvider(c *gin.Context) (*model.HubProvider, bool) {

@@ -46,9 +46,9 @@ func setupHubProviderPayoutControllerTestDB(t *testing.T) {
 	))
 }
 
-func createControllerPayoutAccount(t *testing.T, ownerUserID int) *model.HubProviderPayoutAccount {
+func createControllerPayoutAccount(t *testing.T, provider *model.HubProvider) *model.HubProviderPayoutAccount {
 	t.Helper()
-	account, err := model.CreateHubProviderPayoutAccount(ownerUserID, model.HubProviderPayoutAccountInput{
+	account, err := model.CreateHubProviderPayoutAccount(provider.Id, provider.OwnerUserId, model.HubProviderPayoutAccountInput{
 		Method: model.HubProviderPayoutMethodAlipay,
 		Details: model.HubProviderPayoutAccountDetails{
 			RecipientName: "Alice",
@@ -74,9 +74,9 @@ func decodePayoutControllerResponse(t *testing.T, recorder *httptest.ResponseRec
 
 func TestUpdateHubProviderPayoutAccountRejectsForeignOwner(t *testing.T) {
 	setupHubProviderPayoutControllerTestDB(t)
-	seedHubProvider(t, 42)
+	provider := seedHubProvider(t, 42)
 	seedHubProvider(t, 43)
-	account := createControllerPayoutAccount(t, 42)
+	account := createControllerPayoutAccount(t, provider)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider/payout-accounts/1", map[string]any{
 		"method": model.HubProviderPayoutMethodAlipay,
@@ -91,7 +91,7 @@ func TestUpdateHubProviderPayoutAccountRejectsForeignOwner(t *testing.T) {
 
 	response := decodePayoutControllerResponse(t, recorder)
 	assert.False(t, response.Success)
-	items, err := model.ListHubProviderPayoutAccounts(42)
+	items, err := model.ListHubProviderPayoutAccounts(provider.Id, 42)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "alice@example.com", items[0].Details.Account)
@@ -137,8 +137,8 @@ func TestUploadHubProviderPayoutQRCodeRejectsInvalidFiles(t *testing.T) {
 func TestCreateHubProviderWithdrawalRejectsForeignPayoutAccount(t *testing.T) {
 	setupHubProviderPayoutControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
-	seedHubProvider(t, 43)
-	foreignAccount := createControllerPayoutAccount(t, 43)
+	foreignProvider := seedHubProvider(t, 43)
+	foreignAccount := createControllerPayoutAccount(t, foreignProvider)
 	_, err := model.CreateHubProviderManualAdjustment(provider.Id, 500, 1, "initial credit")
 	require.NoError(t, err)
 
@@ -186,10 +186,10 @@ func TestCreateHubProviderBalanceTransferCreditsCurrentUser(t *testing.T) {
 func TestAdminPaidWithdrawalRequiresPaymentDetails(t *testing.T) {
 	setupHubProviderPayoutControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
-	account := createControllerPayoutAccount(t, 42)
+	account := createControllerPayoutAccount(t, provider)
 	_, err := model.CreateHubProviderManualAdjustment(provider.Id, 500, 1, "initial credit")
 	require.NoError(t, err)
-	withdrawal, err := model.CreateHubProviderWithdrawal(42, 100, account.Id)
+	withdrawal, err := model.CreateHubProviderWithdrawal(provider.Id, 42, 100, account.Id)
 	require.NoError(t, err)
 	_, err = model.UpdateHubProviderWithdrawalStatus(
 		withdrawal.Id,
@@ -219,10 +219,10 @@ func TestAdminPaidWithdrawalRequiresPaymentDetails(t *testing.T) {
 func TestAdminCanPayPendingWithdrawalDirectly(t *testing.T) {
 	setupHubProviderPayoutControllerTestDB(t)
 	provider := seedHubProvider(t, 42)
-	account := createControllerPayoutAccount(t, 42)
+	account := createControllerPayoutAccount(t, provider)
 	_, err := model.CreateHubProviderManualAdjustment(provider.Id, 500, 1, "initial credit")
 	require.NoError(t, err)
-	withdrawal, err := model.CreateHubProviderWithdrawal(42, 100, account.Id)
+	withdrawal, err := model.CreateHubProviderWithdrawal(provider.Id, 42, 100, account.Id)
 	require.NoError(t, err)
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/withdrawals/1/status", map[string]any{

@@ -138,7 +138,7 @@ func TestCreateHubProviderCreatesCurrentUsersProvider(t *testing.T) {
 	assert.Equal(t, "https://acme.example/community", response.Data.SupportValue)
 	assert.Equal(t, model.HubProviderStatusPending, response.Data.Status)
 
-	stored, err := model.GetHubProviderByOwnerUserID(42)
+	stored, err := model.GetHubProviderByOwnerUserIDInTenant(42, 7)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, response.Data.Id, stored.Id)
@@ -272,10 +272,11 @@ func TestCreateHubProviderRejectsInvalidOnboardingEvidenceWithoutCreatingProvide
 	assert.Zero(t, assetCount)
 }
 
-func TestCreateHubProviderRejectsSecondProviderForCurrentUser(t *testing.T) {
+func TestCreateHubProviderRejectsSecondProviderForCurrentUserInSameTenant(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
-	require.NoError(t, model.CreateHubProvider(&model.HubProvider{OwnerUserId: 42, Name: "First"}))
+	tenantID := 7
+	require.NoError(t, model.CreateHubProvider(&model.HubProvider{OwnerUserId: 42, TenantId: &tenantID, Name: "First"}))
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
 		"name":          "Second",
@@ -293,6 +294,87 @@ func TestCreateHubProviderRejectsSecondProviderForCurrentUser(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&model.HubProvider{}).Where("owner_user_id = ?", 42).Count(&count).Error)
 	assert.Equal(t, int64(1), count)
+}
+
+func TestCreateHubProviderAllowsSameUserInDifferentTenants(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+
+	for tenantID, slug := range map[int]string{7: "tenant-seven", 8: "tenant-eight"} {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/hub/provider", map[string]string{
+			"name":          "Provider " + slug,
+			"slug":          slug,
+			"contact_type":  "email",
+			"contact_value": slug + "@example.com",
+		}, 42)
+		common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantID)
+		CreateHubProvider(ctx)
+		response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+		require.True(t, response.Success, recorder.Body.String())
+		require.NotNil(t, response.Data)
+	}
+
+	var providers []model.HubProvider
+	require.NoError(t, db.Where("owner_user_id = ?", 42).Order("tenant_id ASC").Find(&providers).Error)
+	require.Len(t, providers, 2)
+	assert.Equal(t, 7, *providers[0].TenantId)
+	assert.Equal(t, 8, *providers[1].TenantId)
+}
+
+func TestHubProviderSelfAndProfileAreScopedByTenant(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+	tenantA, tenantB := 11, 22
+	providerA := &model.HubProvider{
+		OwnerUserId: 42, TenantId: &tenantA, Name: "Provider A", Slug: "provider-a",
+		ContactType: "email", ContactValue: "a@example.com",
+	}
+	providerB := &model.HubProvider{
+		OwnerUserId: 42, TenantId: &tenantB, Name: "Provider B", Slug: "provider-b",
+		ContactType: "email", ContactValue: "b@example.com",
+	}
+	require.NoError(t, model.CreateHubProvider(providerA))
+	require.NoError(t, model.CreateHubProvider(providerB))
+
+	for tenantID, expectedID := range map[int]int{tenantA: providerA.Id, tenantB: providerB.Id} {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/provider/self", nil, 42)
+		common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantID)
+		GetHubProviderSelf(ctx)
+		response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+		require.True(t, response.Success, recorder.Body.String())
+		require.NotNil(t, response.Data)
+		assert.Equal(t, expectedID, response.Data.Id)
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider", map[string]string{
+		"name":          "Provider B updated",
+		"slug":          providerB.Slug,
+		"contact_type":  "email",
+		"contact_value": "updated-b@example.com",
+	}, 42)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantB)
+	UpdateHubProviderProfile(ctx)
+	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, providerB.Id, response.Data.Id)
+
+	require.NoError(t, db.First(providerA, providerA.Id).Error)
+	require.NoError(t, db.First(providerB, providerB.Id).Error)
+	assert.Equal(t, "Provider A", providerA.Name)
+	assert.Equal(t, "Provider B updated", providerB.Name)
+}
+
+func TestHubProviderSlugRemainsGloballyUniqueAcrossTenants(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
+	tenantA, tenantB := 11, 22
+	require.NoError(t, model.CreateHubProvider(&model.HubProvider{
+		OwnerUserId: 42, TenantId: &tenantA, Name: "Provider A", Slug: "shared-slug",
+	}))
+	err := model.CreateHubProvider(&model.HubProvider{
+		OwnerUserId: 42, TenantId: &tenantB, Name: "Provider B", Slug: "shared-slug",
+	})
+	assert.ErrorIs(t, err, model.ErrHubProviderSlugAlreadyExists)
 }
 
 func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
@@ -331,7 +413,7 @@ func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {
 	assert.Equal(t, "https://t.me/acme_support", response.Data.SupportValue)
 	assert.Equal(t, model.HubProviderStatusActive, response.Data.Status)
 
-	stored, err := model.GetHubProviderByOwnerUserID(42)
+	stored, err := model.GetHubProviderByOwnerUserIDWithoutTenant(42)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, "New name", stored.Name)
@@ -406,7 +488,7 @@ func TestUpdateHubProviderRejectsInvalidEvidenceWithoutChangingProfile(t *testin
 
 	response := decodeHubProviderAPIResponse(t, recorder.Body.Bytes())
 	assert.False(t, response.Success)
-	stored, err := model.GetHubProviderByOwnerUserID(42)
+	stored, err := model.GetHubProviderByOwnerUserIDWithoutTenant(42)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
 	assert.Equal(t, "Original provider", stored.Name)

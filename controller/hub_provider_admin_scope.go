@@ -95,3 +95,23 @@ func requireHubProviderAdminScope(c *gin.Context, providerID int) bool {
 	}
 	return true
 }
+
+func canReadHubProviderPrivateAsset(c *gin.Context, providerID int) bool {
+	provider, err := getCurrentHubProvider(c)
+	if err == nil && provider != nil && provider.Id == providerID {
+		return true
+	}
+	if isPlatformAdmin(c) {
+		return true
+	}
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	if tenantID <= 0 {
+		return false
+	}
+	member, err := model.GetActiveTenantMember(tenantID, c.GetInt("id"))
+	if err != nil || !model.IsTenantAdminRole(member.Role) {
+		return false
+	}
+	provider, err = model.GetHubProviderByIDInTenant(providerID, &tenantID)
+	return err == nil && provider != nil
+}

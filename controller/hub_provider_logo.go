@@ -80,7 +80,7 @@ func serveHubProviderLogo(c *gin.Context, asset *model.HubProviderLogoAsset, pub
 }
 
 func GetHubProviderLogo(c *gin.Context) {
-	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	provider, err := getCurrentHubProvider(c)
 	if err != nil || provider == nil {
 		c.Status(http.StatusNotFound)
 		return

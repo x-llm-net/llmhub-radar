@@ -175,9 +175,9 @@ func hydrateHubProviderPayoutAccount(account *HubProviderPayoutAccount) error {
 	return nil
 }
 
-func hubProviderForOwnerTx(tx *gorm.DB, ownerUserId int) (*HubProvider, error) {
+func hubProviderForOwnerTx(tx *gorm.DB, providerId, ownerUserId int) (*HubProvider, error) {
 	var provider HubProvider
-	if err := tx.Where("owner_user_id = ?", ownerUserId).Order("slot ASC").First(&provider).Error; err != nil {
+	if err := tx.Where("id = ? AND owner_user_id = ?", providerId, ownerUserId).First(&provider).Error; err != nil {
 		return nil, err
 	}
 	return &provider, nil
@@ -199,11 +199,11 @@ func validateHubProviderPayoutAssetTx(tx *gorm.DB, providerId, assetId int) erro
 	return nil
 }
 
-func CreateHubProviderPayoutAsset(ownerUserId int, contentType string, data []byte) (*HubProviderPayoutAsset, error) {
-	if ownerUserId <= 0 || len(data) == 0 || strings.TrimSpace(contentType) == "" {
+func CreateHubProviderPayoutAsset(providerId, ownerUserId int, contentType string, data []byte) (*HubProviderPayoutAsset, error) {
+	if providerId <= 0 || ownerUserId <= 0 || len(data) == 0 || strings.TrimSpace(contentType) == "" {
 		return nil, ErrHubProviderPayoutAssetInvalid
 	}
-	provider, err := hubProviderForOwnerTx(DB, ownerUserId)
+	provider, err := hubProviderForOwnerTx(DB, providerId, ownerUserId)
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +229,8 @@ func GetHubProviderPayoutAsset(id int) (*HubProviderPayoutAsset, error) {
 	return &asset, nil
 }
 
-func CreateHubProviderPayoutAccount(ownerUserId int, input HubProviderPayoutAccountInput) (*HubProviderPayoutAccount, error) {
-	if ownerUserId <= 0 {
+func CreateHubProviderPayoutAccount(providerId, ownerUserId int, input HubProviderPayoutAccountInput) (*HubProviderPayoutAccount, error) {
+	if providerId <= 0 || ownerUserId <= 0 {
 		return nil, ErrHubProviderPayoutAccountInvalid
 	}
 	input, err := normalizeHubProviderPayoutAccountInput(input)
@@ -239,7 +239,7 @@ func CreateHubProviderPayoutAccount(ownerUserId int, input HubProviderPayoutAcco
 	}
 	var created HubProviderPayoutAccount
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		provider, err := hubProviderForOwnerTx(tx, ownerUserId)
+		provider, err := hubProviderForOwnerTx(tx, providerId, ownerUserId)
 		if err != nil {
 			return err
 		}
@@ -279,8 +279,8 @@ func CreateHubProviderPayoutAccount(ownerUserId int, input HubProviderPayoutAcco
 	return &created, nil
 }
 
-func ListHubProviderPayoutAccounts(ownerUserId int) ([]HubProviderPayoutAccount, error) {
-	provider, err := hubProviderForOwnerTx(DB, ownerUserId)
+func ListHubProviderPayoutAccounts(providerId, ownerUserId int) ([]HubProviderPayoutAccount, error) {
+	provider, err := hubProviderForOwnerTx(DB, providerId, ownerUserId)
 	if err != nil {
 		return nil, err
 	}
@@ -297,8 +297,8 @@ func ListHubProviderPayoutAccounts(ownerUserId int) ([]HubProviderPayoutAccount,
 	return items, nil
 }
 
-func UpdateHubProviderPayoutAccount(ownerUserId, id int, input HubProviderPayoutAccountInput) (*HubProviderPayoutAccount, error) {
-	if ownerUserId <= 0 || id <= 0 {
+func UpdateHubProviderPayoutAccount(providerId, ownerUserId, id int, input HubProviderPayoutAccountInput) (*HubProviderPayoutAccount, error) {
+	if providerId <= 0 || ownerUserId <= 0 || id <= 0 {
 		return nil, ErrHubProviderPayoutAccountInvalid
 	}
 	input, err := normalizeHubProviderPayoutAccountInput(input)
@@ -307,7 +307,7 @@ func UpdateHubProviderPayoutAccount(ownerUserId, id int, input HubProviderPayout
 	}
 	var updated HubProviderPayoutAccount
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		provider, err := hubProviderForOwnerTx(tx, ownerUserId)
+		provider, err := hubProviderForOwnerTx(tx, providerId, ownerUserId)
 		if err != nil {
 			return err
 		}
@@ -353,12 +353,12 @@ func UpdateHubProviderPayoutAccount(ownerUserId, id int, input HubProviderPayout
 	return &updated, nil
 }
 
-func DeleteHubProviderPayoutAccount(ownerUserId, id int) error {
-	if ownerUserId <= 0 || id <= 0 {
+func DeleteHubProviderPayoutAccount(providerId, ownerUserId, id int) error {
+	if providerId <= 0 || ownerUserId <= 0 || id <= 0 {
 		return ErrHubProviderPayoutAccountInvalid
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		provider, err := hubProviderForOwnerTx(tx, ownerUserId)
+		provider, err := hubProviderForOwnerTx(tx, providerId, ownerUserId)
 		if err != nil {
 			return err
 		}

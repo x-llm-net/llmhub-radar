@@ -99,3 +99,23 @@ func TestTenantBaseModelsHaveExpectedOwnershipConstraints(t *testing.T) {
 		Status:   TenantMemberStatusActive,
 	}).Error)
 }
+
+func TestHubProviderOwnerConstraintMigratesFromGlobalToTenantScope(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&legacyHubProviderWithoutTenant{}))
+	require.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderLegacyOwnerIndexName))
+
+	require.NoError(t, db.AutoMigrate(&HubProvider{}))
+	require.NoError(t, migrateHubProviderOwnerConstraint())
+	assert.False(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderLegacyOwnerIndexName))
+	assert.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderTenantOwnerIndexName))
+
+	tenantA, tenantB := 101, 202
+	providerA := HubProvider{OwnerUserId: 11, TenantId: &tenantA, Name: "Tenant A provider", Slug: "tenant-a-provider"}
+	providerB := HubProvider{OwnerUserId: 11, TenantId: &tenantB, Name: "Tenant B provider", Slug: "tenant-b-provider"}
+	require.NoError(t, db.Create(&providerA).Error)
+	require.NoError(t, db.Create(&providerB).Error)
+
+	duplicate := HubProvider{OwnerUserId: 11, TenantId: &tenantA, Name: "Duplicate", Slug: "tenant-a-duplicate"}
+	assert.Error(t, db.Create(&duplicate).Error)
+}
