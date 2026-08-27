@@ -5850,6 +5850,7 @@
     "Please select a service tier": "Выберите уровень сервиса",
     "Service tier": "Уровень сервиса",
     "Service tier / Group": "Уровень сервиса / Группа",
+    "Service source": "Источник обслуживания",
     "No service tier found.": "Уровень сервиса не найден.",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "Метрики реальных запросов",

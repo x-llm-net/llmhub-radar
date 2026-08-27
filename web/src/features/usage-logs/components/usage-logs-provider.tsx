@@ -19,7 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
+import { useProvider } from '@/features/provider/hooks/use-provider'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useHubAdminAccess } from '@/hooks/use-hub-admin-access'
 
 import type { ChannelAffinityInfo } from '../types'
 
@@ -92,13 +94,28 @@ export function useUsageLogsContext() {
  * mine" is treated exactly like a regular user for that view.
  */
 export function useLogsViewScope() {
-  const canManageScope = useIsAdmin()
+  const isPlatformAdmin = useIsAdmin()
+  const hubAdminAccess = useHubAdminAccess()
+  const providerQuery = useProvider()
   const { viewScope, setViewScope } = useUsageLogsContext()
+  const canUseAdminScope =
+    isPlatformAdmin || hubAdminAccess.data?.can_view_channels === true
+  const canUseProviderScope = Boolean(providerQuery.provider)
+  const canManageScope = canUseAdminScope || canUseProviderScope
+  let dataScope: 'admin' | 'provider' | 'self' = 'self'
+  if (viewScope === 'all' && canUseAdminScope) {
+    dataScope = 'admin'
+  } else if (viewScope === 'all' && canUseProviderScope) {
+    dataScope = 'provider'
+  }
 
   return {
     canManageScope,
     viewScope,
     setViewScope,
-    isAdminView: canManageScope && viewScope === 'all',
+    dataScope,
+    isAdminView: dataScope !== 'self',
+    isScopeLoading:
+      !isPlatformAdmin && (hubAdminAccess.isLoading || providerQuery.isLoading),
   }
 }

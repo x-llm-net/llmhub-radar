@@ -22,6 +22,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   getAllLogs,
   getUserLogs,
+  getProviderLogs,
   getAllMidjourneyLogs,
   getUserMidjourneyLogs,
   getAllTaskLogs,
@@ -39,6 +40,8 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
 } from '../types'
+
+export { buildQueryParams } from './query-params'
 
 // ============================================================================
 // Type Checkers & Utilities
@@ -94,21 +97,6 @@ function timestampToSeconds(ms: number): number {
 /**
  * Build query parameters from filters
  */
-export function buildQueryParams(
-  params: Record<string, unknown>
-): URLSearchParams {
-  const queryParams = new URLSearchParams()
-
-  Object.entries(params).forEach(([key, value]) => {
-    // Keep 0 as a valid value, only filter out undefined, null, and empty string
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, String(value))
-    }
-  })
-
-  return queryParams
-}
-
 /**
  * Build time range parameters with default values
  * Shared logic for all log types
@@ -259,8 +247,15 @@ export function buildApiParams(config: {
 export async function fetchLogsByCategory(
   config: FetchLogsConfig
 ): Promise<GetLogsResponse> {
-  const { logCategory, isAdmin, page, pageSize, searchParams, columnFilters } =
-    config
+  const {
+    logCategory,
+    isAdmin,
+    dataScope,
+    page,
+    pageSize,
+    searchParams,
+    columnFilters,
+  } = config
 
   if (logCategory === 'common') {
     const params = buildApiParams({
@@ -270,7 +265,9 @@ export async function fetchLogsByCategory(
       columnFilters,
       isAdmin,
     })
-    return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
+    if (dataScope === 'admin') return getAllLogs(params)
+    if (dataScope === 'provider') return getProviderLogs(params)
+    return getUserLogs(params)
   }
 
   // For drawing and task logs
@@ -292,13 +289,13 @@ export async function fetchLogsByCategory(
   }
 
   if (logCategory === 'drawing') {
-    return isAdmin
+    return dataScope === 'admin'
       ? await getAllMidjourneyLogs(paramsWithFilter as GetMidjourneyLogsParams)
       : await getUserMidjourneyLogs(paramsWithFilter as GetMidjourneyLogsParams)
   }
 
   // task logs
-  return isAdmin
+  return dataScope === 'admin'
     ? await getAllTaskLogs(paramsWithFilter as GetTaskLogsParams)
     : await getUserTaskLogs(paramsWithFilter as GetTaskLogsParams)
 }

@@ -35,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
@@ -331,7 +332,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     columns.push(
       {
         id: 'channel',
-        header: t('Channel'),
+        header: t('Service source'),
         accessorFn: (row) => row.channel,
         cell: function ChannelCell({ row }) {
           const { sensitiveVisible, setAffinityTarget, setAffinityDialogOpen } =
@@ -442,6 +443,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       </button>
                     )}
                   </div>
+                  {log.provider_name && (
+                    <span className='text-foreground/80 truncate text-xs font-medium'>
+                      {log.provider_name}
+                    </span>
+                  )}
                   {log.channel_name && (
                     <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
                       {channelName}
@@ -493,20 +499,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         cell: function UserCell({ row }) {
           const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
             useUsageLogsContext()
+          const canInspectUser = useIsAdmin()
           const log = row.original
 
           if (!log.username) return null
 
-          return (
-            <button
-              type='button'
-              className='flex items-center gap-1.5 text-left'
-              onClick={(e) => {
-                e.stopPropagation()
-                setSelectedUserId(log.user_id)
-                setUserInfoDialogOpen(true)
-              }}
-            >
+          const userLabel = (
+            <>
               <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
                 <AvatarFallback
                   className={cn(
@@ -526,7 +525,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className='text-muted-foreground max-w-[100px] truncate text-sm hover:underline' />
+                      <span className='text-muted-foreground max-w-[100px] truncate text-sm' />
                     }
                   >
                     {sensitiveVisible ? log.username : '••••'}
@@ -536,6 +535,24 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                   )}
                 </Tooltip>
               </TooltipProvider>
+            </>
+          )
+
+          if (!canInspectUser) {
+            return <div className='flex items-center gap-1.5'>{userLabel}</div>
+          }
+
+          return (
+            <button
+              type='button'
+              className='flex items-center gap-1.5 text-left'
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedUserId(log.user_id)
+                setUserInfoDialogOpen(true)
+              }}
+            >
+              {userLabel}
             </button>
           )
         },

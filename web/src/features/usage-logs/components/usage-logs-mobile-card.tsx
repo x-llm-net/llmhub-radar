@@ -34,6 +34,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -244,19 +245,12 @@ function MobileTokensField({ log }: { log: UsageLog }) {
 function MobileUserField({ log }: { log: UsageLog }) {
   const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
     useUsageLogsContext()
+  const canInspectUser = useIsAdmin()
 
   if (!log.username) return null
 
-  return (
-    <button
-      type='button'
-      className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left'
-      onClick={(e) => {
-        e.stopPropagation()
-        setSelectedUserId(log.user_id)
-        setUserInfoDialogOpen(true)
-      }}
-    >
+  const content = (
+    <>
       <Avatar className='ring-border/60 size-6 shrink-0 ring-1'>
         <AvatarFallback
           className={cn(
@@ -273,6 +267,28 @@ function MobileUserField({ log }: { log: UsageLog }) {
       <span className='text-foreground min-w-0 truncate text-sm'>
         {sensitiveVisible ? log.username : '••••'}
       </span>
+    </>
+  )
+
+  if (!canInspectUser) {
+    return (
+      <div className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left'>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type='button'
+      className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left'
+      onClick={(e) => {
+        e.stopPropagation()
+        setSelectedUserId(log.user_id)
+        setUserInfoDialogOpen(true)
+      }}
+    >
+      {content}
     </button>
   )
 }

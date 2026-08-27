@@ -5850,6 +5850,7 @@
     "Please select a service tier": "Vui lòng chọn cấp dịch vụ",
     "Service tier": "Cấp dịch vụ",
     "Service tier / Group": "Cấp dịch vụ / Nhóm",
+    "Service source": "Nguồn dịch vụ",
     "No service tier found.": "Không tìm thấy cấp dịch vụ.",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "Chỉ số yêu cầu thực tế",

@@ -5907,6 +5907,7 @@
     "Please select a service tier": "請選擇服務檔位",
     "Service tier": "服務檔位",
     "Service tier / Group": "服務檔位 / 分組",
+    "Service source": "服務來源",
     "No service tier found.": "找不到服務檔位。",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "真實請求指標",

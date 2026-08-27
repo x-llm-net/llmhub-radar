@@ -675,6 +675,17 @@ func GetHubProviderChannelIDsInTenant(tenantID int) ([]int, error) {
 	return channelIDs, err
 }
 
+func GetHubProviderChannelIDs(providerID int) ([]int, error) {
+	if providerID <= 0 {
+		return nil, ErrHubProviderNotFound
+	}
+	var channelIDs []int
+	err := DB.Model(&HubSupplyGroup{}).
+		Where("provider_id = ?", providerID).
+		Pluck("new_api_channel_id", &channelIDs).Error
+	return channelIDs, err
+}
+
 func UpdateHubProviderServiceFeeBasisPoints(providerID int, override *int) (*HubProvider, error) {
 	if providerID <= 0 || (override != nil && (*override < 0 || *override > 10000)) {
 		return nil, errors.New("invalid hub provider service fee")

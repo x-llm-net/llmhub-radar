@@ -162,6 +162,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			hubProviderRoute.GET("/self", controller.GetHubProviderSelf)
 			hubProviderRoute.GET("/logo", controller.GetHubProviderLogo)
+			hubProviderRoute.GET("/logs", controller.GetHubProviderLogs)
+			hubProviderRoute.GET("/logs/stat", controller.GetHubProviderLogsStat)
 			hubProviderRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProvider)
 			hubProviderRoute.PUT("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderProfile)
 			hubProviderRoute.POST("/website-verification/assets", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UploadHubProviderWebsiteEvidence)

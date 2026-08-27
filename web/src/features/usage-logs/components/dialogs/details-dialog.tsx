@@ -890,6 +890,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
+          {props.isAdmin && props.log.provider_name && (
+            <DetailRow
+              label={t('Channel Provider')}
+              value={props.log.provider_name}
+            />
+          )}
+
           {props.isAdmin && props.log.channel > 0 && (
             <DetailRow
               label={t('Channel')}

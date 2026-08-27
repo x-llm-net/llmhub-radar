@@ -5850,6 +5850,7 @@
     "Please select a service tier": "Veuillez sélectionner un niveau de service",
     "Service tier": "Niveau de service",
     "Service tier / Group": "Niveau de service / Groupe",
+    "Service source": "Source du service",
     "No service tier found.": "Aucun niveau de service trouvé.",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "Métriques des requêtes réelles",

@@ -5,12 +5,30 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
 )
 
 func GetAllLogs(c *gin.Context) {
+	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	getLogsInChannelScope(c, channelIDs, scoped, scoped)
+}
+
+func GetHubProviderLogs(c *gin.Context) {
+	channelIDs, ok := hubProviderOwnerLogChannelIDs(c)
+	if !ok {
+		return
+	}
+	getLogsInChannelScope(c, channelIDs, true, true)
+}
+
+func getLogsInChannelScope(c *gin.Context, channelIDs []int, scoped, sanitize bool) {
 	pageInfo := common.GetPageQuery(c)
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
@@ -22,13 +40,9 @@ func GetAllLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
 	var logs []*model.Log
 	var total int64
+	var err error
 	if scoped {
 		logs, total, err = model.GetAllLogsInChannels(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, channelIDs)
 	} else {
@@ -38,10 +52,12 @@ func GetAllLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if sanitize {
+		model.SanitizeHubScopedLogs(logs)
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
-	return
 }
 
 func GetUserLogs(c *gin.Context) {
@@ -107,6 +123,44 @@ func GetLogByKey(c *gin.Context) {
 }
 
 func GetLogsStat(c *gin.Context) {
+	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	getLogStatsInChannelScope(c, channelIDs, scoped)
+}
+
+func GetHubProviderLogsStat(c *gin.Context) {
+	channelIDs, ok := hubProviderOwnerLogChannelIDs(c)
+	if !ok {
+		return
+	}
+	getLogStatsInChannelScope(c, channelIDs, true)
+}
+
+func hubProviderOwnerLogChannelIDs(c *gin.Context) ([]int, bool) {
+	provider, err := model.GetHubProviderByOwnerUserID(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	if provider == nil {
+		common.ApiErrorI18n(c, i18n.MsgNotFound)
+		return nil, false
+	}
+	channelIDs, err := model.GetHubProviderChannelIDs(provider.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	if channelIDs == nil {
+		channelIDs = make([]int, 0)
+	}
+	return channelIDs, true
+}
+
+func getLogStatsInChannelScope(c *gin.Context, channelIDs []int, scoped bool) {
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -116,11 +170,7 @@ func GetLogsStat(c *gin.Context) {
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
 	var stat model.Stat
-	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
+	var err error
 	if scoped {
 		stat, err = model.SumUsedQuotaInChannels(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, channelIDs)
 	} else {
@@ -140,7 +190,6 @@ func GetLogsStat(c *gin.Context) {
 			"tpm":   stat.Tpm,
 		},
 	})
-	return
 }
 
 func GetLogsSelfStat(c *gin.Context) {

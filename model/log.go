@@ -72,6 +72,8 @@ type Log struct {
 	IsStream          bool   `json:"is_stream"`
 	ChannelId         int    `json:"channel" gorm:"index"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
+	ProviderId        int    `json:"provider_id" gorm:"-"`
+	ProviderName      string `json:"provider_name" gorm:"-"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
 	Ip                string `json:"ip" gorm:"index;default:''"`
@@ -578,9 +580,43 @@ func getAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 		for i := range logs {
 			logs[i].ChannelName = channelMap[logs[i].ChannelId]
 		}
+
+		ownership, ownershipErr := GetHubChannelProviderOwnership(channelIds.Items())
+		if ownershipErr != nil {
+			return logs, total, ownershipErr
+		}
+		for i := range logs {
+			if item, ok := ownership[logs[i].ChannelId]; ok {
+				logs[i].ProviderId = item.ProviderId
+				logs[i].ProviderName = item.ProviderName
+			}
+		}
 	}
 
 	return logs, total, err
+}
+
+// SanitizeHubScopedLogs keeps the operational fields required by resellers
+// and providers while removing platform-only diagnostics and user IP data.
+func SanitizeHubScopedLogs(logs []*Log) {
+	for i := range logs {
+		logs[i].Ip = ""
+		other, _ := common.StrToMap(logs[i].Other)
+		if other == nil {
+			continue
+		}
+		delete(other, "admin_info")
+		delete(other, "audit_info")
+		delete(other, "hub_attempts")
+		delete(other, "expr_b64")
+		delete(other, "hub_requested_provider_id")
+		delete(other, "hub_requested_provider_slug")
+		delete(other, "hub_supply_group_id")
+		delete(other, "hub_provider_id")
+		delete(other, "platform_fee_basis_points")
+		delete(other, "provider_service_fee_basis_points")
+		logs[i].Other = common.MapToJsonStr(other)
+	}
 }
 
 const logSearchCountLimit = 10000

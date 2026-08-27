@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import { buildQueryParams } from './lib/utils'
+import { buildQueryParams } from './lib/query-params'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -77,12 +77,18 @@ export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
 ) => fetchLogs('/api/log', params, false)
 
+export const getProviderLogs = (params: GetLogsParams = {}) =>
+  fetchLogs('/api/hub/provider/logs', params, true)
+
 export const getLogStats = (params: GetLogStatsParams = {}) =>
   fetchLogStats('/api/log', params, true)
 
 export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
 ) => fetchLogStats('/api/log', params, false)
+
+export const getProviderLogStats = (params: GetLogStatsParams = {}) =>
+  fetchLogStats('/api/hub/provider/logs', params, true)
 
 export async function getUserInfo(
   userId: number

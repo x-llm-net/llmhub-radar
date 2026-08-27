@@ -5947,6 +5947,7 @@
     "Please select a service tier": "请选择服务档位",
     "Service tier": "服务档位",
     "Service tier / Group": "服务档位 / 分组",
+    "Service source": "服务来源",
     "No service tier found.": "未找到服务档位。",
     "Channel Health & Routing": "渠道健康与路由",
     "Real Request Metrics": "真实请求指标",

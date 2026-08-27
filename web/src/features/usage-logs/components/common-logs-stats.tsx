@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatLogQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { getLogStats, getUserLogStats } from '../api'
+import { getLogStats, getProviderLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
 import { buildApiParams } from '../lib/utils'
 import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
@@ -49,12 +49,13 @@ function StatBadge(props: {
 
 export function CommonLogsStats() {
   const { t } = useTranslation()
-  const { isAdminView: isAdmin } = useLogsViewScope()
+  const { isAdminView: isAdmin, dataScope, isScopeLoading } = useLogsViewScope()
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['usage-logs-stats', isAdmin, searchParams],
+    queryKey: ['usage-logs-stats', dataScope, searchParams],
+    enabled: !isScopeLoading,
     queryFn: async () => {
       const params = buildApiParams({
         page: 1,
@@ -64,9 +65,14 @@ export function CommonLogsStats() {
         isAdmin,
       })
 
-      const result = isAdmin
-        ? await getLogStats(params)
-        : await getUserLogStats(params)
+      let result
+      if (dataScope === 'admin') {
+        result = await getLogStats(params)
+      } else if (dataScope === 'provider') {
+        result = await getProviderLogStats(params)
+      } else {
+        result = await getUserLogStats(params)
+      }
 
       return result.success
         ? result.data || DEFAULT_LOG_STATS
@@ -75,7 +81,7 @@ export function CommonLogsStats() {
     placeholderData: (previousData) => previousData,
   })
 
-  if (isLoading) {
+  if (isScopeLoading || isLoading) {
     return (
       <div className='flex items-center gap-2'>
         <Skeleton className='h-7 w-[150px] rounded-md' />

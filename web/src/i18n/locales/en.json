@@ -5936,6 +5936,7 @@
     "Please select a service tier": "Please select a service tier",
     "Service tier": "Service tier",
     "Service tier / Group": "Service tier / Group",
+    "Service source": "Service source",
     "No service tier found.": "No service tier found.",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "Real Request Metrics",

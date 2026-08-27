@@ -5850,6 +5850,7 @@
     "Please select a service tier": "サービス階層を選択してください",
     "Service tier": "サービス階層",
     "Service tier / Group": "サービス階層 / グループ",
+    "Service source": "サービス提供元",
     "No service tier found.": "サービス階層が見つかりません。",
     "Channel Health & Routing": "Channel Health & Routing",
     "Real Request Metrics": "実リクエスト指標",
