@@ -605,7 +605,7 @@ func ListHubProvidersInTenant(keyword, status string, offset, limit, tenantID in
 	if tenantID <= 0 {
 		return nil, 0, ErrTenantNotFound
 	}
-	return listHubProviders(keyword, status, offset, limit, &tenantID, true, false, false, nil)
+	return listHubProviders(keyword, status, offset, limit, &tenantID, true, false, true, nil)
 }
 
 // ListHubProvidersForOverview is the platform-wide read scope for super

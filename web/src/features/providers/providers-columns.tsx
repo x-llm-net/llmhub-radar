@@ -117,6 +117,35 @@ export function useProvidersColumns(): ColumnDef<HubProviderAdminItem>[] {
       meta: { mobileTitle: true },
     },
     {
+      id: 'tenant',
+      header: t('Reseller'),
+      cell: ({ row }) => {
+        const provider = row.original
+        if (!provider.tenant_id) {
+          return (
+            <span className='text-muted-foreground'>
+              {t('Platform public pool')}
+            </span>
+          )
+        }
+        return (
+          <div className='min-w-[150px]'>
+            <LongText className='max-w-[180px] font-medium'>
+              {provider.tenant_name}
+            </LongText>
+            {provider.tenant_slug && (
+              <LongText className='text-muted-foreground max-w-[180px] text-xs'>
+                {provider.tenant_slug}
+              </LongText>
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      size: 200,
+      meta: { mobileOrder: 15 },
+    },
+    {
       id: 'owner',
       header: t('Owner'),
       cell: ({ row }) => (

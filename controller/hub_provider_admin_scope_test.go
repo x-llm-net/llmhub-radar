@@ -48,6 +48,10 @@ func TestAdminProviderManagementUsesTenantScope(t *testing.T) {
 	assert.Equal(t, 1, listResponse.Data.Total)
 	require.Len(t, listResponse.Data.Items, 1)
 	assert.Equal(t, providerA.Id, listResponse.Data.Items[0].Id)
+	require.NotNil(t, listResponse.Data.Items[0].TenantID)
+	assert.Equal(t, tenantA.Id, *listResponse.Data.Items[0].TenantID)
+	assert.Equal(t, tenantA.Name, listResponse.Data.Items[0].TenantName)
+	assert.Equal(t, tenantA.Slug, listResponse.Data.Items[0].TenantSlug)
 
 	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/providers/1/settlement-settings", map[string]any{
 		"platform_fee_basis_points": 100,
