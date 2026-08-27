@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 
 import {
   applyAuthRotation,
+  claimSessionExpirationHandling,
   clearAuthentication,
   refreshAuthentication,
 } from '@/lib/auth-session'
@@ -77,6 +78,12 @@ function redirectToSignIn(): void {
   }
 }
 
+function handleSessionExpiration(skipErrorHandler?: boolean): void {
+  if (!claimSessionExpirationHandling()) return
+  if (!skipErrorHandler) toast.error(t('Session expired!'))
+  redirectToSignIn()
+}
+
 api.interceptors.response.use(
   (response) => {
     if (response.config.acceptAuthRotation && response.data?.success === true) {
@@ -118,15 +125,13 @@ api.interceptors.response.use(
         }
 
         if (outcome.kind === 'anonymous' || outcome.kind === 'out_of_sync') {
-          if (!skipErrorHandler) toast.error(t('Session expired!'))
-          redirectToSignIn()
+          handleSessionExpiration(skipErrorHandler)
         }
       } else if (config?.authRetry) {
         clearAuthentication(false)
-        if (!skipErrorHandler) toast.error(t('Session expired!'))
-        redirectToSignIn()
-      } else if (!skipErrorHandler) {
-        toast.error(t('Session expired!'))
+        handleSessionExpiration(skipErrorHandler)
+      } else {
+        handleSessionExpiration(skipErrorHandler)
       }
     } else if (!skipErrorHandler) {
       const messageKey = getServerErrorMessageKey(error)

@@ -58,7 +58,7 @@ function valuesFromProvider(provider: HubProvider): ProviderFormValues {
       : provider.logo_url,
     contact_type: provider.contact_type || 'qq',
     contact_value: provider.contact_value,
-    support_type: provider.support_type || 'community',
+    support_type: provider.support_type || 'qq_group',
     support_value: provider.support_value,
   }
 }

@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import axios from 'axios'
 
-import { api, refreshAuthentication, type RefreshOutcome } from '@/lib/api'
+import {
+  api,
+  beginExplicitSignOut,
+  cancelExplicitSignOut,
+  refreshAuthentication,
+  type RefreshOutcome,
+} from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getAffiliateCode } from './lib/storage'
@@ -98,18 +104,26 @@ export async function executeLogout(
 
 // User logout
 export async function logout(): Promise<ApiResponse> {
-  return executeLogout({
-    getExpectedSID: () => useAuthStore.getState().auth.session?.sid,
-    request: async (sid) => {
-      const res = await api.post('/api/user/auth/logout', undefined, {
-        headers: sid ? { 'X-Auth-Session': sid } : undefined,
-        skipAuthRefresh: true,
-        skipErrorHandler: true,
-      })
-      return res.data
-    },
-    refresh: refreshAuthentication,
-  })
+  beginExplicitSignOut()
+  try {
+    const response = await executeLogout({
+      getExpectedSID: () => useAuthStore.getState().auth.session?.sid,
+      request: async (sid) => {
+        const res = await api.post('/api/user/auth/logout', undefined, {
+          headers: sid ? { 'X-Auth-Session': sid } : undefined,
+          skipAuthRefresh: true,
+          skipErrorHandler: true,
+        })
+        return res.data
+      },
+      refresh: refreshAuthentication,
+    })
+    if (!response.success) cancelExplicitSignOut()
+    return response
+  } catch (error: unknown) {
+    cancelExplicitSignOut()
+    throw error
+  }
 }
 
 // ----------------------------------------------------------------------------

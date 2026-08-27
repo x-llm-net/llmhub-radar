@@ -77,6 +77,8 @@ const authClient = axios.create({
 const refreshRaceDelays = [80, 200, 500] as const
 let refreshPromise: Promise<RefreshOutcome> | null = null
 let authEpoch = 0
+let explicitSignOutInProgress = false
+let sessionExpirationHandled = false
 
 class AuthRefreshSupersededError extends Error {
   constructor() {
@@ -150,11 +152,27 @@ export function applyAuthBundle(
   synchronizeTabs = true
 ): void {
   const previousSID = useAuthStore.getState().auth.session?.sid
+  explicitSignOutInProgress = false
+  sessionExpirationHandled = false
   authEpoch += 1
   useAuthStore.getState().auth.setBundle(bundle)
   if (synchronizeTabs && previousSID !== bundle.session.sid) {
     publishAuthSessionEvent('authenticated', bundle.session.sid)
   }
+}
+
+export function beginExplicitSignOut(): void {
+  explicitSignOutInProgress = true
+}
+
+export function cancelExplicitSignOut(): void {
+  explicitSignOutInProgress = false
+}
+
+export function claimSessionExpirationHandling(): boolean {
+  if (explicitSignOutInProgress || sessionExpirationHandled) return false
+  sessionExpirationHandled = true
+  return true
 }
 
 export function applyAuthRotation(value: unknown): void {

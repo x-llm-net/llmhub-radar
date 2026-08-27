@@ -175,7 +175,7 @@ export function ProviderOnboarding() {
       logo_url: '',
       contact_type: 'qq',
       contact_value: '',
-      support_type: 'community',
+      support_type: 'qq_group',
       support_value: '',
     },
   })

@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/empty'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { clearAuthenticatedClientState } from '@/lib/api'
+import { beginExplicitSignOut, clearAuthenticatedClientState } from '@/lib/api'
 import type { LoginSession } from '@/stores/auth-store'
 
 import {
@@ -87,6 +87,7 @@ export function LoginSessionsCard() {
       )
       setRevokeTarget(null)
       if (revokedCurrent) {
+        beginExplicitSignOut()
         clearAuthenticatedClientState(queryClient)
         void navigate({ to: '/sign-in', replace: true })
         return

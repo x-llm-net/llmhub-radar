@@ -36,6 +36,7 @@ import { NotFoundError } from '@/features/errors/not-found-error'
 import { getSetupStatus } from '@/features/setup/api'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import {
+  beginExplicitSignOut,
   bootstrapAuthentication,
   clearAuthenticatedClientState,
   clearAuthentication,
@@ -89,6 +90,7 @@ function RootComponent() {
         }
 
         if (currentSID && event.sid === currentSID) {
+          beginExplicitSignOut()
           clearAuthenticatedClientState(queryClient, false)
           void navigate({ to: '/sign-in', replace: true })
         }

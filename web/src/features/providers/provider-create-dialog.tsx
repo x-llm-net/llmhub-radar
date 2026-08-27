@@ -76,7 +76,7 @@ const initialForm: ProviderFormState = {
   description: '',
   contact_type: 'qq',
   contact_value: '',
-  support_type: 'community',
+  support_type: 'qq_group',
   support_value: '',
   use_provisional_slug: true,
 }
