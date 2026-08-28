@@ -1,6 +1,14 @@
 # LLM-Hub production reverse proxy.
 # Access logs are intentionally metadata-only: no request body or credentials.
 
+{
+	# Caddy asks LLM-Hub before obtaining a certificate for an arbitrary custom
+	# host. The application only authorizes active, verified tenant hosts.
+	on_demand_tls {
+		ask http://new-api:3000/api/hub/public/tls-ask
+	}
+}
+
 # Direct and custom domains use publicly trusted certificates managed by Caddy.
 llm-hub.store, 343246113.xyz {
 	log {
@@ -26,6 +34,40 @@ llm-hub.store, 343246113.xyz {
 		}
 	}
 	encode zstd gzip
+	reverse_proxy new-api:3000 {
+		flush_interval -1
+	}
+}
+
+# Custom tenant domains not listed above use an on-demand, publicly trusted
+# certificate. The ask callback prevents arbitrary domains from being served.
+https:// {
+	log {
+		output file /var/log/caddy/llm-hub-access.json {
+			roll_size 100MiB
+			roll_keep 7
+			roll_keep_for 168h
+		}
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Proxy-Authorization delete
+			request>headers>X-Api-Key delete
+			request>headers>X-Goog-Api-Key delete
+			request>headers>X-Auth-Token delete
+			request>uri query {
+				delete access_token
+				delete api_key
+				delete key
+				delete token
+			}
+		}
+	}
+	encode zstd gzip
+	tls {
+		on_demand
+	}
 	reverse_proxy new-api:3000 {
 		flush_interval -1
 	}

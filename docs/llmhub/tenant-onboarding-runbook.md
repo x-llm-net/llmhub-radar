@@ -20,7 +20,7 @@
 - 渠道商 slug 只要求在同一租户内唯一；不同总代理可以使用相同 slug。
 - 每个租户只有一个 Owner。更换 Owner 时，先移除原 Owner，再设置新 Owner。
 - 超级管理员拥有全平台权限；Owner 和租户 Admin 只拥有本租户权限。
-- Cloudflare、证书和 Caddy 未完成前，域名保持 `pending`，不得提前标记为已验证。
+- Cloudflare 和平台域名验证未完成前，域名保持 `pending`，不得提前标记为已验证。
 
 ## 3. 开通输入
 
@@ -32,7 +32,7 @@
 | 租户 slug | 平台内部稳定标识，不作为公开域名 |
 | 根域名 | 严格两段，申请方可控制 DNS |
 | Owner 用户 | 已存在的平台用户，记录 User ID 和用户名 |
-| Cloudflare Zone | 能配置根域和通配 DNS；如使用 Cloudflare 代理，还需能管理证书 |
+| DNS 服务商 | 能配置根域和通配 DNS；Cloudflare 用户使用 DNS-only（灰云） |
 | 品牌资料 | 品牌名称、Logo，可在基础设施验收后补充 |
 | 验收渠道商 | 一个真实渠道商 slug，以及平台中的 Provider ID |
 
@@ -49,16 +49,9 @@
 如果 DNS 服务商不支持根域 CNAME，使用其 `ALIAS`、`ANAME` 或 CNAME flattening 能力；不要退回手填服务器 IP。
 
 3. 这两条接入记录使用 DNS-only，Cloudflare 的边缘代理和 SSL/TLS 模式不参与这段链路。
-4. 为 Caddy 准备一张公网信任证书，同时覆盖以下 SAN：
+4. 根域和 `*` 必须同时配置。只有 `tenant-root` 时，总代理首页可访问，但所有渠道商地址仍不可用。
 
-```text
-tenant-root
-*.tenant-root
-```
-
-5. 私钥和证书只安装到 `ssh llm-hub` 的 `/opt/llm-hub/certs/`，权限设为 `600`；不得提交到 Git、聊天记录或发布包。
-
-根域和 `*` 必须同时配置。只有 `tenant-root` 时，总代理首页可访问，但所有渠道商地址仍不可用。
+总代理不需要申请、上传或安装证书。LLM-Hub 的 Caddy 已启用按需自动证书：首次访问已验证的总代理根域或渠道商子域时，Caddy 会自动申请并保存公网信任证书，之后自动续期。未登记、未验证、已停用的域名不会触发证书申请。
 
 平台侧由 LLM-Hub 管理员维护一个固定接入记录：
 
@@ -70,17 +63,13 @@ edge.llm-hub.store    A    159.195.18.119    DNS only
 
 ## 5. 阶段 B：Caddy 与会话配置
 
-1. 在仓库的 `scripts/llm-hub/caddy/Caddyfile` 增加根域和通配域名站点，使用对应的公网信任证书，并保留：
-
-```caddyfile
-flush_interval -1
-```
+1. 平台固定使用 `scripts/llm-hub/caddy/Caddyfile` 中的按需 TLS 配置；新增总代理不需要修改 Caddyfile。
 
 2. 将 `https://tenant-root` 加入生产 `.env` 的 `SESSION_COOKIE_TRUSTED_URL`。不加入 `*.tenant-root`；同源的渠道商子域会按请求 Host 校验。
 3. 不修改 `SESSION_COOKIE_DOMAIN=llm-hub.store`。自定义总代理域名会自动使用 Host-only Refresh Cookie，浏览器不会收到无效的跨根域 Cookie。
 4. 不修改 `HUB_PROVIDER_ROOT_DOMAIN=llm-hub.store`。它标识平台默认根域，不是“当前租户域名”；自定义总代理从 `tenant_domains` 解析。
-5. 将新根域加入 `scripts/llm-hub/production-target.json` 的 `publicHealthUrls`，并同步更新 `Release-LlmHub.ps1` 的目标清单断言，使后续每次发布都持续检查该根域。
-6. Caddy、证书、目标清单和 `.env` 属于基础设施变更，不跟随普通应用镜像自动覆盖。先提交并审查候选文件，再在目标机执行配置校验和安装；`.env` 变化需要重建 `new-api` 容器，Caddyfile 或证书变化只重建 Caddy。两者都不重启 MySQL 或 Redis。
+5. 不要把每个总代理域名加入固定 Caddyfile 或生产健康检查清单；按需证书授权接口会根据数据库中的租户域名状态判断。
+6. Caddy、目标清单和 `.env` 属于基础设施变更，不跟随普通应用镜像自动覆盖。先提交并审查候选文件，再在目标机执行配置校验和安装；`.env` 变化需要重建 `new-api` 容器，Caddyfile 变化只重建 Caddy。两者都不重启 MySQL 或 Redis。
 7. Caddy 重载后先运行只读基础设施验收：
 
 ```powershell
@@ -89,7 +78,7 @@ flush_interval -1
   -InfrastructureOnly
 ```
 
-该模式只检查 DNS、边缘 HTTPS、Caddy 源站通配证书、线上版本和可信会话 Origin，不要求平台已经将该域名标记为已验证。
+该模式只检查 DNS、HTTPS、线上版本和可信会话 Origin。自动证书模式下，正式域名还需要完成平台登记和验证，之后用根域和一个真实渠道商子域做首次访问验收。
 
 ## 6. 阶段 C：平台租户与角色
 
@@ -99,8 +88,17 @@ flush_interval -1
 2. 添加根域，先保持未验证；不要填写 `*.`。
 3. 基础设施验收通过后，将域名设为 `verified + active + primary`。
 4. 设置唯一 Owner；需要其他运营人员时再添加 Admin。
-5. 设置品牌名称和 Logo，并在该根域刷新确认。
-6. 检查本租户默认渠道商服务费；平台对总代理毛利润的抽成仍使用平台全局配置，不在租户开通时另造一套费率。
+
+5. 域名验证完成后，按以下地址验收自动证书：
+
+```text
+https://tenant-root
+https://provider-slug.tenant-root
+```
+
+首次访问新地址可能因 ACME 申请证书增加几秒延迟；证书签发后再次访问应恢复正常速度。
+6. 设置品牌名称和 Logo，并在该根域刷新确认。
+7. 检查本租户默认渠道商服务费；平台对总代理毛利润的抽成仍使用平台全局配置，不在租户开通时另造一套费率。
 
 ## 7. 阶段 D：功能验收
 

@@ -27,6 +27,7 @@ func TestRetiredFrontendAPIRoutes(t *testing.T) {
 	_, hasTenantCreate := routes[http.MethodPost+" /api/hub/admin/tenants"]
 	_, hasTenantDomainCreate := routes[http.MethodPost+" /api/hub/admin/tenants/:id/domains"]
 	_, hasTenantMemberUpsert := routes[http.MethodPost+" /api/hub/admin/tenants/:id/members"]
+	_, hasTLSAsk := routes[http.MethodGet+" /api/hub/public/tls-ask"]
 	assert.True(t, hasAsyncCleanup)
 	assert.False(t, hasDirectDelete)
 	assert.False(t, hasConsoleMigration)
@@ -37,4 +38,5 @@ func TestRetiredFrontendAPIRoutes(t *testing.T) {
 	assert.True(t, hasTenantCreate)
 	assert.True(t, hasTenantDomainCreate)
 	assert.True(t, hasTenantMemberUpsert)
+	assert.True(t, hasTLSAsk)
 }

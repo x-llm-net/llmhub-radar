@@ -33,6 +33,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/hub/public/providers/:slug", controller.GetPublicHubProvider)
 		apiRouter.GET("/hub/public/providers/:slug/logo", controller.GetPublicHubProviderLogo)
+		apiRouter.GET("/hub/public/tls-ask", controller.AuthorizeHubPublicTLS)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
