@@ -106,6 +106,8 @@ Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/produ
 
 2026-08-28 的线上核验中，`343246113.xyz` 根域正常，应用使用 `Host: x.343246113.xyz` 时正确返回 Provider 4；但公网 `x.343246113.xyz` 尚无 DNS，且当前 Caddy 只配置了 `*.llm-hub.store` 的通配源站证书。因此该自定义域名的渠道商公网入口仍是独立的基础设施待办，不应由应用发布脚本报告为已完成。
 
+新增总代理按 [tenant-onboarding-runbook.md](tenant-onboarding-runbook.md) 执行，并使用 `scripts/Test-LlmHubTenantDomain.ps1` 做可重复验收。
+
 计费信任额度和渠道商单一归属已按当前业务规则接受。初始化后仍需用新建数据完成一次真实请求、计费、两层分账、转余额和提现闭环。
 
 ## 回滚
