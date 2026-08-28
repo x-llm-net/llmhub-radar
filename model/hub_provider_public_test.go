@@ -39,6 +39,7 @@ func TestHubProviderSlugValidationAndUniqueness(t *testing.T) {
 		{value: "llm-routers", valid: true},
 		{value: "LLM-ROUTERS", valid: true},
 		{value: "api", valid: false},
+		{value: "edge", valid: false},
 		{value: "-routers", valid: false},
 		{value: "路由", valid: false},
 	}

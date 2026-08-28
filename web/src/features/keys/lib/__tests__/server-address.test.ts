@@ -29,6 +29,7 @@ describe('resolveServerAddress', () => {
     assert.equal(getTenantRootDomainFromHostname('x.sub.example.com'), null)
     assert.equal(getProviderSlugFromHostname('x..example.com'), null)
     assert.equal(getTenantRootDomainFromHostname('x..example.com'), null)
+    assert.equal(getProviderSlugFromHostname('edge.llm-hub.store'), null)
     assert.equal(getTenantRootDomainFromHostname('example.com..'), null)
     assert.equal(getTenantRootDomainFromHostname('127.0'), null)
   })

@@ -42,8 +42,9 @@
 
 - `llm-hub.store` 保持仅 DNS，由 Caddy 自动维护公开证书，减少 API 流式链路上的代理开销。
 - `app.llm-hub.store` 与 `*.llm-hub.store` 保持 Cloudflare 代理，源站使用仅覆盖 `*.llm-hub.store` 的 Origin Certificate。
+- `edge.llm-hub.store` 是总代理 CNAME 的固定目标，保持仅 DNS；它的 A 记录指向当前入口服务器，仅用于基础设施健康检查。
 - `343246113.xyz` 保持 Cloudflare 代理，Caddy 已取得该域名的公开证书。
-- 三条 LLM-Hub A 记录和 `343246113.xyz` 均指向 `159.195.18.119`。
+- 服务器更换时只修改 `edge.llm-hub.store` 的 A 记录；总代理侧的 CNAME 不需要调整。
 - Caddy 反代必须保留 `flush_interval -1`，避免重新引入流式缓冲。
 
 通配 Origin 私钥只保存在服务器：

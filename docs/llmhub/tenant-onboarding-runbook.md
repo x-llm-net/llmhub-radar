@@ -32,22 +32,24 @@
 | 租户 slug | 平台内部稳定标识，不作为公开域名 |
 | 根域名 | 严格两段，申请方可控制 DNS |
 | Owner 用户 | 已存在的平台用户，记录 User ID 和用户名 |
-| Cloudflare Zone | 能配置根域、通配 DNS 和 Origin Certificate |
+| Cloudflare Zone | 能配置根域和通配 DNS；如使用 Cloudflare 代理，还需能管理证书 |
 | 品牌资料 | 品牌名称、Logo，可在基础设施验收后补充 |
 | 验收渠道商 | 一个真实渠道商 slug，以及平台中的 Provider ID |
 
 ## 4. 阶段 A：域名与 Cloudflare
 
 1. 确认域名所有权，并确认没有正在承载其他生产服务。
-2. 在 Cloudflare 创建以下记录，首版统一开启代理：
+2. 在 Cloudflare 创建以下记录，统一使用仅 DNS（灰云）：
 
 ```text
-@    A    159.195.18.119    Proxied
-*    A    159.195.18.119    Proxied
+@    CNAME    edge.llm-hub.store    DNS only
+*    CNAME    edge.llm-hub.store    DNS only
 ```
 
-3. Cloudflare SSL/TLS 模式设置为 `Full (strict)`。
-4. 创建同时覆盖以下 SAN 的 Origin Certificate：
+如果 DNS 服务商不支持根域 CNAME，使用其 `ALIAS`、`ANAME` 或 CNAME flattening 能力；不要退回手填服务器 IP。
+
+3. 这两条接入记录使用 DNS-only，Cloudflare 的边缘代理和 SSL/TLS 模式不参与这段链路。
+4. 为 Caddy 准备一张公网信任证书，同时覆盖以下 SAN：
 
 ```text
 tenant-root
@@ -58,9 +60,17 @@ tenant-root
 
 根域和 `*` 必须同时配置。只有 `tenant-root` 时，总代理首页可访问，但所有渠道商地址仍不可用。
 
+平台侧由 LLM-Hub 管理员维护一个固定接入记录：
+
+```text
+edge.llm-hub.store    A    159.195.18.119    DNS only
+```
+
+`edge.llm-hub.store` 是稳定 CNAME 目标，不是总代理的业务域名，也不能注册为渠道商 slug。未来换服务器时只修改平台侧这条 A 记录，所有总代理的 DNS 配置保持不变。它必须是灰云；总代理侧也使用灰云 CNAME，避免不同 Cloudflare 账户之间代理 CNAME 触发跨账号限制。
+
 ## 5. 阶段 B：Caddy 与会话配置
 
-1. 在仓库的 `scripts/llm-hub/caddy/Caddyfile` 增加根域和通配域名站点，使用对应 Origin Certificate，并保留：
+1. 在仓库的 `scripts/llm-hub/caddy/Caddyfile` 增加根域和通配域名站点，使用对应的公网信任证书，并保留：
 
 ```caddyfile
 flush_interval -1
@@ -70,7 +80,7 @@ flush_interval -1
 3. 不修改 `SESSION_COOKIE_DOMAIN=llm-hub.store`。自定义总代理域名会自动使用 Host-only Refresh Cookie，浏览器不会收到无效的跨根域 Cookie。
 4. 不修改 `HUB_PROVIDER_ROOT_DOMAIN=llm-hub.store`。它标识平台默认根域，不是“当前租户域名”；自定义总代理从 `tenant_domains` 解析。
 5. 将新根域加入 `scripts/llm-hub/production-target.json` 的 `publicHealthUrls`，并同步更新 `Release-LlmHub.ps1` 的目标清单断言，使后续每次发布都持续检查该根域。
-6. Caddy、目标清单和 `.env` 属于基础设施变更，不跟随普通应用镜像自动覆盖。先提交并审查候选文件，再在目标机执行配置校验和安装；`.env` 变化需要重建 `new-api` 容器，Caddyfile 变化只重建 Caddy。两者都不重启 MySQL 或 Redis。
+6. Caddy、证书、目标清单和 `.env` 属于基础设施变更，不跟随普通应用镜像自动覆盖。先提交并审查候选文件，再在目标机执行配置校验和安装；`.env` 变化需要重建 `new-api` 容器，Caddyfile 或证书变化只重建 Caddy。两者都不重启 MySQL 或 Redis。
 7. Caddy 重载后先运行只读基础设施验收：
 
 ```powershell

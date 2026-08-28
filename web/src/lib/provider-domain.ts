@@ -28,6 +28,7 @@ const RESERVED_PROVIDER_SLUGS = new Set([
   'console',
   'dashboard',
   'docs',
+  'edge',
   'mail',
   'oauth',
   'provider',

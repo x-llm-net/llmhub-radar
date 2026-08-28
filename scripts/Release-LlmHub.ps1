@@ -46,6 +46,7 @@ function Assert-TargetManifest {
   $expectedHealthUrls = @(
     'https://llm-hub.store',
     'https://app.llm-hub.store',
+    'https://edge.llm-hub.store',
     'https://zz-infra-check.llm-hub.store',
     'https://343246113.xyz'
   )
@@ -223,7 +224,17 @@ function Test-PublicStatus {
   param([string]$ExpectedVersion)
 
   foreach ($baseUrl in @($target.publicHealthUrls)) {
-    $status = Invoke-RestMethod -Uri "$baseUrl/api/status" -Method Get -TimeoutSec 30
+    $statusRequest = @{
+      Uri = "$baseUrl/api/status"
+      Method = 'Get'
+      TimeoutSec = 30
+    }
+    if ($baseUrl -eq 'https://edge.llm-hub.store') {
+      # The fixed CNAME target is an infrastructure alias. It intentionally
+      # uses the origin certificate and is not a user-facing HTTPS origin.
+      $statusRequest.SkipCertificateCheck = $true
+    }
+    $status = Invoke-RestMethod @statusRequest
     if (-not $status.success) {
       throw "Public /api/status did not report success for '$baseUrl'."
     }

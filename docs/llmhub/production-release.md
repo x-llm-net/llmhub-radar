@@ -68,7 +68,7 @@ D:\xllm-xhs-post\projects\llmhub-loop-http400
 
 Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/production/compose.yml` 或 `scripts/llm-hub/caddy/Caddyfile` 时，必须先提交并审查，再将候选文件上传到目标机临时路径，分别执行 Compose 配置校验和 Caddy 配置校验；校验通过后安装到 `/opt/llm-hub`。Caddy 变更只重建 `caddy` 服务，数据库或 Redis 镜像变更必须单独安排并核对命名卷。
 
-应用发布脚本会从 `-Commit` 指定的 Git 提交提取 Compose、Caddyfile 并比较远端 SHA-256；不读取工作区文件，也不受 Windows 换行符转换影响。存在漂移时拒绝继续。它还会检查根域名、`app`、随机通配子域名和 `343246113.xyz` 的状态接口及版本。
+应用发布脚本会从 `-Commit` 指定的 Git 提交提取 Compose、Caddyfile 并比较远端 SHA-256；不读取工作区文件，也不受 Windows 换行符转换影响。存在漂移时拒绝继续。它还会检查根域名、`app`、固定 CNAME 接入点、随机通配子域名和 `343246113.xyz` 的状态接口及版本。
 
 ## 强制校验
 
@@ -101,8 +101,10 @@ Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/produ
 
 1. 根域 DNS 指向 LLM-Hub 入口并能访问 `/api/status`。
 2. `*.<tenant-root>` DNS 已解析到同一入口；只配置根域记录不够。
-3. Cloudflare 边缘证书和 Caddy 源站证书都覆盖根域及一级子域，TLS 模式与证书链一致。
+3. DNS-only 接入时，Caddy 的公网信任证书覆盖根域及一级子域；不要把 Cloudflare Origin CA 证书用于直接公网访问。
 4. 使用真实渠道商 slug 请求 `/api/hub/public/providers/<slug>`，确认返回该租户下的 Provider，而不是只检查根域首页。
+
+平台固定接入点 `edge.llm-hub.store` 必须保持 DNS-only，并由一条平台侧 A 记录指向当前入口；总代理只引用这个稳定名称，不应在自己的 DNS 中记录 LLM-Hub 源站 IP。
 
 2026-08-28 的线上核验中，`343246113.xyz` 根域正常，应用使用 `Host: x.343246113.xyz` 时正确返回 Provider 4；但公网 `x.343246113.xyz` 尚无 DNS，且当前 Caddy 只配置了 `*.llm-hub.store` 的通配源站证书。因此该自定义域名的渠道商公网入口仍是独立的基础设施待办，不应由应用发布脚本报告为已完成。
 
@@ -112,7 +114,7 @@ Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/produ
 
 ## 回滚
 
-从修改生产镜像标签开始，到容器健康、内部状态、远端版本和四个公网入口验证全部通过为止，任一步失败都会恢复备份的 Compose、`.env` 和旧镜像，并等待旧版本重新健康。Prepare 还会预先验证旧镜像能在新版本迁移后的临时数据库上启动。若部署后功能验收失败，使用同一版本号回滚：
+从修改生产镜像标签开始，到容器健康、内部状态、远端版本和目标清单中的公网入口验证全部通过为止，任一步失败都会恢复备份的 Compose、`.env` 和旧镜像，并等待旧版本重新健康。Prepare 还会预先验证旧镜像能在新版本迁移后的临时数据库上启动。若部署后功能验收失败，使用同一版本号回滚：
 
 ```powershell
 .\scripts\Release-LlmHub.ps1 `

@@ -47,7 +47,7 @@ var ErrHubProviderSlugAlreadyExists = errors.New("hub provider slug already exis
 var hubProviderReservedSlugs = map[string]struct{}{
 	"admin": {}, "api": {}, "app": {}, "auth": {}, "billing": {},
 	"cdn": {}, "console": {}, "dashboard": {}, "docs": {}, "mail": {},
-	"oauth": {}, "provider": {}, "providers": {}, "static": {},
+	"edge": {}, "oauth": {}, "provider": {}, "providers": {}, "static": {},
 	"status": {}, "support": {}, "www": {},
 }
 
