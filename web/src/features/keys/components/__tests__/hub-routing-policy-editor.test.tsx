@@ -182,6 +182,67 @@ describe('Hub routing policy editor', () => {
     container.remove()
   })
 
+  test('offers tier-based range presets without changing the form shape', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let nextValue: Array<{
+      family: string
+      min_multiplier: number
+      max_multiplier: number
+    }> = []
+
+    await act(async () =>
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <HubRoutingPolicyEditor
+            options={options}
+            value={[
+              {
+                family: 'openai',
+                min_multiplier: 0.1,
+                max_multiplier: 0.2,
+              },
+            ]}
+            onChange={(value) => {
+              nextValue = value
+            }}
+          />
+        </I18nextProvider>
+      )
+    )
+
+    const standardPreset = container.querySelector<HTMLButtonElement>(
+      '[data-multiplier-preset="standard"]'
+    )
+    assert.ok(standardPreset)
+    await act(async () => standardPreset.click())
+
+    assert.deepEqual(nextValue, [
+      {
+        family: 'openai',
+        min_multiplier: 0.2,
+        max_multiplier: 0.5,
+      },
+    ])
+
+    const highPreset = container.querySelector<HTMLButtonElement>(
+      '[data-multiplier-preset="high"]'
+    )
+    assert.ok(highPreset)
+    await act(async () => highPreset.click())
+    assert.deepEqual(nextValue, [
+      {
+        family: 'openai',
+        min_multiplier: 0.5,
+        max_multiplier: 100,
+      },
+    ])
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   test('initializes premium-only families with a valid range', async () => {
     const container = document.createElement('div')
     document.body.append(container)

@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { Plus, Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +51,74 @@ function formatMultiplier(value: number): string {
 
 function clampMultiplier(value: number, min: number, max: number): number {
   return Math.round(Math.min(max, Math.max(min, value)) * 1000) / 1000
+}
+
+type MultiplierPresetKey = 'all' | 'economy' | 'standard' | 'high'
+
+type MultiplierPreset = {
+  key: MultiplierPresetKey
+  label: string
+  min: number
+  max: number
+}
+
+function getMultiplierPresets(
+  option: HubTokenRoutingFamilyOption,
+  ceilings: HubTokenRoutingOptions['tier_ceilings'][string] | undefined,
+  t: TFunction
+): MultiplierPreset[] {
+  const presets: Array<{
+    key: MultiplierPresetKey
+    label: string
+    min: number
+    max: number
+  }> = [
+    {
+      key: 'all',
+      label: t('All'),
+      min: option.min_multiplier,
+      max: option.max_multiplier,
+    },
+  ]
+
+  if (!ceilings) return presets
+
+  presets.push(
+    {
+      key: 'economy',
+      label: t('Economy'),
+      min: option.min_multiplier,
+      max: Math.min(option.max_multiplier, ceilings.low),
+    },
+    {
+      key: 'standard',
+      label: t('Standard'),
+      min: Math.max(option.min_multiplier, ceilings.low),
+      max: Math.min(option.max_multiplier, ceilings.medium),
+    },
+    {
+      key: 'high',
+      label: t('High quality'),
+      min: Math.max(option.min_multiplier, ceilings.medium),
+      max: option.max_multiplier,
+    }
+  )
+
+  return presets
+    .filter((preset) => preset.min <= preset.max)
+    .map((preset) => ({
+      ...preset,
+      min: clampMultiplier(
+        preset.min,
+        option.min_multiplier,
+        option.max_multiplier
+      ),
+      max: clampMultiplier(
+        preset.max,
+        option.min_multiplier,
+        option.max_multiplier
+      ),
+    }))
 }
 
 function getHighestTier(
@@ -197,6 +266,11 @@ export function HubRoutingPolicyEditor({
           options.tier_ceilings[selection.family],
           displayValue
         )
+        const multiplierPresets = getMultiplierPresets(
+          option,
+          options.tier_ceilings[selection.family],
+          t
+        )
         const matching = option.availability.filter((bucket) =>
           options.mode === 'provider'
             ? Math.abs(bucket.multiplier - displayValue) < 0.0005
@@ -288,6 +362,36 @@ export function HubRoutingPolicyEditor({
               </Select>
             ) : (
               <div className='space-y-2'>
+                <div
+                  className='flex flex-wrap items-center gap-1.5'
+                  role='group'
+                  aria-label={t('Multiplier range')}
+                >
+                  {multiplierPresets.map((preset) => {
+                    const isActive =
+                      selection.min_multiplier === preset.min &&
+                      selection.max_multiplier === preset.max
+
+                    return (
+                      <Button
+                        key={preset.key}
+                        type='button'
+                        size='xs'
+                        variant={isActive ? 'secondary' : 'outline'}
+                        aria-pressed={isActive}
+                        data-multiplier-preset={preset.key}
+                        onClick={() =>
+                          updateSelection(index, {
+                            min_multiplier: preset.min,
+                            max_multiplier: preset.max,
+                          })
+                        }
+                      >
+                        {preset.label}
+                      </Button>
+                    )
+                  })}
+                </div>
                 <Slider
                   min={option.min_multiplier}
                   max={sliderMax}
