@@ -413,7 +413,18 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 	platformFeeBasisPoints := params.PlatformFeeBasisPoints
 	if !params.HasPlatformFeeBasisPoints {
 		var err error
-		platformFeeBasisPoints, err = ResolveHubProviderPlatformFeeBasisPoints(params.ProviderId)
+		tenantId := params.TenantId
+		if tenantId <= 0 {
+			tenantId, err = ResolveHubProviderTenantId(params.ProviderId)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if tenantId > 0 {
+			platformFeeBasisPoints, err = ResolveHubTenantPlatformFeeBasisPoints(tenantId)
+		} else {
+			platformFeeBasisPoints, err = ResolveHubProviderPlatformFeeBasisPoints(params.ProviderId)
+		}
 		if err != nil {
 			return nil, err
 		}

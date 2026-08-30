@@ -14,9 +14,37 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPrepareHubProviderEarningUsesTenantPlatformFee(t *testing.T) {
+	db := useHubSupplyGroupMigrationDB(t)
+	require.NoError(t, db.AutoMigrate(&Tenant{}, &HubProvider{}, &HubProviderEarning{}))
+
+	settings := hub_provider_settlement_setting.Get()
+	original := *settings
+	settings.PlatformFeeBasisPoints = 3000
+	t.Cleanup(func() { *settings = original })
+
+	tenant := &Tenant{Name: "Snapshot tenant", Slug: "snapshot-tenant", Status: TenantStatusActive}
+	require.NoError(t, db.Create(tenant).Error)
+	override := 2000
+	_, err := UpdateHubTenantPlatformFeeBasisPoints(tenant.Id, &override)
+	require.NoError(t, err)
+
+	provider := &HubProvider{OwnerUserId: 90102, Slot: 1, Name: "Tenant fee provider", Slug: "tenant-fee-provider", Status: HubProviderStatusActive, TenantId: &tenant.Id}
+	require.NoError(t, db.Create(provider).Error)
+	earning, err := PrepareHubProviderEarning(HubProviderEarningParams{
+		RequestId: "tenant-fee-snapshot-current", ProviderId: provider.Id, OwnerUserId: provider.OwnerUserId,
+		SupplyGroupId: 3, ChannelId: 4, GrossQuota: 1000, TenantId: tenant.Id,
+		HasProviderServiceFeeBasisPoints: true, ProviderServiceFeeBasisPoints: 1000,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2000, earning.PlatformFeeBasisPoints)
+	assert.Equal(t, 20, earning.PlatformFeeQuota)
+}
 
 func seedHubTenantFinance(t *testing.T) (*Tenant, *User) {
 	t.Helper()

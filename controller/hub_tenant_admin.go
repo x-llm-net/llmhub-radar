@@ -42,6 +42,10 @@ type adminUpdateTenantStatusRequest struct {
 	Status string `json:"status"`
 }
 
+type adminUpdateTenantSettlementSettingsRequest struct {
+	PlatformFeeBasisPoints *int `json:"platform_fee_basis_points"`
+}
+
 type adminCreateTenantDomainRequest struct {
 	Host      string `json:"host"`
 	IsPrimary bool   `json:"is_primary"`
@@ -192,6 +196,37 @@ func AdminUpdateHubTenantStatus(c *gin.Context) {
 	}
 	refreshHubTenantRoutingCache()
 	common.ApiSuccess(c, tenant)
+}
+
+func AdminUpdateHubTenantSettlementSettings(c *gin.Context) {
+	var request adminUpdateTenantSettlementSettingsRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiError(c, errors.New("invalid tenant settlement settings"))
+		return
+	}
+	if request.PlatformFeeBasisPoints != nil && (*request.PlatformFeeBasisPoints < 0 || *request.PlatformFeeBasisPoints > 10000) {
+		common.ApiError(c, errors.New("invalid tenant platform fee"))
+		return
+	}
+	tenant, err := model.UpdateHubTenantPlatformFeeBasisPoints(parseIDParam(c, "id"), request.PlatformFeeBasisPoints)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	effectiveFee, err := model.ResolveHubTenantPlatformFeeBasisPoints(tenant.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	refreshHubTenantRoutingCache()
+	recordManageAudit(c, "hub_tenant.settlement_settings_update", map[string]interface{}{
+		"tenant_id": tenant.Id,
+	})
+	common.ApiSuccess(c, gin.H{
+		"id":                                  tenant.Id,
+		"platform_fee_basis_points":           tenant.PlatformFeeBasisPoints,
+		"effective_platform_fee_basis_points": effectiveFee,
+	})
 }
 
 func refreshHubTenantRoutingCache() {

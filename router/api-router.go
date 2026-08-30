@@ -272,6 +272,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubTenantAdminRoute.GET("/finance", controller.AdminListHubTenantSettlementSummaries)
 			hubTenantAdminRoute.POST("", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenant)
 			hubTenantAdminRoute.PUT("/:id/status", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantStatus)
+			hubTenantAdminRoute.PUT("/:id/settlement-settings", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantSettlementSettings)
 			hubTenantAdminRoute.PUT("/:id/brand", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantBrand)
 			hubTenantAdminRoute.POST("/:id/domains", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminCreateHubTenantDomain)
 			hubTenantAdminRoute.PUT("/:id/domains/:domain_id", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminUpdateHubTenantDomain)

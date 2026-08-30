@@ -36,6 +36,17 @@ D:\xllm-xhs-post\projects\llmhub-loop-http400
 
 ## 应用发布入口
 
+## 最小发布标准
+
+LLM-Hub 后续只按以下四条执行，不使用临时源码快照发布：
+
+1. 功能在独立分支开发，完成后合并到 `main`；`main` 是唯一发布源。
+2. 发布必须指定 `main` 上的明确提交，从该提交生成源码包和镜像；禁止发布未提交修改或手工复制目录。
+3. 构建前后的业务回归测试必须通过，至少包括财务分账、路由和权限相关测试；版本号、容器健康和 `/api/status` 不能替代业务测试。
+4. 发布前备份并准备回滚；只有得到明确确认后才替换线上容器。
+
+发布编号继续使用 `llmhub-<提交短SHA>-<YYYYMMDD>-<序号>`，用于关联提交、源码包和镜像，不额外创建 `llmhub-*` Git 标签。
+
 生产应用版本发布只能通过仓库内的 PowerShell 脚本执行：
 
 ```powershell
@@ -81,7 +92,10 @@ Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/produ
 5. 生产 compose 中不得出现旧 X-LLM 或 GHCR 镜像。
 6. 新镜像先使用临时 SQLite 启动，再对生产 MySQL 执行一致性只读备份，把快照导入隔离的临时 MySQL 8.4 容器，完整执行迁移并通过 `/api/status`；随后启动上一镜像并核对渠道商 `id / tenant_id / slug` 未被改写。预检不在生产数据库执行迁移或写入，也不开放公网端口。
 7. 切换前必须成功查询并确认没有待执行或运行中的渠道测试、供给探测任务；查询失败或返回异常值时拒绝发布。随后备份 MySQL、`.env` 和 compose，并给旧镜像添加回滚标签。
-8. `Deploy` 和 `Rollback` 没有 `-ConfirmProductionSwitch` 时直接拒绝执行。
+8. 构建解包后必须通过 `assert-financial-features.sh`，并在 Docker 的 Go 构建阶段通过 `model`、`relay/helper`、`service`、`controller` 财务回归测试；任一关键业务能力缺失或测试失败都不得生成镜像。
+9. `Deploy` 和 `Rollback` 没有 `-ConfirmProductionSwitch` 时直接拒绝执行。
+
+构建门禁保护的是业务契约：租户费率字段和解析接口、供给价格快照中的租户费率、选路到计费的费率传递、收益记录与总代汇总，以及“总代费率覆盖优先于全局默认”的回归测试。版本号、容器健康和 `/api/status` 只能证明程序启动，不能替代这些业务检查。
 
 ## 上线前复盘闸门
 

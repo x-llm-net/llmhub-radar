@@ -57,8 +57,11 @@ type Tenant struct {
 	Slug        string `json:"slug" gorm:"type:varchar(63);not null;uniqueIndex:idx_tenants_slug"`
 	Status      string `json:"status" gorm:"type:varchar(24);not null"`
 	BrandConfig string `json:"-" gorm:"type:varchar(2048);not null;default:'{}'"`
-	CreatedAt   int64  `json:"created_at" gorm:"bigint;not null"`
-	UpdatedAt   int64  `json:"updated_at" gorm:"bigint;not null"`
+	// PlatformFeeBasisPoints is the platform's share of this tenant's
+	// reseller gross income. A nil value follows the global default.
+	PlatformFeeBasisPoints *int  `json:"-" gorm:"column:platform_fee_basis_points"`
+	CreatedAt              int64 `json:"created_at" gorm:"bigint;not null"`
+	UpdatedAt              int64 `json:"updated_at" gorm:"bigint;not null"`
 }
 
 func (Tenant) TableName() string {

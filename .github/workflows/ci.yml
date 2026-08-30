@@ -40,6 +40,9 @@ jobs:
           mkdir -p web/dist
           touch web/dist/index.html
 
+      - name: Verify LLM-Hub financial contract
+        run: sh scripts/llm-hub/server/assert-financial-features.sh .
+
       - name: Vet root module
         run: go vet ./...
 

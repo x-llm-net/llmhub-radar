@@ -23,6 +23,8 @@ mkdir -p "$source_dir"
 tar -xf "$archive" -C "$source_dir"
 printf '%s\n' "$release_tag" > "$source_dir/VERSION"
 
+sh "$source_dir/scripts/llm-hub/server/assert-financial-features.sh" "$source_dir"
+
 docker build --pull=false -t "$image" "$source_dir"
 actual_version="$(docker run --rm "$image" --version)"
 test "$actual_version" = "$release_tag"

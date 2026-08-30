@@ -172,6 +172,9 @@ func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, chan
 		groupRatioInfo.ProviderServiceFeeBasisPoints = providerServiceFeeBasisPoints
 		groupRatioInfo.HasProviderServiceFeeBasisPoints = true
 		groupRatioInfo.PlatformFeeBasisPoints = hub_provider_settlement_setting.PlatformFeeBasisPoints()
+		if pricing.TenantPlatformFeeBasisPoints != nil && *pricing.TenantPlatformFeeBasisPoints >= 0 && *pricing.TenantPlatformFeeBasisPoints <= 10000 {
+			groupRatioInfo.PlatformFeeBasisPoints = *pricing.TenantPlatformFeeBasisPoints
+		}
 	} else {
 		// A nil tenant is a migration-compatibility state. Keep interpreting
 		// the legacy provider column as the old platform fee until ownership is

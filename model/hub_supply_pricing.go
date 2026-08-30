@@ -14,6 +14,7 @@ type HubSupplyPricing struct {
 	SupplyProviderStatus          string
 	SupplyOwnerUserId             int
 	TenantId                      *int
+	TenantPlatformFeeBasisPoints  *int
 	PriceMultiplier               float64
 	TenantPublished               bool
 	ProviderServiceFeeBasisPoints *int
@@ -141,18 +142,28 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 		ProviderStatus                string
 		OwnerUserId                   int
 		TenantId                      *int
+		TenantPlatformFeeBasisPoints  *int
 		NewAPIChannelId               int
 		PriceMultiplier               float64
 		TenantPublished               bool
 		ProviderServiceFeeBasisPoints *int
 	}
 	var rows []hubSupplyPricingRow
+	tenantPlatformFeeSelect := "NULL AS tenant_platform_fee_basis_points"
+	tenantJoin := ""
+	if DB.Migrator().HasTable(&Tenant{}) {
+		tenantPlatformFeeSelect = "tenants.platform_fee_basis_points AS tenant_platform_fee_basis_points"
+		tenantJoin = "LEFT JOIN tenants ON tenants.id = providers.tenant_id"
+	}
 	if err := DB.Table("hub_supply_groups AS supply_groups").
 		Select(
 			"supply_groups.id, supply_groups.provider_id, providers.status AS provider_status, providers.owner_user_id, providers.tenant_id, " +
-				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, supply_groups.tenant_published, providers.platform_fee_basis_points AS provider_service_fee_basis_points",
+				"supply_groups.new_api_channel_id, supply_groups.price_multiplier, supply_groups.tenant_published, " +
+				"providers.platform_fee_basis_points AS provider_service_fee_basis_points, " +
+				tenantPlatformFeeSelect,
 		).
 		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
+		Joins(tenantJoin).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -164,6 +175,7 @@ func loadHubSupplyPricingCache() (*hubSupplyPricingCacheData, error) {
 			SupplyProviderStatus:          row.ProviderStatus,
 			SupplyOwnerUserId:             row.OwnerUserId,
 			TenantId:                      row.TenantId,
+			TenantPlatformFeeBasisPoints:  row.TenantPlatformFeeBasisPoints,
 			PriceMultiplier:               row.PriceMultiplier,
 			TenantPublished:               row.TenantPublished,
 			ProviderServiceFeeBasisPoints: row.ProviderServiceFeeBasisPoints,

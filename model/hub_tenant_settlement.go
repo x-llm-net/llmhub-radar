@@ -328,12 +328,16 @@ func hubTenantFinanceReadTransaction(fn func(tx *gorm.DB) error) error {
 func getHubTenantSettlementSummaryTx(tx *gorm.DB, tenantID int) (HubTenantSettlementSummary, error) {
 	summary := HubTenantSettlementSummary{
 		TenantId:               tenantID,
-		PlatformFeeBasisPoints: hub_provider_settlement_setting.PlatformFeeBasisPoints(),
 		MinimumWithdrawalQuota: hub_provider_settlement_setting.MinimumWithdrawalQuota(),
 	}
 	if tenantID <= 0 {
 		return summary, ErrTenantNotFound
 	}
+	platformFeeBasisPoints, err := resolveHubTenantPlatformFeeBasisPoints(tx, tenantID)
+	if err != nil {
+		return summary, err
+	}
+	summary.PlatformFeeBasisPoints = platformFeeBasisPoints
 	type earningSums struct {
 		GrossQuota             int `gorm:"column:gross_quota"`
 		PlatformFeeQuota       int `gorm:"column:platform_fee_quota"`
