@@ -278,7 +278,7 @@ describe('Hub routing policy editor', () => {
         family: 'openai',
         min_multiplier: 0.2,
         max_multiplier: 0.5,
-        exact_multiplier: undefined,
+        exact_multipliers: undefined,
       },
     ])
 
@@ -294,7 +294,7 @@ describe('Hub routing policy editor', () => {
       family: string
       min_multiplier: number
       max_multiplier: number
-      exact_multiplier?: number
+      exact_multipliers?: number[]
     }> = []
     const premiumOptions: HubTokenRoutingOptions = {
       ...options,
@@ -330,6 +330,66 @@ describe('Hub routing policy editor', () => {
 
     assert.equal(nextValue[0]?.min_multiplier, 5)
     assert.equal(nextValue[0]?.max_multiplier, 5)
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  test('allows selecting multiple published provider multipliers', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let nextValue: Array<{
+      family: string
+      min_multiplier: number
+      max_multiplier: number
+      exact_multipliers?: number[]
+    }> = []
+    const baseFamily = options.families[0]
+    assert.ok(baseFamily)
+    const providerOptions: HubTokenRoutingOptions = {
+      ...options,
+      mode: 'provider',
+      provider_id: 7,
+      families: [
+        {
+          ...baseFamily,
+          exact_multipliers: [0.2, 0.5],
+          availability: [
+            { multiplier: 0.2, channel_count: 1, provider_count: 1 },
+            { multiplier: 0.5, channel_count: 1, provider_count: 1 },
+          ],
+        },
+      ],
+    }
+
+    await act(async () =>
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <HubRoutingPolicyEditor
+            options={providerOptions}
+            value={[
+              {
+                family: 'openai',
+                min_multiplier: 0.2,
+                max_multiplier: 0.2,
+                exact_multipliers: [0.2],
+              },
+            ]}
+            onChange={(value) => {
+              nextValue = value
+            }}
+          />
+        </I18nextProvider>
+      )
+    )
+
+    const checkboxes =
+      container.querySelectorAll<HTMLElement>('[role="checkbox"]')
+    assert.equal(checkboxes.length, 2)
+    await act(async () => checkboxes[1]?.click())
+
+    assert.deepEqual(nextValue[0]?.exact_multipliers, [0.2, 0.5])
 
     await act(async () => root.unmount())
     container.remove()

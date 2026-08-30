@@ -73,7 +73,7 @@ describe('API key multiplier routing policy mapping', () => {
     })
   })
 
-  test('maps provider-domain choices to the provider and exact multiplier', () => {
+  test('maps provider-domain choices to the provider and exact multipliers', () => {
     const values = {
       ...getApiKeyFormDefaultValues(false),
       hub_selections: [
@@ -81,7 +81,7 @@ describe('API key multiplier routing policy mapping', () => {
           family: 'google',
           min_multiplier: 0.3,
           max_multiplier: 0.3,
-          exact_multiplier: 0.3,
+          exact_multipliers: [0.3, 0.5],
         },
       ],
     }
@@ -99,7 +99,7 @@ describe('API key multiplier routing policy mapping', () => {
       selections: [
         {
           family: 'google',
-          exact_multipliers: [0.3],
+          exact_multipliers: [0.3, 0.5],
         },
       ],
     })

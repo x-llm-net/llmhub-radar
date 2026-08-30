@@ -24,8 +24,8 @@ import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { DEFAULT_GROUP } from '../constants'
 import type { ApiKey, ApiKeyFormData, HubTokenRoutingOptions } from '../types'
 
-function requireExactMultiplier(value: number | undefined): number {
-  if (value === undefined) {
+function requireExactMultipliers(value: number[] | undefined): number[] {
+  if (!value || value.length === 0) {
     throw new Error('Provider routing selection requires an exact multiplier')
   }
   return value
@@ -56,7 +56,7 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
           family: z.string(),
           min_multiplier: z.number(),
           max_multiplier: z.number(),
-          exact_multiplier: z.number().optional(),
+          exact_multipliers: z.array(z.number()).optional(),
         })
       ),
       tokenCount: z.number().min(1).optional(),
@@ -189,9 +189,9 @@ export function transformFormDataToPayload(
             family: selection.family,
             ...(routingOptions?.mode === 'provider'
               ? {
-                  exact_multipliers: [
-                    requireExactMultiplier(selection.exact_multiplier),
-                  ],
+                  exact_multipliers: requireExactMultipliers(
+                    selection.exact_multipliers
+                  ),
                 }
               : {
                   min_multiplier: selection.min_multiplier,
@@ -241,7 +241,7 @@ export function transformApiKeyToFormDefaults(
         family: selection.family,
         min_multiplier: selection.min_multiplier ?? 0.01,
         max_multiplier: selection.max_multiplier ?? 1,
-        exact_multiplier: selection.exact_multipliers?.[0],
+        exact_multipliers: selection.exact_multipliers,
       })
     ),
     tokenCount: 1,

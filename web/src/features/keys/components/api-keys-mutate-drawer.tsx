@@ -381,12 +381,16 @@ export function ApiKeysMutateDrawer({
           const option = routingOptions.families.find(
             (family) => family.key === selection.family
           )
+          const selectedMultipliers = selection.exact_multipliers || []
           return (
             !option ||
-            !option.exact_multipliers?.some(
-              (multiplier) =>
-                selection.exact_multiplier !== undefined &&
-                Math.abs(multiplier - selection.exact_multiplier) < 0.0005
+            selectedMultipliers.length === 0 ||
+            selectedMultipliers.some(
+              (selectedMultiplier) =>
+                !option.exact_multipliers?.some(
+                  (multiplier) =>
+                    Math.abs(multiplier - selectedMultiplier) < 0.0005
+                )
             )
           )
         })

@@ -6121,6 +6121,7 @@
     "This provider has no published routes available for API keys.": "该渠道商目前没有可供 API 密钥使用的已上架路由。",
     "Remove model family": "移除模型类型",
     "Select a published multiplier": "选择已发布倍率",
+    "Select published multipliers": "选择已发布倍率（可多选）",
     "Multiplier range": "倍率范围",
     "Minimum multiplier": "最低倍率",
     "Maximum multiplier": "最高倍率",

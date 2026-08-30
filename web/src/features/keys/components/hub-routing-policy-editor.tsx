@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -24,7 +25,7 @@ export type HubRoutingSelectionFormValue = {
   family: string
   min_multiplier: number
   max_multiplier: number
-  exact_multiplier?: number
+  exact_multipliers?: number[]
 }
 
 type HubRoutingPolicyEditorProps = {
@@ -145,7 +146,9 @@ function defaultSelection(
       family: option.key,
       min_multiplier: option.min_multiplier,
       max_multiplier: fallbackMax,
-      exact_multiplier: option.exact_multipliers?.[0],
+      exact_multipliers: option.exact_multipliers?.[0]
+        ? [option.exact_multipliers[0]]
+        : undefined,
     }
   }
 
@@ -164,7 +167,9 @@ function defaultSelection(
       family: option.key,
       min_multiplier: standardMin,
       max_multiplier: standardMax,
-      exact_multiplier: option.exact_multipliers?.[0],
+      exact_multipliers: option.exact_multipliers?.[0]
+        ? [option.exact_multipliers[0]]
+        : undefined,
     }
   }
 
@@ -172,7 +177,9 @@ function defaultSelection(
     family: option.key,
     min_multiplier: option.min_multiplier,
     max_multiplier: fallbackMax,
-    exact_multiplier: option.exact_multipliers?.[0],
+    exact_multipliers: option.exact_multipliers?.[0]
+      ? [option.exact_multipliers[0]]
+      : undefined,
   }
 }
 
@@ -300,7 +307,9 @@ export function HubRoutingPolicyEditor({
         )
         const displayValue =
           options.mode === 'provider'
-            ? (selection.exact_multiplier ?? option.exact_multipliers?.[0] ?? 0)
+            ? (selection.exact_multipliers?.[0] ??
+              option.exact_multipliers?.[0] ??
+              0)
             : selection.max_multiplier
         const tier = getHighestTier(
           options.tier_ceilings[selection.family],
@@ -313,7 +322,10 @@ export function HubRoutingPolicyEditor({
         )
         const matching = option.availability.filter((bucket) =>
           options.mode === 'provider'
-            ? Math.abs(bucket.multiplier - displayValue) < 0.0005
+            ? (selection.exact_multipliers || []).some(
+                (multiplier) =>
+                  Math.abs(bucket.multiplier - multiplier) < 0.0005
+              )
             : bucket.multiplier >= selection.min_multiplier - 0.0005 &&
               bucket.multiplier <= selection.max_multiplier + 0.0005
         )
@@ -384,30 +396,47 @@ export function HubRoutingPolicyEditor({
             </div>
 
             {options.mode === 'provider' ? (
-              <Select
-                value={selection.exact_multiplier?.toFixed(3)}
-                onValueChange={(raw) => {
-                  const multiplier = Number(raw)
-                  updateSelection(index, {
-                    exact_multiplier: multiplier,
-                    min_multiplier: multiplier,
-                    max_multiplier: multiplier,
-                  })
-                }}
+              <div
+                className='border-muted-foreground/25 flex flex-wrap gap-x-4 gap-y-2 rounded-md border px-3 py-2'
+                role='group'
+                aria-label={t('Select published multipliers')}
               >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={t('Select a published multiplier')}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {(option.exact_multipliers || []).map((multiplier) => (
-                    <SelectItem key={multiplier} value={multiplier.toFixed(3)}>
-                      {formatMultiplier(multiplier)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {(option.exact_multipliers || []).map((multiplier) => {
+                  const selected = (selection.exact_multipliers || []).some(
+                    (value) => Math.abs(value - multiplier) < 0.0005
+                  )
+                  return (
+                    <label
+                      key={multiplier}
+                      className='flex items-center gap-2 text-sm'
+                    >
+                      <Checkbox
+                        checked={selected}
+                        disabled={
+                          selected &&
+                          (selection.exact_multipliers || []).length === 1
+                        }
+                        onCheckedChange={(checked) => {
+                          const current = selection.exact_multipliers || []
+                          const next = checked
+                            ? [...current, multiplier]
+                            : current.filter(
+                                (value) =>
+                                  Math.abs(value - multiplier) >= 0.0005
+                              )
+                          updateSelection(index, {
+                            exact_multipliers:
+                              next.length > 0 ? next : undefined,
+                            min_multiplier: next[0] ?? 0,
+                            max_multiplier: next[0] ?? 0,
+                          })
+                        }}
+                      />
+                      <span>{formatMultiplier(multiplier)}</span>
+                    </label>
+                  )
+                })}
+              </div>
             ) : (
               <div className='space-y-2'>
                 <div
