@@ -74,3 +74,17 @@ func GetActiveTenantBrandAsset(assetID int) (*TenantBrandAsset, error) {
 	}
 	return &asset, nil
 }
+
+func GetActiveTenantBrandAssetInTenant(assetID, tenantID int) (*TenantBrandAsset, error) {
+	if assetID <= 0 || tenantID <= 0 {
+		return nil, ErrTenantBrandAssetInvalid
+	}
+	var asset TenantBrandAsset
+	err := DB.Joins("JOIN tenants ON tenants.id = tenant_brand_assets.tenant_id").
+		Where("tenant_brand_assets.id = ? AND tenant_brand_assets.tenant_id = ? AND tenants.status = ?", assetID, tenantID, TenantStatusActive).
+		First(&asset).Error
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}

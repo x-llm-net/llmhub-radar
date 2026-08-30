@@ -148,6 +148,13 @@ func GetPublicHubProvider(c *gin.Context) {
 }
 
 func publicHubProviderTenantID(c *gin.Context, providerSlug string) (*int, bool) {
+	// Public provider routes are mounted behind TenantHostContextRequired. Use
+	// that resolved tenant as the authorization boundary before any legacy
+	// host compatibility logic can run.
+	if tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId); tenantID > 0 {
+		return &tenantID, true
+	}
+
 	providerHost, err := model.ResolveHubProviderHost(c.Request.Host)
 	if err == nil && providerHost.IsProviderHost {
 		return providerHost.Provider.TenantId, providerHost.Provider.Slug == providerSlug
@@ -174,7 +181,8 @@ func publicHubProviderTenantID(c *gin.Context, providerSlug string) (*int, bool)
 }
 
 func GetPublicHubHome(c *gin.Context) {
-	home, err := model.GetHubPublicHome(common.GetTimestamp())
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	home, err := model.GetHubPublicHomeForTenant(common.GetTimestamp(), tenantID)
 	if err != nil {
 		common.ApiError(c, err)
 		return

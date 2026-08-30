@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -102,7 +103,14 @@ func TestPublicTenantBrandIsIsolatedByTrustedHost(t *testing.T) {
 	} {
 		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/brand", nil, 1)
 		ctx.Request.Host = test.host
-		GetPublicHubTenantBrand(ctx)
+		middleware.TenantHostContextRequired()(ctx)
+		if !ctx.IsAborted() {
+			GetPublicHubTenantBrand(ctx)
+		}
+		if !test.isTenant {
+			assert.Equal(t, http.StatusNotFound, recorder.Code, test.host)
+			continue
+		}
 		response := decodeTenantBrandResponse(t, recorder.Body.Bytes())
 		require.True(t, response.Success, recorder.Body.String())
 		assert.Equal(t, test.isTenant, response.Data.IsTenantHost, test.host)
@@ -187,9 +195,17 @@ func TestTenantBrandAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {
 	assert.Equal(t, png, asset.Data)
 
 	assetContext, assetRecorder := newAuthenticatedContext(t, http.MethodGet, response.Data.Brand.LogoURL, nil, 0)
+	common.SetContextKey(assetContext, constant.ContextKeyTenantId, tenant.Id)
 	assetContext.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(assetID)}}
 	GetPublicHubTenantBrandAsset(assetContext)
 	assert.Equal(t, http.StatusOK, assetRecorder.Code)
 	assert.Equal(t, "image/png", assetRecorder.Header().Get("Content-Type"))
 	assert.Equal(t, png, assetRecorder.Body.Bytes())
+
+	otherTenant := createTenantBrandFixture(t, "Other tenant", "other-tenant", "other.example", model.TenantBrandConfig{Name: "Other"})
+	foreignContext, foreignRecorder := newAuthenticatedContext(t, http.MethodGet, response.Data.Brand.LogoURL, nil, 0)
+	common.SetContextKey(foreignContext, constant.ContextKeyTenantId, otherTenant.Id)
+	foreignContext.Params = gin.Params{{Key: "asset_id", Value: strconv.Itoa(assetID)}}
+	GetPublicHubTenantBrandAsset(foreignContext)
+	assert.Equal(t, http.StatusNotFound, foreignRecorder.Code)
 }

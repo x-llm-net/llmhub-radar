@@ -82,12 +82,12 @@ func serveHubProviderLogo(c *gin.Context, asset *model.HubProviderLogoAsset, pub
 func GetHubProviderLogo(c *gin.Context) {
 	provider, err := getCurrentHubProvider(c)
 	if err != nil || provider == nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	asset, err := getHubProviderLogoAssetForProvider(c, provider.Id)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	serveHubProviderLogo(c, asset, false)
@@ -96,22 +96,22 @@ func GetHubProviderLogo(c *gin.Context) {
 func GetPublicHubProviderLogo(c *gin.Context) {
 	slug, err := model.NormalizeHubProviderSlug(c.Param("slug"))
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	tenantID, ok := publicHubProviderTenantID(c, slug)
 	if !ok {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	provider, err := model.GetActiveHubProviderBySlugInTenant(slug, tenantID)
 	if err != nil || provider == nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	asset, err := getHubProviderLogoAssetForProvider(c, provider.Id)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	serveHubProviderLogo(c, asset, true)

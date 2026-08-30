@@ -86,6 +86,13 @@ type hubPublicHomeAccumulator struct {
 }
 
 func GetHubPublicHome(now int64) (*HubPublicHome, error) {
+	return GetHubPublicHomeForTenant(now, 0)
+}
+
+// GetHubPublicHomeForTenant builds a public storefront within one tenant.
+// A positive tenant ID is an ownership boundary: providers and their supply
+// groups from other tenant storefronts must never appear in the response.
+func GetHubPublicHomeForTenant(now int64, tenantID int) (*HubPublicHome, error) {
 	if now <= 0 {
 		now = common.GetTimestamp()
 	}
@@ -99,7 +106,11 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 	}
 
 	providers := make([]HubProvider, 0)
-	if err := DB.Where("status = ?", HubProviderStatusActive).Order("id ASC").Find(&providers).Error; err != nil {
+	providerQuery := DB.Where("status = ?", HubProviderStatusActive)
+	if tenantID > 0 {
+		providerQuery = providerQuery.Where("tenant_id = ?", tenantID)
+	}
+	if err := providerQuery.Order("id ASC").Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	home.ProviderCount = len(providers)
@@ -130,7 +141,11 @@ func GetHubPublicHome(now int64) (*HubPublicHome, error) {
 		}
 	}
 
-	groups, err := GetAllHubSupplyGroupsWithChannels()
+	providerIDs := make([]int, 0, len(providers))
+	for _, provider := range providers {
+		providerIDs = append(providerIDs, provider.Id)
+	}
+	groups, err := GetAllHubSupplyGroupsWithChannels(providerIDs)
 	if err != nil {
 		return nil, err
 	}

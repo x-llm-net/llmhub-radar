@@ -346,12 +346,18 @@ func HasHubSupplyGroups() bool {
 	return DB.Model(&HubSupplyGroup{}).Limit(1).Count(&count).Error == nil && count > 0
 }
 
-func GetAllHubSupplyGroupsWithChannels() ([]HubSupplyGroupWithChannel, error) {
+func GetAllHubSupplyGroupsWithChannels(providerIDs ...[]int) ([]HubSupplyGroupWithChannel, error) {
 	groups := make([]HubSupplyGroupWithChannel, 0)
-	err := DB.Table("hub_supply_groups AS supply_groups").
+	query := DB.Table("hub_supply_groups AS supply_groups").
 		Select("supply_groups.*, channels.name AS channel_name, channels.type AS channel_type, channels.base_url AS channel_base_url, channels.models AS channel_models, channels.status AS channel_status").
-		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
-		Order("supply_groups.id ASC").Scan(&groups).Error
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id")
+	if len(providerIDs) > 0 {
+		if len(providerIDs[0]) == 0 {
+			return groups, nil
+		}
+		query = query.Where("supply_groups.provider_id IN ?", providerIDs[0])
+	}
+	err := query.Order("supply_groups.id ASC").Scan(&groups).Error
 	return groups, err
 }
 

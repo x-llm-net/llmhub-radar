@@ -109,6 +109,46 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 	}
 }
 
+func TestHubPublicHomeIsolatedByTenant(t *testing.T) {
+	truncateTables(t)
+	resetHubRoutingSnapshotsForTest(t)
+	require.NoError(t, DB.AutoMigrate(&Tenant{}))
+	now := int64(1_800_000_000)
+
+	tenantA := &Tenant{Name: "Tenant A", Slug: "home-tenant-a", Status: TenantStatusActive}
+	tenantB := &Tenant{Name: "Tenant B", Slug: "home-tenant-b", Status: TenantStatusActive}
+	require.NoError(t, DB.Create(tenantA).Error)
+	require.NoError(t, DB.Create(tenantB).Error)
+	t.Cleanup(func() {
+		DB.Delete(&Tenant{}, []int{tenantA.Id, tenantB.Id})
+	})
+
+	providerA := &HubProvider{OwnerUserId: 901, TenantId: &tenantA.Id, Name: "Tenant A Relay"}
+	providerB := &HubProvider{OwnerUserId: 902, TenantId: &tenantB.Id, Name: "Tenant B Relay"}
+	require.NoError(t, CreateHubProvider(providerA))
+	require.NoError(t, CreateHubProvider(providerB))
+	groupA, channelA := createHubPublicHomeTestSupply(t, providerA.Id, "A supply", "gpt-a", "gpt-a", 0.8)
+	groupB, channelB := createHubPublicHomeTestSupply(t, providerB.Id, "B supply", "gpt-b", "gpt-b", 0.9)
+	require.NoError(t, DB.Model(&Channel{Id: channelA.Id}).Update("status", common.ChannelStatusEnabled).Error)
+	require.NoError(t, DB.Model(&Channel{Id: channelB.Id}).Update("status", common.ChannelStatusEnabled).Error)
+	setHubPublicHomeTargetStatus(t, groupA.Id, "gpt-a", HubSupplyProbeStatusAvailable, now-30)
+	setHubPublicHomeTargetStatus(t, groupB.Id, "gpt-b", HubSupplyProbeStatusAvailable, now-20)
+
+	homeA, err := GetHubPublicHomeForTenant(now, tenantA.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 1, homeA.ProviderCount)
+	assert.Equal(t, 1, homeA.PublishedModelCount)
+	assert.Equal(t, "gpt-a", homeA.Families[0].Models[0].ModelName)
+	assert.Equal(t, providerA.Id, homeA.Families[0].Models[0].Providers[0].Provider.Id)
+
+	homeB, err := GetHubPublicHomeForTenant(now, tenantB.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 1, homeB.ProviderCount)
+	assert.Equal(t, 1, homeB.PublishedModelCount)
+	assert.Equal(t, "gpt-b", homeB.Families[0].Models[0].ModelName)
+	assert.Equal(t, providerB.Id, homeB.Families[0].Models[0].Providers[0].Provider.Id)
+}
+
 func TestHubPublicHomeFiltersBlacklistedModelsAndHydratesUploadedLogo(t *testing.T) {
 	truncateTables(t)
 	resetHubRoutingSnapshotsForTest(t)

@@ -158,12 +158,13 @@ func updateTenantBrand(c *gin.Context, tenant *model.Tenant) {
 func GetPublicHubTenantBrandAsset(c *gin.Context) {
 	assetID, err := strconv.Atoi(c.Param("asset_id"))
 	if err != nil || assetID <= 0 {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	asset, err := model.GetActiveTenantBrandAsset(assetID)
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	asset, err := model.GetActiveTenantBrandAssetInTenant(assetID, tenantID)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	c.Header("Cache-Control", "public, max-age=300")
@@ -173,16 +174,12 @@ func GetPublicHubTenantBrandAsset(c *gin.Context) {
 
 func GetPublicHubTenantBrand(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	resolution, err := model.ResolveTenantHost(c.Request.Host)
-	if errors.Is(err, model.ErrTenantHostInvalid) || (err == nil && !resolution.IsTenantHost) {
-		common.ApiSuccess(c, tenantBrandData(nil))
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	if tenantID <= 0 {
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	tenant, err := model.GetActiveTenantByID(resolution.TenantID)
+	tenant, err := model.GetActiveTenantByID(tenantID)
 	if err != nil {
 		common.ApiError(c, err)
 		return

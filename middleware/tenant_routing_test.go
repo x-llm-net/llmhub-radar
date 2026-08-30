@@ -68,3 +68,43 @@ func TestTenantHostContextOnlySetsTrustedTenant(t *testing.T) {
 	assert.Equal(t, tenant.Id, capturedTenantIDs[0])
 	assert.Zero(t, capturedTenantIDs[1])
 }
+
+func TestTenantHostContextRequiredRejectsUntrustedHosts(t *testing.T) {
+	previousDB := model.DB
+	previousType := common.MainDatabaseType()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
+	model.DB = db
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		model.DB = previousDB
+		common.SetMainDatabaseType(previousType)
+	})
+
+	tenant := model.Tenant{Name: "Active tenant", Slug: "active-tenant", Status: model.TenantStatusActive}
+	require.NoError(t, db.Create(&tenant).Error)
+	require.NoError(t, db.Create(&model.TenantDomain{
+		TenantId: tenant.Id, Host: "brand.example.com",
+		VerificationStatus: model.TenantDomainVerificationVerified,
+		Status:             model.TenantDomainStatusActive,
+	}).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/", TenantHostContextRequired(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	for _, host := range []string{"brand.example.com", "unknown.example", "localhost:3000", "192.0.2.10"} {
+		request := httptest.NewRequest(http.MethodGet, "https://"+host+"/", nil)
+		request.Host = host
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if host == "brand.example.com" {
+			assert.Equal(t, http.StatusNoContent, response.Code, host)
+		} else {
+			assert.Equal(t, http.StatusNotFound, response.Code, host)
+		}
+	}
+}
