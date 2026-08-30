@@ -40,6 +40,7 @@ const (
 )
 
 var ErrHubSupplyGroupNotFound = errors.New("hub supply group not found")
+var ErrHubSupplyFailedModelsNotFound = errors.New("hub supply failed models not found")
 
 // HubSupplyGroup is the one-to-one supply extension of a New API Channel.
 // Channel owns all upstream configuration; this record only owns LLM-Hub
@@ -726,6 +727,114 @@ func GetHubSupplyGroupByChannelID(channelID int) (*HubSupplyGroup, error) {
 		return nil, err
 	}
 	return &group, nil
+}
+
+// DeleteHubSupplyGroupFailedModels removes models whose current aggregate probe
+// state is error. It deliberately keeps the probe config version unchanged so
+// successful models retain their current health state and history.
+func DeleteHubSupplyGroupFailedModels(groupID int) ([]string, error) {
+	if groupID <= 0 {
+		return nil, ErrHubSupplyGroupNotFound
+	}
+	deletedModels := make([]string, 0)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var group HubSupplyGroup
+		if err := lockForUpdate(tx).First(&group, groupID).Error; err != nil {
+			return err
+		}
+		var channel Channel
+		if err := lockForUpdate(tx).First(&channel, group.NewAPIChannelId).Error; err != nil {
+			return err
+		}
+		var targets []HubSupplyGroupProbeTarget
+		if err := lockForUpdate(tx).
+			Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).
+			Find(&targets).Error; err != nil {
+			return err
+		}
+
+		targetsByModel := make(map[string][]HubSupplyGroupProbeTarget)
+		for _, target := range targets {
+			targetsByModel[target.ModelName] = append(targetsByModel[target.ModelName], target)
+		}
+		disabledModels := make(map[string]struct{})
+		for _, modelName := range group.GetAutoProbeDisabledModels(channel.Models) {
+			disabledModels[modelName] = struct{}{}
+		}
+		failedModels := make(map[string]struct{})
+		for _, modelName := range channel.GetModels() {
+			if _, disabled := disabledModels[modelName]; disabled {
+				continue
+			}
+			modelTargets := targetsByModel[modelName]
+			if len(modelTargets) == 0 {
+				continue
+			}
+			allAvailable := true
+			hasPending, hasWaiting, hasSuspended := false, false, false
+			for _, target := range modelTargets {
+				if target.Status != HubSupplyProbeStatusAvailable {
+					allAvailable = false
+				}
+				if target.Status == HubSupplyProbeStatusPending || target.Status == HubSupplyProbeStatusTesting {
+					hasPending = true
+				}
+				if target.Status == HubSupplyProbeStatusWaiting {
+					hasWaiting = true
+				}
+				if target.Status == HubSupplyProbeStatusSuspended {
+					hasSuspended = true
+				}
+			}
+			if !allAvailable && !hasPending && !hasWaiting && !hasSuspended {
+				failedModels[modelName] = struct{}{}
+				deletedModels = append(deletedModels, modelName)
+			}
+		}
+		if len(deletedModels) == 0 {
+			return ErrHubSupplyFailedModelsNotFound
+		}
+
+		remainingModels := make([]string, 0, len(channel.GetModels())-len(deletedModels))
+		for _, modelName := range channel.GetModels() {
+			if _, failed := failedModels[modelName]; !failed {
+				remainingModels = append(remainingModels, modelName)
+			}
+		}
+		channel.Models = strings.Join(remainingModels, ",")
+		if err := tx.Model(&Channel{Id: channel.Id}).Update("models", channel.Models).Error; err != nil {
+			return err
+		}
+
+		group.normalizePublishedModels(channel.Models)
+		group.normalizeAutoProbeDisabledModels(channel.Models)
+		if err := group.normalizeProbeEndpointOverrides(channel.Models); err != nil {
+			return err
+		}
+		if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
+			"published_models":           group.PublishedModels,
+			"probe_endpoint_overrides":   group.ProbeEndpointOverrides,
+			"auto_probe_disabled_models": group.AutoProbeDisabledModels,
+			"updated_at":                 common.GetTimestamp(),
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where(
+			"group_id = ? AND config_version = ? AND model_name IN ?",
+			group.Id, group.ConfigVersion, deletedModels,
+		).Delete(&HubSupplyGroupProbeTarget{}).Error; err != nil {
+			return err
+		}
+		if err := channel.UpdateAbilities(tx); err != nil {
+			return err
+		}
+		return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
+	})
+	if err != nil {
+		return nil, err
+	}
+	InitChannelCache()
+	return deletedModels, nil
 }
 
 // UpdateHubSupplyGroupTenantPublication changes only the tenant-local

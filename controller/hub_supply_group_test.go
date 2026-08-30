@@ -507,6 +507,66 @@ func TestUpdateHubProviderChannelModelsPublicationChecksBatchAndOwnership(t *tes
 	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedGroup.GetPublishedModels(channel.Models))
 }
 
+func TestDeleteHubProviderChannelFailedModelsPreservesSuccessfulModelsAndManualDisable(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	provider := seedHubProvider(t, 42)
+	seedHubProvider(t, 43)
+	baseURL := "https://upstream.example"
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, PriceMultiplier: 1, TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "delete-failed",
+		BaseURL: &baseURL, Models: "failed-model,healthy-model", Group: "default",
+		Status: common.ChannelStatusManuallyDisabled,
+	}
+	require.NoError(t, model.CreateHubSupplyGroup(group, channel))
+
+	var failedTarget model.HubSupplyGroupProbeTarget
+	require.NoError(t, model.DB.Where("group_id = ? AND model_name = ?", group.Id, "failed-model").First(&failedTarget).Error)
+	var healthyTarget model.HubSupplyGroupProbeTarget
+	require.NoError(t, model.DB.Where("group_id = ? AND model_name = ?", group.Id, "healthy-model").First(&healthyTarget).Error)
+	require.NoError(t, model.DB.Model(&failedTarget).Updates(map[string]any{
+		"status": model.HubSupplyProbeStatusError, "last_probe_at": common.GetTimestamp(),
+	}).Error)
+	require.NoError(t, model.DB.Model(&healthyTarget).Updates(map[string]any{
+		"status": model.HubSupplyProbeStatusAvailable, "last_probe_at": common.GetTimestamp(),
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodDelete, "/api/hub/provider/channels/1/failed-models", nil, 42)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+	DeleteHubProviderChannelFailedModels(ctx)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			DeletedCount  int      `json:"deleted_count"`
+			DeletedModels []string `json:"deleted_models"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, 1, response.Data.DeletedCount)
+	assert.Equal(t, []string{"failed-model"}, response.Data.DeletedModels)
+
+	updatedChannel, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"healthy-model"}, updatedChannel.GetModels())
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, updatedChannel.Status)
+	var remainingTargets []model.HubSupplyGroupProbeTarget
+	require.NoError(t, model.DB.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&remainingTargets).Error)
+	assert.Len(t, remainingTargets, 1)
+	assert.Equal(t, "healthy-model", remainingTargets[0].ModelName)
+
+	foreignCtx, foreignRecorder := newAuthenticatedContext(t, http.MethodDelete, "/api/hub/provider/channels/1/failed-models", nil, 43)
+	foreignCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+	DeleteHubProviderChannelFailedModels(foreignCtx)
+	var foreignResponse struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(foreignRecorder.Body.Bytes(), &foreignResponse))
+	assert.False(t, foreignResponse.Success)
+}
+
 func TestUpdateHubProviderChannelModelProbeEndpointWaitsForManualTest(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	provider := seedHubProvider(t, 42)

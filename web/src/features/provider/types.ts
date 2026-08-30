@@ -274,6 +274,15 @@ export type HubSupplyModelsPublicationResponse = {
   }
 }
 
+export type HubSupplyFailedModelsDeleteResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    deleted_count: number
+    deleted_models: string[]
+  }
+}
+
 export type HubSupplyModelAutoProbeResponse = {
   success: boolean
   message?: string

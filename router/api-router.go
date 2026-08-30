@@ -193,6 +193,7 @@ func SetApiRouter(router *gin.Engine) {
 			hubProviderRoute.PUT("/channels/:id/model-auto-probe", middleware.HubSupplyProbeRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelAutoProbe)
 			hubProviderRoute.PUT("/channels/:id/model-publication", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelPublication)
 			hubProviderRoute.PUT("/channels/:id/model-publication/batch", middleware.HubSupplyPublicationRateLimit(), middleware.DisableCache(), controller.UpdateHubProviderChannelModelsPublication)
+			hubProviderRoute.DELETE("/channels/:id/failed-models", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.DeleteHubProviderChannelFailedModels)
 			hubProviderRoute.GET("/earnings/summary", controller.GetHubProviderEarningSummary)
 			hubProviderRoute.GET("/earnings", controller.GetHubProviderEarnings)
 			hubProviderRoute.POST("/earnings/balance-transfer", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateHubProviderBalanceTransfer)

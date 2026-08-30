@@ -29,11 +29,13 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -71,6 +73,7 @@ import {
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
+  deleteProviderChannelFailedModels,
   requestProviderChannelModelProbe,
   requestProviderChannelProbe,
   updateProviderChannelModelAutoProbe,
@@ -434,6 +437,7 @@ export function ProviderChannelModelsDialog(
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
     () => new Set()
   )
+  const [deleteFailedDialogOpen, setDeleteFailedDialogOpen] = useState(false)
   const wasRunningRef = useRef(false)
   const channelId = props.providerChannel?.channel.id ?? 0
   const probesQuery = useProviderChannelProbes(channelId, {
@@ -642,6 +646,31 @@ export function ProviderChannelModelsDialog(
       })
     },
   })
+  const deleteFailedMutation = useMutation({
+    mutationFn: () => deleteProviderChannelFailedModels(channelId),
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(response.message || t('Failed to delete failed models'))
+        return
+      }
+      const deletedCount = response.data?.deleted_count ?? 0
+      await Promise.all([
+        refreshProbeData(),
+        queryClient.invalidateQueries({ queryKey: providerChannelsQueryKey }),
+      ])
+      setSelectedModels(new Set())
+      setDeleteFailedDialogOpen(false)
+      toast.success(
+        t('Deleted {{count}} failed models', { count: deletedCount })
+      )
+    },
+    onError: (error) =>
+      toast.error(
+        axios.isAxiosError(error)
+          ? error.response?.data?.message || t('Failed to delete failed models')
+          : t('Failed to delete failed models')
+      ),
+  })
 
   const cooldownSeconds = Math.max(
     0,
@@ -665,6 +694,7 @@ export function ProviderChannelModelsDialog(
       setAutoProbeChangingModels(new Set())
       setPublicationChangingModels(new Set())
       setSelectedModels(new Set())
+      setDeleteFailedDialogOpen(false)
     }
   }, [props.open])
 
@@ -822,14 +852,35 @@ export function ProviderChannelModelsDialog(
                 </Button>
               ))}
             </div>
-            <div className='relative sm:w-64'>
-              <Search className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2' />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t('Search models')}
-                className='pl-9'
-              />
+            <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
+              {counts.error > 0 && (
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='destructive'
+                  disabled={deleteFailedMutation.isPending}
+                  onClick={() => setDeleteFailedDialogOpen(true)}
+                >
+                  {deleteFailedMutation.isPending ? (
+                    <Loader2
+                      className='size-4 animate-spin'
+                      aria-hidden='true'
+                    />
+                  ) : (
+                    <Trash2 className='size-4' aria-hidden='true' />
+                  )}
+                  {t('Delete failed models')} ({counts.error})
+                </Button>
+              )}
+              <div className='relative sm:w-64'>
+                <Search className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2' />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={t('Search models')}
+                  className='pl-9'
+                />
+              </div>
             </div>
           </div>
 
@@ -1107,6 +1158,19 @@ export function ProviderChannelModelsDialog(
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={deleteFailedDialogOpen}
+        onOpenChange={setDeleteFailedDialogOpen}
+        title={t('Delete failed models')}
+        desc={t(
+          'This removes {{count}} failed models from this channel. This action cannot be undone.',
+          { count: counts.error }
+        )}
+        destructive
+        isLoading={deleteFailedMutation.isPending}
+        confirmText={t('Delete')}
+        handleConfirm={() => deleteFailedMutation.mutate()}
+      />
     </Dialog>
   )
 }

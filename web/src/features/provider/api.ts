@@ -35,6 +35,7 @@ import type {
   HubProviderChannelResponse,
   HubProviderChannelProbeResponse,
   HubSupplyProbeRequestResponse,
+  HubSupplyFailedModelsDeleteResponse,
   HubSupplyModelAutoProbeResponse,
   HubSupplyModelPublicationResponse,
   HubSupplyModelsPublicationResponse,
@@ -364,6 +365,16 @@ export async function updateProviderChannelModelsPublication(
   const response = await api.put(
     `/api/hub/provider/channels/${channelId}/model-publication/batch`,
     { model_names: modelNames, published },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function deleteProviderChannelFailedModels(
+  channelId: number
+): Promise<HubSupplyFailedModelsDeleteResponse> {
+  const response = await api.delete(
+    `/api/hub/provider/channels/${channelId}/failed-models`,
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return response.data

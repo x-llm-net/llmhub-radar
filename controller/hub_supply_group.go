@@ -485,6 +485,26 @@ func UpdateHubProviderChannelModelsPublication(c *gin.Context) {
 	})
 }
 
+func DeleteHubProviderChannelFailedModels(c *gin.Context) {
+	group, _, ok := getCurrentActiveHubProviderChannel(c)
+	if !ok {
+		return
+	}
+	deletedModels, err := model.DeleteHubSupplyGroupFailedModels(group.Id)
+	if err != nil {
+		if err == model.ErrHubSupplyFailedModelsNotFound {
+			common.ApiError(c, fmt.Errorf("no failed models to delete"))
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"deleted_count":  len(deletedModels),
+		"deleted_models": deletedModels,
+	})
+}
+
 func normalizeHubProviderChannelPublicationModels(modelNames []string) ([]string, bool) {
 	if len(modelNames) == 0 || len(modelNames) > hubProviderChannelPublicationBatchMax {
 		return nil, false
