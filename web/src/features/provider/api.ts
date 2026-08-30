@@ -36,6 +36,7 @@ import type {
   HubProviderChannelProbeResponse,
   HubSupplyProbeRequestResponse,
   HubSupplyFailedModelsDeleteResponse,
+  HubSupplyMissingPriceNotificationResponse,
   HubSupplyModelAutoProbeResponse,
   HubSupplyModelPublicationResponse,
   HubSupplyModelsPublicationResponse,
@@ -375,6 +376,18 @@ export async function deleteProviderChannelFailedModels(
 ): Promise<HubSupplyFailedModelsDeleteResponse> {
   const response = await api.delete(
     `/api/hub/provider/channels/${channelId}/failed-models`,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function notifyProviderChannelMissingModelPrices(
+  channelId: number,
+  modelNames: string[]
+): Promise<HubSupplyMissingPriceNotificationResponse> {
+  const response = await api.post(
+    `/api/hub/provider/channels/${channelId}/missing-price-notification`,
+    { model_names: modelNames },
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return response.data

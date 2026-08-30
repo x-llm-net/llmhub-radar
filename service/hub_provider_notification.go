@@ -21,6 +21,7 @@ package service
 import (
 	"fmt"
 	"html"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +109,60 @@ func NotifyHubModelPriceMissing(modelName string, channelID int, channelName str
 		fmt.Sprintf("模型：%s\n渠道：%s\n原因：平台基础价格尚未配置，请在模型定价页面补充。", modelName, channelLabel),
 		modelPricingNotificationLink(),
 	)
+}
+
+// NotifyHubModelPricesMissing sends one administrator notification for a
+// batch of models reported by the provider model-management dialog.
+func NotifyHubModelPricesMissing(modelNames []string, channelID int, channelName string) (bool, bool) {
+	config := hub_provider_notification_setting.Get()
+	if !config.Enabled {
+		return false, false
+	}
+	names := make([]string, 0, len(modelNames))
+	seen := make(map[string]struct{}, len(modelNames))
+	for _, modelName := range modelNames {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		key := strings.ToLower(modelName)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, modelName)
+	}
+	if len(names) == 0 {
+		return false, false
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+
+	channelLabel := hubModelPriceChannelLabel(channelID, channelName)
+	keyNames := make([]string, len(names))
+	for i, modelName := range names {
+		keyNames[i] = strings.ToLower(modelName)
+	}
+	key := fmt.Sprintf("batch:%d:%s", channelID, strings.Join(keyNames, "\x00"))
+	now := common.GetTimestamp()
+	hubModelPriceNotificationState.Lock()
+	lastSent := hubModelPriceNotificationState.lastSent[key]
+	if lastSent > 0 && now-lastSent < hubModelPriceNotificationSuppressWindowSeconds {
+		hubModelPriceNotificationState.Unlock()
+		return false, true
+	}
+	hubModelPriceNotificationState.lastSent[key] = now
+	hubModelPriceNotificationState.Unlock()
+
+	notifyHubProviderEvent(
+		config,
+		HubModelPriceNotificationType,
+		"模型价格未配置",
+		fmt.Sprintf("渠道：%s\n缺少价格的模型（%d 个）：\n- %s\n原因：平台基础价格尚未配置，请在模型定价页面补充。", channelLabel, len(names), strings.Join(names, "\n- ")),
+		modelPricingNotificationLink(),
+	)
+	return true, false
 }
 
 func hubModelPriceChannelLabel(channelID int, channelName string) string {

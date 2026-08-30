@@ -28,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -95,6 +96,10 @@ type hubProviderChannelModelPublicationRequest struct {
 type hubProviderChannelModelsPublicationRequest struct {
 	ModelNames []string `json:"model_names"`
 	Published  bool     `json:"published"`
+}
+
+type hubProviderChannelMissingPricesNotificationRequest struct {
+	ModelNames []string `json:"model_names"`
 }
 
 func getCurrentHubProviderChannel(c *gin.Context) (*model.HubSupplyGroup, *model.Channel, bool) {
@@ -502,6 +507,56 @@ func DeleteHubProviderChannelFailedModels(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"deleted_count":  len(deletedModels),
 		"deleted_models": deletedModels,
+	})
+}
+
+func NotifyHubProviderChannelMissingModelPrices(c *gin.Context) {
+	group, channel, ok := getCurrentActiveHubProviderChannel(c)
+	if !ok {
+		return
+	}
+	var req hubProviderChannelMissingPricesNotificationRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	modelNames, valid := normalizeHubProviderChannelPublicationModels(req.ModelNames)
+	if !valid {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	configuredModels := make(map[string]struct{}, len(channel.GetModels()))
+	for _, modelName := range channel.GetModels() {
+		configuredModels[modelName] = struct{}{}
+	}
+	missingModels := make([]string, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		if _, configured := configuredModels[modelName]; !configured {
+			continue
+		}
+		_, _, priced := ratio_setting.GetModelRatioOrPrice(modelName)
+		if !priced {
+			missingModels = append(missingModels, modelName)
+		}
+	}
+	if len(missingModels) == 0 {
+		common.ApiSuccess(c, gin.H{"notified_count": 0, "model_names": []string{}})
+		return
+	}
+	notified, suppressed := service.NotifyHubModelPricesMissing(missingModels, channel.Id, channel.Name)
+	if !notified && !suppressed {
+		common.ApiError(c, fmt.Errorf("administrator notifications are disabled"))
+		return
+	}
+	notifiedCount := 0
+	if notified {
+		notifiedCount = len(missingModels)
+	}
+	common.ApiSuccess(c, gin.H{
+		"notified_count": notifiedCount,
+		"model_names":    missingModels,
+		"channel_id":     group.NewAPIChannelId,
+		"suppressed":     suppressed,
 	})
 }
 

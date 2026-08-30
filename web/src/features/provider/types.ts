@@ -283,6 +283,17 @@ export type HubSupplyFailedModelsDeleteResponse = {
   }
 }
 
+export type HubSupplyMissingPriceNotificationResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    notified_count: number
+    model_names: string[]
+    channel_id?: number
+    suppressed?: boolean
+  }
+}
+
 export type HubSupplyModelAutoProbeResponse = {
   success: boolean
   message?: string

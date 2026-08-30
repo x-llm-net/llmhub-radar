@@ -23,6 +23,7 @@ import {
   CircleX,
   ChevronDown,
   Clock3,
+  BellPlus,
   Loader2,
   ListMinus,
   ListPlus,
@@ -73,6 +74,7 @@ import { formatTimestampToDate } from '@/lib/format'
 
 import {
   deleteProviderChannelFailedModels,
+  notifyProviderChannelMissingModelPrices,
   requestProviderChannelModelProbe,
   requestProviderChannelProbe,
   updateProviderChannelModelAutoProbe,
@@ -422,6 +424,8 @@ export function ProviderChannelModelsDialog(
     () => new Set()
   )
   const [deleteFailedDialogOpen, setDeleteFailedDialogOpen] = useState(false)
+  const [lastNotifiedMissingPriceKey, setLastNotifiedMissingPriceKey] =
+    useState('')
   const wasRunningRef = useRef(false)
   const channelId = props.providerChannel?.channel.id ?? 0
   const probesQuery = useProviderChannelProbes(channelId, {
@@ -644,6 +648,7 @@ export function ProviderChannelModelsDialog(
       ])
       setSelectedModels(new Set())
       setDeleteFailedDialogOpen(false)
+      setLastNotifiedMissingPriceKey('')
       toast.success(
         t('Deleted {{count}} failed models', { count: deletedCount })
       )
@@ -683,6 +688,10 @@ export function ProviderChannelModelsDialog(
   }, [props.open])
 
   useEffect(() => {
+    setLastNotifiedMissingPriceKey('')
+  }, [channelId])
+
+  useEffect(() => {
     if (probeState?.running) {
       wasRunningRef.current = true
       return
@@ -702,6 +711,50 @@ export function ProviderChannelModelsDialog(
       error: models.filter((model) => model.status === 'error').length,
     }
   }, [probeState?.models])
+
+  const missingPriceModelNames = useMemo(
+    () =>
+      (probeState?.models ?? [])
+        .filter((model) =>
+          model.endpoints.some(
+            (endpoint) => endpoint.last_error_code === MODEL_PRICE_ERROR_CODE
+          )
+        )
+        .map((model) => model.model_name),
+    [probeState?.models]
+  )
+  const missingPriceKey = missingPriceModelNames.join('\u0000')
+  const notifyMissingPricesMutation = useMutation({
+    mutationFn: () =>
+      notifyProviderChannelMissingModelPrices(
+        channelId,
+        missingPriceModelNames
+      ),
+    onSuccess: (response) => {
+      const count = response.data?.notified_count ?? 0
+      if (count === 0) {
+        if (response.data?.suppressed) {
+          setLastNotifiedMissingPriceKey(missingPriceKey)
+          toast.info(t('Administrator was already notified'))
+          return
+        }
+        toast.info(t('All detected model prices are configured'))
+        return
+      }
+      setLastNotifiedMissingPriceKey(missingPriceKey)
+      toast.success(
+        t('Administrator notified about {{count}} missing model prices', {
+          count,
+        })
+      )
+    },
+    onError: (error) =>
+      toast.error(
+        axios.isAxiosError(error)
+          ? error.response?.data?.message || t('Failed to notify administrator')
+          : t('Failed to notify administrator')
+      ),
+  })
 
   const visibleModels = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -854,6 +907,31 @@ export function ProviderChannelModelsDialog(
                     <Trash2 className='size-4' aria-hidden='true' />
                   )}
                   {t('Delete failed models')} ({counts.error})
+                </Button>
+              )}
+              {missingPriceModelNames.length > 0 && (
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  disabled={
+                    notifyMissingPricesMutation.isPending ||
+                    lastNotifiedMissingPriceKey === missingPriceKey
+                  }
+                  onClick={() => notifyMissingPricesMutation.mutate()}
+                >
+                  {notifyMissingPricesMutation.isPending ? (
+                    <Loader2
+                      className='size-4 animate-spin'
+                      aria-hidden='true'
+                    />
+                  ) : (
+                    <BellPlus className='size-4' aria-hidden='true' />
+                  )}
+                  {lastNotifiedMissingPriceKey === missingPriceKey
+                    ? t('Administrator notified')
+                    : t('Notify administrator about prices')}{' '}
+                  ({missingPriceModelNames.length})
                 </Button>
               )}
               <div className='relative sm:w-64'>
