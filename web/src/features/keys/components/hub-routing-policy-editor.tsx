@@ -132,14 +132,46 @@ function getHighestTier(
   return 'High quality'
 }
 
-function defaultSelection(option: HubTokenRoutingFamilyOption) {
+function defaultSelection(
+  option: HubTokenRoutingFamilyOption,
+  ceilings: HubTokenRoutingOptions['tier_ceilings'][string] | undefined
+) {
+  const fallbackMax = Math.min(
+    option.max_multiplier,
+    Math.max(option.min_multiplier, 1)
+  )
+  if (!ceilings) {
+    return {
+      family: option.key,
+      min_multiplier: option.min_multiplier,
+      max_multiplier: fallbackMax,
+      exact_multiplier: option.exact_multipliers?.[0],
+    }
+  }
+
+  const standardMin = clampMultiplier(
+    Math.max(option.min_multiplier, ceilings.low),
+    option.min_multiplier,
+    option.max_multiplier
+  )
+  const standardMax = clampMultiplier(
+    Math.min(option.max_multiplier, ceilings.medium),
+    option.min_multiplier,
+    option.max_multiplier
+  )
+  if (standardMin <= standardMax) {
+    return {
+      family: option.key,
+      min_multiplier: standardMin,
+      max_multiplier: standardMax,
+      exact_multiplier: option.exact_multipliers?.[0],
+    }
+  }
+
   return {
     family: option.key,
     min_multiplier: option.min_multiplier,
-    max_multiplier: Math.min(
-      option.max_multiplier,
-      Math.max(option.min_multiplier, 1)
-    ),
+    max_multiplier: fallbackMax,
     exact_multiplier: option.exact_multipliers?.[0],
   }
 }
@@ -161,7 +193,15 @@ export function HubRoutingPolicyEditor({
       (option) => !value.some((selection) => selection.family === option.key)
     )
     if (!available || value.length >= 8) return
-    onChange([...value, defaultSelection(available)])
+    onChange([
+      ...value,
+      defaultSelection(
+        available,
+        options.mode === 'public_pool'
+          ? options.tier_ceilings[available.key]
+          : undefined
+      ),
+    ])
   }
 
   const updateSelection = (
@@ -297,7 +337,15 @@ export function HubRoutingPolicyEditor({
                   if (!family) return
                   const next = optionByFamily.get(family)
                   if (!next) return
-                  updateSelection(index, defaultSelection(next))
+                  updateSelection(
+                    index,
+                    defaultSelection(
+                      next,
+                      options.mode === 'public_pool'
+                        ? options.tier_ceilings[next.key]
+                        : undefined
+                    )
+                  )
                 }}
               >
                 <SelectTrigger className='min-w-0 flex-1'>

@@ -243,6 +243,49 @@ describe('Hub routing policy editor', () => {
     container.remove()
   })
 
+  test('defaults newly added families to the configured standard tier', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let nextValue: Array<{
+      family: string
+      min_multiplier: number
+      max_multiplier: number
+    }> = []
+
+    await act(async () =>
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <HubRoutingPolicyEditor
+            options={options}
+            value={[]}
+            onChange={(value) => {
+              nextValue = value
+            }}
+          />
+        </I18nextProvider>
+      )
+    )
+
+    const addButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Add model family')
+    )
+    assert.ok(addButton)
+    await act(async () => addButton.click())
+
+    assert.deepEqual(nextValue, [
+      {
+        family: 'openai',
+        min_multiplier: 0.2,
+        max_multiplier: 0.5,
+        exact_multiplier: undefined,
+      },
+    ])
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   test('initializes premium-only families with a valid range', async () => {
     const container = document.createElement('div')
     document.body.append(container)
