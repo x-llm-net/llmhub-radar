@@ -132,6 +132,12 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
         {item.badge && <NavBadge>{item.badge}</NavBadge>}
+        {item.showArrow && (
+          <ChevronRight
+            className='text-muted-foreground ms-auto size-4 shrink-0'
+            aria-hidden='true'
+          />
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
