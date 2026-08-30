@@ -235,7 +235,7 @@ describe('Hub routing policy editor', () => {
       {
         family: 'openai',
         min_multiplier: 0.5,
-        max_multiplier: 100,
+        max_multiplier: 1,
       },
     ])
 

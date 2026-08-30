@@ -100,7 +100,7 @@ function getMultiplierPresets(
       key: 'high',
       label: t('High quality'),
       min: Math.max(option.min_multiplier, ceilings.medium),
-      max: option.max_multiplier,
+      max: Math.min(option.max_multiplier, ceilings.high),
     }
   )
 
