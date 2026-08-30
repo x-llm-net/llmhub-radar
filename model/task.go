@@ -187,6 +187,7 @@ type SyncTaskQueryParams struct {
 	StartTimestamp int64
 	EndTimestamp   int64
 	UserIDs        []int
+	ChannelIDs     []int
 }
 
 func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) *Task {
@@ -274,6 +275,12 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 	// 添加过滤条件
 	if queryParams.ChannelID != "" {
 		query = query.Where("channel_id = ?", queryParams.ChannelID)
+	}
+	if queryParams.ChannelIDs != nil {
+		if len(queryParams.ChannelIDs) == 0 {
+			return []*Task{}
+		}
+		query = query.Where("channel_id IN ?", queryParams.ChannelIDs)
 	}
 	if queryParams.Platform != "" {
 		query = query.Where("platform = ?", queryParams.Platform)
@@ -468,6 +475,12 @@ func TaskCountAllTasks(queryParams SyncTaskQueryParams) int64 {
 	query := DB.Model(&Task{})
 	if queryParams.ChannelID != "" {
 		query = query.Where("channel_id = ?", queryParams.ChannelID)
+	}
+	if queryParams.ChannelIDs != nil {
+		if len(queryParams.ChannelIDs) == 0 {
+			return 0
+		}
+		query = query.Where("channel_id IN ?", queryParams.ChannelIDs)
 	}
 	if queryParams.Platform != "" {
 		query = query.Where("platform = ?", queryParams.Platform)

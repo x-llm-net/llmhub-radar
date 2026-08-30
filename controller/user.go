@@ -376,6 +376,46 @@ func SearchUsers(c *gin.Context) {
 	return
 }
 
+// GetTenantUsers returns the read-only customer list for the current tenant.
+// It is intentionally separate from the platform-wide user management API.
+func GetTenantUsers(c *gin.Context) {
+	channelIDs, scoped, err := hubProviderAdminChannelIDs(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !scoped {
+		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
+		return
+	}
+
+	var status *int
+	if statusStr := c.Query("status"); statusStr != "" {
+		if parsed, parseErr := strconv.Atoi(statusStr); parseErr == nil {
+			status = &parsed
+		}
+	}
+	pageInfo := common.GetPageQuery(c)
+	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
+	users, total, err := model.GetTenantUsersInChannels(
+		channelIDs,
+		c.Query("keyword"),
+		c.Query("group"),
+		status,
+		pageInfo.GetStartIdx(),
+		pageInfo.GetPageSize(),
+		sortOptions,
+	)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(users)
+	common.ApiSuccess(c, pageInfo)
+}
+
 func canManageTargetRole(myRole int, targetRole int) bool {
 	return myRole == common.RoleRootUser || myRole > targetRole
 }

@@ -19,7 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
+import { TenantUsersTable } from './components/tenant-users-table'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -29,25 +32,33 @@ import { UsersTable } from './components/users-table'
 function UsersContent() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow } = useUsers()
+  const userRole = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST)
+  const tenantUserView = userRole < ROLE.ADMIN
 
   return (
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('Users')}</SectionPageLayout.Title>
-        <SectionPageLayout.Actions>
-          <UsersPrimaryButtons />
-        </SectionPageLayout.Actions>
+        {!tenantUserView && (
+          <SectionPageLayout.Actions>
+            <UsersPrimaryButtons />
+          </SectionPageLayout.Actions>
+        )}
         <SectionPageLayout.Content>
-          <UsersTable />
+          {tenantUserView ? <TenantUsersTable /> : <UsersTable />}
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <UsersMutateDrawer
-        open={open === 'create' || open === 'update'}
-        onOpenChange={(isOpen) => !isOpen && setOpen(null)}
-        currentRow={open === 'update' ? currentRow || undefined : undefined}
-      />
-      <UsersDeleteDialog />
+      {!tenantUserView && (
+        <>
+          <UsersMutateDrawer
+            open={open === 'create' || open === 'update'}
+            onOpenChange={(isOpen) => !isOpen && setOpen(null)}
+            currentRow={open === 'update' ? currentRow || undefined : undefined}
+          />
+          <UsersDeleteDialog />
+        </>
+      )}
     </>
   )
 }

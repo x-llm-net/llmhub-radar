@@ -136,6 +136,12 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.DELETE("/oauth/bindings/:provider_id", controller.UnbindCustomOAuth)
 			}
 
+			tenantUserRoute := userRoute.Group("/")
+			tenantUserRoute.Use(middleware.TenantHostContext(), middleware.TenantAdminAuth())
+			{
+				tenantUserRoute.GET("/tenant", controller.GetTenantUsers)
+			}
+
 			adminRoute := userRoute.Group("/")
 			adminRoute.Use(middleware.AdminAuth())
 			{
@@ -157,6 +163,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+
 		}
 
 		hubProviderRoute := apiRouter.Group("/hub/provider")
@@ -459,6 +466,8 @@ func SetApiRouter(router *gin.Engine) {
 		taskRoute := apiRouter.Group("/task")
 		{
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
+			taskRoute.GET("/tenant", middleware.TenantHostContext(), middleware.TenantAdminAuth(), controller.GetTenantTask)
+			taskRoute.GET("/provider", middleware.TenantHostContext(), middleware.UserAuth(), controller.GetHubProviderTask)
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 

@@ -23,6 +23,8 @@ import type {
   User,
   GetUsersParams,
   GetUsersResponse,
+  GetTenantUsersParams,
+  GetTenantUsersResponse,
   SearchUsersParams,
   UserFormData,
   ManageUserAction,
@@ -78,6 +80,25 @@ export async function searchUsers(
   if (sort_by) queryParams.set('sort_by', sort_by)
   if (sort_order) queryParams.set('sort_order', sort_order)
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  return res.data
+}
+
+/** Get the current tenant's read-only customer list. */
+export async function getTenantUsers(
+  params: GetTenantUsersParams = {}
+): Promise<GetTenantUsersResponse> {
+  const {
+    keyword = '',
+    group = '',
+    status = '',
+    p = 1,
+    page_size = 10,
+    sort_by,
+    sort_order,
+  } = params
+  const res = await api.get('/api/user/tenant', {
+    params: { keyword, group, status, p, page_size, sort_by, sort_order },
+  })
   return res.data
 }
 

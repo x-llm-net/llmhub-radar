@@ -33,6 +33,20 @@ type UserSortOptions struct {
 	SortOrder string
 }
 
+// TenantUserListItem is the intentionally limited user view exposed to a
+// tenant administrator. User accounts and wallets remain platform-global, so
+// balances, invitation data, email, and role are not returned here.
+type TenantUserListItem struct {
+	Id           int    `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	Status       int    `json:"status"`
+	RequestCount int    `json:"request_count"`
+	Group        string `json:"group"`
+	CreatedAt    int64  `json:"created_at"`
+	LastLoginAt  int64  `json:"last_login_at"`
+}
+
 func NewUserSortOptions(sortBy string, sortOrder string) UserSortOptions {
 	normalizedSortBy := strings.ToLower(strings.TrimSpace(sortBy))
 	normalizedSortOrder := strings.ToLower(strings.TrimSpace(sortOrder))
@@ -448,6 +462,78 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	}
 
 	return users, total, nil
+}
+
+// GetTenantUsersInChannels returns customers whose requests have reached at
+// least one channel owned by the tenant. This is a read-only operational view;
+// it deliberately does not make the globally shared users table tenant-owned.
+func GetTenantUsersInChannels(channelIDs []int, keyword, group string, status *int, startIdx, num int, sortOptions ...UserSortOptions) ([]TenantUserListItem, int64, error) {
+	if len(channelIDs) == 0 {
+		return []TenantUserListItem{}, 0, nil
+	}
+
+	userIDs := make([]int, 0)
+	seen := make(map[int]struct{})
+	if LOG_DB != nil && LOG_DB.Migrator().HasTable(&Log{}) {
+		var logUserIDs []int
+		if err := LOG_DB.Model(&Log{}).
+			Where("channel_id IN ? AND user_id > ?", channelIDs, 0).
+			Distinct("user_id").Pluck("user_id", &logUserIDs).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, userID := range logUserIDs {
+			if _, ok := seen[userID]; !ok {
+				seen[userID] = struct{}{}
+				userIDs = append(userIDs, userID)
+			}
+		}
+	}
+	if DB == nil {
+		return nil, 0, errors.New("main database is not initialized")
+	}
+	if DB.Migrator().HasTable(&Task{}) {
+		var taskUserIDs []int
+		if err := DB.Model(&Task{}).
+			Where("channel_id IN ? AND user_id > ?", channelIDs, 0).
+			Distinct("user_id").Pluck("user_id", &taskUserIDs).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, userID := range taskUserIDs {
+			if _, ok := seen[userID]; !ok {
+				seen[userID] = struct{}{}
+				userIDs = append(userIDs, userID)
+			}
+		}
+	}
+	if len(userIDs) == 0 {
+		return []TenantUserListItem{}, 0, nil
+	}
+
+	query := DB.Model(&User{}).Where("id IN ?", userIDs)
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("(username LIKE ? OR display_name LIKE ?)", like, like)
+	}
+	if group != "" {
+		query = query.Where(commonGroupCol+" = ?", group)
+	}
+	if status != nil {
+		query = query.Where("status = ?", *status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]TenantUserListItem, 0)
+	selectColumns := "id, username, display_name, status, request_count, " + commonGroupCol + ", created_at, last_login_at"
+	query = query.Select(selectColumns)
+	query = resolveUserSortOptions(sortOptions).Apply(query).Limit(num).Offset(startIdx)
+	if err := query.Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func GetUserById(id int, selectAll bool) (*User, error) {

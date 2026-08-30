@@ -65,6 +65,18 @@ export const userSchema = z.object({
 })
 export type User = z.infer<typeof userSchema>
 
+export const tenantUserSchema = z.object({
+  id: z.number(),
+  username: z.string(),
+  display_name: z.string(),
+  status: userStatusSchema,
+  request_count: z.number(),
+  group: z.string(),
+  created_at: z.number(),
+  last_login_at: z.number(),
+})
+export type TenantUser = z.infer<typeof tenantUserSchema>
+
 export const userListSchema = z.array(userSchema)
 
 // ============================================================================
@@ -100,6 +112,27 @@ export interface GetUsersResponse {
   message?: string
   data?: {
     items: User[]
+    total: number
+    page: number
+    page_size: number
+  }
+}
+
+export interface GetTenantUsersParams {
+  keyword?: string
+  group?: string
+  status?: string
+  p?: number
+  page_size?: number
+  sort_by?: Exclude<UserSortBy, 'quota'>
+  sort_order?: UserSortOrder
+}
+
+export interface GetTenantUsersResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: TenantUser[]
     total: number
     page: number
     page_size: number

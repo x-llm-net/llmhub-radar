@@ -26,6 +26,8 @@ import {
   getAllMidjourneyLogs,
   getUserMidjourneyLogs,
   getAllTaskLogs,
+  getTenantTaskLogs,
+  getProviderTaskLogs,
   getUserTaskLogs,
 } from '../api'
 import {
@@ -265,7 +267,8 @@ export async function fetchLogsByCategory(
       columnFilters,
       isAdmin,
     })
-    if (dataScope === 'admin') return getAllLogs(params)
+    if (dataScope === 'admin' || dataScope === 'tenant')
+      return getAllLogs(params)
     if (dataScope === 'provider') return getProviderLogs(params)
     return getUserLogs(params)
   }
@@ -295,7 +298,14 @@ export async function fetchLogsByCategory(
   }
 
   // task logs
-  return dataScope === 'admin'
-    ? await getAllTaskLogs(paramsWithFilter as GetTaskLogsParams)
-    : await getUserTaskLogs(paramsWithFilter as GetTaskLogsParams)
+  if (dataScope === 'admin') {
+    return await getAllTaskLogs(paramsWithFilter as GetTaskLogsParams)
+  }
+  if (dataScope === 'tenant') {
+    return await getTenantTaskLogs(paramsWithFilter as GetTaskLogsParams)
+  }
+  if (dataScope === 'provider') {
+    return await getProviderTaskLogs(paramsWithFilter as GetTaskLogsParams)
+  }
+  return await getUserTaskLogs(paramsWithFilter as GetTaskLogsParams)
 }

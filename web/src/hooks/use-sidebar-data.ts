@@ -179,6 +179,7 @@ export function useSidebarData(): SidebarData {
             title: t('Users'),
             url: '/users',
             icon: Users,
+            tenantAdminAllowed: true,
           },
           {
             title: t('Redemption Codes'),

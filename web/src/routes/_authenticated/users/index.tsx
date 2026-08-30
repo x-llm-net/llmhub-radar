@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
+import { getHubAdminAccess } from '@/features/providers/api'
 import { Users } from '@/features/users'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -39,13 +40,22 @@ const usersSearchSchema = z.object({
 })
 
 export const Route = createFileRoute('/_authenticated/users/')({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const { auth } = useAuthStore.getState()
 
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    if (!auth.user) {
       throw redirect({
         to: '/403',
       })
+    }
+    if (auth.user.role >= ROLE.ADMIN) return
+    try {
+      const response = await getHubAdminAccess()
+      if (!response.success || !response.data?.tenant_scoped) {
+        throw new Error('tenant user list is unavailable')
+      }
+    } catch {
+      throw redirect({ to: '/403' })
     }
   },
   validateSearch: usersSearchSchema,

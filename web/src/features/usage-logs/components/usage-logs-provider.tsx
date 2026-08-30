@@ -102,8 +102,15 @@ export function useLogsViewScope() {
     isPlatformAdmin || hubAdminAccess.data?.can_view_channels === true
   const canUseProviderScope = Boolean(providerQuery.provider)
   const canManageScope = canUseAdminScope || canUseProviderScope
-  let dataScope: 'admin' | 'provider' | 'self' = 'self'
-  if (viewScope === 'all' && canUseAdminScope) {
+  let dataScope: 'admin' | 'tenant' | 'provider' | 'self' = 'self'
+  if (viewScope === 'all' && isPlatformAdmin) {
+    dataScope = 'admin'
+  } else if (
+    viewScope === 'all' &&
+    hubAdminAccess.data?.tenant_scoped === true
+  ) {
+    dataScope = 'tenant'
+  } else if (viewScope === 'all' && canUseAdminScope) {
     dataScope = 'admin'
   } else if (viewScope === 'all' && canUseProviderScope) {
     dataScope = 'provider'
