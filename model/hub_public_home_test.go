@@ -46,8 +46,8 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 		t,
 		primaryProvider.Id,
 		"Alpha supply",
-		"gpt-alpha,gpt-private",
-		"gpt-alpha",
+		"gpt-alpha,gpt-private,gpt-retired",
+		"gpt-alpha,gpt-retired",
 		0.82,
 	)
 	secondaryGroup, secondaryChannel := createHubPublicHomeTestSupply(
@@ -62,6 +62,7 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 	require.NoError(t, DB.Model(&Channel{Id: secondaryChannel.Id}).Update("status", common.ChannelStatusEnabled).Error)
 
 	setHubPublicHomeTargetStatus(t, primaryGroup.Id, "gpt-alpha", HubSupplyProbeStatusAvailable, now-30)
+	setHubPublicHomeTargetStatus(t, primaryGroup.Id, "gpt-retired", HubSupplyProbeStatusError, now-40)
 	setHubPublicHomeTargetStatus(t, secondaryGroup.Id, "gpt-alpha", HubSupplyProbeStatusError, now-45)
 	setHubPublicHomeTargetStatus(t, secondaryGroup.Id, "claude-test", HubSupplyProbeStatusAvailable, now-20)
 
@@ -70,6 +71,7 @@ func TestHubPublicHomeAggregatesPublishedModelsAcrossActiveProviders(t *testing.
 		{GroupId: primaryGroup.Id, ConfigVersion: primaryGroup.ConfigVersion, ModelName: "gpt-alpha", Success: true, LatencyMs: 900, ProbedAt: now - 120},
 		{GroupId: secondaryGroup.Id, ConfigVersion: secondaryGroup.ConfigVersion, ModelName: "gpt-alpha", Success: false, LatencyMs: 5000, ProbedAt: now - 90},
 		{GroupId: secondaryGroup.Id, ConfigVersion: secondaryGroup.ConfigVersion, ModelName: "claude-test", Success: true, LatencyMs: 1100, ProbedAt: now - 60},
+		{GroupId: primaryGroup.Id, ConfigVersion: primaryGroup.ConfigVersion, ModelName: "gpt-retired", Success: false, LatencyMs: 5000, ProbedAt: now - 50},
 		{GroupId: primaryGroup.Id, ConfigVersion: primaryGroup.ConfigVersion, ModelName: "gpt-private", Success: true, LatencyMs: 1, ProbedAt: now - 10},
 	}
 	require.NoError(t, DB.Create(&samples).Error)
@@ -133,6 +135,10 @@ func TestHubPublicHomeIsolatedByTenant(t *testing.T) {
 	require.NoError(t, DB.Model(&Channel{Id: channelB.Id}).Update("status", common.ChannelStatusEnabled).Error)
 	setHubPublicHomeTargetStatus(t, groupA.Id, "gpt-a", HubSupplyProbeStatusAvailable, now-30)
 	setHubPublicHomeTargetStatus(t, groupB.Id, "gpt-b", HubSupplyProbeStatusAvailable, now-20)
+	require.NoError(t, DB.Create([]HubSupplyGroupProbeSample{
+		{GroupId: groupA.Id, ConfigVersion: groupA.ConfigVersion, ModelName: "gpt-a", Success: true, LatencyMs: 700, ProbedAt: now - 30},
+		{GroupId: groupB.Id, ConfigVersion: groupB.ConfigVersion, ModelName: "gpt-b", Success: true, LatencyMs: 700, ProbedAt: now - 20},
+	}).Error)
 
 	homeA, err := GetHubPublicHomeForTenant(now, tenantA.Id)
 	require.NoError(t, err)
@@ -172,6 +178,10 @@ func TestHubPublicHomeFiltersBlacklistedModelsAndHydratesUploadedLogo(t *testing
 	require.NoError(t, DB.Model(&Channel{Id: channel.Id}).Update("status", common.ChannelStatusEnabled).Error)
 	setHubPublicHomeTargetStatus(t, group.Id, "gpt-visible", HubSupplyProbeStatusAvailable, now-20)
 	setHubPublicHomeTargetStatus(t, group.Id, "codex-auto-review", HubSupplyProbeStatusAvailable, now-10)
+	require.NoError(t, DB.Create(&HubSupplyGroupProbeSample{
+		GroupId: group.Id, ConfigVersion: group.ConfigVersion, ModelName: "gpt-visible",
+		Success: true, LatencyMs: 700, ProbedAt: now - 20,
+	}).Error)
 
 	common.OptionMapRWMutex.Lock()
 	if common.OptionMap == nil {

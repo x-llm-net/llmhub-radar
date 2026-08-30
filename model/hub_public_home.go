@@ -361,8 +361,22 @@ func GetHubPublicHomeForTenant(now int64, tenantID int) (*HubPublicHome, error) 
 		}
 	}
 
+	// A published model with only failed probes is no longer useful in the
+	// public stability list. Keep failed provider rows when another provider
+	// has a successful sample, so the model remains transparent about partial
+	// outages without advertising models that have never worked.
+	modelsWithSuccessfulProbe := make(map[string]struct{})
+	for _, item := range accumulators {
+		if item.successCount > 0 {
+			modelsWithSuccessfulProbe[item.model.ModelName] = struct{}{}
+		}
+	}
+
 	modelsByName := make(map[string]*HubPublicHomeModel)
 	for _, item := range accumulators {
+		if _, hasSuccessfulProbe := modelsWithSuccessfulProbe[item.model.ModelName]; !hasSuccessfulProbe {
+			continue
+		}
 		finalizeHubPublicHomeAccumulator(item, periodStartedAt, bucketSeconds)
 		row := HubPublicHomeProvider{
 			Provider:           item.provider,

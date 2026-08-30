@@ -754,8 +754,8 @@ export function useChannelsColumns(
                 className='h-auto max-w-[180px] justify-start gap-1.5 p-0 text-left text-sm'
                 render={
                   <Link
-                    to='/providers'
-                    search={{ filter: channel.hub_provider_name }}
+                    to='/provider/$providerId'
+                    params={{ providerId: String(channel.hub_provider_id) }}
                   />
                 }
               >
