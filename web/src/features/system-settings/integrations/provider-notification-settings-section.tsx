@@ -209,7 +209,9 @@ export function ProviderNotificationSettingsSection() {
           <SettingsSwitchContent>
             <Label>{t('Enable provider notifications')}</Label>
             <p className='text-muted-foreground text-xs'>
-              {t('Notify administrators when provider applications change.')}
+              {t(
+                'Notify administrators about provider applications, reviews, and missing model prices.'
+              )}
             </p>
           </SettingsSwitchContent>
           <Switch

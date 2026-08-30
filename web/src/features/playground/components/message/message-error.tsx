@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { AlertCircle, AlertTriangle, Settings } from 'lucide-react'
+import { AlertCircle, AlertTriangle } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -39,14 +39,12 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
   FALLBACK_ERROR_CONTENT,
   getMessageErrorState,
   isAdminRole,
-  MODEL_PRICING_SETTINGS_PATH,
 } from '../../lib'
 import type { Message } from '../../types'
 
@@ -85,16 +83,6 @@ export function MessageError({
         <AlertTitle>{t('Model Price Not Configured')}</AlertTitle>
         <AlertDescription className='space-y-2'>
           <p>{content}</p>
-          {errorState.showSettingsLink && (
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => window.open(MODEL_PRICING_SETTINGS_PATH, '_blank')}
-            >
-              <Settings className='mr-1 h-3.5 w-3.5' />
-              {t('Go to Settings')}
-            </Button>
-          )}
           {actions}
         </AlertDescription>
       </Alert>

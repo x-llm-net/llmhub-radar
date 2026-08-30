@@ -311,7 +311,9 @@ function AdminNotificationsContent({
       <EmptyState
         icon={<Bell />}
         title={t('Loading...')}
-        description={t('Provider application and review events')}
+        description={t(
+          'Provider application, review, and missing model price events'
+        )}
       />
     )
   }
@@ -340,7 +342,9 @@ function AdminNotificationsContent({
         <EmptyState
           icon={<Bell />}
           title={t('No provider notifications')}
-          description={t('Provider application and review events')}
+          description={t(
+            'Provider application, review, and missing model price events'
+          )}
         />
       ) : (
         <ScrollArea className='h-[min(52vh,28rem)] pr-3'>

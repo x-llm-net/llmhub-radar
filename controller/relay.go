@@ -164,6 +164,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
+		if helper.IsModelPriceNotConfiguredError(err) {
+			service.NotifyHubModelPriceMissing(relayInfo.OriginModelName, relayInfo.GetChannelID(), "")
+		}
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		return
 	}

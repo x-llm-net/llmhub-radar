@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestModelPriceNotConfiguredErrorIdentity(t *testing.T) {
+	err := modelPriceNotConfiguredError("missing-model", 0)
+
+	require.True(t, IsModelPriceNotConfiguredError(err))
+	require.True(t, IsModelPriceNotConfiguredError(fmt.Errorf("wrapped: %w", err)))
+	require.False(t, IsModelPriceNotConfiguredError(errors.New("other pricing error")))
+}
 
 func setupHubSupplyPricingTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

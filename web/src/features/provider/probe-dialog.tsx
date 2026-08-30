@@ -28,7 +28,6 @@ import {
   ListPlus,
   RefreshCw,
   Search,
-  Settings,
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -97,7 +96,6 @@ import type {
 type ProbeFilter = 'all' | 'published' | 'online' | 'error'
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'
-const MODEL_PRICING_SETTINGS_PATH = '/system-settings/billing/model-pricing'
 
 type ProviderChannelModelsDialogProps = {
   providerChannel: HubProviderChannel | null
@@ -394,20 +392,6 @@ function EndpointResult(props: {
                 </div>
               </PopoverContent>
             </Popover>
-            {isModelPriceError && (
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                className='h-7 shrink-0 px-2 text-xs'
-                onClick={() =>
-                  window.open(MODEL_PRICING_SETTINGS_PATH, '_blank')
-                }
-              >
-                <Settings className='size-3.5' aria-hidden='true' />
-                {t('Go to Settings')}
-              </Button>
-            )}
           </div>
         )}
     </div>

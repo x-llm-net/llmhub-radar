@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -34,7 +35,17 @@ import (
 const (
 	HubProviderApplicationNotificationType = "hub_provider_application"
 	HubProviderReviewNotificationType      = "hub_provider_review"
+	HubModelPriceNotificationType          = "hub_model_price_missing"
 )
+
+const hubModelPriceNotificationSuppressWindowSeconds = int64(time.Hour / time.Second)
+
+var hubModelPriceNotificationState = struct {
+	sync.Mutex
+	lastSent map[string]int64
+}{
+	lastSent: make(map[string]int64),
+}
 
 func NotifyHubProviderApplication(provider *model.HubProvider) {
 	config := hub_provider_notification_setting.Get()
@@ -63,6 +74,54 @@ func NotifyHubProviderReview(providerID int, status string, reviewRemark string)
 	title := fmt.Sprintf("渠道商审核结果：%s", hubProviderStatusLabel(status))
 	content := formatHubProviderReviewContent(&provider, status, reviewRemark)
 	notifyHubProviderEvent(config, HubProviderReviewNotificationType, title, content, providerNotificationLink())
+}
+
+// NotifyHubModelPriceMissing alerts the same administrator targets used by
+// provider application notifications. Missing prices can be encountered by
+// probes and user requests, so identical model/channel pairs are suppressed
+// for one hour to avoid turning a configuration issue into a notification storm.
+func NotifyHubModelPriceMissing(modelName string, channelID int, channelName string) {
+	config := hub_provider_notification_setting.Get()
+	if !config.Enabled {
+		return
+	}
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return
+	}
+	channelLabel := hubModelPriceChannelLabel(channelID, channelName)
+	key := fmt.Sprintf("%d:%s", channelID, strings.ToLower(modelName))
+	now := common.GetTimestamp()
+	hubModelPriceNotificationState.Lock()
+	lastSent := hubModelPriceNotificationState.lastSent[key]
+	if lastSent > 0 && now-lastSent < hubModelPriceNotificationSuppressWindowSeconds {
+		hubModelPriceNotificationState.Unlock()
+		return
+	}
+	hubModelPriceNotificationState.lastSent[key] = now
+	hubModelPriceNotificationState.Unlock()
+
+	notifyHubProviderEvent(
+		config,
+		HubModelPriceNotificationType,
+		"模型价格未配置",
+		fmt.Sprintf("模型：%s\n渠道：%s\n原因：平台基础价格尚未配置，请在模型定价页面补充。", modelName, channelLabel),
+		modelPricingNotificationLink(),
+	)
+}
+
+func hubModelPriceChannelLabel(channelID int, channelName string) string {
+	if channelName = strings.TrimSpace(channelName); channelName != "" {
+		return channelName
+	}
+	if channelID > 0 && model.DB != nil {
+		var channel model.Channel
+		if err := model.DB.Select("name").First(&channel, channelID).Error; err == nil && strings.TrimSpace(channel.Name) != "" {
+			return fmt.Sprintf("%s (#%d)", strings.TrimSpace(channel.Name), channelID)
+		}
+		return fmt.Sprintf("渠道 #%d", channelID)
+	}
+	return "未知渠道"
 }
 
 func TestHubProviderNotification() error {
@@ -198,4 +257,12 @@ func providerNotificationLink() string {
 		return "/providers"
 	}
 	return base + "/providers"
+}
+
+func modelPricingNotificationLink() string {
+	base := strings.TrimRight(strings.TrimSpace(system_setting.ServerAddress), "/")
+	if base == "" {
+		return "/system-settings/billing/model-pricing"
+	}
+	return base + "/system-settings/billing/model-pricing"
 }

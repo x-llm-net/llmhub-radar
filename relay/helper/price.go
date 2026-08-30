@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -21,19 +22,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func modelPriceNotConfiguredError(modelName string, userId int) error {
-	if model.IsAdmin(userId) {
-		return fmt.Errorf(
+type ModelPriceNotConfiguredError struct {
+	ModelName string
+	UserID    int
+}
+
+func (err *ModelPriceNotConfiguredError) Error() string {
+	modelName := err.ModelName
+	if model.IsAdmin(err.UserID) {
+		return fmt.Sprintf(
 			"模型 %s 的价格未配置。请前往「系统设置 → 运营设置」开启自用模式，或在「系统设置 → 分组与模型定价设置」中为该模型配置价格；"+
 				"Model %s price not configured. Go to System Settings → Operation Settings to enable self-use mode, or configure the model price in System Settings → Group & Model Pricing.",
 			modelName, modelName,
 		)
 	}
-	return fmt.Errorf(
+	return fmt.Sprintf(
 		"模型 %s 的价格尚未由管理员配置，暂时无法使用，请联系站点管理员开启该模型；"+
 			"Model %s has not been priced by the administrator yet. Please contact the site administrator to enable this model.",
 		modelName, modelName,
 	)
+}
+
+func IsModelPriceNotConfiguredError(err error) bool {
+	var target *ModelPriceNotConfiguredError
+	return errors.As(err, &target)
+}
+
+func modelPriceNotConfiguredError(modelName string, userId int) error {
+	return &ModelPriceNotConfiguredError{ModelName: modelName, UserID: userId}
 }
 
 // https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration

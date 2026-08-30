@@ -206,6 +206,9 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
 	if err != nil {
+		if helper.IsModelPriceNotConfiguredError(err) {
+			service.NotifyHubModelPriceMissing(modelName, info.GetChannelID(), "")
+		}
 		return &dto.MidjourneyResponse{
 			Code:        4,
 			Description: err.Error(),
@@ -511,6 +514,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 
 	priceData, err := helper.ModelPriceHelperPerCall(c, relayInfo)
 	if err != nil {
+		if helper.IsModelPriceNotConfiguredError(err) {
+			service.NotifyHubModelPriceMissing(modelName, relayInfo.GetChannelID(), "")
+		}
 		return &dto.MidjourneyResponse{
 			Code:        4,
 			Description: err.Error(),

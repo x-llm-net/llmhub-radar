@@ -429,6 +429,9 @@ func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUse
 	//logInfo.ApiKey = ""
 	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
 	if err != nil {
+		if helper.IsModelPriceNotConfiguredError(err) {
+			service.NotifyHubModelPriceMissing(info.OriginModelName, channel.Id, channel.Name)
+		}
 		return testResult{
 			context:     c,
 			localErr:    err,

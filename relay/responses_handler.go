@@ -157,6 +157,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 		_, err := helper.ModelPriceHelper(c, info, info.GetEstimatePromptTokens(), &types.TokenCountMeta{})
 		if err != nil {
+			if helper.IsModelPriceNotConfiguredError(err) {
+				service.NotifyHubModelPriceMissing(info.OriginModelName, info.GetChannelID(), "")
+			}
 			info.OriginModelName = originModelName
 			info.PriceData = originPriceData
 			return types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry(), types.ErrOptionWithStatusCode(http.StatusBadRequest))

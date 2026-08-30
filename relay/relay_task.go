@@ -197,6 +197,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	info.OriginModelName = modelName
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
 	if err != nil {
+		if helper.IsModelPriceNotConfiguredError(err) {
+			service.NotifyHubModelPriceMissing(info.OriginModelName, info.GetChannelID(), "")
+		}
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}
 	info.PriceData = priceData
