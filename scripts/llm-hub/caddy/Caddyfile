@@ -73,6 +73,16 @@ https:// {
 	}
 }
 
+# Probe Lite is isolated from the LLM-Hub application and protected before
+# requests reach its local management API.
+probe.llm-hub.store {
+	tls /etc/caddy/certs/llm-hub.store.pem /etc/caddy/certs/llm-hub.store.key
+	basic_auth {
+		admin $2a$14$Ozfos8L6/t.sJyyYeMZ2/.moTkscZKR9zVIBIug1LxkUmH2cQYA0i
+	}
+	reverse_proxy 172.28.10.1:8787
+}
+
 # Cloudflare-proxied subdomains use the wildcard Origin Certificate.
 *.llm-hub.store {
 	log {
