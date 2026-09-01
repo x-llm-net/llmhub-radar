@@ -164,6 +164,12 @@ export function ApiKeysMutateDrawer({
     apiKeyData.data &&
     !apiKeyData.data.hub_routing_policy
   )
+  const editingProviderId =
+    isUpdate &&
+    apiKeyFetched &&
+    apiKeyData?.data?.hub_routing_policy?.mode === 'provider'
+      ? apiKeyData.data.hub_routing_policy.provider_id
+      : undefined
   const requiresHubRouting = !isUpdate || (apiKeyFetched && !editingLegacyKey)
   const {
     data: routingOptionsData,
@@ -171,8 +177,12 @@ export function ApiKeysMutateDrawer({
     isError: routingOptionsError,
     refetch: refetchRoutingOptions,
   } = useQuery({
-    queryKey: ['hub-token-routing-options', window.location.hostname],
-    queryFn: () => getHubTokenRoutingOptions(),
+    queryKey: [
+      'hub-token-routing-options',
+      window.location.hostname,
+      editingProviderId,
+    ],
+    queryFn: () => getHubTokenRoutingOptions(editingProviderId),
     enabled: open && requiresHubRouting,
     staleTime: 15_000,
     retry: false,

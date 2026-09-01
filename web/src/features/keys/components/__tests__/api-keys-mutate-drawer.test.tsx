@@ -163,6 +163,37 @@ function installApiFixtures(
         return { data: { success: true, data: legacyApiKey } }
       case '/api/token/2':
         return { data: { success: true, data: providerScopedApiKey } }
+      case '/api/token/routing-options?provider_id=7':
+        return {
+          data: {
+            success: true,
+            data: {
+              mode: 'provider',
+              provider_id: 7,
+              families: [
+                {
+                  key: 'openai',
+                  min_multiplier: 0.01,
+                  max_multiplier: 1,
+                  slider_max_multiplier: 1,
+                  step: 0.001,
+                  availability: [
+                    {
+                      multiplier: 0.8,
+                      channel_count: 1,
+                      provider_count: 1,
+                      provider_ids: [7],
+                    },
+                  ],
+                  exact_multipliers: [0.8],
+                  available_channel_count: 1,
+                  provider_count: 1,
+                },
+              ],
+              tier_ceilings: {},
+            },
+          },
+        }
       default:
         throw new Error(`Unexpected GET ${url}`)
     }
@@ -258,7 +289,7 @@ async function renderDrawer(
   }
   if (routingOptionsData !== undefined) {
     queryClient.setQueryData(
-      ['hub-token-routing-options', window.location.hostname],
+      ['hub-token-routing-options', window.location.hostname, undefined],
       routingOptionsData,
       { updatedAt: freshAt }
     )
@@ -457,26 +488,27 @@ describe('API keys mutate drawer legacy Auto group integration', () => {
     assert.equal(createdPayloads.length, 0)
   })
 
-  test('uses the current domain scope when editing a provider-scoped key', async () => {
-    installApiFixtures([])
-    await renderDrawer(providerScopedApiKey, {
-      success: true,
-      data: {
-        mode: 'public_pool',
-        families: [],
-        tier_ceilings: {},
-      },
-    })
+  test('keeps the original provider scope when editing a provider-scoped key', async () => {
+    const updatedPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(updatedPayloads)
+    await renderDrawer(providerScopedApiKey)
 
     assert.equal(
-      document.body.textContent?.includes(
-        'Model families and multiplier ranges'
-      ),
+      document.body.textContent?.includes('Available provider routes'),
       true
     )
-    assert.equal(
-      document.body.textContent?.includes('Available provider routes'),
-      false
+
+    await act(async () => findButton('Save changes', true).click())
+    await act(async () =>
+      waitForCondition(
+        () => updatedPayloads.length === 1,
+        'provider-scoped API key was not updated'
+      )
     )
+    const policy = updatedPayloads[0]?.hub_routing_policy as
+      | Record<string, unknown>
+      | undefined
+    assert.equal(policy?.mode, 'provider')
+    assert.equal(policy?.provider_id, 7)
   })
 })
