@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 
+import { formatHubMultiplier } from '../lib/multiplier'
 import type {
   HubTokenRoutingFamilyOption,
   HubTokenRoutingOptions,
@@ -44,10 +45,6 @@ const FAMILY_LABELS: Record<string, string> = {
   bytedance: 'ByteDance',
   zhipu: 'GLM / Zhipu',
   other: 'Other models',
-}
-
-function formatMultiplier(value: number): string {
-  return `${value.toFixed(3)}x`
 }
 
 function clampMultiplier(value: number, min: number, max: number): number {
@@ -432,7 +429,7 @@ export function HubRoutingPolicyEditor({
                           })
                         }}
                       />
-                      <span>{formatMultiplier(multiplier)}</span>
+                      <span>{formatHubMultiplier(multiplier)}</span>
                     </label>
                   )
                 })}

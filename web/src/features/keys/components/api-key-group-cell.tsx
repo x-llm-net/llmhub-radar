@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
+import { formatHubMultiplier } from '../lib/multiplier'
 import type { HubTokenRoutingPolicy } from '../types'
 import {
   // AutoGroupBadge,
@@ -47,11 +48,11 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
         )
         const exact = selection.exact_multipliers
         if (exact?.length) {
-          return `${family} ${exact.map((value) => `${value.toFixed(3)}x`).join(', ')}`
+          return `${family} ${exact.map(formatHubMultiplier).join(', ')}`
         }
-        return `${family} ${(selection.min_multiplier ?? 0).toFixed(3)}x-${(
+        return `${family} ${formatHubMultiplier(selection.min_multiplier ?? 0)}-${formatHubMultiplier(
           selection.max_multiplier ?? 0
-        ).toFixed(3)}x`
+        )}`
       })
       .join(' / ')
     return (

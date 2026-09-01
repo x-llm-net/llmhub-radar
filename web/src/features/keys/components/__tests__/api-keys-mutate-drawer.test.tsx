@@ -114,6 +114,23 @@ const legacyApiKey: ApiKey = {
   hub_routing_policy: null,
 }
 
+const providerScopedApiKey: ApiKey = {
+  ...legacyApiKey,
+  id: 2,
+  name: 'provider-scoped',
+  group: 'default',
+  hub_routing_policy: {
+    mode: 'provider',
+    provider_id: 7,
+    selections: [
+      {
+        family: 'openai',
+        exact_multipliers: [0.8],
+      },
+    ],
+  },
+}
+
 function installApiFixtures(
   updatedPayloads: Array<Record<string, unknown>>,
   createdPayloads: Array<Record<string, unknown>> = []
@@ -144,6 +161,8 @@ function installApiFixtures(
         }
       case '/api/token/1':
         return { data: { success: true, data: legacyApiKey } }
+      case '/api/token/2':
+        return { data: { success: true, data: providerScopedApiKey } }
       default:
         throw new Error(`Unexpected GET ${url}`)
     }
@@ -239,7 +258,7 @@ async function renderDrawer(
   }
   if (routingOptionsData !== undefined) {
     queryClient.setQueryData(
-      ['hub-token-routing-options', window.location.hostname, undefined],
+      ['hub-token-routing-options', window.location.hostname],
       routingOptionsData,
       { updatedAt: freshAt }
     )
@@ -436,5 +455,28 @@ describe('API keys mutate drawer legacy Auto group integration', () => {
     await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'blocked')
     await act(async () => findButton('Save changes', true).click())
     assert.equal(createdPayloads.length, 0)
+  })
+
+  test('uses the current domain scope when editing a provider-scoped key', async () => {
+    installApiFixtures([])
+    await renderDrawer(providerScopedApiKey, {
+      success: true,
+      data: {
+        mode: 'public_pool',
+        families: [],
+        tier_ceilings: {},
+      },
+    })
+
+    assert.equal(
+      document.body.textContent?.includes(
+        'Model families and multiplier ranges'
+      ),
+      true
+    )
+    assert.equal(
+      document.body.textContent?.includes('Available provider routes'),
+      false
+    )
   })
 })

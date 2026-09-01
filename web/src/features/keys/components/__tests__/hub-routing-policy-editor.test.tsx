@@ -21,6 +21,7 @@ import { after, describe, test } from 'node:test'
 
 import { Window } from 'happy-dom'
 
+import { formatHubMultiplier } from '../../lib/multiplier'
 import type { HubTokenRoutingOptions } from '../../types'
 
 const domWindow = new Window()
@@ -104,6 +105,12 @@ const options: HubTokenRoutingOptions = {
 describe('Hub routing policy editor', () => {
   after(() => {
     domWindow.close()
+  })
+
+  test('formats multipliers without insignificant trailing zeroes', () => {
+    assert.equal(formatHubMultiplier(0.8), '0.8x')
+    assert.equal(formatHubMultiplier(0.125), '0.125x')
+    assert.equal(formatHubMultiplier(1), '1x')
   })
 
   test('shows precise range inputs and deduplicates providers across multiplier buckets', async () => {
