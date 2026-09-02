@@ -172,6 +172,8 @@ function Assert-LocalIdentity {
     throw "Release source must be the main branch, got '$branch'. Merge the intended change into main first."
   }
 
+  Invoke-Git -Arguments @('fetch', '--quiet', 'origin', 'main') | Out-Null
+
   $trackedChanges = (Invoke-Git -Arguments @('status', '--porcelain', '--untracked-files=no')).Trim()
   if ($trackedChanges) {
     throw "Tracked files are not clean. Commit the intended release before preparing production:`n$trackedChanges"
