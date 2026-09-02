@@ -45,12 +45,14 @@ LLM-Hub 后续只按以下四条执行，不使用临时源码快照发布：
 3. 构建前后的业务回归测试必须通过，至少包括财务分账、路由和权限相关测试；版本号、容器健康和 `/api/status` 不能替代业务测试。
 4. 发布前备份并准备回滚；只有得到明确确认后才替换线上容器。
 
+发布源还必须满足两个可验证条件：当前工作树处于 `main`，且 `main` 与 `origin/main` 的完整提交 SHA 一致。发布脚本会在本地 Git 检查阶段拒绝分支副本、未推送提交和未同步的远端引用；不要用本地领先的临时提交或 `.tmp` 归档副本发布。
+
 发布编号继续使用 `llmhub-<提交短SHA>-<YYYYMMDD>-<序号>`，用于关联提交、源码包和镜像，不额外创建 `llmhub-*` Git 标签。
 
 生产应用版本发布只能通过仓库内的 PowerShell 脚本执行：
 
 ```powershell
-# 只读核验本地仓库和生产目标
+# 只读核验本地仓库、SSH 配置、生产目标和当前探测任务
 .\scripts\Release-LlmHub.ps1 -Action Preflight
 
 # 归档指定提交、上传、构建镜像并运行隔离预启动检查；不切换流量
@@ -79,7 +81,7 @@ LLM-Hub 后续只按以下四条执行，不使用临时源码快照发布：
 
 Compose 和 Caddy 不随应用镜像自动覆盖。修改 `scripts/llm-hub/production/compose.yml` 或 `scripts/llm-hub/caddy/Caddyfile` 时，必须先提交并审查，再将候选文件上传到目标机临时路径，分别执行 Compose 配置校验和 Caddy 配置校验；校验通过后安装到 `/opt/llm-hub`。Caddy 变更只重建 `caddy` 服务，数据库或 Redis 镜像变更必须单独安排并核对命名卷。
 
-应用发布脚本会从 `-Commit` 指定的 Git 提交提取 Compose、Caddyfile 并比较远端 SHA-256；不读取工作区文件，也不受 Windows 换行符转换影响。存在漂移时拒绝继续。它还会检查根域名、`app`、固定 CNAME 接入点、随机通配子域名和 `343246113.xyz` 的状态接口及版本。
+应用发布脚本会从 `-Commit` 指定的 Git 提交提取 Compose、Caddyfile 并比较远端 SHA-256；不读取工作区文件，也不受 Windows 换行符转换影响。存在漂移时拒绝继续。它还会在执行 Git 检查前确认 SSH 别名解析到目标地址，并在 `Preflight` 阶段检查没有运行中的渠道测试或供给探测任务；随后检查根域名、`app`、固定 CNAME 接入点、随机通配子域名和 `343246113.xyz` 的状态接口及版本。
 
 ## 强制校验
 

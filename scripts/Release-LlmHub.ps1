@@ -73,11 +73,55 @@ function Assert-ProductionSource {
 function Invoke-Git {
   param([Parameter(Mandatory)][string[]]$Arguments)
 
-  $output = & git -C $repoRoot @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    throw "git $($Arguments -join ' ') failed:`n$($output -join "`n")"
+  $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) "llm-hub-git-$PID-$([guid]::NewGuid().ToString('N')).stderr"
+  try {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      $output = & git -C $repoRoot @Arguments 2> $stderrPath
+      $exitCode = $LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    $stderrContent = if (Test-Path -LiteralPath $stderrPath) {
+      Get-Content -Raw -LiteralPath $stderrPath
+    } else {
+      $null
+    }
+    $stderr = if ($stderrContent) { $stderrContent.Trim() } else { '' }
+    if ($stderr) {
+      Write-Warning $stderr
+    }
+    if ($exitCode -ne 0) {
+      throw "git $($Arguments -join ' ') failed with exit code $exitCode.`n$stderr"
+    }
+    return [string]($output -join "`n")
+  } finally {
+    if (Test-Path -LiteralPath $stderrPath) {
+      Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
   }
-  return [string]($output -join "`n")
+}
+
+function Assert-SshConfiguration {
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = & ssh -G $target.sshTarget 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) {
+    throw "SSH configuration cannot resolve '$($target.sshTarget)'. Check the user SSH config and run this script from the configured release environment.`n$($output -join "`n")"
+  }
+
+  $resolvedHost = (($output | Where-Object { $_ -match '^hostname\s+' } | Select-Object -First 1) -replace '^hostname\s+', '').Trim()
+  if ($resolvedHost -ne $target.remoteAddress) {
+    throw "SSH target '$($target.sshTarget)' resolves to '$resolvedHost', expected '$($target.remoteAddress)'. Refusing to continue."
+  }
+  Write-Host "SSH_CONFIG_OK target=$($target.sshTarget) address=$resolvedHost"
 }
 
 function Invoke-Ssh {
@@ -123,13 +167,23 @@ function Assert-LocalIdentity {
     throw "Unexpected origin '$origin'. LLM-Hub production only accepts x-llm-net/llmhub-radar."
   }
 
+  $branch = (Invoke-Git -Arguments @('symbolic-ref', '--short', 'HEAD')).Trim()
+  if ($branch -ne 'main') {
+    throw "Release source must be the main branch, got '$branch'. Merge the intended change into main first."
+  }
+
   $trackedChanges = (Invoke-Git -Arguments @('status', '--porcelain', '--untracked-files=no')).Trim()
   if ($trackedChanges) {
     throw "Tracked files are not clean. Commit the intended release before preparing production:`n$trackedChanges"
   }
 
   $commitExpression = $Commit + '^{commit}'
-  return (Invoke-Git -Arguments @('rev-parse', $commitExpression)).Trim()
+  $commitSha = (Invoke-Git -Arguments @('rev-parse', $commitExpression)).Trim()
+  $originMainSha = (Invoke-Git -Arguments @('rev-parse', 'refs/remotes/origin/main')).Trim()
+  if ($commitSha -ne $originMainSha) {
+    throw "main is not synchronized with origin/main. Push the reviewed release commit before publishing.`nmain=$commitSha`norigin/main=$originMainSha"
+  }
+  return $commitSha
 }
 
 function Assert-ReleaseTag {
@@ -304,13 +358,26 @@ function Assert-VersionedServerScripts {
   Write-Host (Invoke-Ssh -Command "$ReleaseDir/tools/assert-release-tools.sh $ReleaseTag")
 }
 
+function Assert-NoBlockingTasks {
+  $localScript = Join-Path $serverScriptDir 'assert-no-blocking-tasks.sh'
+  $remoteScript = "/tmp/llm-hub-no-blocking-tasks-$PID.sh"
+  Copy-ToRemote -LocalPath $localScript -RemotePath $remoteScript
+  $result = Invoke-Ssh -Command "chmod 700 $remoteScript && $remoteScript"
+  if ($result -notmatch 'NO_BLOCKING_TASKS count=0') {
+    throw "Production has active channel test or supply probe tasks. Wait for them to finish before publishing:`n$result"
+  }
+  Write-Host $result
+}
+
 Assert-TargetManifest
 Assert-ProductionSource
+Assert-SshConfiguration
 $commitSha = Assert-LocalIdentity
 Assert-RemoteIdentity
 Assert-RemoteInfrastructure -CommitSha $commitSha
 
 if ($Action -eq 'Preflight') {
+  Assert-NoBlockingTasks
   $currentVersion = Get-RemoteVersion
   Test-PublicStatus -ExpectedVersion $currentVersion
   Write-Host "PREFLIGHT_OK commit=$commitSha target=$($target.deploymentId)"
@@ -327,10 +394,7 @@ switch ($Action) {
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
     $archive = Join-Path $tempDir 'source.tar'
 
-    $archiveOutput = & git -C $repoRoot archive --format=tar --output=$archive $commitSha 2>&1
-    if ($LASTEXITCODE -ne 0) {
-      throw "git archive failed:`n$($archiveOutput -join "`n")"
-    }
+    Invoke-Git -Arguments @('archive', '--format=tar', "--output=$archive", $commitSha) | Out-Null
     $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     $extractOutput = & tar -xf $archive -C $tempDir scripts/llm-hub/server 2>&1
     if ($LASTEXITCODE -ne 0) {
