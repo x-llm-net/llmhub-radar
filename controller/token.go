@@ -84,6 +84,13 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
+func getTokenHubScope(c *gin.Context) model.HubTokenScope {
+	return model.HubTokenScope{
+		TenantID:   common.GetContextKeyInt(c, constant.ContextKeyTenantId),
+		ProviderID: common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId),
+	}
+}
+
 func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
@@ -160,13 +167,14 @@ func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRouting
 
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
+	scope := getTokenHubScope(c)
 	pageInfo := common.GetPageQuery(c)
-	tokens, err := model.GetAllUserTokens(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	tokens, err := model.GetAllUserTokensInScope(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
+	total, _ := model.CountUserTokensInScope(userId, scope)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
 	common.ApiSuccess(c, pageInfo)
@@ -174,12 +182,13 @@ func GetAllTokens(c *gin.Context) {
 
 func SearchTokens(c *gin.Context) {
 	userId := c.GetInt("id")
+	scope := getTokenHubScope(c)
 	keyword := c.Query("keyword")
 	token := c.Query("token")
 
 	pageInfo := common.GetPageQuery(c)
 
-	tokens, total, err := model.SearchUserTokens(userId, keyword, token, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	tokens, total, err := model.SearchUserTokensInScope(userId, keyword, token, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -192,11 +201,12 @@ func SearchTokens(c *gin.Context) {
 func GetToken(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
+	scope := getTokenHubScope(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	token, err := model.GetTokenByIds(id, userId)
+	token, err := model.GetTokenByIdsInScope(id, userId, scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -232,11 +242,12 @@ func GetHubTokenRoutingOptions(c *gin.Context) {
 func GetTokenKey(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
+	scope := getTokenHubScope(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	token, err := model.GetTokenByIds(id, userId)
+	token, err := model.GetTokenByIdsInScope(id, userId, scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -317,6 +328,7 @@ func GetTokenUsage(c *gin.Context) {
 }
 
 func AddToken(c *gin.Context) {
+	scope := getTokenHubScope(c)
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -358,7 +370,7 @@ func AddToken(c *gin.Context) {
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
+	count, err := model.CountUserTokensInScope(c.GetInt("id"), scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -386,6 +398,8 @@ func AddToken(c *gin.Context) {
 	}
 	cleanToken := model.Token{
 		UserId:             c.GetInt("id"),
+		HubTenantId:        scope.TenantID,
+		HubProviderId:      scope.ProviderID,
 		Name:               token.Name,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
@@ -421,7 +435,7 @@ func AddToken(c *gin.Context) {
 func DeleteToken(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
-	err := model.DeleteTokenById(id, userId)
+	err := model.DeleteTokenByIdInScope(id, userId, getTokenHubScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -434,6 +448,7 @@ func DeleteToken(c *gin.Context) {
 
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
+	scope := getTokenHubScope(c)
 	statusOnly := c.Query("status_only")
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
@@ -457,7 +472,7 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
-	cleanToken, err := model.GetTokenByIds(token.Id, userId)
+	cleanToken, err := model.GetTokenByIdsInScope(token.Id, userId, scope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -551,7 +566,7 @@ func DeleteTokenBatch(c *gin.Context) {
 		return
 	}
 	userId := c.GetInt("id")
-	count, err := model.BatchDeleteTokens(tokenBatch.Ids, userId)
+	count, err := model.BatchDeleteTokensInScope(tokenBatch.Ids, userId, getTokenHubScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -574,7 +589,7 @@ func GetTokenKeysBatch(c *gin.Context) {
 		return
 	}
 	userId := c.GetInt("id")
-	tokens, err := model.GetTokenKeysByIds(tokenBatch.Ids, userId)
+	tokens, err := model.GetTokenKeysByIdsInScope(tokenBatch.Ids, userId, getTokenHubScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -372,6 +372,7 @@ func SetApiRouter(router *gin.Engine) {
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
+		tokenRoute.Use(middleware.TenantHostContext())
 		tokenRoute.Use(middleware.HubProviderRouting())
 		tokenRoute.Use(middleware.UserAuth())
 		{

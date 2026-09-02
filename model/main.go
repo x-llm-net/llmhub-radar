@@ -335,6 +335,9 @@ func migrateDB() error {
 	if err := migrateHubProviderOriginClaims(); err != nil {
 		return err
 	}
+	if err := migrateHubTokenScopes(); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -453,6 +456,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := migrateHubProviderOriginClaims(); err != nil {
+		return err
+	}
+	if err := migrateHubTokenScopes(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

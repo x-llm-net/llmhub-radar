@@ -14,6 +14,8 @@ import (
 type Token struct {
 	Id                 int            `json:"id"`
 	UserId             int            `json:"user_id" gorm:"index"`
+	HubTenantId        int            `json:"-" gorm:"column:hub_tenant_id;not null;default:0;index"`
+	HubProviderId      int            `json:"-" gorm:"column:hub_provider_id;not null;default:0;index"`
 	Key                string         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
 	Status             int            `json:"status" gorm:"default:1"`
 	Name               string         `json:"name" gorm:"index" `
@@ -37,6 +39,24 @@ type Token struct {
 // atomic quota decrement. Unlimited tokens are allowed through the same path
 // but keep their remaining-quota display unchanged.
 var ErrTokenQuotaInsufficient = errors.New("token quota is insufficient")
+
+// HubTokenScope identifies the management surface where a token was created.
+// A provider scope takes precedence over its tenant scope; a tenant scope with
+// no provider is a tenant's shared/root token pool.
+type HubTokenScope struct {
+	TenantID   int
+	ProviderID int
+}
+
+func ApplyHubTokenScope(query *gorm.DB, scope HubTokenScope) *gorm.DB {
+	if scope.ProviderID > 0 {
+		return query.Where("hub_tenant_id = ? AND hub_provider_id = ?", scope.TenantID, scope.ProviderID)
+	}
+	if scope.TenantID > 0 {
+		return query.Where("hub_tenant_id = ? AND hub_provider_id = 0", scope.TenantID)
+	}
+	return query
+}
 
 func (token *Token) GetAutoGroups() ([]string, error) {
 	if token.AutoGroups == "" {
@@ -110,9 +130,13 @@ func (token *Token) GetIpLimits() []string {
 }
 
 func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
+	return GetAllUserTokensInScope(userId, startIdx, num, HubTokenScope{})
+}
+
+func GetAllUserTokensInScope(userId int, startIdx int, num int, scope HubTokenScope) ([]*Token, error) {
 	var tokens []*Token
-	var err error
-	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
+	query := ApplyHubTokenScope(DB.Where("user_id = ?", userId), scope)
+	err := query.Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
 }
 
@@ -163,6 +187,10 @@ func validateLikePattern(input string) error {
 const searchHardLimit = 100
 
 func SearchUserTokens(userId int, keyword string, token string, offset int, limit int) (tokens []*Token, total int64, err error) {
+	return SearchUserTokensInScope(userId, keyword, token, offset, limit, HubTokenScope{})
+}
+
+func SearchUserTokensInScope(userId int, keyword string, token string, offset int, limit int, scope HubTokenScope) (tokens []*Token, total int64, err error) {
 	// model 层强制截断
 	if limit <= 0 || limit > searchHardLimit {
 		limit = searchHardLimit
@@ -179,7 +207,7 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 	maxTokens := operation_setting.GetMaxUserTokens()
 	hasFuzzy := strings.Contains(keyword, "%") || strings.Contains(token, "%")
 	if hasFuzzy {
-		count, err := CountUserTokens(userId)
+		count, err := CountUserTokensInScope(userId, scope)
 		if err != nil {
 			common.SysLog("failed to count user tokens: " + err.Error())
 			return nil, 0, errors.New("获取令牌数量失败")
@@ -189,7 +217,7 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 		}
 	}
 
-	baseQuery := DB.Model(&Token{}).Where("user_id = ?", userId)
+	baseQuery := ApplyHubTokenScope(DB.Model(&Token{}).Where("user_id = ?", userId), scope)
 
 	// 非空才加 LIKE 条件，空则跳过（不过滤该字段）
 	if keyword != "" {
@@ -264,12 +292,16 @@ func ValidateUserToken(key string) (token *Token, err error) {
 }
 
 func GetTokenByIds(id int, userId int) (*Token, error) {
+	return GetTokenByIdsInScope(id, userId, HubTokenScope{})
+}
+
+func GetTokenByIdsInScope(id int, userId int, scope HubTokenScope) (*Token, error) {
 	if id == 0 || userId == 0 {
 		return nil, errors.New("id 或 userId 为空！")
 	}
 	token := Token{Id: id, UserId: userId}
-	var err error = nil
-	err = DB.First(&token, "id = ? and user_id = ?", id, userId).Error
+	query := ApplyHubTokenScope(DB, scope)
+	err := query.First(&token, "id = ? and user_id = ?", id, userId).Error
 	return &token, err
 }
 
@@ -396,12 +428,17 @@ func DisableModelLimits(tokenId int) error {
 }
 
 func DeleteTokenById(id int, userId int) (err error) {
+	return DeleteTokenByIdInScope(id, userId, HubTokenScope{})
+}
+
+func DeleteTokenByIdInScope(id int, userId int, scope HubTokenScope) (err error) {
 	// Why we need userId here? In case user want to delete other's token.
 	if id == 0 || userId == 0 {
 		return errors.New("id 或 userId 为空！")
 	}
 	token := Token{Id: id, UserId: userId}
-	err = DB.Where(token).First(&token).Error
+	query := ApplyHubTokenScope(DB, scope)
+	err = query.Where(token).First(&token).Error
 	if err != nil {
 		return err
 	}
@@ -559,13 +596,22 @@ func decreaseTokenQuota(id int, quota int) (err error) {
 
 // CountUserTokens returns total number of tokens for the given user, used for pagination
 func CountUserTokens(userId int) (int64, error) {
+	return CountUserTokensInScope(userId, HubTokenScope{})
+}
+
+func CountUserTokensInScope(userId int, scope HubTokenScope) (int64, error) {
 	var total int64
-	err := DB.Model(&Token{}).Where("user_id = ?", userId).Count(&total).Error
+	query := ApplyHubTokenScope(DB.Model(&Token{}).Where("user_id = ?", userId), scope)
+	err := query.Count(&total).Error
 	return total, err
 }
 
 // BatchDeleteTokens 删除指定用户的一组令牌，返回成功删除数量
 func BatchDeleteTokens(ids []int, userId int) (int, error) {
+	return BatchDeleteTokensInScope(ids, userId, HubTokenScope{})
+}
+
+func BatchDeleteTokensInScope(ids []int, userId int, scope HubTokenScope) (int, error) {
 	if len(ids) == 0 {
 		return 0, errors.New("ids 不能为空！")
 	}
@@ -573,12 +619,14 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	tx := DB.Begin()
 
 	var tokens []Token
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+	query := ApplyHubTokenScope(tx, scope)
+	if err := query.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}
 
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Delete(&Token{}).Error; err != nil {
+	query = ApplyHubTokenScope(tx, scope)
+	if err := query.Where("user_id = ? AND id IN (?)", userId, ids).Delete(&Token{}).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}
@@ -599,8 +647,13 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 }
 
 func GetTokenKeysByIds(ids []int, userId int) ([]Token, error) {
+	return GetTokenKeysByIdsInScope(ids, userId, HubTokenScope{})
+}
+
+func GetTokenKeysByIdsInScope(ids []int, userId int, scope HubTokenScope) ([]Token, error) {
 	var tokens []Token
-	err := DB.Select("id", commonKeyCol).
+	query := ApplyHubTokenScope(DB.Select("id", commonKeyCol), scope)
+	err := query.
 		Where("user_id = ? AND id IN (?)", userId, ids).
 		Find(&tokens).Error
 	return tokens, err
