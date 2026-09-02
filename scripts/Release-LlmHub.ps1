@@ -223,7 +223,6 @@ function Assert-RemoteInfrastructure {
 function Test-PublicStatus {
   param([string]$ExpectedVersion)
 
-  $supportsSkipCertificateCheck = (Get-Command Invoke-RestMethod).Parameters.ContainsKey('SkipCertificateCheck')
   foreach ($baseUrl in @($target.publicHealthUrls)) {
     $statusRequest = @{
       Uri = "$baseUrl/api/status"
@@ -231,22 +230,17 @@ function Test-PublicStatus {
       TimeoutSec = 30
     }
     $isInfrastructureAlias = $baseUrl -eq 'https://edge.llm-hub.store'
-    if ($isInfrastructureAlias -and $supportsSkipCertificateCheck) {
-      # The fixed CNAME target is an infrastructure alias. It intentionally
-      # uses the origin certificate and is not a user-facing HTTPS origin.
-      $statusRequest.SkipCertificateCheck = $true
-    }
-    $previousCertificateCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
-    try {
-      if ($isInfrastructureAlias -and -not $supportsSkipCertificateCheck) {
-        # Windows PowerShell 5.1 has no SkipCertificateCheck parameter. This
-        # callback is process-local and is restored immediately after the one
-        # infrastructure-only request.
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    if ($isInfrastructureAlias) {
+      # The fixed CNAME target intentionally uses the origin certificate and
+      # is not a user-facing HTTPS origin. curl keeps this check compatible
+      # with both Windows PowerShell 5.1 and PowerShell 7.
+      $curlOutput = & curl.exe -k -sS --fail --max-time 30 "$baseUrl/api/status" 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        throw "Infrastructure alias health request failed for '$baseUrl': $($curlOutput -join "`n")"
       }
+      $status = ([string]($curlOutput -join "`n")) | ConvertFrom-Json
+    } else {
       $status = Invoke-RestMethod @statusRequest
-    } finally {
-      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCertificateCallback
     }
     if (-not $status.success) {
       throw "Public /api/status did not report success for '$baseUrl'."
