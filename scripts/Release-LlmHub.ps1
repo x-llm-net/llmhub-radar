@@ -223,18 +223,31 @@ function Assert-RemoteInfrastructure {
 function Test-PublicStatus {
   param([string]$ExpectedVersion)
 
+  $supportsSkipCertificateCheck = (Get-Command Invoke-RestMethod).Parameters.ContainsKey('SkipCertificateCheck')
   foreach ($baseUrl in @($target.publicHealthUrls)) {
     $statusRequest = @{
       Uri = "$baseUrl/api/status"
       Method = 'Get'
       TimeoutSec = 30
     }
-    if ($baseUrl -eq 'https://edge.llm-hub.store') {
+    $isInfrastructureAlias = $baseUrl -eq 'https://edge.llm-hub.store'
+    if ($isInfrastructureAlias -and $supportsSkipCertificateCheck) {
       # The fixed CNAME target is an infrastructure alias. It intentionally
       # uses the origin certificate and is not a user-facing HTTPS origin.
       $statusRequest.SkipCertificateCheck = $true
     }
-    $status = Invoke-RestMethod @statusRequest
+    $previousCertificateCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    try {
+      if ($isInfrastructureAlias -and -not $supportsSkipCertificateCheck) {
+        # Windows PowerShell 5.1 has no SkipCertificateCheck parameter. This
+        # callback is process-local and is restored immediately after the one
+        # infrastructure-only request.
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+      }
+      $status = Invoke-RestMethod @statusRequest
+    } finally {
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCertificateCallback
+    }
     if (-not $status.success) {
       throw "Public /api/status did not report success for '$baseUrl'."
     }
