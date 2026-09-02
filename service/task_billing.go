@@ -145,7 +145,13 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		if bc.HasSupplyPricing {
 			other["group_ratio"] = bc.BaseGroupRatio
 			other["supply_multiplier"] = bc.SupplyMultiplier
+			if bc.SupplyBillingRatio > 0 {
+				other["supply_billing_ratio"] = bc.SupplyBillingRatio
+			}
 			other["billing_ratio"] = bc.GroupRatio
+			if bc.FallbackPriceProtection {
+				other["fallback_price_protection"] = true
+			}
 			other["hub_supply_group_id"] = bc.SupplyGroupId
 			other["hub_provider_id"] = bc.SupplyProviderId
 			feeBasisPoints := hub_provider_settlement_setting.PlatformFeeBasisPoints()

@@ -119,7 +119,9 @@ type TaskBillingContext struct {
 	GroupRatio                       float64            `json:"group_ratio,omitempty"` // 用户组与供给渠道的综合计费倍率
 	BaseGroupRatio                   float64            `json:"base_group_ratio,omitempty"`
 	SupplyMultiplier                 float64            `json:"supply_multiplier,omitempty"`
+	SupplyBillingRatio               float64            `json:"supply_billing_ratio,omitempty"`
 	HasSupplyPricing                 bool               `json:"has_supply_pricing,omitempty"`
+	FallbackPriceProtection          bool               `json:"fallback_price_protection,omitempty"`
 	SupplyGroupId                    int                `json:"supply_group_id,omitempty"`
 	SupplyProviderId                 int                `json:"supply_provider_id,omitempty"`
 	SupplyOwnerUserId                int                `json:"supply_owner_user_id,omitempty"`

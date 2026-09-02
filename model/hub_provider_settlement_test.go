@@ -112,6 +112,48 @@ func TestCalculateHubProviderTwoLayerRevenueSplitKeepsUserChargeExact(t *testing
 	}
 }
 
+func TestFallbackPriceProtectionSplitsSpreadWithoutReducingServingProviderIncome(t *testing.T) {
+	truncateTables(t)
+	tenantID := 901
+	serviceProvider := HubProvider{
+		OwnerUserId: 902, TenantId: &tenantID, Slot: 1,
+		Name: "Protected Service", Slug: "protected-service", Status: HubProviderStatusActive,
+	}
+	referralProvider := HubProvider{
+		OwnerUserId: 903, TenantId: &tenantID, Slot: 1,
+		Name: "Protected Referral", Slug: "protected-referral", Status: HubProviderStatusActive,
+	}
+	require.NoError(t, DB.Create(&serviceProvider).Error)
+	require.NoError(t, DB.Create(&referralProvider).Error)
+
+	earning, err := PrepareHubProviderEarning(HubProviderEarningParams{
+		RequestId: "req-price-protection-spread", ProviderId: serviceProvider.Id, OwnerUserId: serviceProvider.OwnerUserId,
+		ConsumerUserId: 904, TokenId: 905, SupplyGroupId: 906, ChannelId: 907,
+		ModelName: "gpt-5", BillingSource: "wallet", GrossQuota: 3000,
+		BaseGroupRatio: 1, SupplyMultiplier: 0.2, SupplyBillingRatio: 0.2, BillingRatio: 0.3,
+		TenantId: tenantID, ProviderServiceFeeBasisPoints: 1000, HasProviderServiceFeeBasisPoints: true,
+		PlatformFeeBasisPoints: 3000, HasPlatformFeeBasisPoints: true,
+		ReferralProviderId: referralProvider.Id, ReferralBasisPoints: 2000, FallbackPriceProtection: true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 3000, earning.GrossQuota)
+	assert.Equal(t, 2000, earning.SupplyGrossQuota)
+	assert.Equal(t, 860, earning.PlatformFeeQuota)
+	assert.Equal(t, 1800, earning.ProviderIncomeQuota)
+	assert.Equal(t, 200, earning.ReferralIncomeQuota)
+	assert.Equal(t, 200, earning.ResellerGrossQuota)
+	assert.Equal(t, 140, earning.ResellerNetIncomeQuota)
+	assert.Equal(t, 800, earning.FallbackSpreadPlatformQuota)
+	assert.Equal(t, earning.GrossQuota, earning.PlatformFeeQuota+earning.ProviderIncomeQuota+earning.ReferralIncomeQuota+earning.ResellerNetIncomeQuota)
+
+	require.NoError(t, SettleHubProviderEarning(earning.RequestId, earning.GrossQuota))
+	var settled HubProviderEarning
+	require.NoError(t, DB.First(&settled, earning.Id).Error)
+	assert.Equal(t, 2000, settled.SupplyGrossQuota)
+	assert.Equal(t, 860, settled.PlatformFeeQuota)
+}
+
 func TestHubProviderSettlementOptionsSaveTogether(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 	settings := hub_provider_settlement_setting.Get()

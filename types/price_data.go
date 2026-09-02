@@ -13,6 +13,7 @@ type GroupRatioInfo struct {
 	HasSpecialRatio                  bool
 	BaseGroupRatio                   float64
 	SupplyMultiplier                 float64
+	SupplyGroupRatio                 float64
 	HasSupplyPricing                 bool
 	SupplyGroupId                    int
 	SupplyProviderId                 int
@@ -22,6 +23,7 @@ type GroupRatioInfo struct {
 	HasProviderServiceFeeBasisPoints bool
 	PlatformFeeBasisPoints           int
 	HasPlatformFeeBasisPoints        bool
+	FallbackPriceProtection          bool
 }
 
 type PriceData struct {

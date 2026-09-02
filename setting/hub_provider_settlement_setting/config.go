@@ -22,7 +22,7 @@ const (
 	DefaultProviderServiceFeeBasisPoints = 1000
 	DefaultMinimumWithdrawalQuota        = 0
 	DefaultFallbackReferralEnabled       = true
-	DefaultFallbackReferralBasisPoints   = 100
+	DefaultFallbackReferralBasisPoints   = 2000
 )
 
 type HubProviderSettlementSetting struct {

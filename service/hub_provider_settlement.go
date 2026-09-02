@@ -83,6 +83,7 @@ func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			GrossQuota:                       actualQuota,
 			BaseGroupRatio:                   pricing.BaseGroupRatio,
 			SupplyMultiplier:                 pricing.SupplyMultiplier,
+			SupplyBillingRatio:               pricing.SupplyGroupRatio,
 			BillingRatio:                     pricing.GroupRatio,
 			ProviderServiceFeeBasisPoints:    pricing.ProviderServiceFeeBasisPoints,
 			HasProviderServiceFeeBasisPoints: pricing.HasProviderServiceFeeBasisPoints,
@@ -90,6 +91,7 @@ func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			HasPlatformFeeBasisPoints:        pricing.HasPlatformFeeBasisPoints,
 			ReferralProviderId:               referralProviderId,
 			ReferralBasisPoints:              referralBasisPoints,
+			FallbackPriceProtection:          pricing.FallbackPriceProtection,
 			SettlementDeferred:               settlementDeferred,
 		})
 		return err

@@ -83,7 +83,11 @@ type HubProviderEarning struct {
 	ChannelId          int    `json:"channel_id" gorm:"not null;default:0;index"`
 	ModelName          string `json:"model_name" gorm:"type:varchar(255);not null;default:'';index"`
 	BillingSource      string `json:"billing_source" gorm:"type:varchar(24);not null;default:''"`
-	GrossQuota         int    `json:"gross_quota" gorm:"not null;default:0"`
+	// GrossQuota is the amount charged to the consumer. SupplyGrossQuota is
+	// the amount attributed to the channel that actually served the request.
+	GrossQuota         int     `json:"gross_quota" gorm:"not null;default:0"`
+	SupplyGrossQuota   int     `json:"supply_gross_quota" gorm:"not null;default:0"`
+	SupplyBillingRatio float64 `json:"supply_billing_ratio" gorm:"type:real;not null;default:0"`
 	// ProviderServiceFeeBasisPoints is the share paid by the user-side
 	// marketplace to the serving provider's tenant before the platform cut.
 	ProviderServiceFeeBasisPoints int     `json:"provider_service_fee_basis_points" gorm:"not null;default:0"`
@@ -97,6 +101,8 @@ type HubProviderEarning struct {
 	ReferralOwnerUserId           int     `json:"-" gorm:"not null;default:0;index"`
 	ReferralBasisPoints           int     `json:"referral_basis_points" gorm:"not null;default:0"`
 	ReferralIncomeQuota           int     `json:"referral_income_quota" gorm:"not null;default:0"`
+	FallbackSpreadPlatformQuota   int     `json:"fallback_spread_platform_quota" gorm:"not null;default:0"`
+	FallbackPriceProtection       bool    `json:"fallback_price_protection" gorm:"not null;default:false"`
 	BaseGroupRatio                float64 `json:"base_group_ratio" gorm:"type:real;not null;default:0"`
 	SupplyMultiplier              float64 `json:"supply_multiplier" gorm:"type:real;not null;default:0"`
 	BillingRatio                  float64 `json:"billing_ratio" gorm:"type:real;not null;default:0"`
@@ -207,6 +213,7 @@ type HubProviderEarningParams struct {
 	GrossQuota                       int
 	BaseGroupRatio                   float64
 	SupplyMultiplier                 float64
+	SupplyBillingRatio               float64
 	BillingRatio                     float64
 	TenantId                         int
 	ProviderServiceFeeBasisPoints    int
@@ -215,6 +222,7 @@ type HubProviderEarningParams struct {
 	HasPlatformFeeBasisPoints        bool
 	ReferralProviderId               int
 	ReferralBasisPoints              int
+	FallbackPriceProtection          bool
 	SettlementDeferred               *bool
 }
 
@@ -306,7 +314,25 @@ func clampHubProviderBasisPoints(value int) int {
 	return value
 }
 
-func calculateHubProviderEarningRevenueSplit(tx *gorm.DB, earning HubProviderEarning, grossQuota int) (int, int, int, int, int, error) {
+func calculateHubProviderSupplyQuota(earning HubProviderEarning, grossQuota int) (int, error) {
+	if grossQuota <= 0 {
+		return 0, nil
+	}
+	if !earning.FallbackPriceProtection || earning.BillingRatio <= 0 || earning.SupplyBillingRatio <= 0 ||
+		earning.SupplyBillingRatio >= earning.BillingRatio {
+		return grossQuota, nil
+	}
+	return common.QuotaRoundStrict(float64(grossQuota) * earning.SupplyBillingRatio / earning.BillingRatio)
+}
+
+func compatibleHubProviderSupplyQuota(earning HubProviderEarning, grossQuota int) int {
+	if earning.SupplyGrossQuota == 0 && !earning.FallbackPriceProtection {
+		return grossQuota
+	}
+	return earning.SupplyGrossQuota
+}
+
+func calculateHubProviderEarningRevenueSplit(tx *gorm.DB, earning HubProviderEarning, grossQuota int) (int, int, int, int, int, int, int, error) {
 	referralBasisPoints := earning.ReferralBasisPoints
 	if referralBasisPoints > 0 && earning.ReferralProviderId > 0 {
 		var referralProvider HubProvider
@@ -314,28 +340,62 @@ func calculateHubProviderEarningRevenueSplit(tx *gorm.DB, earning HubProviderEar
 			Select("id", "owner_user_id", "status").
 			First(&referralProvider, earning.ReferralProviderId).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, 0, 0, 0, 0, err
+			return 0, 0, 0, 0, 0, 0, 0, err
 		}
 		if err != nil || referralProvider.Status != HubProviderStatusActive ||
 			referralProvider.OwnerUserId != earning.ReferralOwnerUserId {
 			referralBasisPoints = 0
 		}
 	}
+	supplyGrossQuota, err := calculateHubProviderSupplyQuota(earning, grossQuota)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, err
+	}
+	spreadQuota := grossQuota - supplyGrossQuota
+	if spreadQuota < 0 {
+		spreadQuota = 0
+	}
+	fallbackSpreadPlatformQuota := 0
+	if earning.FallbackPriceProtection {
+		// Price protection replaces the legacy fixed referral charge. The
+		// referral share is taken only from the protected price spread.
+		var platformFee, providerIncome, resellerGross, resellerNet int
+		if earning.SettlementVersion >= 2 {
+			platformFee, providerIncome, _, resellerGross, resellerNet = CalculateHubProviderTwoLayerRevenueSplit(
+				supplyGrossQuota,
+				earning.ProviderServiceFeeBasisPoints,
+				earning.PlatformFeeBasisPoints,
+				0,
+			)
+		} else {
+			platformFee, providerIncome = CalculateHubProviderRevenueSplit(
+				supplyGrossQuota,
+				earning.PlatformFeeBasisPoints,
+			)
+		}
+		referralIncome := int((int64(spreadQuota)*int64(clampHubProviderBasisPoints(referralBasisPoints)) + 5000) / 10000)
+		if referralIncome > spreadQuota {
+			referralIncome = spreadQuota
+		}
+		fallbackSpreadPlatformQuota = spreadQuota - referralIncome
+		platformFee += fallbackSpreadPlatformQuota
+		return platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, nil
+	}
 	if earning.SettlementVersion < 2 {
 		platformFee, providerIncome, referralIncome := CalculateHubProviderRevenueSplitWithReferral(
-			grossQuota,
+			supplyGrossQuota,
 			earning.PlatformFeeBasisPoints,
 			referralBasisPoints,
 		)
-		return platformFee, providerIncome, referralIncome, 0, 0, nil
+		return platformFee, providerIncome, referralIncome, 0, 0, supplyGrossQuota, fallbackSpreadPlatformQuota, nil
 	}
 	platformFee, providerIncome, referralIncome, resellerGross, resellerNet := CalculateHubProviderTwoLayerRevenueSplit(
-		grossQuota,
+		supplyGrossQuota,
 		earning.ProviderServiceFeeBasisPoints,
 		earning.PlatformFeeBasisPoints,
 		referralBasisPoints,
 	)
-	return platformFee, providerIncome, referralIncome, resellerGross, resellerNet, nil
+	return platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, nil
 }
 
 func ResolveHubProviderPlatformFeeBasisPoints(providerId int) (int, error) {
@@ -470,20 +530,8 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 			referralBasisPoints = params.ReferralBasisPoints
 		}
 	}
-	platformFee, providerIncome, referralIncome := CalculateHubProviderRevenueSplitWithReferral(
-		params.GrossQuota,
-		platformFeeBasisPoints,
-		referralBasisPoints,
-	)
-	resellerGross, resellerNet := 0, 0
 	settlementVersion := 0
 	if useTwoLayerSettlement {
-		platformFee, providerIncome, referralIncome, resellerGross, resellerNet = CalculateHubProviderTwoLayerRevenueSplit(
-			params.GrossQuota,
-			providerServiceFeeBasisPoints,
-			platformFeeBasisPoints,
-			referralBasisPoints,
-		)
 		settlementVersion = 2
 	} else {
 		providerServiceFeeBasisPoints = 0
@@ -503,21 +551,34 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		ModelName:                     strings.TrimSpace(params.ModelName),
 		BillingSource:                 strings.TrimSpace(params.BillingSource),
 		GrossQuota:                    params.GrossQuota,
+		SupplyBillingRatio:            params.SupplyBillingRatio,
 		ProviderServiceFeeBasisPoints: providerServiceFeeBasisPoints,
 		PlatformFeeBasisPoints:        platformFeeBasisPoints,
-		PlatformFeeQuota:              platformFee,
-		ProviderIncomeQuota:           providerIncome,
-		ResellerGrossQuota:            resellerGross,
-		ResellerNetIncomeQuota:        resellerNet,
+		PlatformFeeQuota:              0,
+		ProviderIncomeQuota:           0,
+		ResellerGrossQuota:            0,
+		ResellerNetIncomeQuota:        0,
 		ReferralProviderId:            referralProviderId,
 		ReferralOwnerUserId:           referralOwnerUserId,
 		ReferralBasisPoints:           referralBasisPoints,
-		ReferralIncomeQuota:           referralIncome,
+		FallbackPriceProtection:       params.FallbackPriceProtection,
+		ReferralIncomeQuota:           0,
 		BaseGroupRatio:                params.BaseGroupRatio,
 		SupplyMultiplier:              params.SupplyMultiplier,
 		BillingRatio:                  params.BillingRatio,
 		SettlementVersion:             settlementVersion,
 	}
+	platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, err := calculateHubProviderEarningRevenueSplit(DB, *earning, params.GrossQuota)
+	if err != nil {
+		return nil, err
+	}
+	earning.PlatformFeeQuota = platformFee
+	earning.ProviderIncomeQuota = providerIncome
+	earning.ResellerGrossQuota = resellerGross
+	earning.ResellerNetIncomeQuota = resellerNet
+	earning.ReferralIncomeQuota = referralIncome
+	earning.SupplyGrossQuota = supplyGrossQuota
+	earning.FallbackSpreadPlatformQuota = fallbackSpreadPlatformQuota
 	if err := DB.Create(earning).Error; err == nil {
 		return earning, nil
 	}
@@ -542,6 +603,8 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 				"settlement_deferred":               params.SettlementDeferred,
 				"billing_source":                    strings.TrimSpace(params.BillingSource),
 				"gross_quota":                       params.GrossQuota,
+				"supply_gross_quota":                supplyGrossQuota,
+				"supply_billing_ratio":              params.SupplyBillingRatio,
 				"tenant_id":                         tenantId,
 				"provider_service_fee_basis_points": providerServiceFeeBasisPoints,
 				"platform_fee_basis_points":         platformFeeBasisPoints,
@@ -554,6 +617,8 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 				"referral_owner_user_id":            referralOwnerUserId,
 				"referral_basis_points":             referralBasisPoints,
 				"referral_income_quota":             referralIncome,
+				"fallback_spread_platform_quota":    fallbackSpreadPlatformQuota,
+				"fallback_price_protection":         params.FallbackPriceProtection,
 				"base_group_ratio":                  params.BaseGroupRatio,
 				"supply_multiplier":                 params.SupplyMultiplier,
 				"billing_ratio":                     params.BillingRatio,
@@ -588,32 +653,35 @@ func SettleHubProviderEarning(requestId string, grossQuota int) error {
 			return ErrHubProviderEarningSettlementDeferred
 		}
 		if earning.Status == HubProviderEarningStatusSettled {
-			platformFee, providerIncome, referralIncome, resellerGross, resellerNet, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+			platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
 			if err != nil {
 				return err
 			}
 			if earning.GrossQuota != grossQuota || earning.PlatformFeeQuota != platformFee ||
 				earning.ProviderIncomeQuota != providerIncome || earning.ReferralIncomeQuota != referralIncome ||
+				compatibleHubProviderSupplyQuota(earning, grossQuota) != supplyGrossQuota || earning.FallbackSpreadPlatformQuota != fallbackSpreadPlatformQuota ||
 				earning.SettlementVersion >= 2 && (earning.ResellerGrossQuota != resellerGross || earning.ResellerNetIncomeQuota != resellerNet) {
 				return ErrHubProviderEarningReferenceConflict
 			}
 			return nil
 		}
-		platformFee, providerIncome, referralIncome, resellerGross, resellerNet, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+		platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
 		if err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
 		return tx.Model(&HubProviderEarning{}).Where("id = ?", earning.Id).Updates(map[string]any{
-			"status":                    HubProviderEarningStatusSettled,
-			"gross_quota":               grossQuota,
-			"platform_fee_quota":        platformFee,
-			"provider_income_quota":     providerIncome,
-			"referral_income_quota":     referralIncome,
-			"reseller_gross_quota":      resellerGross,
-			"reseller_net_income_quota": resellerNet,
-			"settled_at":                now,
-			"updated_at":                now,
+			"status":                         HubProviderEarningStatusSettled,
+			"gross_quota":                    grossQuota,
+			"supply_gross_quota":             supplyGrossQuota,
+			"platform_fee_quota":             platformFee,
+			"provider_income_quota":          providerIncome,
+			"referral_income_quota":          referralIncome,
+			"reseller_gross_quota":           resellerGross,
+			"reseller_net_income_quota":      resellerNet,
+			"fallback_spread_platform_quota": fallbackSpreadPlatformQuota,
+			"settled_at":                     now,
+			"updated_at":                     now,
 		}).Error
 	})
 }
@@ -632,14 +700,21 @@ func MarkHubProviderEarningReady(requestId string, grossQuota int) error {
 		}
 		switch earning.Status {
 		case HubProviderEarningStatusSettled:
-			if earning.GrossQuota != grossQuota {
+			platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+			if err != nil {
+				return err
+			}
+			if earning.GrossQuota != grossQuota || earning.PlatformFeeQuota != platformFee ||
+				earning.ProviderIncomeQuota != providerIncome || earning.ReferralIncomeQuota != referralIncome ||
+				compatibleHubProviderSupplyQuota(earning, grossQuota) != supplyGrossQuota || earning.FallbackSpreadPlatformQuota != fallbackSpreadPlatformQuota ||
+				earning.SettlementVersion >= 2 && (earning.ResellerGrossQuota != resellerGross || earning.ResellerNetIncomeQuota != resellerNet) {
 				return ErrHubProviderEarningReferenceConflict
 			}
 			return nil
 		case HubProviderEarningStatusCancelled:
 			return ErrHubProviderEarningCancelled
 		}
-		platformFee, providerIncome, referralIncome, resellerGross, resellerNet, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
+		platformFee, providerIncome, referralIncome, resellerGross, resellerNet, supplyGrossQuota, fallbackSpreadPlatformQuota, err := calculateHubProviderEarningRevenueSplit(tx, earning, grossQuota)
 		if err != nil {
 			return err
 		}
@@ -647,14 +722,16 @@ func MarkHubProviderEarningReady(requestId string, grossQuota int) error {
 		result := tx.Model(&HubProviderEarning{}).
 			Where("id = ? AND status = ?", earning.Id, HubProviderEarningStatusPending).
 			Updates(map[string]any{
-				"settlement_deferred":       &falseValue,
-				"gross_quota":               grossQuota,
-				"platform_fee_quota":        platformFee,
-				"provider_income_quota":     providerIncome,
-				"referral_income_quota":     referralIncome,
-				"reseller_gross_quota":      resellerGross,
-				"reseller_net_income_quota": resellerNet,
-				"updated_at":                common.GetTimestamp(),
+				"settlement_deferred":            &falseValue,
+				"gross_quota":                    grossQuota,
+				"supply_gross_quota":             supplyGrossQuota,
+				"platform_fee_quota":             platformFee,
+				"provider_income_quota":          providerIncome,
+				"referral_income_quota":          referralIncome,
+				"reseller_gross_quota":           resellerGross,
+				"reseller_net_income_quota":      resellerNet,
+				"fallback_spread_platform_quota": fallbackSpreadPlatformQuota,
+				"updated_at":                     common.GetTimestamp(),
 			})
 		if result.Error != nil {
 			return result.Error
@@ -884,7 +961,11 @@ func listHubProviderEarnings(providerId, offset, limit int, sanitize bool) ([]Hu
 			items[index].ProviderIncomeQuota = items[index].ReferralIncomeQuota
 			items[index].BaseGroupRatio = 0
 			items[index].SupplyMultiplier = 0
+			items[index].SupplyGrossQuota = 0
+			items[index].SupplyBillingRatio = 0
 			items[index].BillingRatio = 0
+			items[index].FallbackSpreadPlatformQuota = 0
+			items[index].FallbackPriceProtection = false
 		}
 		if sanitize {
 			items[index].ReferralProviderId = 0

@@ -153,6 +153,54 @@ func TestApplyHubSupplyPricingFromRequestUsesCapturedSnapshot(t *testing.T) {
 	require.Equal(t, hub_provider_settlement_setting.PlatformFeeBasisPoints(), priced.PlatformFeeBasisPoints)
 }
 
+func TestApplyHubSupplyPricingFromRequestProtectsProviderFallbackPrice(t *testing.T) {
+	db := setupHubSupplyPricingTestDB(t)
+	provider := &model.HubProvider{
+		OwnerUserId: 98003,
+		Name:        "Fallback Protection Provider",
+		Slug:        "fallback-protection-provider",
+	}
+	require.NoError(t, db.Create(provider).Error)
+	group := &model.HubSupplyGroup{
+		ProviderId: provider.Id, NewAPIChannelId: 107, PriceMultiplier: 0.2,
+	}
+	require.NoError(t, db.Create(group).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyHubRoutingFallback, true)
+	common.SetContextKey(ctx, constant.ContextKeyOriginalModel, "gpt-5")
+	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModeProvider,
+		Selections: []model.HubTokenRoutingSelection{{
+			Family:           "openai",
+			ExactMultipliers: []float64{0.3, 0.4},
+		}},
+	})
+	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(group.NewAPIChannelId))
+
+	priced, err := ApplyHubSupplyPricingFromRequest(ctx, hosttypes.GroupRatioInfo{GroupRatio: 1}, group.NewAPIChannelId)
+	require.NoError(t, err)
+	require.Equal(t, 0.2, priced.SupplyMultiplier)
+	require.Equal(t, 0.2, priced.SupplyGroupRatio)
+	require.Equal(t, 0.3, priced.GroupRatio)
+	require.True(t, priced.FallbackPriceProtection)
+
+	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, model.HubSupplyPricingSnapshot{
+		ChannelID: group.NewAPIChannelId,
+		Found:     true,
+		Pricing:   model.CaptureHubSupplyPricingSnapshot(group.NewAPIChannelId).Pricing,
+	})
+	group.PriceMultiplier = 0.3
+	require.NoError(t, db.Save(group).Error)
+	require.NoError(t, model.RefreshHubSupplyPricingCache())
+	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(group.NewAPIChannelId))
+	priced, err = ApplyHubSupplyPricingFromRequest(ctx, hosttypes.GroupRatioInfo{GroupRatio: 1}, group.NewAPIChannelId)
+	require.NoError(t, err)
+	require.Equal(t, 0.3, priced.GroupRatio)
+	require.False(t, priced.FallbackPriceProtection)
+}
+
 func TestApplyHubSupplyPricingFromRequestFailsClosedOnIncompleteCapturedSnapshot(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

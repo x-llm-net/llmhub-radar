@@ -528,7 +528,7 @@ F2/F3 第一版采用最小接入，不新增健康存储、容量模型或公�
 
 兜底引流佣金沿用现有 `HubProviderEarning` 单请求账本，不新建第二套流水或结算任务。一个成功请求仍由同一个 `request_id` 控制准备、发布、结算、退款取消、恢复和幂等；账本增加入口渠道商、入口 Owner、佣金比例和佣金额度快照。历史记录的新字段默认为 0，仍按原账目解释。
 
-默认全局开关开启、比例为 100 basis points（1%）。只有请求最终处于 `platform_fallback`、入口 Provider 与实际服务 Provider 不同、入口 Provider 存在且有效时才保存佣金快照；最终落账前会再次检查入口 Provider 状态，期间被禁用或删除则把佣金归还实际服务 Provider。根域公共池、正常 preferred 命中、同 Provider 重试、禁用或不存在的入口 Provider 均保存为 0。路由阶段和入口 Provider 只从服务端请求上下文或已校验的 Token 路由策略读取，不信任客户端提交值。
+默认全局开关开启、比例为 2000 basis points（20%）。只有请求最终处于 `platform_fallback`、入口 Provider 与实际服务 Provider 不同、入口 Provider 存在且有效时才保存佣金快照；最终落账前会再次检查入口 Provider 状态，期间被禁用或删除则把佣金归还实际服务 Provider。根域公共池、正常 preferred 命中、同 Provider 重试、禁用或不存在的入口 Provider 均保存为 0。路由阶段和入口 Provider 只从服务端请求上下文或已校验的 Token 路由策略读取，不信任客户端提交值。
 
 最终结算公式为：
 
@@ -541,6 +541,18 @@ serving_provider_income = gross - platform_fee - referral_income
 因此 `gross = platform_fee + serving_provider_income + referral_income` 始终成立，佣金不会让实际服务渠道商收益变成负数。平台服务费和用户最终扣费均不改变。异步任务成功时按最终 gross 重新计算三方金额；失败或退款继续取消同一条 pending 收益，不留下独立佣金。佣金计入入口渠道商的累计收益、可提现收益和转余额额度，服务渠道商流水显示本次扣减；管理员可在渠道商结算设置中关闭或调整后续请求的比例。
 
 该功能不读取或写入候选、Affinity、健康、排名和恢复状态。四项渠道商结算全局设置通过一个接口写库，并以单次运行时快照发布，避免开关和比例在请求中途混合生效；旧的单项设置接口对这些键也复用同一发布路径。引流方的收益明细会隐藏实际服务 Channel、供给组、Token 和消费者等内部字段，并把用户扣费列明确标记为佣金计算基数；管理员明细保留原始服务方、渠道、消费者和倍率快照用于审计。重复准备同一 request_id 时保留首次返佣快照，入口渠道商是否仍有效只在最终结算时复核。自动化测试覆盖账目守恒、普通请求无佣金、开关关闭、同 Provider、入口失效、100% 平台服务费、异步最终金额重算、幂等以及佣金转余额。
+
+## 9.5 更低价平台兜底的价格保护
+
+当渠道商优先路由没有可用渠道，平台兜底选中了更低供给倍率时，用户仍按该密钥在原渠道商选择的最低倍率计费；实际服务渠道商只按自己的供给倍率结算。系统保存两套快照：用户实际扣费的 `BillingRatio`，以及服务渠道实际应得的 `SupplyBillingRatio`。差额仅在 `FallbackPriceProtection` 标记为真且服务倍率更低时产生：
+
+```text
+spread = user_charge - serving_supply_charge
+referral_income = round(spread * fallback_referral_basis_points / 10000)
+platform_spread_income = spread - referral_income
+```
+
+平台和服务渠道商在 `serving_supply_charge` 上继续沿用原有分账规则；差额不再收取旧的固定 1% 引流费，而是按上述可配置比例在入口渠道商与平台之间分配。普通 preferred、同倍率兜底、非渠道商路由和没有更低供给价的请求不启用保护。同步请求、异步任务最终结算、退款、恢复和同一 `request_id` 的重复处理均使用同一计费快照，避免重试或模型价格变化造成账目漂移。历史没有新快照字段的记录继续按原有整笔金额结算。
 
 ## 10. 动态倍率令牌实现记录
 

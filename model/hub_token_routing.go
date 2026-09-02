@@ -239,6 +239,29 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(family 
 	return false
 }
 
+// ProviderFallbackProtectionMultiplier returns the lowest multiplier the
+// user selected for a provider-scoped product. It is the maximum supply price
+// eligible for price-protected fallback billing.
+func (policy *HubTokenRoutingPolicy) ProviderFallbackProtectionMultiplier(family string) (float64, bool) {
+	if policy == nil || policy.Mode != HubTokenRoutingModeProvider {
+		return 0, false
+	}
+	family = strings.ToLower(strings.TrimSpace(family))
+	for _, selection := range policy.Selections {
+		if selection.Family != family || len(selection.ExactMultipliers) == 0 {
+			continue
+		}
+		lowest := selection.ExactMultipliers[0]
+		for _, multiplier := range selection.ExactMultipliers[1:] {
+			if multiplier < lowest {
+				lowest = multiplier
+			}
+		}
+		return lowest, true
+	}
+	return 0, false
+}
+
 func (policy *HubTokenRoutingPolicy) AllowsModel(modelName string) bool {
 	if policy == nil {
 		return false

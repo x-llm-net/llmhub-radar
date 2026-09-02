@@ -129,15 +129,59 @@ func ApplyHubSupplyPricingFromRequest(c *gin.Context, groupRatioInfo hosttypes.G
 			if !snapshot.Found && !snapshot.Configured {
 				return groupRatioInfo, nil
 			}
-			return applyHubSupplyPricingSnapshot(groupRatioInfo, channelID, snapshot.Pricing, snapshot.Found)
+			priced, err := applyHubSupplyPricingSnapshot(groupRatioInfo, channelID, snapshot.Pricing, snapshot.Found)
+			if err != nil {
+				return priced, err
+			}
+			return applyHubFallbackPriceProtection(c, priced), nil
 		}
 	}
 	return ApplyHubSupplyPricing(groupRatioInfo, channelID)
 }
 
+func applyHubFallbackPriceProtection(c *gin.Context, groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.GroupRatioInfo {
+	if c == nil || !groupRatioInfo.HasSupplyPricing || groupRatioInfo.SupplyGroupRatio <= 0 {
+		return groupRatioInfo
+	}
+	if !common.GetContextKeyBool(c, constant.ContextKeyHubRoutingFallback) {
+		return groupRatioInfo
+	}
+	policy := serviceHubTokenRoutingPolicy(c)
+	if policy == nil {
+		return groupRatioInfo
+	}
+	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	if modelName == "" {
+		modelName = c.GetString("model")
+	}
+	protectedMultiplier, ok := policy.ProviderFallbackProtectionMultiplier(model.ClassifyHubPublicModelFamily(modelName))
+	if !ok || groupRatioInfo.SupplyMultiplier >= protectedMultiplier-0.0005 {
+		return groupRatioInfo
+	}
+	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * protectedMultiplier
+	groupRatioInfo.FallbackPriceProtection = true
+	return groupRatioInfo
+}
+
+func serviceHubTokenRoutingPolicy(c *gin.Context) *model.HubTokenRoutingPolicy {
+	value, ok := common.GetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy)
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case *model.HubTokenRoutingPolicy:
+		return typed
+	case model.HubTokenRoutingPolicy:
+		return &typed
+	default:
+		return nil
+	}
+}
+
 func resetHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.GroupRatioInfo {
 	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
 	groupRatioInfo.SupplyMultiplier = 1
+	groupRatioInfo.SupplyGroupRatio = groupRatioInfo.GroupRatio
 	groupRatioInfo.HasSupplyPricing = false
 	groupRatioInfo.SupplyGroupId = 0
 	groupRatioInfo.SupplyProviderId = 0
@@ -147,6 +191,7 @@ func resetHubSupplyPricing(groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.Gr
 	groupRatioInfo.HasProviderServiceFeeBasisPoints = false
 	groupRatioInfo.PlatformFeeBasisPoints = 0
 	groupRatioInfo.HasPlatformFeeBasisPoints = false
+	groupRatioInfo.FallbackPriceProtection = false
 	return groupRatioInfo
 }
 
@@ -173,6 +218,7 @@ func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, chan
 	}
 
 	groupRatioInfo.SupplyMultiplier = pricing.PriceMultiplier
+	groupRatioInfo.SupplyGroupRatio = groupRatioInfo.BaseGroupRatio * pricing.PriceMultiplier
 	groupRatioInfo.HasSupplyPricing = true
 	groupRatioInfo.SupplyGroupId = pricing.SupplyGroupId
 	groupRatioInfo.SupplyProviderId = pricing.SupplyProviderId
@@ -202,7 +248,7 @@ func applyHubSupplyPricingSnapshot(groupRatioInfo hosttypes.GroupRatioInfo, chan
 		groupRatioInfo.PlatformFeeBasisPoints = legacyFeeBasisPoints
 	}
 	groupRatioInfo.HasPlatformFeeBasisPoints = true
-	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * pricing.PriceMultiplier
+	groupRatioInfo.GroupRatio = groupRatioInfo.SupplyGroupRatio
 	return groupRatioInfo, nil
 }
 
