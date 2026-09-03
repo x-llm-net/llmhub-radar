@@ -58,26 +58,37 @@ export function Providers() {
           </Button>
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <Tabs defaultValue='providers' className='min-h-0 flex-1 gap-3'>
-            <TabsList>
-              <TabsTrigger value='providers'>{t('Providers')}</TabsTrigger>
-              <TabsTrigger value='withdrawals'>
-                {t('Withdrawal requests')}
-              </TabsTrigger>
-              <TabsTrigger value='tenant-withdrawals'>
-                {t('Tenant withdrawals')}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value='providers' className='min-h-0'>
-              <ProvidersTable />
-            </TabsContent>
-            <TabsContent value='withdrawals' className='min-h-0'>
-              <ProviderWithdrawals />
-            </TabsContent>
-            <TabsContent value='tenant-withdrawals' className='min-h-0'>
-              <TenantWithdrawals canReview={isPlatformAdmin} />
-            </TabsContent>
-          </Tabs>
+          <div className='flex h-full min-h-0 flex-col'>
+            <Tabs defaultValue='providers' className='min-h-0 flex-1 gap-3'>
+              <TabsList>
+                <TabsTrigger value='providers'>{t('Providers')}</TabsTrigger>
+                <TabsTrigger value='withdrawals'>
+                  {t('Withdrawal requests')}
+                </TabsTrigger>
+                <TabsTrigger value='tenant-withdrawals'>
+                  {t('Tenant withdrawals')}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent
+                value='providers'
+                className='flex min-h-0 flex-1 flex-col'
+              >
+                <ProvidersTable />
+              </TabsContent>
+              <TabsContent
+                value='withdrawals'
+                className='flex min-h-0 flex-1 flex-col'
+              >
+                <ProviderWithdrawals />
+              </TabsContent>
+              <TabsContent
+                value='tenant-withdrawals'
+                className='flex min-h-0 flex-1 flex-col'
+              >
+                <TenantWithdrawals canReview={isPlatformAdmin} />
+              </TabsContent>
+            </Tabs>
+          </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
       <ProviderCreateDialog

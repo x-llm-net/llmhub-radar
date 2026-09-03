@@ -75,6 +75,7 @@ function ChannelCardComponent({
   const typeCell = renderCell('type')
   const ownershipCell = renderCell('ownership')
   const tenantCell = renderCell('tenant')
+  const multiplierCell = renderCell('hub_supply_multiplier')
   const nameCell = renderCell('name')
   const statusCell = renderCell('status')
   const actionsCell = renderCell('actions')
@@ -124,6 +125,13 @@ function ChannelCardComponent({
           <div className='min-w-0 overflow-hidden'>
             <div className={cn('mb-1', labelClass)}>{t('Reseller')}</div>
             {tenantCell}
+          </div>
+        </div>
+
+        <div className='min-w-0'>
+          <div className={cn('mb-1', labelClass)}>{t('Multiplier')}</div>
+          <div className='text-sm'>
+            {multiplierCell ?? <span className='text-muted-foreground'>-</span>}
           </div>
         </div>
 

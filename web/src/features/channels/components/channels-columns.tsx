@@ -819,6 +819,24 @@ export function useChannelsColumns(
         meta: { mobileOrder: 21 },
       },
 
+      // Keep the provider's published multiplier visible independently from
+      // the group label, including channels in the default group.
+      {
+        id: 'hub_supply_multiplier',
+        accessorFn: (channel) => channel.hub_supply_multiplier,
+        header: t('Multiplier'),
+        cell: ({ row }) => (
+          <span className='font-medium'>
+            {row.original.hub_supply_multiplier != null
+              ? `× ${row.original.hub_supply_multiplier}`
+              : '-'}
+          </span>
+        ),
+        size: 120,
+        meta: { mobileOrder: 22 },
+        enableSorting: false,
+      },
+
       // Type column
       {
         accessorKey: 'type',

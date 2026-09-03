@@ -51,14 +51,16 @@ export function useSidebarView(): ResolvedSidebarView {
   const userRole = useAuthStore((s) => s.auth.user?.role)
   const hubAdminAccess = useHubAdminAccess()
   const rootSidebarData = useSidebarData()
-  const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
+  const canTenantAdminManage =
+    hubAdminAccess.data?.can_manage_providers === true ||
+    hubAdminAccess.data?.can_view_channels === true
+  const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups, {
+    ignoreUserAdminConfig: canTenantAdminManage,
+  })
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
-    const canTenantAdminManage =
-      hubAdminAccess.data?.can_manage_providers === true ||
-      hubAdminAccess.data?.can_view_channels === true
     return configFilteredRoot
       .filter((group) =>
         group.id === 'admin' ? isAdmin || canTenantAdminManage : true
@@ -81,7 +83,7 @@ export function useSidebarView(): ResolvedSidebarView {
         })
         return items.length === group.items.length ? group : { ...group, items }
       })
-  }, [configFilteredRoot, hubAdminAccess.data, userRole])
+  }, [configFilteredRoot, hubAdminAccess.data, userRole, canTenantAdminManage])
 
   const view = resolveSidebarView(pathname)
 

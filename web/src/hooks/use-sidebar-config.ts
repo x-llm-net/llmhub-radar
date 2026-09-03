@@ -273,7 +273,10 @@ function filterNavItems(
  *      stale historical value cannot lock them out of entries they have no
  *      UI to restore.
  */
-export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
+export function useSidebarConfig(
+  navGroups: NavGroup[],
+  options: { ignoreUserAdminConfig?: boolean } = {}
+): NavGroup[] {
   const { status } = useStatus()
   const { auth } = useAuthStore()
 
@@ -294,8 +297,21 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
     if (auth?.user?.permissions?.sidebar_settings === false) {
       return null
     }
-    return parseUserSidebarConfig(auth?.user?.sidebar_modules)
-  }, [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules])
+    const parsed = parseUserSidebarConfig(auth?.user?.sidebar_modules)
+    if (!parsed || !options.ignoreUserAdminConfig) {
+      return parsed
+    }
+
+    // Tenant administrators are granted the Hub admin allowlist by the
+    // tenant membership API. An old user-level `admin: false` setting must
+    // not hide that allowlisted navigation before the route can be used.
+    const { admin: _admin, ...withoutAdminOverride } = parsed
+    return withoutAdminOverride
+  }, [
+    auth?.user?.permissions?.sidebar_settings,
+    auth?.user?.sidebar_modules,
+    options.ignoreUserAdminConfig,
+  ])
 
   const filteredNavGroups = useMemo(
     () =>
