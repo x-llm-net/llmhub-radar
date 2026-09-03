@@ -13,6 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestQuotaNotificationContentUsesPlainTextForWebhook(t *testing.T) {
+	content, values := quotaNotificationContent("webhook", "额度告警", "CNY 10", "https://llm-hub.store/wallet")
+	require.NotContains(t, content, "<br")
+	require.NotContains(t, content, "<a ")
+	require.Equal(t, []interface{}{"额度告警", "CNY 10", "https://llm-hub.store/wallet"}, values)
+
+	content, values = quotaNotificationContent("email", "额度告警", "CNY 10", "https://llm-hub.store/wallet")
+	require.Contains(t, content, "<a href=")
+	require.Len(t, values, 4)
+}
+
 func TestSendWebhookNotifyWithProviderFormatsSupportedBots(t *testing.T) {
 	fetchSetting := system_setting.GetFetchSetting()
 	originalFetchSetting := *fetchSetting

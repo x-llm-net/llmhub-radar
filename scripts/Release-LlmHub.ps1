@@ -301,6 +301,11 @@ function Test-PublicStatus {
     if (-not $status.success) {
       throw "Public /api/status did not report success for '$baseUrl'."
     }
+    $configuredServerAddress = ([string]$status.data.server_address).TrimEnd('/')
+    $expectedServerAddress = ([string]$target.publicBaseUrl).TrimEnd('/')
+    if ($configuredServerAddress -ne $expectedServerAddress) {
+      throw "Public server_address mismatch for '$baseUrl'. Expected '$expectedServerAddress', got '$configuredServerAddress'. Refusing to release."
+    }
     if ($ExpectedVersion -and [string]$status.data.version -ne $ExpectedVersion) {
       throw "Public version mismatch for '$baseUrl'. Expected '$ExpectedVersion', got '$($status.data.version)'."
     }

@@ -25,7 +25,6 @@ import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -34,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
@@ -49,7 +49,12 @@ import {
   WEBHOOK_PROVIDERS,
 } from '../../constants'
 import { parseUserSettings } from '../../lib'
-import type { UserProfile, UserSettings, NotifyType, WebhookProvider } from '../../types'
+import type {
+  UserProfile,
+  UserSettings,
+  NotifyType,
+  WebhookProvider,
+} from '../../types'
 
 const NOTIFICATION_ICONS: Record<NotifyType, typeof Mail> = {
   email: Mail,
@@ -237,14 +242,18 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
             if (value !== '') {
               const amount = Number(value)
               if (Number.isFinite(amount)) {
-                updateField('quota_warning_threshold', parseQuotaFromDollars(amount))
+                updateField(
+                  'quota_warning_threshold',
+                  parseQuotaFromDollars(amount)
+                )
               }
             }
           }}
           placeholder={t('Enter threshold')}
         />
         <p className='text-muted-foreground text-xs'>
-          {t('Get notified when balance falls below this value')} ({currencyLabel})
+          {t('Get notified when balance falls below this value')} (
+          {currencyLabel})
         </p>
       </div>
 
@@ -275,7 +284,13 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
               }
             >
               <SelectTrigger id='webhookProvider' className='h-9 w-full'>
-                <SelectValue />
+                <SelectValue>
+                  {t(
+                    WEBHOOK_PROVIDERS.find(
+                      (provider) => provider.value === settings.webhook_provider
+                    )?.label ?? 'Generic Webhook'
+                  )}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>

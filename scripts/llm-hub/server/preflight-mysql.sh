@@ -74,6 +74,7 @@ done
 
 docker exec "$app_container" grep -q '"success":true' /tmp/status.json
 docker exec "$app_container" grep -q "\"version\":\"$release_tag\"" /tmp/status.json
+docker exec "$app_container" grep -q '"server_address":"https://llm-hub.store"' /tmp/status.json
 docker logs --tail 50 "$app_container"
 
 # A failed release must be able to start the previous image after migrations.

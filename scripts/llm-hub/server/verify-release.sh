@@ -13,4 +13,5 @@ test "$(docker exec llm-hub-new-api /new-api --version)" = "$release_tag"
 docker exec llm-hub-new-api wget -q -O /tmp/llm-hub-status.json http://127.0.0.1:3000/api/status
 docker exec llm-hub-new-api grep -q '"success":true' /tmp/llm-hub-status.json
 docker exec llm-hub-new-api grep -q "\"version\":\"$release_tag\"" /tmp/llm-hub-status.json
+docker exec llm-hub-new-api grep -q '"server_address":"https://llm-hub.store"' /tmp/llm-hub-status.json
 docker inspect llm-hub-new-api --format 'VERIFY_REMOTE_OK image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}} status={{.State.Status}}'
