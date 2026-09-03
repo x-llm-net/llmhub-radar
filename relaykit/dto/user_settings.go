@@ -5,6 +5,7 @@ type UserSetting struct {
 	QuotaWarningThreshold            float64 `json:"quota_warning_threshold,omitempty"`              // QuotaWarningThreshold 额度预警阈值
 	WebhookUrl                       string  `json:"webhook_url,omitempty"`                          // WebhookUrl webhook地址
 	WebhookSecret                    string  `json:"webhook_secret,omitempty"`                       // WebhookSecret webhook密钥
+	WebhookProvider                  string  `json:"webhook_provider,omitempty"`                     // WebhookProvider webhook类型
 	NotificationEmail                string  `json:"notification_email,omitempty"`                   // NotificationEmail 通知邮箱地址
 	BarkUrl                          string  `json:"bark_url,omitempty"`                             // BarkUrl Bark推送URL
 	GotifyUrl                        string  `json:"gotify_url,omitempty"`                           // GotifyUrl Gotify服务器地址
@@ -23,4 +24,18 @@ var (
 	NotifyTypeWebhook = "webhook" // Webhook
 	NotifyTypeBark    = "bark"    // Bark 推送
 	NotifyTypeGotify  = "gotify"  // Gotify 推送
+
+	WebhookProviderGeneric  = "generic"
+	WebhookProviderWeCom    = "wecom"
+	WebhookProviderDingTalk = "dingtalk"
+	WebhookProviderFeishu   = "feishu"
 )
+
+func IsValidWebhookProvider(provider string) bool {
+	switch provider {
+	case "", WebhookProviderGeneric, WebhookProviderWeCom, WebhookProviderDingTalk, WebhookProviderFeishu:
+		return true
+	default:
+		return false
+	}
+}

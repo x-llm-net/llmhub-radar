@@ -34,3 +34,10 @@ export const NOTIFICATION_METHODS = [
   { value: 'bark' as const, label: 'Bark' },
   { value: 'gotify' as const, label: 'Gotify' },
 ] as const
+
+export const WEBHOOK_PROVIDERS = [
+  { value: 'generic' as const, label: 'Generic Webhook' },
+  { value: 'wecom' as const, label: 'Enterprise WeChat Bot' },
+  { value: 'dingtalk' as const, label: 'DingTalk Bot' },
+  { value: 'feishu' as const, label: 'Feishu Bot' },
+] as const

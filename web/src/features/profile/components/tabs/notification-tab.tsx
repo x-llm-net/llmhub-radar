@@ -26,16 +26,30 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
+import {
+  useSystemConfigStore,
+  type CurrencyConfig,
+} from '@/stores/system-config-store'
 
 import { updateUserSettings } from '../../api'
 import {
   DEFAULT_QUOTA_WARNING_THRESHOLD,
   NOTIFICATION_METHODS,
+  WEBHOOK_PROVIDERS,
 } from '../../constants'
 import { parseUserSettings } from '../../lib'
-import type { UserProfile, UserSettings, NotifyType } from '../../types'
+import type { UserProfile, UserSettings, NotifyType, WebhookProvider } from '../../types'
 
 const NOTIFICATION_ICONS: Record<NotifyType, typeof Mail> = {
   email: Mail,
@@ -55,6 +69,30 @@ function normalizeNotifyType(value: unknown): NotifyType {
     : 'email'
 }
 
+function normalizeWebhookProvider(value: unknown): WebhookProvider {
+  return WEBHOOK_PROVIDERS.some((provider) => provider.value === value)
+    ? (value as WebhookProvider)
+    : 'generic'
+}
+
+function formatThresholdInput(quota: number): string {
+  const amount = quotaUnitsToDollars(quota)
+  return Number.isFinite(amount) ? String(Number(amount.toFixed(6))) : ''
+}
+
+function getQuotaCurrencyLabel(config: CurrencyConfig): string {
+  switch (config.quotaDisplayType) {
+    case 'CNY':
+      return 'CNY'
+    case 'CUSTOM':
+      return config.customCurrencySymbol || 'Custom'
+    case 'TOKENS':
+      return 'Tokens'
+    default:
+      return 'USD'
+  }
+}
+
 // ============================================================================
 // Settings Tab Component
 // ============================================================================
@@ -66,6 +104,8 @@ interface NotificationTabProps {
 
 export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   const { t } = useTranslation()
+  const currencyConfig = useSystemConfigStore((state) => state.config.currency)
+  const currencyLabel = getQuotaCurrencyLabel(currencyConfig)
   const isAdmin = (profile?.role ?? 0) >= ROLE.ADMIN
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<UserSettings>({
@@ -74,6 +114,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
     notification_email: '',
     webhook_url: '',
     webhook_secret: '',
+    webhook_provider: 'generic',
     bark_url: '',
     gotify_url: '',
     gotify_token: '',
@@ -82,6 +123,9 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
     record_ip_log: false,
     upstream_model_update_notify_enabled: false,
   })
+  const [thresholdInput, setThresholdInput] = useState(
+    formatThresholdInput(DEFAULT_QUOTA_WARNING_THRESHOLD)
+  )
 
   // Update form field helper
   const updateField = useCallback(
@@ -101,6 +145,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
         notification_email: parsed.notification_email ?? '',
         webhook_url: parsed.webhook_url ?? '',
         webhook_secret: parsed.webhook_secret ?? '',
+        webhook_provider: normalizeWebhookProvider(parsed.webhook_provider),
         bark_url: parsed.bark_url ?? '',
         gotify_url: parsed.gotify_url ?? '',
         gotify_token: parsed.gotify_token ?? '',
@@ -111,6 +156,11 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
         upstream_model_update_notify_enabled:
           parsed.upstream_model_update_notify_enabled || false,
       })
+      setThresholdInput(
+        formatThresholdInput(
+          parsed.quota_warning_threshold ?? DEFAULT_QUOTA_WARNING_THRESHOLD
+        )
+      )
     }
   }, [profile])
 
@@ -125,7 +175,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
       } else {
         toast.error(response.message || t('Failed to update settings'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to update settings'))
     } finally {
       setLoading(false)
@@ -143,8 +193,9 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
           value={[notifyType]}
           onValueChange={(value) => {
             const nextValue = value.find((item) => item !== notifyType)
-            if (nextValue)
+            if (nextValue) {
               updateField('notify_type', normalizeNotifyType(nextValue))
+            }
           }}
           aria-label={t('Notification Method')}
           variant='outline'
@@ -172,19 +223,28 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
 
       {/* Warning Threshold */}
       <div className='space-y-1.5'>
-        <Label htmlFor='threshold'>{t('Quota Warning Threshold')}</Label>
+        <Label htmlFor='threshold'>
+          {t('Quota Warning Threshold')} ({currencyLabel})
+        </Label>
         <Input
           id='threshold'
           type='number'
           className='h-9'
-          value={settings.quota_warning_threshold}
-          onChange={(e) =>
-            updateField('quota_warning_threshold', Number(e.target.value))
-          }
+          value={thresholdInput}
+          onChange={(e) => {
+            const value = e.target.value
+            setThresholdInput(value)
+            if (value !== '') {
+              const amount = Number(value)
+              if (Number.isFinite(amount)) {
+                updateField('quota_warning_threshold', parseQuotaFromDollars(amount))
+              }
+            }
+          }}
           placeholder={t('Enter threshold')}
         />
         <p className='text-muted-foreground text-xs'>
-          {t('Get notified when balance falls below this value')}
+          {t('Get notified when balance falls below this value')} ({currencyLabel})
         </p>
       </div>
 
@@ -206,6 +266,28 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
       {/* Webhook Settings */}
       {notifyType === 'webhook' && (
         <>
+          <div className='space-y-1.5'>
+            <Label htmlFor='webhookProvider'>{t('Webhook Provider')}</Label>
+            <Select
+              value={settings.webhook_provider ?? 'generic'}
+              onValueChange={(value) =>
+                updateField('webhook_provider', normalizeWebhookProvider(value))
+              }
+            >
+              <SelectTrigger id='webhookProvider' className='h-9 w-full'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {WEBHOOK_PROVIDERS.map((provider) => (
+                    <SelectItem key={provider.value} value={provider.value}>
+                      {t(provider.label)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
           <div className='space-y-1.5'>
             <Label htmlFor='webhookUrl'>{t('Webhook URL')}</Label>
             <Input

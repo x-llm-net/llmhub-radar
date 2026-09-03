@@ -84,7 +84,7 @@ func NotifyUser(userId int, userEmail string, userSetting dto.UserSetting, data 
 
 		// 获取 webhook secret
 		webhookSecret := userSetting.WebhookSecret
-		return SendWebhookNotify(webhookURLStr, webhookSecret, data)
+		return SendWebhookNotifyWithProvider(webhookURLStr, webhookSecret, userSetting.WebhookProvider, data)
 	case dto.NotifyTypeBark:
 		barkURL := userSetting.BarkUrl
 		if barkURL == "" {

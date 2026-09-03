@@ -87,6 +87,7 @@ export interface UserProfile {
  * Notification type
  */
 export type NotifyType = 'email' | 'webhook' | 'bark' | 'gotify'
+export type WebhookProvider = 'generic' | 'wecom' | 'dingtalk' | 'feishu'
 
 /**
  * Parsed user settings
@@ -100,6 +101,8 @@ export interface UserSettings {
   webhook_url?: string
   /** Webhook secret */
   webhook_secret?: string
+  /** Webhook provider */
+  webhook_provider?: WebhookProvider
   /** Notification email */
   notification_email?: string
   /** Bark URL */
@@ -137,6 +140,7 @@ export interface UpdateUserSettingsRequest {
   quota_warning_threshold?: number
   webhook_url?: string
   webhook_secret?: string
+  webhook_provider?: WebhookProvider
   notification_email?: string
   bark_url?: string
   gotify_url?: string

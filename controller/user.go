@@ -1445,6 +1445,7 @@ type UpdateUserSettingRequest struct {
 	QuotaWarningThreshold            float64 `json:"quota_warning_threshold"`
 	WebhookUrl                       string  `json:"webhook_url,omitempty"`
 	WebhookSecret                    string  `json:"webhook_secret,omitempty"`
+	WebhookProvider                  string  `json:"webhook_provider,omitempty"`
 	NotificationEmail                string  `json:"notification_email,omitempty"`
 	BarkUrl                          string  `json:"bark_url,omitempty"`
 	GotifyUrl                        string  `json:"gotify_url,omitempty"`
@@ -1476,6 +1477,10 @@ func UpdateUserSetting(c *gin.Context) {
 
 	// 如果是webhook类型,验证webhook地址
 	if req.QuotaWarningType == dto.NotifyTypeWebhook {
+		if !dto.IsValidWebhookProvider(req.WebhookProvider) {
+			common.ApiErrorI18n(c, i18n.MsgSettingInvalidType)
+			return
+		}
 		if req.WebhookUrl == "" {
 			common.ApiErrorI18n(c, i18n.MsgSettingWebhookEmpty)
 			return
@@ -1560,6 +1565,10 @@ func UpdateUserSetting(c *gin.Context) {
 	// 如果是webhook类型,添加webhook相关设置
 	if req.QuotaWarningType == dto.NotifyTypeWebhook {
 		settings.WebhookUrl = req.WebhookUrl
+		settings.WebhookProvider = req.WebhookProvider
+		if settings.WebhookProvider == "" {
+			settings.WebhookProvider = dto.WebhookProviderGeneric
+		}
 		if req.WebhookSecret != "" {
 			settings.WebhookSecret = req.WebhookSecret
 		}
