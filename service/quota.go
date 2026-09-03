@@ -502,11 +502,23 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			threshold = int(userSetting.QuotaWarningThreshold)
 		}
 
-		//noMoreQuota := userCache.Quota-(quota+preConsumedQuota) <= 0
-		quotaTooLow := false
 		consumeQuota := quota + preConsumedQuota
-		if relayInfo.UserQuota-consumeQuota < threshold {
-			quotaTooLow = true
+		postBalance := relayInfo.UserQuota - consumeQuota
+		quotaTooLow := false
+		if postBalance < threshold {
+			var err error
+			quotaTooLow, err = model.ClaimWalletQuotaWarning(
+				relayInfo.UserId,
+				postBalance,
+				threshold,
+			)
+			if err != nil {
+				common.SysError(fmt.Sprintf("failed to update quota warning state for user %d: %s", relayInfo.UserId, err.Error()))
+				return
+			}
+			if !quotaTooLow {
+				return
+			}
 		}
 		if quotaTooLow {
 			prompt := "您的额度即将用尽"

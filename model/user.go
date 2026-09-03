@@ -1327,9 +1327,18 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	})
 	if !db && common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
+		if err := ResetWalletQuotaWarning(id); err != nil {
+			common.SysLog("failed to reset quota warning state: " + err.Error())
+		}
 		return nil
 	}
-	return increaseUserQuota(id, quota)
+	if err := increaseUserQuota(id, quota); err != nil {
+		return err
+	}
+	if err := ResetWalletQuotaWarning(id); err != nil {
+		common.SysLog("failed to reset quota warning state: " + err.Error())
+	}
+	return nil
 }
 
 func increaseUserQuota(id int, quota int) (err error) {

@@ -262,6 +262,7 @@ func migrateDB() error {
 		&Channel{},
 		&Token{},
 		&User{},
+		&QuotaWarningState{},
 		&Tenant{},
 		&TenantDomain{},
 		&TenantMember{},
