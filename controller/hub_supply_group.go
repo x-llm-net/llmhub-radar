@@ -543,7 +543,11 @@ func NotifyHubProviderChannelMissingModelPrices(c *gin.Context) {
 		common.ApiSuccess(c, gin.H{"notified_count": 0, "model_names": []string{}})
 		return
 	}
-	notified, suppressed := service.NotifyHubModelPricesMissing(missingModels, channel.Id, channel.Name)
+	notified, suppressed, err := service.NotifyHubModelPricesMissing(missingModels, channel.Id, channel.Name)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if !notified && !suppressed {
 		common.ApiError(c, fmt.Errorf("administrator notifications are disabled"))
 		return

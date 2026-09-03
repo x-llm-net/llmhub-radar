@@ -23,7 +23,6 @@ import (
 	"html"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -40,13 +39,6 @@ const (
 )
 
 const hubModelPriceNotificationSuppressWindowSeconds = int64(time.Hour / time.Second)
-
-var hubModelPriceNotificationState = struct {
-	sync.Mutex
-	lastSent map[string]int64
-}{
-	lastSent: make(map[string]int64),
-}
 
 func NotifyHubProviderApplication(provider *model.HubProvider) {
 	config := hub_provider_notification_setting.Get()
@@ -79,8 +71,8 @@ func NotifyHubProviderReview(providerID int, status string, reviewRemark string)
 
 // NotifyHubModelPriceMissing alerts the same administrator targets used by
 // provider application notifications. Missing prices can be encountered by
-// probes and user requests, so identical model/channel pairs are suppressed
-// for one hour to avoid turning a configuration issue into a notification storm.
+// probes and user requests, so each model is suppressed for one hour to avoid
+// turning a configuration issue into a notification storm.
 func NotifyHubModelPriceMissing(modelName string, channelID int, channelName string) {
 	config := hub_provider_notification_setting.Get()
 	if !config.Enabled {
@@ -90,17 +82,19 @@ func NotifyHubModelPriceMissing(modelName string, channelID int, channelName str
 	if modelName == "" {
 		return
 	}
-	channelLabel := hubModelPriceChannelLabel(channelID, channelName)
-	key := fmt.Sprintf("%d:%s", channelID, strings.ToLower(modelName))
-	now := common.GetTimestamp()
-	hubModelPriceNotificationState.Lock()
-	lastSent := hubModelPriceNotificationState.lastSent[key]
-	if lastSent > 0 && now-lastSent < hubModelPriceNotificationSuppressWindowSeconds {
-		hubModelPriceNotificationState.Unlock()
+	notified, err := model.ClaimHubModelPriceNotification(
+		modelName,
+		common.GetTimestamp(),
+		hubModelPriceNotificationSuppressWindowSeconds,
+	)
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to claim missing model price notification for %s: %v", modelName, err))
 		return
 	}
-	hubModelPriceNotificationState.lastSent[key] = now
-	hubModelPriceNotificationState.Unlock()
+	if !notified {
+		return
+	}
+	channelLabel := hubModelPriceChannelLabel(channelID, channelName)
 
 	notifyHubProviderEvent(
 		config,
@@ -111,12 +105,12 @@ func NotifyHubModelPriceMissing(modelName string, channelID int, channelName str
 	)
 }
 
-// NotifyHubModelPricesMissing sends one administrator notification for a
-// batch of models reported by the provider model-management dialog.
-func NotifyHubModelPricesMissing(modelNames []string, channelID int, channelName string) (bool, bool) {
+// NotifyHubModelPricesMissing sends one administrator notification for the
+// newly reported models from the provider model-management dialog.
+func NotifyHubModelPricesMissing(modelNames []string, channelID int, channelName string) (bool, bool, error) {
 	config := hub_provider_notification_setting.Get()
 	if !config.Enabled {
-		return false, false
+		return false, false, nil
 	}
 	names := make([]string, 0, len(modelNames))
 	seen := make(map[string]struct{}, len(modelNames))
@@ -133,36 +127,40 @@ func NotifyHubModelPricesMissing(modelNames []string, channelID int, channelName
 		names = append(names, modelName)
 	}
 	if len(names) == 0 {
-		return false, false
+		return false, false, nil
 	}
 	sort.SliceStable(names, func(i, j int) bool {
 		return strings.ToLower(names[i]) < strings.ToLower(names[j])
 	})
 
+	newNames := make([]string, 0, len(names))
+	for _, modelName := range names {
+		notified, err := model.ClaimHubModelPriceNotification(
+			modelName,
+			common.GetTimestamp(),
+			hubModelPriceNotificationSuppressWindowSeconds,
+		)
+		if err != nil {
+			return false, false, fmt.Errorf("failed to claim missing model price notification for %s: %w", modelName, err)
+		}
+		if notified {
+			newNames = append(newNames, modelName)
+		}
+	}
+	if len(newNames) == 0 {
+		return false, true, nil
+	}
+
 	channelLabel := hubModelPriceChannelLabel(channelID, channelName)
-	keyNames := make([]string, len(names))
-	for i, modelName := range names {
-		keyNames[i] = strings.ToLower(modelName)
-	}
-	key := fmt.Sprintf("batch:%d:%s", channelID, strings.Join(keyNames, "\x00"))
-	now := common.GetTimestamp()
-	hubModelPriceNotificationState.Lock()
-	lastSent := hubModelPriceNotificationState.lastSent[key]
-	if lastSent > 0 && now-lastSent < hubModelPriceNotificationSuppressWindowSeconds {
-		hubModelPriceNotificationState.Unlock()
-		return false, true
-	}
-	hubModelPriceNotificationState.lastSent[key] = now
-	hubModelPriceNotificationState.Unlock()
 
 	notifyHubProviderEvent(
 		config,
 		HubModelPriceNotificationType,
 		"模型价格未配置",
-		fmt.Sprintf("渠道：%s\n缺少价格的模型（%d 个）：\n- %s\n原因：平台基础价格尚未配置，请在模型定价页面补充。", channelLabel, len(names), strings.Join(names, "\n- ")),
+		fmt.Sprintf("渠道：%s\n缺少价格的模型（%d 个）：\n- %s\n原因：平台基础价格尚未配置，请在模型定价页面补充。", channelLabel, len(newNames), strings.Join(newNames, "\n- ")),
 		modelPricingNotificationLink(),
 	)
-	return true, false
+	return true, false, nil
 }
 
 func hubModelPriceChannelLabel(channelID int, channelName string) string {
