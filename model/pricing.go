@@ -36,6 +36,9 @@ type Pricing struct {
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	// HubRouting marks a model that is publicly available through the hub
+	// router. It is intentionally kept out of the API response.
+	HubRouting bool `json:"-"`
 }
 
 type PricingVendor struct {
@@ -259,9 +262,13 @@ func updatePricing() {
 	}
 
 	modelGroupsMap := make(map[string]*types.Set[string])
+	modelHubRoutingMap := make(map[string]bool)
 
 	for _, ability := range enableAbilities {
 		if IsHubTokenRoutingAbilityGroup(ability.Group) {
+			// This is an implementation detail, but the model itself remains
+			// publicly available through the hub router.
+			modelHubRoutingMap[ability.Model] = true
 			continue
 		}
 		groups, ok := modelGroupsMap[ability.Model]
@@ -358,11 +365,21 @@ func updatePricing() {
 	}
 
 	pricingMap = make([]Pricing, 0)
+	modelsToPrice := make(map[string]*types.Set[string], len(modelGroupsMap)+len(modelHubRoutingMap))
 	for model, groups := range modelGroupsMap {
+		modelsToPrice[model] = groups
+	}
+	for model := range modelHubRoutingMap {
+		if _, exists := modelsToPrice[model]; !exists {
+			modelsToPrice[model] = types.NewSet[string]()
+		}
+	}
+	for model, groups := range modelsToPrice {
 		pricing := Pricing{
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+			HubRouting:             modelHubRoutingMap[model],
 		}
 
 		// 补充模型元数据（描述、标签、供应商、状态）

@@ -19,6 +19,13 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 
 	filtered := make([]model.Pricing, 0, len(pricing))
 	for _, item := range pricing {
+		// hub-routing is an internal group name. A model that is available
+		// through the public hub router must remain visible even when it has
+		// no legacy user group attached to it.
+		if item.HubRouting {
+			filtered = append(filtered, item)
+			continue
+		}
 		if common.StringsContains(item.EnableGroup, "all") {
 			filtered = append(filtered, item)
 			continue
