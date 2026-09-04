@@ -29,6 +29,7 @@ const RESERVED_PROVIDER_SLUGS = new Set([
   'dashboard',
   'docs',
   'edge',
+  'guide',
   'mail',
   'oauth',
   'provider',
@@ -43,7 +44,9 @@ export function getProviderRootDomain(): string {
   const rawConfigured = import.meta.env?.VITE_PROVIDER_ROOT_DOMAIN
   const configured =
     typeof rawConfigured === 'string' ? rawConfigured.trim() : ''
-  const normalized = normalizeHostname(configured || DEFAULT_PROVIDER_ROOT_DOMAIN)
+  const normalized = normalizeHostname(
+    configured || DEFAULT_PROVIDER_ROOT_DOMAIN
+  )
   return getTenantRootDomainFromHostname(normalized) === normalized
     ? normalized
     : DEFAULT_PROVIDER_ROOT_DOMAIN

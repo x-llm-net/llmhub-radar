@@ -294,7 +294,7 @@ effective_weight = static_weight * A * L
 
 以下内容记录为后续阶段，不进入当前 M1/M2：
 
-- `CapacityScore`、Channel/渠道商 inflight 和并发租约。
+- `CapacityScore`、Channel inflight 和并发租约。渠道商总并发、用户并发和模型并发不在当前待办范围；如后续实现，先按 `routing-and-fallback-design.md` 中 2026-09-04 的最新讨论结论执行。
 - `healthy -> degraded -> open -> half-open` 新状态机。
 - 用户请求触发的半开恢复；恢复优先复用现有供给探测任务。
 - fairness factor、provider base weight 和 5% exploration。

@@ -1,0 +1,8 @@
+interface:
+  display_name: "X-LLM Image Gen"
+  short_description: "Use the active X-LLM provider to generate or edit images"
+  brand_color: "#146C43"
+  default_prompt: "Use $xllm-imagegen to generate an image through my active X-LLM provider."
+
+policy:
+  allow_implicit_invocation: true

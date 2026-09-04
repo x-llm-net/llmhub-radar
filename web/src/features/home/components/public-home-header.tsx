@@ -27,6 +27,7 @@ const navigation = [
   { label: 'Homepage', href: '#top' },
   { label: 'Model rankings', href: '#model-rankings' },
   { label: 'Ranking rules', href: '#ranking-rules' },
+  { label: 'Usage guide', href: '/guide' },
   { label: 'Become a channel provider', href: '#provider-onboarding' },
 ]
 
