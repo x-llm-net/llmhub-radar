@@ -165,19 +165,19 @@ export function DesktopGuide() {
           </p>
           <div className='grid gap-5 md:grid-cols-3'>
             <GuideImage
-              src='/guide/api-key-created.png'
+              src='/guide-assets/api-key-created.png'
               alt={t('API Keys page with a newly created key')}
               caption={t(
                 'After creating a key, use the menu on the right side of its row. You do not need to copy the key.'
               )}
             />
             <GuideImage
-              src='/guide/key-actions.png'
+              src='/guide-assets/key-actions.png'
               alt={t('API key action menu with CC Switch selected')}
               caption={t('Choose CC Switch from the key row action menu.')}
             />
             <GuideImage
-              src='/guide/cc-switch-dialog.png'
+              src='/guide-assets/cc-switch-dialog.png'
               alt={t('CC Switch import dialog with Codex selected')}
               caption={t(
                 'Select Codex and a model, then open CC Switch to import the configuration.'
