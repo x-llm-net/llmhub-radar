@@ -377,7 +377,7 @@ func buildChannelAbilitiesWithRoutingSetting(tx *gorm.DB, channel *Channel, rout
 	for _, modelName := range abilityModels {
 		groups := defaultGroups
 		if supplyGroup != nil {
-			if _, _, priced := ratio_setting.GetModelRatioOrPrice(modelName); !priced {
+			if !HasModelBillingConfig(modelName) {
 				continue
 			}
 			family := ClassifyHubPublicModelFamily(modelName)

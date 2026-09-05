@@ -28,7 +28,6 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -534,8 +533,7 @@ func NotifyHubProviderChannelMissingModelPrices(c *gin.Context) {
 		if _, configured := configuredModels[modelName]; !configured {
 			continue
 		}
-		_, _, priced := ratio_setting.GetModelRatioOrPrice(modelName)
-		if !priced {
+		if !model.HasModelBillingConfig(modelName) {
 			missingModels = append(missingModels, modelName)
 		}
 	}
