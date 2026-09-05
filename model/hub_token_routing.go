@@ -37,11 +37,12 @@ type HubTokenRoutingPolicy struct {
 }
 
 type HubTokenRoutingChannel struct {
-	ChannelID  int      `json:"channel_id"`
-	Name       string   `json:"name"`
-	Multiplier float64  `json:"multiplier"`
-	Models     []string `json:"models"`
-	Available  bool     `json:"available"`
+	ChannelID     int      `json:"channel_id"`
+	Name          string   `json:"name"`
+	Multiplier    float64  `json:"multiplier"`
+	Models        []string `json:"models"`
+	ModelFamilies []string `json:"model_families,omitempty"`
+	Available     bool     `json:"available"`
 }
 
 type HubTokenRoutingOptions struct {

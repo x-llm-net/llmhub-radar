@@ -426,9 +426,9 @@ func hubSupplyStringValue(value *string) string {
 	return *value
 }
 
-// HubSupplyChannelConnectionChanged compares the Channel fields that affect
-// real upstream requests. Both the native admin editor and the provider editor
-// use this definition so probe revisions cannot drift between the two paths.
+// HubSupplyChannelConnectionChanged compares settings that invalidate existing
+// probe results. Model-list changes are synchronized incrementally so healthy
+// models can remain online while newly added models are tested.
 func HubSupplyChannelConnectionChanged(before, after *Channel) bool {
 	if before == nil || after == nil {
 		return true
@@ -436,7 +436,6 @@ func HubSupplyChannelConnectionChanged(before, after *Channel) bool {
 	return before.Type != after.Type ||
 		before.Key != after.Key ||
 		before.GetBaseURL() != after.GetBaseURL() ||
-		before.Models != after.Models ||
 		hubSupplyStringValue(before.OpenAIOrganization) != hubSupplyStringValue(after.OpenAIOrganization) ||
 		before.Other != after.Other ||
 		before.GetModelMapping() != after.GetModelMapping() ||
@@ -898,12 +897,34 @@ func syncHubSupplyGroupFromChannelTx(tx *gorm.DB, before, channel *Channel) erro
 	if err != nil {
 		return err
 	}
-	group.normalizePublishedModels(channel.Models)
+	publishedSet := make(map[string]struct{})
+	for _, modelName := range group.GetPublishedModels(channel.Models) {
+		publishedSet[modelName] = struct{}{}
+	}
+	if before != nil {
+		previousModels := make(map[string]struct{})
+		for _, modelName := range before.GetModels() {
+			previousModels[modelName] = struct{}{}
+		}
+		for _, modelName := range channel.GetModels() {
+			if _, existed := previousModels[modelName]; !existed {
+				publishedSet[modelName] = struct{}{}
+			}
+		}
+	}
+	publishedModels := make([]string, 0, len(publishedSet))
+	for _, modelName := range channel.GetModels() {
+		if _, published := publishedSet[modelName]; published {
+			publishedModels = append(publishedModels, modelName)
+		}
+	}
+	group.PublishedModels = strings.Join(publishedModels, ",")
 	group.normalizeAutoProbeDisabledModels(channel.Models)
 	if err := group.normalizeProbeEndpointOverrides(channel.Models); err != nil {
 		return err
 	}
 	connectionChanged := HubSupplyChannelConnectionChanged(before, channel)
+	modelsChanged := before != nil && before.Models != channel.Models
 	updates := map[string]any{
 		"published_models":           group.PublishedModels,
 		"probe_endpoint_overrides":   group.ProbeEndpointOverrides,
@@ -942,7 +963,22 @@ func syncHubSupplyGroupFromChannelTx(tx *gorm.DB, before, channel *Channel) erro
 			return err
 		}
 	}
-	return syncHubSupplyGroupProbeTargetsTx(tx, &group, channel)
+	if err := syncHubSupplyGroupProbeTargetsTx(tx, &group, channel); err != nil {
+		return err
+	}
+	if modelsChanged && !connectionChanged {
+		if err := reconcileHubSupplyGroupRouteStateTx(tx, group.Id); err != nil {
+			return err
+		}
+		var status int
+		if err := tx.Model(&Channel{}).
+			Where("id = ?", channel.Id).
+			Pluck("status", &status).Error; err != nil {
+			return err
+		}
+		channel.Status = status
+	}
+	return nil
 }
 
 func GetHubSupplyChannelIDSet() (map[int]struct{}, error) {

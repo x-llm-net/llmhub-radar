@@ -670,6 +670,77 @@ func TestUpdateHubSupplyGroupDropsPublicationForRemovedModels(t *testing.T) {
 	assert.Equal(t, []string{"gpt-5-mini"}, updatedGroup.GetPublishedModels(channel.Models))
 }
 
+func TestUpdateHubSupplyGroupPublishesAndProbesOnlyNewModels(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.Create(&HubProvider{
+		Id: 1, OwnerUserId: 1, Slot: 1, Name: "active provider", Slug: "active-provider",
+		Status: HubProviderStatusActive,
+	}).Error)
+	baseURL := "https://upstream.example"
+	group := &HubSupplyGroup{
+		ProviderId: 1, PriceMultiplier: 1, PublishedModels: "gpt-5",
+		TenantPublished: true, TextProbeMinutes: 10, ImageProbeMinutes: 30,
+	}
+	channel := &Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "secret", Name: "incremental models",
+		BaseURL: &baseURL, Models: "gpt-5,claude-sonnet-4", Group: "default",
+		Status: common.ChannelStatusAutoDisabled,
+	}
+	require.NoError(t, CreateHubSupplyGroup(group, channel))
+
+	var existingTargets []HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ?", group.Id).Find(&existingTargets).Error)
+	require.Len(t, existingTargets, 2)
+	existingTargetIDs := make(map[string]int, len(existingTargets))
+	for _, target := range existingTargets {
+		existingTargetIDs[target.ModelName] = target.Id
+		_, _, err := RecordHubSupplyProbeResult(target.Id, true, 100, "", "", "")
+		require.NoError(t, err)
+	}
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id))
+	savedPolicy := &HubTokenRoutingPolicy{
+		Mode: HubTokenRoutingModeChannels, ProviderID: group.ProviderId, ChannelIDs: []int{channel.Id},
+	}
+
+	channel.Models = "gpt-5,claude-sonnet-4,gpt-5-mini"
+	require.NoError(t, UpdateHubSupplyChannel(group, channel))
+
+	updatedGroup, err := GetHubSupplyGroupByChannelID(channel.Id)
+	require.NoError(t, err)
+	require.NotNil(t, updatedGroup)
+	assert.Equal(t, group.ConfigVersion, updatedGroup.ConfigVersion)
+	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, updatedGroup.GetPublishedModels(channel.Models))
+	assert.Equal(t, HubSupplyGroupStatusPartial, updatedGroup.Status)
+	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id))
+
+	var currentTargets []HubSupplyGroupProbeTarget
+	require.NoError(t, DB.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&currentTargets).Error)
+	require.Len(t, currentTargets, 3)
+	var newTarget HubSupplyGroupProbeTarget
+	for _, target := range currentTargets {
+		if target.ModelName == "gpt-5-mini" {
+			newTarget = target
+			continue
+		}
+		assert.Equal(t, existingTargetIDs[target.ModelName], target.Id)
+		assert.Equal(t, HubSupplyProbeStatusAvailable, target.Status)
+	}
+	require.NotZero(t, newTarget.Id)
+	assert.Equal(t, HubSupplyProbeStatusPending, newTarget.Status)
+
+	_, _, err = RecordHubSupplyProbeResult(newTarget.Id, true, 100, "", "", "")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileHubSupplyGroupRouteState(group.Id))
+	assert.Equal(t, []string{"gpt-5", "gpt-5-mini"}, getChannelAbilityModels(t, channel.Id))
+	resolvedPolicy, err := ResolveHubTokenRoutingPolicy(savedPolicy)
+	require.NoError(t, err)
+	assert.True(t, resolvedPolicy.AllowsModel("gpt-5-mini"))
+	available, err := IsModelAvailableForHubTokenPolicy(resolvedPolicy, "gpt-5-mini")
+	require.NoError(t, err)
+	assert.True(t, available)
+}
+
 func TestRequestImmediateHubSupplyGroupProbeEnforcesCooldown(t *testing.T) {
 	truncateTables(t)
 	baseURL := "https://upstream.example"

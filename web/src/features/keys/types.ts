@@ -115,6 +115,7 @@ export interface HubTokenRoutingChannelOption {
   name: string
   multiplier: number
   models: string[]
+  model_families?: string[]
   available: boolean
 }
 

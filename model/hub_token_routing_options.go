@@ -38,8 +38,20 @@ func getHubTokenRoutingChannels(providerID int, channelIDs []int) ([]HubTokenRou
 	for _, row := range rows {
 		group := HubSupplyGroup{PublishedModels: row.PublishedModels}
 		models := group.GetPublishedModels(row.ChannelModels)
+		familySet := make(map[string]struct{})
+		modelFamilies := make([]string, 0)
+		for _, modelName := range models {
+			family := ClassifyHubPublicModelFamily(modelName)
+			if common.IsImageGenerationModel(modelName) {
+				family = "image"
+			}
+			if _, exists := familySet[family]; !exists {
+				familySet[family] = struct{}{}
+				modelFamilies = append(modelFamilies, family)
+			}
+		}
 		channels = append(channels, HubTokenRoutingChannel{
-			ChannelID: row.ChannelID, Name: row.Name, Multiplier: roundHubTokenMultiplier(row.Multiplier), Models: models,
+			ChannelID: row.ChannelID, Name: row.Name, Multiplier: roundHubTokenMultiplier(row.Multiplier), Models: models, ModelFamilies: modelFamilies,
 			Available: row.ChannelStatus == common.ChannelStatusEnabled && row.ProviderStatus == HubProviderStatusActive &&
 				row.TenantPublished && validHubTokenMultiplier(row.Multiplier) && len(models) > 0,
 		})

@@ -206,6 +206,7 @@ func TestHubTokenRoutingOptionsExposeProviderChannelsAndKeepUnavailableSelection
 	assert.Equal(t, channels[0].Id, options.Channels[0].ChannelID)
 	assert.False(t, options.Channels[0].Available)
 	assert.Equal(t, []string{"gpt-routing-text", "claude-routing-text"}, options.Channels[0].Models)
+	assert.Equal(t, []string{"openai", "anthropic"}, options.Channels[0].ModelFamilies)
 	assert.Equal(t, 0.3, options.Channels[0].Multiplier)
 	policy := &HubTokenRoutingPolicy{Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id, ChannelIDs: []int{channels[0].Id}}
 	require.NoError(t, ValidateHubTokenProviderSelections(policy))

@@ -79,6 +79,7 @@ const options: HubTokenRoutingOptions = {
       name: 'Premium GPT',
       multiplier: 0.6,
       models: ['gpt-5'],
+      model_families: ['openai'],
       available: true,
     },
     {
@@ -86,6 +87,7 @@ const options: HubTokenRoutingOptions = {
       name: 'Economy GPT',
       multiplier: 0.3,
       models: ['gpt-5', 'gpt-image-1'],
+      model_families: ['openai', 'image'],
       available: true,
     },
     {
@@ -93,6 +95,7 @@ const options: HubTokenRoutingOptions = {
       name: 'Claude',
       multiplier: 0.4,
       models: ['claude-sonnet-4'],
+      model_families: ['anthropic'],
       available: true,
     },
     {
@@ -100,6 +103,7 @@ const options: HubTokenRoutingOptions = {
       name: 'Unpublished',
       multiplier: 0.2,
       models: ['gpt-5'],
+      model_families: ['openai'],
       available: false,
     },
   ],
@@ -164,9 +168,11 @@ describe('Hub channel routing editor', () => {
       'Select Claude',
       'Select Premium GPT',
     ])
-    assert.ok(
-      namedControl('Available channels').textContent?.includes('gpt-image-1')
-    )
+    const catalogText = namedControl('Available channels').textContent ?? ''
+    assert.ok(catalogText.includes('GPT'))
+    assert.ok(catalogText.includes('Image'))
+    assert.ok(catalogText.includes('2 models'))
+    assert.ok(!catalogText.includes('gpt-image-1'))
     await act(async () => namedControl('Select Economy GPT').click())
     assert.deepEqual(changed, [20, 10])
   })
