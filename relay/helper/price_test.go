@@ -171,11 +171,12 @@ func TestApplyHubSupplyPricingFromRequestProtectsProviderFallbackPrice(t *testin
 	common.SetContextKey(ctx, constant.ContextKeyHubRoutingFallback, true)
 	common.SetContextKey(ctx, constant.ContextKeyOriginalModel, "gpt-5")
 	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
-		Mode: model.HubTokenRoutingModeProvider,
-		Selections: []model.HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{0.3, 0.4},
-		}},
+		Mode:       model.HubTokenRoutingModeChannels,
+		ChannelIDs: []int{101, 102},
+		Channels: []model.HubTokenRoutingChannel{
+			{ChannelID: 101, Models: []string{"gpt-5"}, Multiplier: 0.3},
+			{ChannelID: 102, Models: []string{"gpt-5"}, Multiplier: 0.4},
+		},
 	})
 	common.SetContextKey(ctx, constant.ContextKeyHubSupplyPricingSnapshot, model.CaptureHubSupplyPricingSnapshot(group.NewAPIChannelId))
 

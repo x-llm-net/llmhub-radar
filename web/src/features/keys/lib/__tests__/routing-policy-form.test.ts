@@ -19,112 +19,95 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import type { HubTokenRoutingOptions } from '../../types'
+import { createInstance } from 'i18next'
+
+import { apiKeySchema, type HubTokenRoutingOptions } from '../../types'
 import {
   getApiKeyFormDefaultValues,
+  getApiKeyFormSchema,
+  transformApiKeyToFormDefaults,
   transformFormDataToPayload,
 } from '../api-key-form'
 
-const baseOptions: HubTokenRoutingOptions = {
-  mode: 'public_pool',
-  families: [],
-  tier_ceilings: {},
+const options: HubTokenRoutingOptions = {
+  mode: 'channels',
+  provider_id: 7,
+  channels: [],
 }
+const i18n = createInstance()
+await i18n.init({ lng: 'en', resources: { en: { translation: {} } } })
 
-describe('API key multiplier routing policy mapping', () => {
-  test('maps root-domain family ranges without keeping legacy group routing', () => {
+describe('API key channel routing policy mapping', () => {
+  test('sends only ordered channel IDs and disables the old group route', () => {
     const values = {
       ...getApiKeyFormDefaultValues(true),
       group: 'auto',
       auto_groups: ['vip'],
-      cross_group_retry: true,
-      hub_selections: [
-        {
-          family: 'openai',
-          min_multiplier: 0.01,
-          max_multiplier: 0.05,
-        },
-        {
-          family: 'anthropic',
-          min_multiplier: 0.2,
-          max_multiplier: 0.4,
-        },
-      ],
+      hub_channel_ids: [30, 10, 20],
     }
-
-    const payload = transformFormDataToPayload(values, baseOptions)
-
+    const payload = transformFormDataToPayload(values, options)
     assert.equal(payload.group, 'default')
     assert.equal(payload.cross_group_retry, false)
+    assert.deepEqual(payload.auto_groups, [])
     assert.deepEqual(payload.hub_routing_policy, {
-      mode: 'public_pool',
-      selections: [
-        {
-          family: 'openai',
-          min_multiplier: 0.01,
-          max_multiplier: 0.05,
-        },
-        {
-          family: 'anthropic',
-          min_multiplier: 0.2,
-          max_multiplier: 0.4,
-        },
-      ],
+      mode: 'channels',
+      provider_id: 7,
+      channel_ids: [30, 10, 20],
     })
   })
 
-  test('maps provider-domain choices to the provider and exact multipliers', () => {
+  test('rejects duplicate and over-limit channel selections', () => {
+    const schema = getApiKeyFormSchema(i18n.t)
     const values = {
       ...getApiKeyFormDefaultValues(false),
-      hub_selections: [
-        {
-          family: 'google',
-          min_multiplier: 0.3,
-          max_multiplier: 0.3,
-          exact_multipliers: [0.3, 0.5],
-        },
-      ],
+      name: 'test',
+      group: 'default',
     }
-    const options: HubTokenRoutingOptions = {
-      ...baseOptions,
-      mode: 'provider',
-      provider_id: 7,
-    }
-
-    const payload = transformFormDataToPayload(values, options)
-
-    assert.deepEqual(payload.hub_routing_policy, {
-      mode: 'provider',
-      provider_id: 7,
-      selections: [
-        {
-          family: 'google',
-          exact_multipliers: [0.3, 0.5],
-        },
-      ],
-    })
+    assert.equal(
+      schema.safeParse({ ...values, hub_channel_ids: [3, 3] }).success,
+      false
+    )
+    assert.equal(
+      schema.safeParse({
+        ...values,
+        hub_channel_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      }).success,
+      false
+    )
+    assert.equal(
+      schema.safeParse({ ...values, hub_channel_ids: [3, 1] }).success,
+      true
+    )
   })
 
-  test('does not substitute the range maximum for a missing provider multiplier', () => {
-    const values = {
-      ...getApiKeyFormDefaultValues(false),
-      hub_selections: [
-        {
-          family: 'google',
-          min_multiplier: 0.3,
-          max_multiplier: 0.3,
-        },
-      ],
-    }
-    const options: HubTokenRoutingOptions = {
-      ...baseOptions,
-      mode: 'provider',
+  test('requires legacy policy reselection instead of converting model multipliers to channels', () => {
+    const key = apiKeySchema.parse({
+      id: 1,
+      name: 'old',
+      key: '',
+      status: 1,
+      remain_quota: 0,
+      used_quota: 0,
+      unlimited_quota: true,
+      expired_time: -1,
+      created_time: 1,
+      accessed_time: 1,
+      model_limits_enabled: false,
+      hub_routing_policy: {
+        mode: 'provider',
+        provider_id: 7,
+        selections: [{ model: 'gpt-5', multipliers: [0.3] }],
+      },
+    })
+    assert.deepEqual(transformApiKeyToFormDefaults(key).hub_channel_ids, [])
+    key.hub_routing_policy = {
+      mode: 'channels',
       provider_id: 7,
+      channel_ids: [20, 10],
     }
-
-    assert.throws(
-      () => transformFormDataToPayload(values, options),
-      /requires an exact multiplier/
+    assert.deepEqual(
+      transformApiKeyToFormDefaults(key).hub_channel_ids,
+      [20, 10]
     )
   })
 })

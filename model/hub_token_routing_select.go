@@ -11,7 +11,7 @@ import (
 
 // GetRandomSatisfiedChannelWithHubPolicy keeps the existing channel priority,
 // weight, request-path and probe checks, but builds its candidate set from a
-// token's model-family and multiplier policy instead of one legacy Group.
+// token's selected channels instead of one legacy Group.
 func GetRandomSatisfiedChannelWithHubPolicy(
 	policy *HubTokenRoutingPolicy,
 	modelName string,
@@ -23,6 +23,16 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 	if policy == nil || strings.TrimSpace(modelName) == "" {
 		return nil, HubSupplyPricingSnapshot{}, nil
 	}
+	if policy.Channels == nil {
+		var err error
+		policy, err = ResolveHubTokenRoutingPolicy(policy)
+		if err != nil {
+			return nil, HubSupplyPricingSnapshot{}, err
+		}
+	}
+	if !policy.AllowsModel(modelName) {
+		return nil, HubSupplyPricingSnapshot{}, nil
+	}
 	if common.MemoryCacheEnabled {
 		return getHubPolicyChannelFromCache(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter)
 	}
@@ -32,122 +42,50 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 // IsModelAvailableForHubTokenPolicy keeps model discovery aligned with the
 // same multiplier, provider-status and publication checks used by requests.
 func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string) (bool, error) {
-	if policy == nil || !policy.AllowsModel(modelName) {
+	if policy == nil {
 		return false, nil
 	}
-	if policy.Mode == HubTokenRoutingModeProvider {
-		provider, ok := GetHubProviderRoutingByID(policy.ProviderID)
-		if !ok || provider.Status != HubProviderStatusActive {
-			return false, nil
+	if policy.Channels == nil {
+		var err error
+		policy, err = ResolveHubTokenRoutingPolicy(policy)
+		if err != nil {
+			return false, err
 		}
 	}
-	providerFilter := ChannelProviderFilter{}
-	if policy.Mode == HubTokenRoutingModeProvider {
-		providerFilter = ChannelProviderFilter{
-			ProviderID: policy.ProviderID, Mode: ChannelProviderOnly, StrictExcludedChannels: true,
-		}
+	if !policy.AllowsModel(modelName) {
+		return false, nil
 	}
-	channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
-		policy,
-		modelName,
-		0,
-		"",
-		nil,
-		providerFilter,
-	)
-	if channel == nil && policy.Mode == HubTokenRoutingModeProvider {
-		channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
-			policy,
-			modelName,
-			0,
-			"",
-			nil,
-			ChannelProviderFilter{
-				ProviderID: policy.ProviderID, Mode: ChannelProviderExclude, StrictExcludedChannels: true,
-			},
+	for _, requestPath := range []string{"", "/v1/images/generations"} {
+		channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
+			policy, modelName, 0, requestPath, nil, ChannelProviderFilter{StrictExcludedChannels: true},
 		)
+		if err != nil || channel != nil {
+			return channel != nil, err
+		}
+		channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
+			policy, modelName, 0, requestPath, nil, ChannelProviderFilter{PlatformFallback: true, StrictExcludedChannels: true},
+		)
+		if err != nil || channel != nil {
+			return channel != nil, err
+		}
 	}
-	return channel != nil, err
+	return false, nil
 }
 
-// HasConfiguredSupplyForHubTokenPolicy distinguishes a permanently unsupported
-// model from supply that is only temporarily unroutable. It intentionally
-// ignores probe health, Channel status, and Provider status.
+// A published model on a selected channel retains its price basis during
+// outages and whole-channel unpublication. Removed models have no basis.
 func HasConfiguredSupplyForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string) (bool, error) {
-	if policy == nil || !policy.AllowsModel(modelName) || DB == nil {
+	if policy == nil {
 		return false, nil
 	}
-
-	modelNames := []string{modelName}
-	normalized := ratio_setting.FormatMatchingModelName(modelName)
-	if normalized != "" && normalized != modelName {
-		modelNames = append(modelNames, normalized)
-	}
-	modelSet := make(map[string]struct{}, len(modelNames))
-	for _, candidate := range modelNames {
-		modelSet[candidate] = struct{}{}
-	}
-
-	type configuredSupplyRow struct {
-		ChannelID       int     `gorm:"column:channel_id"`
-		PriceMultiplier float64 `gorm:"column:price_multiplier"`
-		PublishedModels string  `gorm:"column:published_models"`
-		ChannelModels   string  `gorm:"column:channel_models"`
-	}
-	var supplyRows []configuredSupplyRow
-	if err := DB.Table("hub_supply_groups AS supply_groups").
-		Select("supply_groups.new_api_channel_id AS channel_id, supply_groups.price_multiplier, supply_groups.published_models, channels.models AS channel_models").
-		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
-		Scan(&supplyRows).Error; err != nil {
-		return false, err
-	}
-
-	configuredSupplyChannels := make(map[int]struct{}, len(supplyRows))
-	for _, row := range supplyRows {
-		configuredSupplyChannels[row.ChannelID] = struct{}{}
-		if !policy.AllowsMultiplierForPlatformFallback(modelName, row.PriceMultiplier) {
-			continue
-		}
-		group := HubSupplyGroup{PublishedModels: row.PublishedModels}
-		for _, publishedModel := range group.GetPublishedModels(row.ChannelModels) {
-			if _, ok := modelSet[publishedModel]; ok {
-				return true, nil
-			}
+	if policy.Channels == nil {
+		var err error
+		policy, err = ResolveHubTokenRoutingPolicy(policy)
+		if err != nil {
+			return false, err
 		}
 	}
-
-	// Channels without a Hub supply record are platform-owned and use the
-	// baseline multiplier. Disabled Ability rows still represent configured
-	// supply, which is exactly what this temporary/permanent distinction needs.
-	if !policy.AllowsMultiplier(modelName, 1) {
-		return false, nil
-	}
-	var abilities []Ability
-	if err := DB.Where("model IN ?", modelNames).Find(&abilities).Error; err != nil {
-		return false, err
-	}
-	platformChannelIDs := make([]int, 0, len(abilities))
-	seenPlatformChannels := make(map[int]struct{}, len(abilities))
-	for _, ability := range abilities {
-		if !isHubTokenRoutingCandidateAbilityGroup(ability.Group) {
-			continue
-		}
-		if _, isSupply := configuredSupplyChannels[ability.ChannelId]; isSupply {
-			continue
-		}
-		if _, seen := seenPlatformChannels[ability.ChannelId]; !seen {
-			seenPlatformChannels[ability.ChannelId] = struct{}{}
-			platformChannelIDs = append(platformChannelIDs, ability.ChannelId)
-		}
-	}
-	if len(platformChannelIDs) == 0 {
-		return false, nil
-	}
-	var count int64
-	if err := DB.Model(&Channel{}).Where("id IN ?", platformChannelIDs).Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return policy.AllowsModel(modelName), nil
 }
 
 func getHubPolicyChannelFromCache(
@@ -167,8 +105,7 @@ func getHubPolicyChannelFromCache(
 	if normalized != "" && normalized != modelName {
 		modelNames = append(modelNames, normalized)
 	}
-	allowCheaperMultiplier := policy.Mode == HubTokenRoutingModeProvider &&
-		providerFilter.Mode == ChannelProviderExclude
+	allowCheaperMultiplier := providerFilter.PlatformFallback
 	seen := make(map[int]struct{})
 	candidates := make([]hubTierChannelCandidate, 0)
 	for group, groups := range group2model2channels {
@@ -182,6 +119,7 @@ func getHubPolicyChannelFromCache(
 				}
 				channel, ok := channelsIDM[channelID]
 				if !ok || channel.Status != common.ChannelStatusEnabled ||
+					!hubPolicyChannelMatchesSelection(policy, channelID, providerFilter.PlatformFallback) ||
 					!ChannelMatchesProviderFilter(channelID, providerFilter) ||
 					!hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath) {
 					continue
@@ -205,7 +143,7 @@ func getHubPolicyChannelFromCache(
 					if !policy.AllowsMultiplierForPlatformFallback(modelName, multiplier) {
 						continue
 					}
-				} else if !policy.AllowsMultiplier(modelName, multiplier) {
+				} else if !policy.AllowsPreferredChannel(modelName, channelID, multiplier) {
 					continue
 				}
 				seen[channelID] = struct{}{}
@@ -220,7 +158,7 @@ func getHubPolicyChannelFromCache(
 			}
 		}
 	}
-	selectedID := selectHubTierChannelByHubPolicy(policy, modelName, candidates, excludedChannelIDs, allowCheaperMultiplier)
+	selectedID := selectHubTierChannelByHubPolicy(policy, modelName, candidates, excludedChannelIDs, allowCheaperMultiplier, providerFilter.PreferredChannelID)
 	if selectedID == 0 {
 		return nil, HubSupplyPricingSnapshot{}, nil
 	}
@@ -251,7 +189,8 @@ func getHubPolicyChannelFromDB(
 		if ability.Model != modelName && (normalized == "" || ability.Model != normalized) {
 			continue
 		}
-		if !ChannelMatchesProviderFilter(ability.ChannelId, providerFilter) ||
+		if !hubPolicyChannelMatchesSelection(policy, ability.ChannelId, providerFilter.PlatformFallback) ||
+			!ChannelMatchesProviderFilter(ability.ChannelId, providerFilter) ||
 			!IsHubSupplyChannelRoutableForRequest(ability.ChannelId, modelName, requestPath) {
 			continue
 		}
@@ -277,8 +216,7 @@ func getHubPolicyChannelFromDB(
 		channelByID[channel.Id] = channel
 	}
 	candidates := make([]hubTierChannelCandidate, 0, len(channelIDs))
-	allowCheaperMultiplier := policy.Mode == HubTokenRoutingModeProvider &&
-		providerFilter.Mode == ChannelProviderExclude
+	allowCheaperMultiplier := providerFilter.PlatformFallback
 	for _, channelID := range channelIDs {
 		channel := channelByID[channelID]
 		if channel == nil {
@@ -297,7 +235,7 @@ func getHubPolicyChannelFromDB(
 			if !policy.AllowsMultiplierForPlatformFallback(modelName, multiplier) {
 				continue
 			}
-		} else if !policy.AllowsMultiplier(modelName, multiplier) {
+		} else if !policy.AllowsPreferredChannel(modelName, channelID, multiplier) {
 			continue
 		}
 		priority := channel.GetPriority()
@@ -322,7 +260,7 @@ func getHubPolicyChannelFromDB(
 		}
 		candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath))
 	}
-	selectedID := selectHubTierChannelByHubPolicy(policy, modelName, candidates, excludedChannelIDs, allowCheaperMultiplier)
+	selectedID := selectHubTierChannelByHubPolicy(policy, modelName, candidates, excludedChannelIDs, allowCheaperMultiplier, providerFilter.PreferredChannelID)
 	if selectedID == 0 {
 		return nil, HubSupplyPricingSnapshot{}, nil
 	}
@@ -331,14 +269,13 @@ func getHubPolicyChannelFromDB(
 }
 
 // IsChannelEnabledForHubTokenPolicy is used by affinity and fixed-channel
-// paths so they cannot bypass a token's model-family or multiplier boundary.
+// paths so they cannot bypass a token's selected channels or current multiplier boundary.
 func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string, channelID int) bool {
 	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", CaptureHubSupplyPricingSnapshot(channelID), false)
 }
 
-// IsChannelEnabledForHubTokenPolicyFallback validates a channel that already
-// served an origin task. Provider-scoped tokens may continue on a platform
-// fallback channel, but the model family, multiplier and endpoint stay fixed.
+// IsChannelEnabledForHubTokenPolicyFallback validates an origin task channel
+// against the selected model's current price ceiling and endpoint support.
 func IsChannelEnabledForHubTokenPolicyFallback(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int) bool {
 	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, CaptureHubSupplyPricingSnapshot(channelID), true)
 }
@@ -351,7 +288,17 @@ func IsChannelEnabledForHubTokenPolicySnapshot(policy *HubTokenRoutingPolicy, mo
 
 func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool) bool {
 	channelID := snapshot.ChannelID
-	if policy == nil || channelID <= 0 || !policy.AllowsModel(modelName) {
+	if policy == nil || channelID <= 0 {
+		return false
+	}
+	if policy.Channels == nil {
+		var err error
+		policy, err = ResolveHubTokenRoutingPolicy(policy)
+		if err != nil {
+			return false
+		}
+	}
+	if !policy.AllowsModel(modelName) {
 		return false
 	}
 	multiplier := 1.0
@@ -360,18 +307,21 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 		if pricing.SupplyProviderStatus != HubProviderStatusActive || pricing.PriceMultiplier <= 0 {
 			return false
 		}
-		if policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback && pricing.SupplyProviderId != policy.ProviderID {
+		if !allowProviderFallback && pricing.SupplyProviderId != policy.ProviderID {
 			return false
 		}
 		multiplier = pricing.PriceMultiplier
-	} else if snapshot.Configured || (policy.Mode == HubTokenRoutingModeProvider && !allowProviderFallback) {
+	} else if snapshot.Configured || !allowProviderFallback {
+		return false
+	}
+	if !hubPolicyChannelMatchesSelection(policy, channelID, allowProviderFallback) {
 		return false
 	}
 	if allowProviderFallback {
 		if !policy.AllowsMultiplierForPlatformFallback(modelName, multiplier) {
 			return false
 		}
-	} else if !policy.AllowsMultiplier(modelName, multiplier) {
+	} else if !policy.AllowsPreferredChannel(modelName, channelID, multiplier) {
 		return false
 	}
 	if requestPath != "" && !IsHubSupplyChannelRoutableForRequest(channelID, modelName, requestPath) {
@@ -415,4 +365,10 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 
 func isHubTokenRoutingCandidateAbilityGroup(group string) bool {
 	return IsHubTokenRoutingAbilityGroup(group) || group == "default" || hub_routing_setting.IsServiceTier(group)
+}
+func hubPolicyChannelMatchesSelection(policy *HubTokenRoutingPolicy, channelID int, platformFallback bool) bool {
+	if platformFallback {
+		return !policy.AllowsChannel(channelID)
+	}
+	return policy.AllowsChannel(channelID)
 }

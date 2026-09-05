@@ -175,19 +175,19 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	assert.Equal(t, originProvider.Id, resolution.Provider.Id)
 
 	token := &model.Token{
-		Id:          96103,
-		UserId:      96103,
-		Key:         "marketplace-policy-token",
-		Name:        "marketplace exact multiplier",
-		Status:      common.TokenStatusEnabled,
-		RemainQuota: 10_000,
-		Group:       "default",
+		Id:            96103,
+		UserId:        96103,
+		Key:           "marketplace-policy-token",
+		Name:          "marketplace exact multiplier",
+		Status:        common.TokenStatusEnabled,
+		RemainQuota:   10_000,
+		Group:         "default",
+		HubTenantId:   originTenantID,
+		HubProviderId: originProvider.Id,
 	}
 	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
-		Selections: []model.HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{0.5},
-		}},
+		Mode:       model.HubTokenRoutingModeChannels,
+		ChannelIDs: []int{originChannel.Id},
 	}, originProvider.Id)
 	require.NoError(t, err)
 	require.NoError(t, token.SetHubRoutingPolicy(policy))
@@ -336,7 +336,7 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	other := map[string]interface{}{}
 	service.AttachHubRelayLogInfo(ctx, finalInfo, other, true)
 	assert.NotContains(t, other, "service_tier")
-	assert.Equal(t, model.HubTokenRoutingModeProvider, other["routing_policy_mode"])
+	assert.Equal(t, model.HubTokenRoutingModeChannels, other["routing_policy_mode"])
 	assert.Equal(t, originProvider.Id, other["origin_provider_id"])
 	assert.Equal(t, fallbackProvider.Id, other["served_provider_id"])
 	attempts, ok := other["hub_attempts"].([]service.HubRelayAttempt)
@@ -347,13 +347,13 @@ func TestHubMarketplacePolicyFlowFallsBackAtExactMultiplierAndSettlesFinalProvid
 	assert.Equal(t, originProvider.Id, attempts[0].ProviderID)
 	assert.Equal(t, originGroup.Id, attempts[0].SupplyGroupID)
 	assert.Equal(t, originChannel.Id, attempts[0].ChannelID)
-	assert.Equal(t, model.HubTokenRoutingModeProvider, attempts[0].RoutingPolicyMode)
+	assert.Equal(t, model.HubTokenRoutingModeChannels, attempts[0].RoutingPolicyMode)
 	assert.Empty(t, attempts[0].ServiceTier)
 	assert.Equal(t, "success", attempts[1].Result)
 	assert.Equal(t, "platform_fallback", attempts[1].RoutingPhase)
 	assert.Equal(t, fallbackProvider.Id, attempts[1].ProviderID)
 	assert.Equal(t, fallbackGroup.Id, attempts[1].SupplyGroupID)
 	assert.Equal(t, fallbackChannel.Id, attempts[1].ChannelID)
-	assert.Equal(t, model.HubTokenRoutingModeProvider, attempts[1].RoutingPolicyMode)
+	assert.Equal(t, model.HubTokenRoutingModeChannels, attempts[1].RoutingPolicyMode)
 	assert.Empty(t, attempts[1].ServiceTier)
 }

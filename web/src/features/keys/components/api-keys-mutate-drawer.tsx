@@ -23,7 +23,6 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
-import { areServiceTierGroups } from '@/components/group-badge-utils'
 import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import {
@@ -53,8 +52,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { useStatus } from '@/hooks/use-status'
-import { getUserModels, getUserGroups } from '@/lib/api'
+import { getUserModels } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
@@ -62,7 +60,6 @@ import {
   createApiKey,
   updateApiKey,
   getApiKey,
-  getTokenAutoGroups,
   getHubTokenRoutingOptions,
 } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
@@ -74,34 +71,8 @@ import {
   transformApiKeyToFormDefaults,
 } from '../lib'
 import type { ApiKey } from '../types'
-import {
-  ApiKeyGroupCombobox,
-  type ApiKeyGroupOption,
-} from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
-import { AutoGroupOrderEditor } from './auto-group-order-editor'
 import { HubRoutingPolicyEditor } from './hub-routing-policy-editor'
-
-const SERVICE_TIER_ORDER = ['special', 'low', 'medium', 'high'] as const
-
-const SERVICE_TIER_I18N = {
-  special: {
-    label: 'Special price',
-    desc: 'Lowest-cost approved supply',
-  },
-  low: {
-    label: 'Economy',
-    desc: 'Budget routing within this price tier',
-  },
-  medium: {
-    label: 'Standard',
-    desc: 'Balanced routing within this price tier',
-  },
-  high: {
-    label: 'High quality',
-    desc: 'Admin-approved high-quality sources',
-  },
-} as const
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -118,30 +89,16 @@ export function ApiKeysMutateDrawer({
   const isUpdate = !!currentRow
   const currentRowId = currentRow?.id
   const { triggerRefresh } = useApiKeys()
-  const { status, loading: statusLoading } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [initializedTarget, setInitializedTarget] = useState<string | null>(
     null
   )
-  const defaultUseAutoGroup = status?.default_use_auto_group === true
 
   // Fetch models
   const { data: modelsData } = useQuery({
     queryKey: ['user-models'],
     queryFn: getUserModels,
-    enabled: open,
-    staleTime: 0,
-  })
-
-  // Fetch groups
-  const {
-    data: groupsData,
-    isFetched: groupsFetched,
-    isFetching: groupsFetching,
-  } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: getUserGroups,
     enabled: open,
     staleTime: 0,
   })
@@ -162,15 +119,16 @@ export function ApiKeysMutateDrawer({
     apiKeyFetched &&
     apiKeyData?.success === true &&
     apiKeyData.data &&
-    !apiKeyData.data.hub_routing_policy
+    (apiKeyData.data.hub_routing_policy?.mode !== 'channels' ||
+      !apiKeyData.data.hub_routing_policy.channel_ids?.length)
   )
   const editingProviderId =
     isUpdate &&
     apiKeyFetched &&
-    apiKeyData?.data?.hub_routing_policy?.mode === 'provider'
+    apiKeyData?.data?.hub_routing_policy?.mode === 'channels'
       ? apiKeyData.data.hub_routing_policy.provider_id
       : undefined
-  const requiresHubRouting = !isUpdate || (apiKeyFetched && !editingLegacyKey)
+  const requiresHubRouting = !isUpdate || apiKeyFetched
   const {
     data: routingOptionsData,
     isFetching: routingOptionsFetching,
@@ -188,76 +146,8 @@ export function ApiKeysMutateDrawer({
     retry: false,
   })
 
-  const {
-    data: autoGroupsData,
-    isFetched: autoGroupsFetched,
-    isFetching: autoGroupsFetching,
-  } = useQuery({
-    queryKey: ['token-auto-groups'],
-    queryFn: getTokenAutoGroups,
-    enabled: open,
-    staleTime: 0,
-  })
-
   const models = modelsData?.data || []
-  const groups = useMemo<ApiKeyGroupOption[]>(() => {
-    const allGroups = Object.entries(groupsData?.data || {}).map(
-      ([key, info]) => ({
-        value: key,
-        label: key,
-        desc: info.desc || key,
-        ratio: info.ratio,
-      })
-    )
-    const groupsByValue = new Map(
-      allGroups.map((group) => [group.value, group])
-    )
-    const serviceTiers = SERVICE_TIER_ORDER.flatMap((tier) => {
-      const group = groupsByValue.get(tier)
-      if (!group) return []
-      const meta = SERVICE_TIER_I18N[tier]
-      return [
-        {
-          value: group.value,
-          label: t(meta.label),
-          desc: t(meta.desc),
-        },
-      ]
-    })
-    return serviceTiers.length === SERVICE_TIER_ORDER.length
-      ? serviceTiers
-      : allGroups
-  }, [groupsData, t])
-  const usesServiceTiers = areServiceTierGroups(
-    groups.map((group) => group.value)
-  )
-  const backendHasAuto = groups.some((g) => g.value === 'auto')
-  const availableAutoGroupNames = useMemo(
-    () => groups.filter((group) => group.value !== 'auto').map((g) => g.value),
-    [groups]
-  )
-  const globalAutoGroups = useMemo(() => {
-    const available = new Set(availableAutoGroupNames)
-    return (autoGroupsData?.data?.groups || []).filter((group) =>
-      available.has(group)
-    )
-  }, [autoGroupsData, availableAutoGroupNames])
-  const globalAutoGroupOptions = useMemo(() => {
-    const groupsByValue = new Map(groups.map((group) => [group.value, group]))
-    return globalAutoGroups.flatMap((group) => {
-      const option = groupsByValue.get(group)
-      return option ? [option] : []
-    })
-  }, [globalAutoGroups, groups])
-  const maxAutoGroups =
-    Number.isInteger(autoGroupsData?.data?.max_count) &&
-    Number(autoGroupsData?.data?.max_count) > 0
-      ? Number(autoGroupsData?.data?.max_count)
-      : 5
-  const schema = useMemo(
-    () => getApiKeyFormSchema(t, maxAutoGroups),
-    [t, maxAutoGroups]
-  )
+  const schema = useMemo(() => getApiKeyFormSchema(t), [t])
   const routingOptions = routingOptionsData?.success
     ? routingOptionsData.data
     : undefined
@@ -269,7 +159,7 @@ export function ApiKeysMutateDrawer({
 
   const form = useForm<ApiKeyFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: getApiKeyFormDefaultValues(defaultUseAutoGroup),
+    defaultValues: getApiKeyFormDefaultValues(false),
   })
 
   // Load existing data when updating
@@ -278,34 +168,17 @@ export function ApiKeysMutateDrawer({
       setInitializedTarget(null)
       return
     }
-    if (
-      !groupsFetched ||
-      groupsFetching ||
-      !autoGroupsFetched ||
-      autoGroupsFetching
-    ) {
-      return
-    }
     if (isUpdate && (!apiKeyFetched || apiKeyFetching)) return
-    if (!isUpdate && statusLoading) return
 
     const target = isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
     if (initializedTarget === target) return
     if (isUpdate && currentRow) {
       if (apiKeyData?.success && apiKeyData.data) {
-        form.reset(
-          transformApiKeyToFormDefaults(
-            apiKeyData.data,
-            availableAutoGroupNames,
-            maxAutoGroups
-          )
-        )
+        form.reset(transformApiKeyToFormDefaults(apiKeyData.data))
         setInitializedTarget(target)
       }
     } else {
-      form.reset(
-        getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
-      )
+      form.reset(getApiKeyFormDefaultValues(false))
       setInitializedTarget(target)
     }
   }, [
@@ -313,18 +186,9 @@ export function ApiKeysMutateDrawer({
     isUpdate,
     currentRow,
     form,
-    defaultUseAutoGroup,
-    statusLoading,
-    backendHasAuto,
-    groupsFetched,
-    groupsFetching,
-    autoGroupsFetched,
-    autoGroupsFetching,
     apiKeyData,
     apiKeyFetched,
     apiKeyFetching,
-    availableAutoGroupNames,
-    maxAutoGroups,
     initializedTarget,
   ])
 
@@ -332,29 +196,6 @@ export function ApiKeysMutateDrawer({
     isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
   const isFormInitialized = initializedTarget === formTarget
   const selectedGroup = form.watch('group')
-
-  // Correct group after groups load: if the form value is not in available groups, fall back
-  useEffect(() => {
-    if (groups.length === 0) return
-    const currentGroup = selectedGroup
-    if (
-      !hubRoutingEnabled &&
-      currentGroup &&
-      !groups.some((g) => g.value === currentGroup)
-    ) {
-      const fallback = usesServiceTiers
-        ? ''
-        : (groups.find((g) => g.value === 'default')?.value ??
-          groups[0]?.value ??
-          '')
-      form.setValue('group', fallback)
-      if (currentGroup === 'auto') {
-        form.setValue('auto_groups', [])
-        form.setValue('auto_groups_mode', 'inherit')
-        form.setValue('cross_group_retry', false)
-      }
-    }
-  }, [groups, form, selectedGroup, usesServiceTiers, hubRoutingEnabled])
 
   useEffect(() => {
     if (hubRoutingEnabled && selectedGroup !== 'default') {
@@ -373,37 +214,24 @@ export function ApiKeysMutateDrawer({
         )
         return
       }
-      if (routingOptions && data.hub_selections.length === 0) {
-        toast.error(t('Add at least one model family'))
+      if (routingOptions && data.hub_channel_ids.length === 0) {
+        form.setError('hub_channel_ids', {
+          message: t('Select at least one channel'),
+        })
         return
       }
       if (
-        routingOptions?.mode === 'provider' &&
-        data.hub_selections.some((selection) => {
-          const modelOption = routingOptions.models?.find(
-            (item) => item.model === selection.model
-          )
-          const option =
-            modelOption ||
-            routingOptions.families.find(
-              (family) => family.key === selection.family
+        routingOptions &&
+        data.hub_channel_ids.some(
+          (id) =>
+            !routingOptions.channels.some(
+              (channel) => channel.channel_id === id
             )
-          const selectedMultipliers =
-            selection.multipliers || selection.exact_multipliers || []
-          return (
-            !option ||
-            selectedMultipliers.length === 0 ||
-            selectedMultipliers.some(
-              (selectedMultiplier) =>
-                !option.exact_multipliers?.some(
-                  (multiplier) =>
-                    Math.abs(multiplier - selectedMultiplier) < 0.0005
-                )
-            )
-          )
-        })
+        )
       ) {
-        toast.error(t('Remove unavailable routes before saving'))
+        form.setError('hub_channel_ids', {
+          message: t('Remove deleted channels before saving'),
+        })
         return
       }
       const basePayload = transformFormDataToPayload(data, routingOptions)
@@ -483,9 +311,8 @@ export function ApiKeysMutateDrawer({
   const quotaPlaceholder = tokensOnly
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
-  const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
-  const hubSelections = form.watch('hub_selections')
+  const hubChannelIds = form.watch('hub_channel_ids')
 
   return (
     <Sheet
@@ -540,7 +367,11 @@ export function ApiKeysMutateDrawer({
               />
 
               {requiresHubRouting && routingOptionsFetching && (
-                <div className='space-y-3 rounded-md border p-3'>
+                <div
+                  className='space-y-3 py-3'
+                  role='status'
+                  aria-label={t('Loading channels')}
+                >
                   <Skeleton className='h-5 w-44' />
                   <Skeleton className='h-20 w-full' />
                 </div>
@@ -548,13 +379,13 @@ export function ApiKeysMutateDrawer({
               {!routingOptionsFetching && hubRoutingEnabled && (
                 <FormField
                   control={form.control}
-                  name='hub_selections'
+                  name='hub_channel_ids'
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
                         <HubRoutingPolicyEditor
                           options={routingOptions}
-                          value={hubSelections}
+                          value={hubChannelIds}
                           onChange={(value) => field.onChange(value)}
                         />
                       </FormControl>
@@ -591,115 +422,9 @@ export function ApiKeysMutateDrawer({
                 </div>
               )}
               {editingLegacyKey && (
-                <FormField
-                  control={form.control}
-                  name='group'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {usesServiceTiers ? t('Service tier') : t('Group')}
-                      </FormLabel>
-                      <FormControl>
-                        <ApiKeyGroupCombobox
-                          options={groups}
-                          value={field.value}
-                          onValueChange={(group) => {
-                            field.onChange(group)
-                            if (group === 'auto') {
-                              form.setValue('cross_group_retry', true, {
-                                shouldDirty: true,
-                              })
-                              return
-                            }
-                            form.setValue('cross_group_retry', false, {
-                              shouldDirty: true,
-                            })
-                          }}
-                          placeholder={t(
-                            usesServiceTiers
-                              ? 'Please select a service tier'
-                              : 'Select a group'
-                          )}
-                          emptyMessage={
-                            usesServiceTiers
-                              ? t('No service tier found.')
-                              : undefined
-                          }
-                          showRatio={!usesServiceTiers}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              {editingLegacyKey && selectedGroup === 'auto' && (
-                <FormField
-                  control={form.control}
-                  name='auto_groups'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Auto group order')}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          'Choose and order the groups this API key will try.'
-                        )}
-                      </FormDescription>
-                      <FormControl>
-                        <AutoGroupOrderEditor
-                          value={field.value}
-                          mode={autoGroupsMode}
-                          options={groups}
-                          globalOptions={globalAutoGroupOptions}
-                          maxCount={maxAutoGroups}
-                          onChange={(value) => {
-                            form.setValue('auto_groups_mode', value.mode, {
-                              shouldDirty: true,
-                              shouldValidate: false,
-                            })
-                            form.setValue(
-                              'auto_groups',
-                              value.groups.slice(0, maxAutoGroups),
-                              {
-                                shouldDirty: true,
-                                shouldValidate: true,
-                              }
-                            )
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              {editingLegacyKey && selectedGroup === 'auto' && (
-                <FormField
-                  control={form.control}
-                  name='cross_group_retry'
-                  render={({ field }) => (
-                    <FormItem className={sideDrawerSwitchItemClassName()}>
-                      <div className='flex flex-col gap-0.5'>
-                        <FormLabel className='text-sm'>
-                          {t('Cross-group retry')}
-                        </FormLabel>
-                        <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
-                          {t(
-                            'When enabled, if channels in the current group fail, it will try channels in the next group in order.'
-                          )}
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={!!field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                <p role='alert' className='text-destructive text-sm'>
+                  {t('Select channels to reactivate this API key.')}
+                </p>
               )}
 
               <FormField

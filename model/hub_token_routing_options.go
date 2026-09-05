@@ -1,284 +1,85 @@
 package model
 
 import (
+	"errors"
 	"fmt"
-	"math"
-	"sort"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 )
 
-var hubTokenRoutingFamilyOrder = []string{
-	"openai", "anthropic", "google", "xai", "deepseek", "alibaba", "bytedance", "zhipu", "other",
+type hubTokenRoutingChannelRow struct {
+	ChannelID       int
+	Name            string
+	ChannelModels   string
+	PublishedModels string
+	Multiplier      float64
+	ChannelStatus   int
+	ProviderStatus  string
+	TenantPublished bool
 }
 
-type hubTokenRoutingOptionRow struct {
-	ChannelID      int
-	ModelName      string
-	AbilityGroup   string
-	ChannelStatus  int
-	ProviderID     int
-	ProviderStatus string
-	Multiplier     float64
+func getHubTokenRoutingChannels(providerID int, channelIDs []int) ([]HubTokenRoutingChannel, error) {
+	if DB == nil || providerID <= 0 {
+		return nil, errors.New("routing provider is unavailable")
+	}
+	var rows []hubTokenRoutingChannelRow
+	query := DB.Table("hub_supply_groups AS supply_groups").
+		Select("channels.id AS channel_id, channels.name, channels.models AS channel_models, channels.status AS channel_status, supply_groups.published_models, supply_groups.price_multiplier AS multiplier, supply_groups.tenant_published, providers.status AS provider_status").
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Joins("JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
+		Where("supply_groups.provider_id = ?", providerID)
+	if len(channelIDs) > 0 {
+		query = query.Where("channels.id IN ?", channelIDs)
+	}
+	if err := query.Order("supply_groups.price_multiplier ASC, channels.id ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	channels := make([]HubTokenRoutingChannel, 0, len(rows))
+	for _, row := range rows {
+		group := HubSupplyGroup{PublishedModels: row.PublishedModels}
+		models := group.GetPublishedModels(row.ChannelModels)
+		channels = append(channels, HubTokenRoutingChannel{
+			ChannelID: row.ChannelID, Name: row.Name, Multiplier: roundHubTokenMultiplier(row.Multiplier), Models: models,
+			Available: row.ChannelStatus == common.ChannelStatusEnabled && row.ProviderStatus == HubProviderStatusActive &&
+				row.TenantPublished && validHubTokenMultiplier(row.Multiplier) && len(models) > 0,
+		})
+	}
+	return channels, nil
 }
 
 func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) {
-	options := &HubTokenRoutingOptions{
-		Mode:         HubTokenRoutingModePublic,
-		ProviderID:   providerID,
-		Families:     make([]HubTokenRoutingFamilyOption, 0),
-		TierCeilings: hub_routing_setting.GetFamilyTierCeilings(),
+	if providerID <= 0 || DB == nil {
+		return nil, errors.New("routing provider is unavailable")
 	}
-	if providerID > 0 {
-		options.Mode = HubTokenRoutingModeProvider
-		var provider HubProvider
-		if err := DB.Select("id", "name", "slug").First(&provider, providerID).Error; err != nil {
-			return nil, err
-		}
-		options.ProviderName = provider.Name
-		options.ProviderSlug = provider.Slug
-	}
-	if DB == nil || !DB.Migrator().HasTable(&Ability{}) {
-		return options, nil
-	}
-
-	rows := make([]hubTokenRoutingOptionRow, 0)
-	query := DB.Table("abilities AS abilities").
-		Select("abilities.channel_id, abilities.model AS model_name, abilities."+abilityGroupColumn()+" AS ability_group, channels.status AS channel_status, COALESCE(supply_groups.provider_id, 0) AS provider_id, COALESCE(providers.status, '') AS provider_status, COALESCE(supply_groups.price_multiplier, 1) AS multiplier").
-		Joins("JOIN channels ON channels.id = abilities.channel_id").
-		Joins("LEFT JOIN hub_supply_groups AS supply_groups ON supply_groups.new_api_channel_id = abilities.channel_id").
-		Joins("LEFT JOIN hub_providers AS providers ON providers.id = supply_groups.provider_id").
-		Where("abilities.enabled = ? AND channels.status = ?", true, common.ChannelStatusEnabled)
-	if providerID > 0 {
-		query = query.Where("supply_groups.provider_id = ?", providerID)
-	}
-	if err := query.Scan(&rows).Error; err != nil {
+	var provider HubProvider
+	if err := DB.Select("id", "name", "slug").First(&provider, providerID).Error; err != nil {
 		return nil, err
 	}
-
-	type familyChannelKey struct {
-		family    string
-		channelID int
+	channels, err := getHubTokenRoutingChannels(providerID, nil)
+	if err != nil {
+		return nil, err
 	}
-	seenChannels := make(map[familyChannelKey]struct{})
-	byFamily := make(map[string]map[float64]HubTokenRoutingAvailability)
-	providersByFamily := make(map[string]map[float64]map[int]struct{})
-	for _, row := range rows {
-		if row.ChannelStatus != common.ChannelStatusEnabled ||
-			!isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
-			(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) {
-			continue
-		}
-		family := ClassifyHubPublicModelFamily(row.ModelName)
-		key := familyChannelKey{family: family, channelID: row.ChannelID}
-		if _, exists := seenChannels[key]; exists {
-			continue
-		}
-		seenChannels[key] = struct{}{}
-		if byFamily[family] == nil {
-			byFamily[family] = make(map[float64]HubTokenRoutingAvailability)
-		}
-		if providersByFamily[family] == nil {
-			providersByFamily[family] = make(map[float64]map[int]struct{})
-		}
-		multiplier := roundHubTokenMultiplier(row.Multiplier)
-		if !validHubTokenMultiplier(multiplier) {
-			continue
-		}
-		bucket := byFamily[family][multiplier]
-		bucket.Multiplier = multiplier
-		bucket.ChannelCount++
-		if row.ProviderID > 0 {
-			if providersByFamily[family][multiplier] == nil {
-				providersByFamily[family][multiplier] = make(map[int]struct{})
-			}
-			providersByFamily[family][multiplier][row.ProviderID] = struct{}{}
-		}
-		byFamily[family][multiplier] = bucket
-	}
-
-	for _, family := range hubTokenRoutingFamilyOrder {
-		buckets := byFamily[family]
-		if len(buckets) == 0 && providerID > 0 {
-			continue
-		}
-		availability := make([]HubTokenRoutingAvailability, 0, len(buckets))
-		for multiplier, bucket := range buckets {
-			providerIDs := make([]int, 0, len(providersByFamily[family][multiplier]))
-			for currentProviderID := range providersByFamily[family][multiplier] {
-				providerIDs = append(providerIDs, currentProviderID)
-			}
-			sort.Ints(providerIDs)
-			bucket.ProviderCount = len(providerIDs)
-			bucket.ProviderIDs = providerIDs
-			availability = append(availability, bucket)
-		}
-		sort.Slice(availability, func(i, j int) bool {
-			return availability[i].Multiplier < availability[j].Multiplier
-		})
-		option := HubTokenRoutingFamilyOption{
-			Key:                 family,
-			MinMultiplier:       HubTokenRoutingMinMultiplier,
-			MaxMultiplier:       HubTokenRoutingMaxMultiplier,
-			SliderMaxMultiplier: 1,
-			Step:                HubTokenRoutingMultiplierStep,
-			Availability:        availability,
-			ExactMultipliers:    make([]float64, 0, len(availability)),
-		}
-		if len(availability) > 0 && availability[len(availability)-1].Multiplier > option.SliderMaxMultiplier {
-			option.SliderMaxMultiplier = availability[len(availability)-1].Multiplier
-		}
-		if option.SliderMaxMultiplier < 1 {
-			option.SliderMaxMultiplier = 1
-		}
-		providerSet := make(map[int]struct{})
-		for _, row := range rows {
-			if ClassifyHubPublicModelFamily(row.ModelName) != family || row.ProviderID <= 0 ||
-				!isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
-				(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) {
-				continue
-			}
-			if providerID > 0 && row.ProviderID != providerID {
-				continue
-			}
-			providerSet[row.ProviderID] = struct{}{}
-		}
-		option.AvailableChannelCount = 0
-		for _, bucket := range availability {
-			option.AvailableChannelCount += bucket.ChannelCount
-			option.ExactMultipliers = append(option.ExactMultipliers, bucket.Multiplier)
-		}
-		option.ProviderCount = len(providerSet)
-		options.Families = append(options.Families, option)
-	}
-	options.Models = buildHubTokenRoutingModelOptions(rows, providerID)
-	return options, nil
-}
-
-func buildHubTokenRoutingModelOptions(rows []hubTokenRoutingOptionRow, providerID int) []HubTokenRoutingModelOption {
-	type key struct {
-		model   string
-		channel int
-	}
-	seen := make(map[key]struct{})
-	byModel := make(map[string]map[float64]HubTokenRoutingAvailability)
-	providers := make(map[string]map[float64]map[int]struct{})
-	for _, row := range rows {
-		if row.ChannelStatus != common.ChannelStatusEnabled || !isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
-			(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) || (providerID > 0 && row.ProviderID != providerID) {
-			continue
-		}
-		modelName := strings.TrimSpace(row.ModelName)
-		if modelName == "" {
-			continue
-		}
-		if _, ok := seen[key{modelName, row.ChannelID}]; ok {
-			continue
-		}
-		seen[key{modelName, row.ChannelID}] = struct{}{}
-		multiplier := roundHubTokenMultiplier(row.Multiplier)
-		if !validHubTokenMultiplier(multiplier) {
-			continue
-		}
-		if byModel[modelName] == nil {
-			byModel[modelName] = make(map[float64]HubTokenRoutingAvailability)
-		}
-		if providers[modelName] == nil {
-			providers[modelName] = make(map[float64]map[int]struct{})
-		}
-		bucket := byModel[modelName][multiplier]
-		bucket.Multiplier = multiplier
-		bucket.ChannelCount++
-		if row.ProviderID > 0 {
-			if providers[modelName][multiplier] == nil {
-				providers[modelName][multiplier] = make(map[int]struct{})
-			}
-			providers[modelName][multiplier][row.ProviderID] = struct{}{}
-		}
-		byModel[modelName][multiplier] = bucket
-	}
-	models := make([]string, 0, len(byModel))
-	for modelName := range byModel {
-		models = append(models, modelName)
-	}
-	sort.Strings(models)
-	result := make([]HubTokenRoutingModelOption, 0, len(models))
-	for _, modelName := range models {
-		buckets := byModel[modelName]
-		availability := make([]HubTokenRoutingAvailability, 0, len(buckets))
-		for multiplier, bucket := range buckets {
-			ids := make([]int, 0, len(providers[modelName][multiplier]))
-			for id := range providers[modelName][multiplier] {
-				ids = append(ids, id)
-			}
-			sort.Ints(ids)
-			bucket.ProviderIDs = ids
-			bucket.ProviderCount = len(ids)
-			availability = append(availability, bucket)
-		}
-		sort.Slice(availability, func(i, j int) bool { return availability[i].Multiplier < availability[j].Multiplier })
-		option := HubTokenRoutingModelOption{
-			Model: modelName, MinMultiplier: HubTokenRoutingMinMultiplier, MaxMultiplier: HubTokenRoutingMaxMultiplier,
-			SliderMaxMultiplier: 1, Step: HubTokenRoutingMultiplierStep, Availability: availability,
-			ExactMultipliers: make([]float64, 0, len(availability)),
-		}
-		providerSet := make(map[int]struct{})
-		for _, bucket := range availability {
-			option.AvailableChannelCount += bucket.ChannelCount
-			option.ExactMultipliers = append(option.ExactMultipliers, bucket.Multiplier)
-			for _, id := range bucket.ProviderIDs {
-				providerSet[id] = struct{}{}
-			}
-			if bucket.Multiplier > option.SliderMaxMultiplier {
-				option.SliderMaxMultiplier = bucket.Multiplier
-			}
-		}
-		if option.SliderMaxMultiplier < 1 {
-			option.SliderMaxMultiplier = 1
-		}
-		option.ProviderCount = len(providerSet)
-		result = append(result, option)
-	}
-	return result
+	return &HubTokenRoutingOptions{
+		Mode: HubTokenRoutingModeChannels, ProviderID: providerID,
+		ProviderName: provider.Name, ProviderSlug: provider.Slug,
+		Channels: channels, MaxSelections: HubTokenRoutingMaxSelections,
+	}, nil
 }
 
 func ValidateHubTokenProviderSelections(policy *HubTokenRoutingPolicy) error {
-	if policy == nil || policy.Mode != HubTokenRoutingModeProvider {
+	if policy == nil {
 		return nil
 	}
-	options, err := GetHubTokenRoutingOptions(policy.ProviderID)
+	resolved, err := ResolveHubTokenRoutingPolicy(policy)
 	if err != nil {
 		return err
 	}
-	available := make(map[string][]float64, len(options.Families))
-	for _, option := range options.Families {
-		available[option.Key] = option.ExactMultipliers
+	if len(resolved.Channels) != len(policy.ChannelIDs) {
+		return errors.New("selected channel does not belong to this provider or no longer exists")
 	}
-	for _, option := range options.Models {
-		available[option.Model] = option.ExactMultipliers
-	}
-	for _, selection := range policy.Selections {
-		modelKey := selection.Model
-		if modelKey == "" {
-			modelKey = selection.Family
-		}
-		exacts := selection.Multipliers
-		if len(exacts) == 0 {
-			exacts = selection.ExactMultipliers
-		}
-		for _, requested := range exacts {
-			matched := false
-			for _, candidate := range available[modelKey] {
-				if math.Abs(candidate-requested) < 0.0005 {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return fmt.Errorf("provider does not publish multiplier %.3f for %s", requested, modelKey)
-			}
+	for _, channel := range resolved.Channels {
+		if !validHubTokenMultiplier(channel.Multiplier) {
+			return fmt.Errorf("channel %d has invalid pricing", channel.ChannelID)
 		}
 	}
 	return nil

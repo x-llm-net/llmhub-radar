@@ -36,39 +36,15 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-type GroupMetadata = {
-  ratios: Record<string, number | string>
-  usesServiceTiers: boolean
-}
-
-function useGroupMetadata(): GroupMetadata {
-  const { data } = useQuery({
+export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
+  const { t, i18n } = useTranslation()
+  const { data: groupsData } = useQuery({
     queryKey: ['user-groups'],
     queryFn: getUserGroups,
     staleTime: 0,
-    select: (res) => {
-      if (!res.success || !res.data) {
-        return { ratios: {}, usesServiceTiers: false }
-      }
-      const ratios: Record<string, number | string> = {}
-      for (const [group, info] of Object.entries(res.data)) {
-        if (typeof info.ratio === 'number' || typeof info.ratio === 'string') {
-          ratios[group] = info.ratio
-        }
-      }
-      return {
-        ratios,
-        usesServiceTiers: areServiceTierGroups(Object.keys(res.data)),
-      }
-    },
   })
-
-  return data ?? { ratios: {}, usesServiceTiers: false }
-}
-
-export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
-  const { t, i18n } = useTranslation()
-  const { ratios: groupRatios, usesServiceTiers } = useGroupMetadata()
+  const groupMetadata =
+    groupsData?.success && groupsData.data ? groupsData.data : {}
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
@@ -189,10 +165,15 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       cell: ({ row }) => {
         const apiKey = row.original
         const group = row.getValue('group') as string
+        const ratioValue = groupMetadata[group]?.ratio
         return (
           <ApiKeyGroupCell
             group={group}
-            ratio={usesServiceTiers ? undefined : groupRatios[group]}
+            ratio={
+              areServiceTierGroups(Object.keys(groupMetadata))
+                ? undefined
+                : ratioValue
+            }
             crossGroupRetry={apiKey.cross_group_retry}
             shouldReduceMotion={shouldReduceMotion}
             policy={apiKey.hub_routing_policy}

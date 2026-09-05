@@ -48,18 +48,9 @@ export const apiKeySchema = z.object({
   allow_ips: z.string().nullish().default(''),
   hub_routing_policy: z
     .object({
-      mode: z.enum(['public_pool', 'provider']),
+      mode: z.string(),
       provider_id: z.number().optional(),
-      selections: z.array(
-        z.object({
-          model: z.string().optional(),
-          family: z.string().optional(),
-          min_multiplier: z.number().optional(),
-          max_multiplier: z.number().optional(),
-          exact_multipliers: z.array(z.number()).optional(),
-          multipliers: z.array(z.number()).optional(),
-        })
-      ),
+      channel_ids: z.array(z.number()).optional(),
     })
     .nullish(),
 })
@@ -113,55 +104,26 @@ export interface ApiKeyFormData {
   hub_routing_policy?: HubTokenRoutingPolicy
 }
 
-export interface HubTokenRoutingSelection {
-  model?: string
-  family?: string
-  min_multiplier?: number
-  max_multiplier?: number
-  exact_multipliers?: number[]
-  multipliers?: number[]
-}
-
 export interface HubTokenRoutingPolicy {
-  mode: 'public_pool' | 'provider'
-  provider_id?: number
-  selections: HubTokenRoutingSelection[]
+  mode: 'channels'
+  provider_id: number
+  channel_ids: number[]
 }
 
-export interface HubTokenRoutingAvailability {
+export interface HubTokenRoutingChannelOption {
+  channel_id: number
+  name: string
   multiplier: number
-  channel_count: number
-  provider_count: number
-  provider_ids?: number[]
-}
-
-export interface HubTokenRoutingFamilyOption {
-  key: string
-  min_multiplier: number
-  max_multiplier: number
-  slider_max_multiplier: number
-  step: number
-  available_channel_count: number
-  provider_count: number
-  exact_multipliers?: number[]
-  availability: HubTokenRoutingAvailability[]
-}
-
-export interface HubTokenRoutingModelOption extends HubTokenRoutingFamilyOption {
-  model: string
+  models: string[]
+  available: boolean
 }
 
 export interface HubTokenRoutingOptions {
-  mode: 'public_pool' | 'provider'
-  provider_id?: number
+  mode: 'channels'
+  provider_id: number
   provider_name?: string
   provider_slug?: string
-  families: HubTokenRoutingFamilyOption[]
-  models?: HubTokenRoutingModelOption[]
-  tier_ceilings: Record<
-    string,
-    { special: number; low: number; medium: number; high: number }
-  >
+  channels: HubTokenRoutingChannelOption[]
 }
 
 export interface TokenAutoGroupsConfig {

@@ -790,11 +790,9 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		}
 		routingScope := []string(nil)
 		if policy := GetHubTokenRoutingPolicy(c); policy != nil {
-			routingScope = []string{"hub", policy.Mode}
-			if policy.Mode == model.HubTokenRoutingModeProvider {
-				routingScope = append(routingScope, strconv.Itoa(policy.ProviderID))
-			}
-			if len(policy.Selections) > 0 {
+			routingScope = []string{"hub", policy.Mode, strconv.Itoa(policy.ProviderID),
+				strconv.Itoa(common.GetContextKeyInt(c, constant.ContextKeyTenantId))}
+			if len(policy.ChannelIDs) > 0 {
 				encoded, err := common.Marshal(policy)
 				if err == nil {
 					routingScope = append(routingScope, affinityFingerprint(string(encoded)))

@@ -159,7 +159,7 @@ func TestProviderHostRoutingFallsBackImmediatelyWhenProviderHasNoModel(t *testin
 	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback))
 }
 
-func TestProviderPolicyDoesNotFallbackWhenOriginProviderIsDisabled(t *testing.T) {
+func TestChannelPolicyCannotFallbackWithoutSelectedModel(t *testing.T) {
 	const modelName = "gpt-disabled-origin-provider-policy"
 	originProvider := &model.HubProvider{OwnerUserId: 95011, Name: "Disabled Origin", Slug: "disabled-origin"}
 	fallbackProvider := &model.HubProvider{OwnerUserId: 95012, Name: "Disabled Origin Fallback", Slug: "disabled-origin-fallback"}
@@ -193,9 +193,8 @@ func TestProviderPolicyDoesNotFallbackWhenOriginProviderIsDisabled(t *testing.T)
 	})
 
 	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
-		Selections: []model.HubTokenRoutingSelection{{
-			Family: "openai", ExactMultipliers: []float64{0.5},
-		}},
+		Mode:       model.HubTokenRoutingModeChannels,
+		ChannelIDs: []int{fallbackChannel.Id + 1},
 	}, originProvider.Id)
 	require.NoError(t, err)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -207,9 +206,8 @@ func TestProviderPolicyDoesNotFallbackWhenOriginProviderIsDisabled(t *testing.T)
 
 	selected, _, err := CacheGetRandomSatisfiedChannel(param)
 
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, selected)
-	require.Contains(t, err.Error(), "provider is unavailable")
 }
 
 func TestProviderHostRoutingPreservesAutoGroupRetryState(t *testing.T) {

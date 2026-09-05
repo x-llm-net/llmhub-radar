@@ -368,12 +368,8 @@ func TestListModelsFiltersByHubTokenRoutingAvailability(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
-		Mode: model.HubTokenRoutingModePublic,
-		Selections: []model.HubTokenRoutingSelection{{
-			Family:        "openai",
-			MinMultiplier: 5,
-			MaxMultiplier: 6,
-		}},
+		Mode: model.HubTokenRoutingModeChannels, ProviderID: 1, ChannelIDs: []int{2},
+		Channels: []model.HubTokenRoutingChannel{{ChannelID: 2, Models: []string{"gpt-premium-policy-model"}, Multiplier: 5.5}},
 	})
 
 	ListModels(ctx, constant.ChannelTypeOpenAI)

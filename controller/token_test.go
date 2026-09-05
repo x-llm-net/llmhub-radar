@@ -510,6 +510,7 @@ func TestGetTokenMasksKeyInResponse(t *testing.T) {
 }
 
 func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
+	configureTokenServiceTierRouting(t, false)
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "editable-token", "yzab1234cdef5678")
 

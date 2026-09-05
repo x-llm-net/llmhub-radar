@@ -136,7 +136,11 @@ func ApplyHubSupplyPricingFromRequest(c *gin.Context, groupRatioInfo hosttypes.G
 			return applyHubFallbackPriceProtection(c, priced), nil
 		}
 	}
-	return ApplyHubSupplyPricing(groupRatioInfo, channelID)
+	priced, err := ApplyHubSupplyPricing(groupRatioInfo, channelID)
+	if err != nil {
+		return priced, err
+	}
+	return applyHubFallbackPriceProtection(c, priced), nil
 }
 
 func applyHubFallbackPriceProtection(c *gin.Context, groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.GroupRatioInfo {

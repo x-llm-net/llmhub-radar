@@ -167,23 +167,19 @@ func TestDistributeHubPolicyDistinguishesUnconfiguredFromUnavailable(t *testing.
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, i18n.Init())
 
-	newContext := func(modelName string, multiplier float64) (*gin.Context, *httptest.ResponseRecorder) {
+	newContext := func(modelName string, channels []model.HubTokenRoutingChannel) (*gin.Context, *httptest.ResponseRecorder) {
 		ctx, recorder := newDistributorServiceTierContextForModel(0, modelName)
 		common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")
 		common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
-			Mode: model.HubTokenRoutingModePublic,
-			Selections: []model.HubTokenRoutingSelection{{
-				Family:        "openai",
-				MinMultiplier: multiplier,
-				MaxMultiplier: multiplier,
-			}},
+			Mode: model.HubTokenRoutingModeChannels, ProviderID: 1, ChannelIDs: []int{1},
+			Channels: channels,
 		})
 		return ctx, recorder
 	}
 
 	t.Run("never configured model is not retryable", func(t *testing.T) {
 		db := setupDistributorServiceTierTestDB(t)
-		ctx, recorder := newContext("gpt-5.6-luna", 0.2)
+		ctx, recorder := newContext("gpt-5.6-luna", []model.HubTokenRoutingChannel{})
 		ctx.Set("id", 74000)
 		ctx.Set("username", "unsupported-model-user")
 		ctx.Set("token_id", 40)
@@ -236,7 +232,7 @@ func TestDistributeHubPolicyDistinguishesUnconfiguredFromUnavailable(t *testing.
 			Status:          model.HubSupplyGroupStatusError,
 		}).Error)
 		model.InitChannelCache()
-		ctx, recorder := newContext(modelName, 0.2)
+		ctx, recorder := newContext(modelName, []model.HubTokenRoutingChannel{{ChannelID: channel.Id, Models: []string{modelName}, Multiplier: 0.2}})
 
 		Distribute()(ctx)
 
@@ -244,7 +240,7 @@ func TestDistributeHubPolicyDistinguishesUnconfiguredFromUnavailable(t *testing.
 		assertServiceTierUnavailable(t, recorder)
 	})
 
-	t.Run("disabled platform channel remains temporarily unavailable", func(t *testing.T) {
+	t.Run("unselected platform channel does not authorize a model", func(t *testing.T) {
 		db := setupDistributorServiceTierTestDB(t)
 		const modelName = "gpt-configured-platform-disabled"
 		channel := &model.Channel{
@@ -259,12 +255,12 @@ func TestDistributeHubPolicyDistinguishesUnconfiguredFromUnavailable(t *testing.
 			Group: "default", Model: modelName, ChannelId: channel.Id, Enabled: false,
 		}).Error)
 		model.InitChannelCache()
-		ctx, recorder := newContext(modelName, 1)
+		ctx, recorder := newContext(modelName, []model.HubTokenRoutingChannel{})
 
 		Distribute()(ctx)
 
 		require.True(t, ctx.IsAborted())
-		assertServiceTierUnavailable(t, recorder)
+		assert.Equal(t, http.StatusNotFound, recorder.Code)
 	})
 }
 
@@ -289,12 +285,8 @@ func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T
 		provider, channel := createFixedChannelServiceTierFixture(t, db, "fixed-policy-multiplier")
 		ctx, recorder := newFixedChannelServiceTierContext(channel.Id, "fixed-policy-multiplier", "/v1/chat/completions", `{"model":"fixed-policy-multiplier","messages":[]}`, provider.Id)
 		common.SetContextKey(ctx, constant.ContextKeyHubTokenRoutingPolicy, &model.HubTokenRoutingPolicy{
-			Mode: model.HubTokenRoutingModePublic,
-			Selections: []model.HubTokenRoutingSelection{{
-				Family:        "other",
-				MinMultiplier: 0.2,
-				MaxMultiplier: 0.2,
-			}},
+			Mode: model.HubTokenRoutingModeChannels, ProviderID: provider.Id, ChannelIDs: []int{channel.Id},
+			Channels: []model.HubTokenRoutingChannel{{ChannelID: channel.Id, Models: []string{"fixed-policy-multiplier"}, Multiplier: 0.2}},
 		})
 
 		Distribute()(ctx)
@@ -565,12 +557,10 @@ func TestDistributeReusesProviderPolicyFallbackAffinity(t *testing.T) {
 		affinitySetting.Enabled = originalEnabled
 	})
 
-	policy, err := model.NormalizeHubTokenRoutingPolicy(&model.HubTokenRoutingPolicy{
-		Selections: []model.HubTokenRoutingSelection{{
-			Family: "openai", ExactMultipliers: []float64{0.5},
-		}},
-	}, originProvider.Id)
-	require.NoError(t, err)
+	policy := &model.HubTokenRoutingPolicy{
+		Mode: model.HubTokenRoutingModeChannels, ProviderID: originProvider.Id, ChannelIDs: []int{999},
+		Channels: []model.HubTokenRoutingChannel{{ChannelID: 999, Models: []string{modelName}, Multiplier: 0.5}},
+	}
 	newContext := func() (*gin.Context, *httptest.ResponseRecorder) {
 		ctx, recorder := newDistributorServiceTierContextForModel(originProvider.Id, modelName)
 		common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "default")

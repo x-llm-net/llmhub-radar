@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -533,10 +534,15 @@ func TokenAuth() func(c *gin.Context) {
 		}
 
 		userCache.WriteContext(c)
+		if err = SetupContextForToken(c, token, parts...); err != nil {
+			return
+		}
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		if tokenGroup != "" {
+		if service.GetHubTokenRoutingPolicy(c) != nil {
+			userGroup = "default"
+		} else if tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -553,10 +559,6 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 
-		err = SetupContextForToken(c, token, parts...)
-		if err != nil {
-			return
-		}
 		c.Next()
 	}
 }
@@ -581,19 +583,50 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
-	if policy, err := token.GetHubRoutingPolicy(); err != nil {
-		return fmt.Errorf("invalid hub routing policy: %w", err)
-	} else if policy != nil {
+	policy, policyErr := token.GetHubRoutingPolicy()
+	hubToken := token.HubTenantId > 0 || token.HubProviderId > 0 || token.HubRoutingPolicy != "" ||
+		token.Id > 0 && hub_routing_setting.Snapshot().Enabled
+	if policyErr != nil || policy == nil && hubToken {
+		err := fmt.Errorf("this API key requires channel selection; edit the key and select channels before retrying")
+		abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
+		return err
+	}
+	if policy != nil {
 		requestedProviderID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
-		if requestedProviderID > 0 && policy.Mode == model.HubTokenRoutingModeProvider &&
-			policy.ProviderID != requestedProviderID {
-			err := fmt.Errorf("token is bound to another provider")
+		if requestedProviderID > 0 && (policy.ProviderID != requestedProviderID || token.HubProviderId != requestedProviderID) {
+			err := fmt.Errorf("token is bound to another provider domain")
 			abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
 			return err
 		}
-		common.SetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy, policy)
+		if c.Request != nil && c.Request.Host != "" {
+			resolution, err := model.ResolveTenantHost(c.Request.Host)
+			if err != nil {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "could not resolve the API key domain")
+				return err
+			}
+			if resolution.IsConfigured && (!resolution.IsTenantHost || resolution.TenantID != token.HubTenantId || token.HubProviderId != requestedProviderID) {
+				err := fmt.Errorf("token does not belong to the current domain")
+				abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
+				return err
+			}
+		}
+		provider, ok := model.GetHubProviderRoutingByID(policy.ProviderID)
+		if !ok || token.HubTenantId <= 0 || provider.TenantId == nil || *provider.TenantId != token.HubTenantId ||
+			token.HubProviderId > 0 && token.HubProviderId != policy.ProviderID {
+			err := fmt.Errorf("token routing ownership is unavailable; select channels again")
+			abortWithOpenAiMessage(c, http.StatusForbidden, err.Error(), types.ErrorCodeAccessDenied)
+			return err
+		}
+		resolved, err := model.ResolveHubTokenRoutingPolicy(policy)
+		if err != nil {
+			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "could not load the channels selected for this API key")
+			return err
+		}
+		common.SetContextKey(c, constant.ContextKeyTenantId, token.HubTenantId)
+		common.SetContextKey(c, constant.ContextKeyHubTokenRoutingPolicy, resolved)
+		common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, false)
 	}
-	if token.AutoGroups != "" {
+	if policy == nil && token.AutoGroups != "" {
 		autoGroups, err := token.GetAutoGroups()
 		if err != nil {
 			common.SysError(fmt.Sprintf("failed to parse auto groups for token %d: %v", token.Id, err))

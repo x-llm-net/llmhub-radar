@@ -40,8 +40,9 @@ type tokenRequest struct {
 
 type tokenResponse struct {
 	*model.Token
-	AutoGroups       []string                     `json:"auto_groups"`
-	HubRoutingPolicy *model.HubTokenRoutingPolicy `json:"hub_routing_policy,omitempty"`
+	AutoGroups           []string                     `json:"auto_groups"`
+	HubRoutingPolicy     *model.HubTokenRoutingPolicy `json:"hub_routing_policy,omitempty"`
+	NeedsReconfiguration bool                         `json:"needs_reconfiguration"`
 }
 
 func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
@@ -63,7 +64,8 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 		common.SysError(fmt.Sprintf("failed to parse hub routing policy for token %d: %v", token.Id, err))
 		policy = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups, HubRoutingPolicy: policy}
+	needsReconfiguration := err != nil || policy == nil && (token.HubTenantId > 0 || token.HubProviderId > 0 || hub_routing_setting.Snapshot().Enabled)
+	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups, HubRoutingPolicy: policy, NeedsReconfiguration: needsReconfiguration}
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
@@ -131,29 +133,56 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 	return true
 }
 
-func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRoutingPolicy, existingPolicy *model.HubTokenRoutingPolicy) (*model.HubTokenRoutingPolicy, bool, error) {
-	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
-	if existingPolicy != nil {
-		switch existingPolicy.Mode {
-		case model.HubTokenRoutingModeProvider:
-			if providerID > 0 && providerID != existingPolicy.ProviderID {
-				return nil, input != nil, fmt.Errorf("routing scope does not match the current domain")
-			}
-			providerID = existingPolicy.ProviderID
-		case model.HubTokenRoutingModePublic:
-			if providerID > 0 {
-				return nil, input != nil, fmt.Errorf("routing scope does not match the current domain")
-			}
-			providerID = 0
-		default:
-			return nil, input != nil, fmt.Errorf("invalid existing routing policy mode")
+func resolveTokenRoutingProviderID(c *gin.Context) (int, error) {
+	tenantID := common.GetContextKeyInt(c, constant.ContextKeyTenantId)
+	if tenantID <= 0 && c.Request != nil {
+		resolution, err := model.ResolveTenantHost(c.Request.Host)
+		if err != nil {
+			return 0, err
+		}
+		if resolution.IsTenantHost {
+			tenantID = resolution.TenantID
+			common.SetContextKey(c, constant.ContextKeyTenantId, tenantID)
 		}
 	}
+	if tenantID <= 0 {
+		return 0, fmt.Errorf("channel selection requires a tenant domain")
+	}
+	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
+	var provider *model.HubProvider
+	var err error
+	if providerID > 0 {
+		provider, err = model.GetHubProviderByIDInTenant(providerID, &tenantID)
+	} else {
+		owner, ownerErr := model.GetTenantOwnerMember(tenantID)
+		if ownerErr != nil || owner == nil || owner.Status != model.TenantMemberStatusActive {
+			return 0, fmt.Errorf("the tenant has no active owner for channel selection")
+		}
+		provider, err = model.GetHubProviderByOwnerUserIDInTenant(owner.UserId, tenantID)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if provider == nil || provider.Status != model.HubProviderStatusActive {
+		return 0, fmt.Errorf("the current domain has no active provider channels")
+	}
+	return provider.Id, nil
+}
+
+func normalizeTokenHubRoutingPolicy(c *gin.Context, input *model.HubTokenRoutingPolicy, existingPolicy *model.HubTokenRoutingPolicy) (*model.HubTokenRoutingPolicy, bool, error) {
 	if input == nil {
-		if providerID > 0 {
-			return nil, false, fmt.Errorf("provider subdomain requires a routing policy")
+		scope := getTokenHubScope(c)
+		if existingPolicy != nil || scope.ProviderID > 0 || scope.TenantID > 0 || hub_routing_setting.Snapshot().Enabled {
+			return nil, false, fmt.Errorf("select channels for this API key before saving")
 		}
 		return nil, false, nil
+	}
+	providerID, err := resolveTokenRoutingProviderID(c)
+	if err != nil {
+		return nil, true, err
+	}
+	if input.ProviderID > 0 && input.ProviderID != providerID || existingPolicy != nil && existingPolicy.ProviderID != providerID {
+		return nil, true, fmt.Errorf("routing scope does not match the current domain")
 	}
 	policy, err := model.NormalizeHubTokenRoutingPolicy(input, providerID)
 	if err != nil {
@@ -227,9 +256,17 @@ func GetTokenAutoGroups(c *gin.Context) {
 }
 
 func GetHubTokenRoutingOptions(c *gin.Context) {
-	providerID := common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId)
-	if providerID <= 0 {
-		providerID, _ = strconv.Atoi(c.Query("provider_id"))
+	providerID, err := resolveTokenRoutingProviderID(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if requested := c.Query("provider_id"); requested != "" {
+		requestedProviderID, parseErr := strconv.Atoi(requested)
+		if parseErr != nil || requestedProviderID != providerID {
+			common.ApiError(c, fmt.Errorf("routing scope does not match the current domain"))
+			return
+		}
 	}
 	options, err := model.GetHubTokenRoutingOptions(providerID)
 	if err != nil {
@@ -328,7 +365,6 @@ func GetTokenUsage(c *gin.Context) {
 }
 
 func AddToken(c *gin.Context) {
-	scope := getTokenHubScope(c)
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -341,6 +377,7 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	scope := getTokenHubScope(c)
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
@@ -478,15 +515,18 @@ func UpdateToken(c *gin.Context) {
 		return
 	}
 	existingPolicy, parseErr := cleanToken.GetHubRoutingPolicy()
-	if parseErr != nil {
-		common.ApiError(c, parseErr)
+	if statusOnly == "" && request.HubRoutingPolicy == nil && (parseErr != nil || cleanToken.HubTenantId > 0 || cleanToken.HubProviderId > 0) {
+		common.ApiError(c, fmt.Errorf("select channels for this API key before saving"))
 		return
+	}
+	if parseErr != nil {
+		existingPolicy = nil
 	}
 	var routingPolicy *model.HubTokenRoutingPolicy
 	if statusOnly == "" {
 		routingPolicy, _, err = normalizeTokenHubRoutingPolicy(c, request.HubRoutingPolicy, existingPolicy)
-		if err != nil && request.HubRoutingPolicy != nil {
-			common.ApiErrorI18n(c, i18n.MsgTokenRoutingScopeMismatch)
+		if err != nil {
+			common.ApiError(c, err)
 			return
 		}
 	}

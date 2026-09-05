@@ -57,7 +57,7 @@ func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback) {
 		requestedProviderId := common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId)
 		if requestedProviderId <= 0 {
-			if policy := GetHubTokenRoutingPolicy(ctx); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
+			if policy := GetHubTokenRoutingPolicy(ctx); policy != nil {
 				requestedProviderId = policy.ProviderID
 			}
 		}

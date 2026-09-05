@@ -24,12 +24,7 @@ import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { DEFAULT_GROUP } from '../constants'
 import type { ApiKey, ApiKeyFormData, HubTokenRoutingOptions } from '../types'
 
-function requireExactMultipliers(value: number[] | undefined): number[] {
-  if (!value || value.length === 0) {
-    throw new Error('Provider routing selection requires an exact multiplier')
-  }
-  return value
-}
+export const MAX_HUB_CHANNEL_SELECTIONS = 8
 
 // ============================================================================
 // Form Schema
@@ -51,14 +46,17 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
       auto_groups_mode: z.enum(['inherit', 'custom']),
       auto_groups: z.array(z.string()),
       cross_group_retry: z.boolean().optional(),
-      hub_selections: z.array(
-        z.object({
-          family: z.string(),
-          min_multiplier: z.number(),
-          max_multiplier: z.number(),
-          exact_multipliers: z.array(z.number()).optional(),
-        })
-      ),
+      hub_channel_ids: z
+        .array(z.number().int().positive())
+        .max(
+          MAX_HUB_CHANNEL_SELECTIONS,
+          t('Select at most {{max}} channels', {
+            max: MAX_HUB_CHANNEL_SELECTIONS,
+          })
+        )
+        .refine((ids) => new Set(ids).size === ids.length, {
+          message: t('Channels must not contain duplicates'),
+        }),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
@@ -129,7 +127,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   auto_groups_mode: 'inherit',
   auto_groups: [],
   cross_group_retry: true,
-  hub_selections: [],
+  hub_channel_ids: [],
   tokenCount: 1,
 }
 
@@ -175,37 +173,14 @@ export function transformFormDataToPayload(
         : [],
     cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
     ...(routingOptions &&
-      data.hub_selections.length > 0 && {
+      data.hub_channel_ids.length > 0 && {
         group: 'default',
         auto_groups: [],
         cross_group_retry: false,
         hub_routing_policy: {
-          mode:
-            routingOptions?.mode === 'provider' ? 'provider' : 'public_pool',
-          ...(routingOptions?.provider_id
-            ? { provider_id: routingOptions.provider_id }
-            : {}),
-          selections: data.hub_selections.map((selection) => ({
-            ...(selection.model
-              ? { model: selection.model }
-              : { family: selection.family }),
-            ...(selection.model || selection.multipliers
-              ? {
-                  multipliers: requireExactMultipliers(
-                    selection.multipliers || selection.exact_multipliers
-                  ),
-                }
-              : routingOptions?.mode === 'provider'
-                ? {
-                    exact_multipliers: requireExactMultipliers(
-                      selection.exact_multipliers
-                    ),
-                  }
-                : {
-                    min_multiplier: selection.min_multiplier,
-                    max_multiplier: selection.max_multiplier,
-                  }),
-          })),
+          mode: 'channels',
+          provider_id: routingOptions.provider_id,
+          channel_ids: [...data.hub_channel_ids],
         },
       }),
   }
@@ -244,16 +219,10 @@ export function transformApiKeyToFormDefaults(
     auto_groups_mode: autoGroupsMode,
     auto_groups: autoGroups,
     cross_group_retry: !!apiKey.cross_group_retry,
-    hub_selections: (apiKey.hub_routing_policy?.selections || []).map(
-      (selection) => ({
-        model: selection.model,
-        family: selection.family,
-        min_multiplier: selection.min_multiplier ?? 0.01,
-        max_multiplier: selection.max_multiplier ?? 1,
-        exact_multipliers: selection.exact_multipliers,
-        multipliers: selection.multipliers || selection.exact_multipliers,
-      })
-    ),
+    hub_channel_ids:
+      apiKey.hub_routing_policy?.mode === 'channels'
+        ? [...(apiKey.hub_routing_policy.channel_ids || [])]
+        : [],
     tokenCount: 1,
   }
 }

@@ -219,6 +219,7 @@ func TestHubAffinityExpiredMainCanRecoverAgainAfterFailure(t *testing.T) {
 		affinityValue,
 		"hub",
 		model.HubTokenRoutingModePublic,
+		"0", "0",
 	)
 	mainCache := getChannelAffinityCache()
 	fallbackCache := getChannelAffinityFallbackCache()

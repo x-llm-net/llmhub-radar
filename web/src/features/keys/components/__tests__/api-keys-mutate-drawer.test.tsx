@@ -120,14 +120,9 @@ const providerScopedApiKey: ApiKey = {
   name: 'provider-scoped',
   group: 'default',
   hub_routing_policy: {
-    mode: 'provider',
+    mode: 'channels',
     provider_id: 7,
-    selections: [
-      {
-        family: 'openai',
-        exact_multipliers: [0.8],
-      },
-    ],
+    channel_ids: [30, 10],
   },
 }
 
@@ -163,34 +158,30 @@ function installApiFixtures(
         return { data: { success: true, data: legacyApiKey } }
       case '/api/token/2':
         return { data: { success: true, data: providerScopedApiKey } }
+      case '/api/token/routing-options':
       case '/api/token/routing-options?provider_id=7':
         return {
           data: {
             success: true,
             data: {
-              mode: 'provider',
+              mode: 'channels',
               provider_id: 7,
-              families: [
+              channels: [
                 {
-                  key: 'openai',
-                  min_multiplier: 0.01,
-                  max_multiplier: 1,
-                  slider_max_multiplier: 1,
-                  step: 0.001,
-                  availability: [
-                    {
-                      multiplier: 0.8,
-                      channel_count: 1,
-                      provider_count: 1,
-                      provider_ids: [7],
-                    },
-                  ],
-                  exact_multipliers: [0.8],
-                  available_channel_count: 1,
-                  provider_count: 1,
+                  channel_id: 30,
+                  name: 'Premium GPT',
+                  multiplier: 0.6,
+                  models: ['gpt-5'],
+                  available: true,
+                },
+                {
+                  channel_id: 10,
+                  name: 'Economy GPT',
+                  multiplier: 0.3,
+                  models: ['gpt-5', 'gpt-image-1'],
+                  available: true,
                 },
               ],
-              tier_ceilings: {},
             },
           },
         }
@@ -287,9 +278,16 @@ async function renderDrawer(
       { updatedAt: freshAt }
     )
   }
+  const providerId = currentRow?.hub_routing_policy?.provider_id
+  if (routingOptionsData === undefined) {
+    const url = providerId
+      ? `/api/token/routing-options?provider_id=${providerId}`
+      : '/api/token/routing-options'
+    routingOptionsData = (await apiClient.get(url)).data
+  }
   if (routingOptionsData !== undefined) {
     queryClient.setQueryData(
-      ['hub-token-routing-options', window.location.hostname, undefined],
+      ['hub-token-routing-options', window.location.hostname, providerId],
       routingOptionsData,
       { updatedAt: freshAt }
     )
@@ -360,18 +358,6 @@ async function changeInput(input: HTMLInputElement, value: string) {
   })
 }
 
-async function selectComboboxOption(
-  trigger: HTMLButtonElement,
-  optionDescription: string
-) {
-  await act(async () => trigger.click())
-  const option = [
-    ...document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
-  ].find((candidate) => candidate.textContent?.includes(optionDescription))
-  assert.ok(option, `Expected option containing "${optionDescription}"`)
-  await act(async () => option.click())
-}
-
 afterEach(async () => {
   apiClient.get = originalGet
   apiClient.post = originalPost
@@ -390,87 +376,39 @@ after(() => {
   domWindow.close()
 })
 
-describe('API keys mutate drawer legacy Auto group integration', () => {
-  test('keeps a legacy key on the inherited root Auto order when editing', async () => {
+describe('API keys mutate drawer channel routing integration', () => {
+  test('requires a legacy key to select channels before saving', async () => {
     const updatedPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(updatedPayloads)
     await renderDrawer(legacyApiKey)
-
-    const groupTrigger = getControlByLabel<HTMLButtonElement>('Group')
-    assert.equal(groupTrigger.textContent?.includes('auto'), true)
-    assert.equal(
+    assert.ok(
       document.body.textContent?.includes(
-        'Using the complete global Auto order (2 groups)'
-      ),
-      true
-    )
-    assert.deepEqual(
-      [
-        ...document.querySelectorAll('[data-slot="global-auto-order-name"]'),
-      ].map((item) => item.textContent),
-      ['vip', 'default']
-    )
-    assert.equal(findButton('Restore global Auto', true).disabled, true)
-
-    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'edited')
-    await act(async () => findButton('Save changes', true).click())
-    await act(async () =>
-      waitForCondition(
-        () => updatedPayloads.length === 1,
-        'legacy API key was not updated'
+        'Select channels to reactivate this API key.'
       )
     )
-
-    assert.equal(updatedPayloads[0]?.name, 'edited')
-    assert.equal(updatedPayloads[0]?.group, 'auto')
-    assert.deepEqual(updatedPayloads[0]?.auto_groups, [])
-    assert.equal(updatedPayloads[0]?.cross_group_retry, true)
-    assert.equal(updatedPayloads[0]?.hub_routing_policy, undefined)
-  })
-
-  test('preserves an unsaved custom order and mode after Auto to ordinary to Auto changes', async () => {
-    const updatedPayloads: Array<Record<string, unknown>> = []
-    installApiFixtures(updatedPayloads)
-    await renderDrawer(legacyApiKey)
-
-    const autoOrderControl = getControlByLabel<HTMLElement>('Auto group order')
-    const addGroupTrigger = autoOrderControl.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]'
-    )
-    assert.ok(addGroupTrigger)
-    await selectComboboxOption(addGroupTrigger, 'Priority access')
-
-    assert.ok(document.querySelector('button[aria-label="Remove vip"]'))
     assert.equal(
-      document.body.textContent?.includes('1 / 3 groups selected'),
-      true
-    )
-    assert.equal(findButton('Restore global Auto', true).disabled, false)
-
-    const groupTrigger = getControlByLabel<HTMLButtonElement>('Group')
-    await selectComboboxOption(groupTrigger, 'Standard access')
-    assert.equal(
-      document.querySelector('button[aria-label="Remove vip"]'),
+      document.querySelector('[data-slot="global-auto-order-name"]'),
       null
     )
-    await selectComboboxOption(groupTrigger, 'Automatic routing')
-
-    assert.ok(document.querySelector('button[aria-label="Remove vip"]'))
-    assert.equal(
-      document.body.textContent?.includes('1 / 3 groups selected'),
-      true
-    )
-    assert.equal(findButton('Restore global Auto', true).disabled, false)
-
-    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'custom')
     await act(async () => findButton('Save changes', true).click())
-    await act(async () =>
-      waitForCondition(
-        () => updatedPayloads.length === 1,
-        'custom-order API key was not updated'
-      )
+    assert.equal(updatedPayloads.length, 0)
+    assert.ok(
+      document.body.textContent?.includes('Select at least one channel')
     )
-    assert.deepEqual(updatedPayloads[0]?.auto_groups, ['vip'])
+    const checkbox = document.querySelector<HTMLElement>(
+      '[aria-label="Select Economy GPT"]'
+    )
+    assert.ok(checkbox)
+    await act(async () => checkbox.click())
+    assert.equal(checkbox.getAttribute('aria-checked'), 'true')
+    await act(async () => findButton('Save changes', true).click())
+    assert.equal(updatedPayloads.length, 1, document.body.textContent || '')
+    assert.deepEqual(updatedPayloads[0].hub_routing_policy, {
+      mode: 'channels',
+      provider_id: 7,
+      channel_ids: [10],
+    })
+    assert.equal(updatedPayloads[0].group, 'default')
   })
 
   test('blocks new key creation when routing options are unavailable', async () => {
@@ -478,37 +416,30 @@ describe('API keys mutate drawer legacy Auto group integration', () => {
     const createdPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(updatedPayloads, createdPayloads)
     await renderDrawer(undefined, { success: false })
-
-    assert.equal(document.body.textContent?.includes('Failed to load'), true)
-    assert.equal(document.body.textContent?.includes('Retry'), true)
-    assert.equal(document.body.textContent?.includes('Group'), false)
-
+    assert.ok(document.body.textContent?.includes('Failed to load'))
+    assert.ok(document.body.textContent?.includes('Retry'))
     await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'blocked')
     await act(async () => findButton('Save changes', true).click())
     assert.equal(createdPayloads.length, 0)
   })
 
-  test('keeps the original provider scope when editing a provider-scoped key', async () => {
+  test('preserves channel order and provider when editing without storing prices or models', async () => {
     const updatedPayloads: Array<Record<string, unknown>> = []
     installApiFixtures(updatedPayloads)
     await renderDrawer(providerScopedApiKey)
-
-    assert.equal(
-      document.body.textContent?.includes('Available provider routes'),
-      true
-    )
-
+    assert.ok(document.body.textContent?.includes('Premium GPT'))
+    assert.ok(document.body.textContent?.includes('0.6x'))
     await act(async () => findButton('Save changes', true).click())
     await act(async () =>
       waitForCondition(
         () => updatedPayloads.length === 1,
-        'provider-scoped API key was not updated'
+        'channel policy was not updated'
       )
     )
-    const policy = updatedPayloads[0]?.hub_routing_policy as
-      | Record<string, unknown>
-      | undefined
-    assert.equal(policy?.mode, 'provider')
-    assert.equal(policy?.provider_id, 7)
+    assert.deepEqual(updatedPayloads[0].hub_routing_policy, {
+      mode: 'channels',
+      provider_id: 7,
+      channel_ids: [30, 10],
+    })
   })
 })

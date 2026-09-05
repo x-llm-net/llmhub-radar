@@ -128,14 +128,13 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 func validateOriginTaskHubPolicy(c *gin.Context, originTask *model.Task) *dto.TaskError {
 	policy := service.GetHubTokenRoutingPolicy(c)
 	if originTask == nil || originTask.PrivateData.BillingContext == nil ||
-		originTask.PrivateData.BillingContext.RoutingPolicyMode != model.HubTokenRoutingModeProvider ||
 		originTask.PrivateData.BillingContext.OriginProviderId <= 0 {
 		// Historical tasks have no routing ownership snapshot and remain
 		// compatible with legacy/public/provider keys.
 		return nil
 	}
 	originProviderID := originTask.PrivateData.BillingContext.OriginProviderId
-	if policy == nil || policy.Mode != model.HubTokenRoutingModeProvider || policy.ProviderID != originProviderID {
+	if policy == nil || policy.ProviderID != originProviderID {
 		return service.TaskErrorWrapperLocal(
 			errors.New("the origin task belongs to another provider route"),
 			"task_provider_mismatch",

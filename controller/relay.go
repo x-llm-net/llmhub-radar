@@ -204,7 +204,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 	retryBudgetExhausted := false
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.GetRetry() <= retryParam.MaxRetry(); retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -254,7 +254,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		retriesRemaining := common.RetryTimes - retryParam.GetRetry()
+		retriesRemaining := retryParam.MaxRetry() - retryParam.GetRetry()
 		retryBudgetExhausted = retriesRemaining <= 0 && shouldRetry(c, newAPIError, 1)
 		if !shouldRetry(c, newAPIError, retriesRemaining) {
 			break
@@ -434,7 +434,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
-	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+	if service.GetHubTokenRoutingPolicy(c) == nil && common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
 	if types.IsChannelError(openaiErr) {
@@ -709,6 +709,11 @@ func RelayTask(c *gin.Context) {
 		respondTaskError(c, taskErr)
 		return
 	}
+	lockedChannel, _ := relayInfo.LockedChannel.(*model.Channel)
+	lockedPricingSnapshot := model.HubSupplyPricingSnapshot{}
+	if lockedChannel != nil {
+		lockedPricingSnapshot = model.CaptureHubSupplyPricingSnapshot(lockedChannel.Id)
+	}
 
 	var result *relay.TaskSubmitResult
 	var taskErr *taskdto.TaskError
@@ -727,36 +732,14 @@ func RelayTask(c *gin.Context) {
 		Retry:       common.GetPointer(0),
 	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.GetRetry() <= taskRelayMaxRetry(retryParam, lockedChannel != nil); retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		var channel *model.Channel
 
-		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
-			channel = lockedCh
-			if policy := service.GetHubTokenRoutingPolicy(c); policy != nil &&
-				!model.IsChannelEnabledForHubTokenPolicyFallback(policy, relayInfo.OriginModelName, c.Request.URL.Path, channel.Id) {
-				taskErr = taskErrorFromChannelSelection(c, newServiceTierUnavailableError(
-					c,
-					errors.New("the channel of the origin task does not satisfy the token routing policy"),
-					relayInfo.TokenGroup,
-					relayInfo.OriginModelName,
-				))
+		if lockedChannel != nil {
+			channel = lockedChannel
+			if taskErr = setupLockedTaskChannel(c, relayInfo, channel, lockedPricingSnapshot); taskErr != nil {
 				break
-			}
-			if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
-				taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
-				break
-			}
-			if policy := service.GetHubTokenRoutingPolicy(c); policy != nil && policy.Mode == model.HubTokenRoutingModeProvider {
-				phase := "preferred"
-				if !model.ChannelMatchesProviderFilter(channel.Id, model.ChannelProviderFilter{
-					ProviderID: policy.ProviderID,
-					Mode:       model.ChannelProviderOnly,
-				}) {
-					phase = "platform_fallback"
-				}
-				common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, phase)
-				common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, phase == "platform_fallback")
 			}
 		} else {
 			var channelErr *types.NewAPIError
@@ -796,8 +779,8 @@ func RelayTask(c *gin.Context) {
 				relayErr)
 		}
 
-		retriesRemaining := common.RetryTimes - retryParam.GetRetry()
-		channelLocked := relayInfo.LockedChannel != nil
+		channelLocked := lockedChannel != nil
+		retriesRemaining := taskRelayMaxRetry(retryParam, channelLocked) - retryParam.GetRetry()
 		retryBudgetExhausted = retriesRemaining <= 0 &&
 			taskErr.Code != string(types.ErrorCodeRequestLoopDetected) &&
 			shouldRetryTaskRelay(c, taskErr, 1, channelLocked)
@@ -886,9 +869,7 @@ func RelayTask(c *gin.Context) {
 		}
 		if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
 			task.PrivateData.BillingContext.RoutingPolicyMode = policy.Mode
-			if policy.Mode == model.HubTokenRoutingModeProvider {
-				task.PrivateData.BillingContext.OriginProviderId = policy.ProviderID
-			}
+			task.PrivateData.BillingContext.OriginProviderId = policy.ProviderID
 		}
 		task.Quota = settledTaskQuota
 		task.Data = result.TaskData
@@ -916,6 +897,40 @@ func RelayTask(c *gin.Context) {
 	}
 }
 
+func taskRelayMaxRetry(retryParam *service.RetryParam, channelLocked bool) int {
+	if channelLocked {
+		return common.RetryTimes
+	}
+	return retryParam.MaxRetry()
+}
+
+func setupLockedTaskChannel(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel, snapshot model.HubSupplyPricingSnapshot) *taskdto.TaskError {
+	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
+		preferred := model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, false)
+		if !preferred && !model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, true) {
+			return taskErrorFromChannelSelection(c, newServiceTierUnavailableError(
+				c,
+				errors.New("the channel of the origin task does not satisfy the token routing policy"),
+				info.TokenGroup,
+				info.OriginModelName,
+			))
+		}
+		phase := "preferred"
+		if !preferred {
+			phase = "platform_fallback"
+		}
+		common.SetContextKey(c, constant.ContextKeyHubRoutingPhase, phase)
+		common.SetContextKey(c, constant.ContextKeyHubRoutingFallback, !preferred)
+	}
+	// Validation, request metadata, and billing share this request's price
+	// generation even if the channel is repriced while a locked task retries.
+	common.SetContextKey(c, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
+	if setupErr := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName); setupErr != nil {
+		return service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
+	}
+	return nil
+}
+
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
@@ -928,7 +943,7 @@ func shouldRetryTaskRelay(c *gin.Context, taskErr *taskdto.TaskError, retryTimes
 	if taskErr == nil {
 		return false
 	}
-	if common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+	if service.GetHubTokenRoutingPolicy(c) == nil && common.GetContextKeyInt(c, constant.ContextKeyHubRequestedProviderId) <= 0 && service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
 	if retryTimes <= 0 {

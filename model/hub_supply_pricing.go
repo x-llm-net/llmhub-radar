@@ -53,6 +53,8 @@ type ChannelProviderFilter struct {
 	ProviderID             int
 	Mode                   ChannelProviderFilterMode
 	StrictExcludedChannels bool
+	PlatformFallback       bool
+	PreferredChannelID     int
 }
 
 var (

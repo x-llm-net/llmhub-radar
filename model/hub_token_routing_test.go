@@ -1,7 +1,9 @@
 package model
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -10,136 +12,278 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHubTokenRoutingPolicyMatchesConcreteModelAndPreservesPreferredMultiplier(t *testing.T) {
+func TestNormalizeHubTokenRoutingChannelsAndRejectLegacy(t *testing.T) {
 	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.3, 0.4, 0.6, 0.4}}},
-	}, 0)
-	require.NoError(t, err)
-	assert.Equal(t, "gpt-4o", policy.Selections[0].Model)
-	assert.Equal(t, []float64{0.3, 0.4, 0.6}, policy.Selections[0].Multipliers)
-	assert.True(t, policy.AllowsModel("gpt-4o"))
-	assert.False(t, policy.AllowsModel("gpt-4o-mini"))
-	preferred, ok := policy.ProviderFallbackProtectionMultiplier("gpt-4o")
-	assert.False(t, ok)
-	assert.Zero(t, preferred)
-}
-
-func TestHubTokenRoutingProviderProtectionUsesFirstMultiplier(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.6, 0.3, 0.4}}},
+		ProviderID: 999, ChannelIDs: []int{3, 1, 2},
+		Channels: []HubTokenRoutingChannel{{ChannelID: 3, Multiplier: 100}},
 	}, 42)
 	require.NoError(t, err)
-	preferred, ok := policy.ProviderFallbackProtectionMultiplier("gpt-4o")
-	assert.True(t, ok)
+	assert.Equal(t, HubTokenRoutingModeChannels, policy.Mode)
+	assert.Equal(t, 42, policy.ProviderID)
+	assert.Equal(t, []int{3, 1, 2}, policy.ChannelIDs)
+	assert.Nil(t, policy.Channels)
+	for _, ids := range [][]int{nil, {1, 1}, {0}, {-1}, {1, 2, 3, 4, 5, 6, 7, 8, 9}} {
+		_, err = NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{ChannelIDs: ids}, 42)
+		assert.Error(t, err)
+	}
+	_, err = NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{ChannelIDs: []int{1}}, 0)
+	assert.Error(t, err)
+	for _, legacy := range []string{
+		`{"mode":"provider","provider_id":42,"selections":[{"family":"openai","exact_multipliers":[0.3]}]}`,
+		`{"mode":"public_pool","selections":[{"model":"gpt-4o","multipliers":[0.3]}]}`,
+		`{"mode":"channels","provider_id":42,"channel_ids":[]}`,
+	} {
+		token := Token{HubRoutingPolicy: legacy}
+		_, err = token.GetHubRoutingPolicy()
+		assert.ErrorIs(t, err, ErrHubRoutingPolicyRequiresSelection)
+	}
+}
+
+func TestHubTokenRoutingRuntimeFollowsCurrentPublishedChannelDefinitions(t *testing.T) {
+	providers, channels, groups := createHubTokenRoutingSupply(t)
+	input := &HubTokenRoutingPolicy{Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id, ChannelIDs: []int{channels[1].Id, channels[0].Id}}
+	policy, err := ResolveHubTokenRoutingPolicy(input)
+	require.NoError(t, err)
+	assert.Equal(t, []float64{0.6, 0.3}, policy.OrderedMultipliers("gpt-routing-text"))
+	assert.Equal(t, []float64{0.3}, policy.OrderedMultipliers("claude-routing-text"))
+	assert.False(t, policy.AllowsModel("gpt-routing-image"))
+	assert.False(t, policy.AllowsModel("openai"))
+	assert.False(t, policy.AllowsModel("GPT-ROUTING-TEXT"))
+	preferred, ok := policy.ProviderFallbackProtectionMultiplier("gpt-routing-text")
+	require.True(t, ok)
 	assert.Equal(t, 0.6, preferred)
-}
 
-func TestNormalizeHubTokenRoutingPolicyRejectsDuplicateConcreteModels(t *testing.T) {
-	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{
-			{Model: "gpt-4o", Multipliers: []float64{0.3}},
-			{Model: " GPT-4O ", Multipliers: []float64{0.4}},
-		},
-	}, 0)
-	require.Error(t, err)
-}
-
-func TestNormalizeHubTokenRoutingPolicyRoundsPublicRangesToThreeDecimals(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Mode: HubTokenRoutingModePublic,
-		Selections: []HubTokenRoutingSelection{{
-			Family:        " OpenAI ",
-			MinMultiplier: 0.0104,
-			MaxMultiplier: 0.0504,
-		}},
-	}, 0)
-
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", channels[0].Id).Update("status", common.ChannelStatusManuallyDisabled).Error)
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("tenant_published", false).Error)
+	disabled, err := ResolveHubTokenRoutingPolicy(input)
 	require.NoError(t, err)
-	require.NotNil(t, policy)
-	assert.Equal(t, "openai", policy.Selections[0].Family)
-	assert.Equal(t, 0.01, policy.Selections[0].MinMultiplier)
-	assert.Equal(t, 0.05, policy.Selections[0].MaxMultiplier)
-	assert.True(t, policy.AllowsMultiplier("openai", 0.05))
-	assert.False(t, policy.AllowsMultiplier("openai", 0.051))
-}
+	assert.Equal(t, []float64{0.3}, disabled.OrderedMultipliers("claude-routing-text"))
+	require.NoError(t, ValidateHubTokenProviderSelections(disabled))
 
-func TestNormalizeHubTokenRoutingPolicyAllowsPremiumMultipliersAboveBaseline(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:        "openai",
-			MinMultiplier: 5.0004,
-			MaxMultiplier: 6.0004,
-		}},
-	}, 0)
-
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("price_multiplier", 0.8).Error)
+	repriced, err := ResolveHubTokenRoutingPolicy(input)
 	require.NoError(t, err)
-	require.NotNil(t, policy)
-	assert.Equal(t, 5.0, policy.Selections[0].MinMultiplier)
-	assert.Equal(t, 6.0, policy.Selections[0].MaxMultiplier)
-	assert.True(t, policy.AllowsMultiplier("openai", 5.5))
-	assert.False(t, policy.AllowsMultiplier("openai", 6.001))
+	assert.Equal(t, []float64{0.6, 0.8}, repriced.OrderedMultipliers("gpt-routing-text"))
+	assert.Equal(t, []float64{0.6, 0.3}, policy.OrderedMultipliers("gpt-routing-text"), "an in-flight request retains its resolved definitions")
+	assert.True(t, repriced.AllowsMultiplierForPlatformFallback("gpt-routing-text", 0.8))
+	assert.False(t, repriced.AllowsMultiplierForPlatformFallback("gpt-routing-text", 0.801))
+	assert.False(t, repriced.AllowsMultiplierForPlatformFallback("gpt-routing-image", 0.1))
+
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", channels[0].Id).Update("models", "gpt-routing-text,claude-routing-text,gpt-routing-new").Error)
+	unpublishedNew, err := ResolveHubTokenRoutingPolicy(input)
+	require.NoError(t, err)
+	assert.False(t, unpublishedNew.AllowsModel("gpt-routing-new"))
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("published_models", "gpt-routing-text,gpt-routing-new").Error)
+	publishedNew, err := ResolveHubTokenRoutingPolicy(input)
+	require.NoError(t, err)
+	assert.True(t, publishedNew.AllowsModel("gpt-routing-new"))
+	assert.False(t, publishedNew.AllowsModel("claude-routing-text"))
+
+	require.NoError(t, DB.Delete(&Channel{}, channels[0].Id).Error)
+	deleted, err := ResolveHubTokenRoutingPolicy(input)
+	require.NoError(t, err)
+	assert.Equal(t, []float64{0.6}, deleted.OrderedMultipliers("gpt-routing-text"))
+	assert.False(t, deleted.AllowsModel("gpt-routing-new"))
+	require.Error(t, ValidateHubTokenProviderSelections(deleted))
 }
 
-func TestHubTokenRoutingPolicySnapshotKeepsCapturedMultiplierGeneration(t *testing.T) {
-	const modelName = "gpt-affinity-pricing-snapshot"
-	originalMemoryCacheEnabled := common.MemoryCacheEnabled
-	common.MemoryCacheEnabled = false
+func TestHubTokenRoutingSelectsExactChannelsAndGlobalFallbackWithCacheParity(t *testing.T) {
+	providers, channels, groups := createHubTokenRoutingSupply(t)
+	for _, memoryCache := range []bool{false, true} {
+		t.Run(fmt.Sprintf("memory_cache_%t", memoryCache), func(t *testing.T) {
+			original := common.MemoryCacheEnabled
+			common.MemoryCacheEnabled = memoryCache
+			t.Cleanup(func() { common.MemoryCacheEnabled = original; InitChannelCache() })
+			InitChannelCache()
+			policy, err := ResolveHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+				Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id,
+				ChannelIDs: []int{channels[0].Id, channels[1].Id},
+			})
+			require.NoError(t, err)
+			preferredFilter := ChannelProviderFilter{PreferredChannelID: channels[1].Id}
+			selected, snapshot, err := GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", nil, preferredFilter)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[0].Id, selected.Id, "affinity cannot skip the first selected multiplier")
+			assert.Equal(t, 0.3, snapshot.Pricing.PriceMultiplier)
 
-	provider := HubProvider{
-		OwnerUserId: 71202,
-		Name:        "Affinity Snapshot Provider",
-		Slug:        "affinity-snapshot-provider",
-		Status:      HubProviderStatusActive,
+			excluded := map[int]struct{}{channels[0].Id: {}}
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", excluded, ChannelProviderFilter{})
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[1].Id, selected.Id, "an unselected channel at 0.3 is not a preferred route")
+
+			fallbackFilter := ChannelProviderFilter{PlatformFallback: true, PreferredChannelID: channels[4].Id}
+			selected, snapshot, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", nil, fallbackFilter)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[3].Id, selected.Id, "cheaper global supply precedes fallback affinity")
+			assert.Equal(t, providers[1].Id, snapshot.Pricing.SupplyProviderId)
+			assert.Equal(t, 2, *snapshot.Pricing.TenantId)
+
+			excluded[channels[3].Id] = struct{}{}
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", excluded, ChannelProviderFilter{PlatformFallback: true, PreferredChannelID: channels[2].Id})
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[2].Id, selected.Id, "fallback includes unselected supply from the origin provider")
+			excluded[channels[2].Id] = struct{}{}
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", excluded, fallbackFilter)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[4].Id, selected.Id, "fallback may exceed preferred but never the selected maximum")
+			excluded[channels[4].Id] = struct{}{}
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", excluded, fallbackFilter)
+			require.NoError(t, err)
+			assert.Nil(t, selected, "0.8 exceeds the selected maximum of 0.6")
+
+			assert.True(t, IsChannelEnabledForHubTokenPolicy(policy, "gpt-routing-text", channels[0].Id))
+			assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, "gpt-routing-text", channels[2].Id))
+			assert.True(t, IsChannelEnabledForHubTokenPolicyFallback(policy, "gpt-routing-text", "/v1/chat/completions", channels[2].Id))
+			assert.False(t, IsChannelEnabledForHubTokenPolicyFallback(policy, "gpt-routing-text", "/v1/chat/completions", channels[0].Id))
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-image", 0, "/v1/images/generations", nil, fallbackFilter)
+			require.NoError(t, err)
+			assert.Nil(t, selected, "an unselected model cannot gain authorization through fallback")
+			imagePolicy, err := ResolveHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+				Mode: HubTokenRoutingModeChannels, ProviderID: providers[1].Id, ChannelIDs: []int{channels[6].Id},
+			})
+			require.NoError(t, err)
+			imageAvailable, err := IsModelAvailableForHubTokenPolicy(imagePolicy, "gpt-routing-image")
+			require.NoError(t, err)
+			assert.True(t, imageAvailable, "model discovery includes selected image-only supply")
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/images/generations", nil, ChannelProviderFilter{})
+			require.NoError(t, err)
+			assert.Nil(t, selected, "text-only supply cannot satisfy an image endpoint")
+
+			originalRuntime := hubRoutingRuntimeSnapshotValue.Load()
+			PublishHubRoutingRuntimeSignals(time.Now().Unix(), []HubRoutingRuntimeSignal{{
+				ChannelID: channels[0].Id, ModelName: "gpt-routing-text", ProbeKind: HubSupplyProbeKindText,
+				RealHealthState: HubRoutingRealHealthQuarantined,
+			}})
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/chat/completions", nil, ChannelProviderFilter{})
+			hubRoutingRuntimeSnapshotValue.Store(originalRuntime)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[1].Id, selected.Id, "quarantined selected supply is skipped")
+
+			require.NoError(t, DB.Model(&Channel{}).Where("id IN ?", []int{channels[0].Id, channels[1].Id}).Update("status", common.ChannelStatusManuallyDisabled).Error)
+			InitChannelCache()
+			unavailable, err := ResolveHubTokenRoutingPolicy(policy)
+			require.NoError(t, err)
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(unavailable, "gpt-routing-text", 0, "/v1/chat/completions", nil, ChannelProviderFilter{})
+			require.NoError(t, err)
+			assert.Nil(t, selected)
+			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(unavailable, "gpt-routing-text", 0, "/v1/chat/completions", nil, fallbackFilter)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, channels[3].Id, selected.Id)
+			available, err := IsModelAvailableForHubTokenPolicy(unavailable, "gpt-routing-text")
+			require.NoError(t, err)
+			assert.True(t, available)
+			require.NoError(t, DB.Model(&Channel{}).Where("id IN ?", []int{channels[0].Id, channels[1].Id}).Update("status", common.ChannelStatusEnabled).Error)
+			InitChannelCache()
+
+			captured := CaptureHubSupplyPricingSnapshot(channels[0].Id)
+			require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("price_multiplier", 0.9).Error)
+			InitChannelCache()
+			repriced, err := ResolveHubTokenRoutingPolicy(policy)
+			require.NoError(t, err)
+			assert.True(t, IsChannelEnabledForHubTokenPolicySnapshot(policy, "gpt-routing-text", "", captured, false))
+			assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, "gpt-routing-text", channels[0].Id), "a captured request cannot silently adopt a newer channel price")
+			assert.True(t, IsChannelEnabledForHubTokenPolicy(repriced, "gpt-routing-text", channels[0].Id))
+			require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("price_multiplier", 0.3).Error)
+			InitChannelCache()
+		})
 	}
-	require.NoError(t, DB.Create(&provider).Error)
-	channel := Channel{
-		Name:   "affinity-snapshot-channel",
-		Type:   constant.ChannelTypeOpenAI,
-		Status: common.ChannelStatusEnabled,
-		Models: modelName,
-		Group:  HubTokenRoutingAbilityGroup,
+}
+
+func TestHubTokenRoutingOptionsExposeProviderChannelsAndKeepUnavailableSelections(t *testing.T) {
+	providers, channels, groups := createHubTokenRoutingSupply(t)
+	require.NoError(t, DB.Model(&HubSupplyGroup{}).Where("id = ?", groups[0].Id).Update("tenant_published", false).Error)
+	options, err := GetHubTokenRoutingOptions(providers[0].Id)
+	require.NoError(t, err)
+	assert.Equal(t, HubTokenRoutingModeChannels, options.Mode)
+	require.Len(t, options.Channels, 3)
+	assert.Equal(t, channels[0].Id, options.Channels[0].ChannelID)
+	assert.False(t, options.Channels[0].Available)
+	assert.Equal(t, []string{"gpt-routing-text", "claude-routing-text"}, options.Channels[0].Models)
+	assert.Equal(t, 0.3, options.Channels[0].Multiplier)
+	policy := &HubTokenRoutingPolicy{Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id, ChannelIDs: []int{channels[0].Id}}
+	require.NoError(t, ValidateHubTokenProviderSelections(policy))
+	policy.ChannelIDs = []int{channels[3].Id}
+	require.Error(t, ValidateHubTokenProviderSelections(policy))
+}
+
+func TestHubTokenRoutingPolicyRoundTripsOnlyOrderedIDsThroughTokenCache(t *testing.T) {
+	useUserCacheMiniRedis(t)
+	policy := &HubTokenRoutingPolicy{
+		Mode: HubTokenRoutingModeChannels, ProviderID: 42, ChannelIDs: []int{3, 1},
+		Channels: []HubTokenRoutingChannel{{ChannelID: 3, Multiplier: 0.3, Models: []string{"gpt-4o"}}},
 	}
-	require.NoError(t, DB.Create(&channel).Error)
-	require.NoError(t, DB.Create(&Ability{
-		Group: HubTokenRoutingAbilityGroup, Model: modelName,
-		ChannelId: channel.Id, Enabled: true,
-	}).Error)
-	supplyGroup := HubSupplyGroup{
-		PublicId:        "affinity-pricing-snapshot",
-		ProviderId:      provider.Id,
-		NewAPIChannelId: channel.Id,
-		PriceMultiplier: 0.2,
-		Status:          HubSupplyGroupStatusAvailable,
+	token := Token{Id: 73, UserId: 9, Key: "hub-routing-policy-cache-key", Name: "hub-routing-cache", Group: "default"}
+	require.NoError(t, token.SetHubRoutingPolicy(policy))
+	assert.JSONEq(t, `{"mode":"channels","provider_id":42,"channel_ids":[3,1]}`, token.HubRoutingPolicy)
+	require.NoError(t, cacheSetToken(token))
+	cached, err := cacheGetTokenByKey(token.Key)
+	require.NoError(t, err)
+	cachedPolicy, err := cached.GetHubRoutingPolicy()
+	require.NoError(t, err)
+	assert.Equal(t, policy.ChannelIDs, cachedPolicy.ChannelIDs)
+	assert.Nil(t, cachedPolicy.Channels, "token cache must not freeze current models or prices")
+}
+
+func createHubTokenRoutingSupply(t *testing.T) ([]HubProvider, []Channel, []HubSupplyGroup) {
+	t.Helper()
+	tenantA, tenantB := 1, 2
+	providers := []HubProvider{
+		{OwnerUserId: 71001, TenantId: &tenantA, Name: "Routing A", Slug: "routing-a"},
+		{OwnerUserId: 71002, TenantId: &tenantB, Name: "Routing B", Slug: "routing-b"},
 	}
-	require.NoError(t, DB.Create(&supplyGroup).Error)
-	require.NoError(t, RefreshHubSupplyPricingCache())
+	require.NoError(t, DB.Create(&providers).Error)
+	channels := make([]Channel, 7)
+	groups := make([]HubSupplyGroup, len(channels))
+	multipliers := []float64{0.3, 0.6, 0.3, 0.2, 0.4, 0.8, 0.1}
+	providerIDs := []int{providers[0].Id, providers[0].Id, providers[0].Id, providers[1].Id, providers[1].Id, providers[1].Id, providers[1].Id}
+	for index := range channels {
+		models := "gpt-routing-text"
+		if index == 0 {
+			models += ",claude-routing-text"
+		}
+		if index == 6 {
+			models = "gpt-routing-image"
+		}
+		channels[index] = Channel{Name: fmt.Sprintf("routing-channel-%d", index), Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: models, Group: HubTokenRoutingAbilityGroup}
+		require.NoError(t, DB.Create(&channels[index]).Error)
+		groups[index] = HubSupplyGroup{
+			ProviderId: providerIDs[index], NewAPIChannelId: channels[index].Id,
+			PriceMultiplier: multipliers[index], PublishedModels: models, TenantPublished: true, ConfigVersion: 1,
+		}
+		require.NoError(t, DB.Create(&groups[index]).Error)
+		for _, modelName := range channels[index].GetModels() {
+			probeKind := HubSupplyProbeKindText
+			if index == 6 {
+				probeKind = HubSupplyProbeKindImage
+			}
+			require.NoError(t, DB.Create(&Ability{Group: HubTokenRoutingAbilityGroup, Model: modelName, ChannelId: channels[index].Id, Enabled: true}).Error)
+			require.NoError(t, DB.Create(&HubSupplyGroupProbeTarget{
+				GroupId: groups[index].Id, ConfigVersion: 1, ModelName: modelName,
+				EndpointType: "openai", ProbeKind: probeKind, Status: HubSupplyProbeStatusAvailable,
+			}).Error)
+		}
+	}
+	InitChannelCache()
 	t.Cleanup(func() {
-		common.MemoryCacheEnabled = originalMemoryCacheEnabled
-		DB.Where("channel_id = ?", channel.Id).Delete(&Ability{})
-		DB.Delete(&HubSupplyGroup{}, supplyGroup.Id)
-		DB.Delete(&Channel{}, channel.Id)
-		DB.Delete(&HubProvider{}, provider.Id)
-		require.NoError(t, RefreshHubSupplyPricingCache())
+		for index := range channels {
+			require.NoError(t, DB.Where("group_id = ?", groups[index].Id).Delete(&HubSupplyGroupProbeTarget{}).Error)
+			require.NoError(t, DB.Where("channel_id = ?", channels[index].Id).Delete(&Ability{}).Error)
+			require.NoError(t, DB.Delete(&HubSupplyGroup{}, groups[index].Id).Error)
+			require.NoError(t, DB.Delete(&Channel{}, channels[index].Id).Error)
+		}
+		for _, provider := range providers {
+			require.NoError(t, DB.Delete(&HubProvider{}, provider.Id).Error)
+		}
+		InitChannelCache()
 	})
-
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family: "openai", MinMultiplier: 0.2, MaxMultiplier: 0.2,
-		}},
-	}, 0)
-	require.NoError(t, err)
-
-	captured := CaptureHubSupplyPricingSnapshot(channel.Id)
-	require.True(t, captured.Found)
-	require.Equal(t, 0.2, captured.Pricing.PriceMultiplier)
-
-	require.NoError(t, DB.Model(&HubSupplyGroup{}).
-		Where("id = ?", supplyGroup.Id).
-		Update("price_multiplier", 0.8).Error)
-	require.NoError(t, RefreshHubSupplyPricingCache())
-
-	assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, modelName, channel.Id))
-	assert.True(t, IsChannelEnabledForHubTokenPolicySnapshot(policy, modelName, "", captured, false))
+	return providers, channels, groups
 }
 
 func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
@@ -199,10 +343,7 @@ func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
 	assert.Nil(t, defaultChannel)
 
 	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{5.5},
-		}},
+		ChannelIDs: []int{channel.Id},
 	}, provider.Id)
 	require.NoError(t, err)
 	require.NoError(t, ValidateHubTokenProviderSelections(policy))
@@ -222,252 +363,7 @@ func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
 
 	options, err := GetHubTokenRoutingOptions(provider.Id)
 	require.NoError(t, err)
-	require.Len(t, options.Families, 1)
-	assert.Equal(t, []float64{5.5}, options.Families[0].ExactMultipliers)
-	assert.Equal(t, 5.5, options.Families[0].SliderMaxMultiplier)
-}
-
-func TestNormalizeHubTokenRoutingPolicyBindsProviderAndDeduplicatesExactMultiplier(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Mode: HubTokenRoutingModePublic,
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "anthropic",
-			ExactMultipliers: []float64{0.2, 0.2004},
-		}},
-	}, 7)
-
-	require.NoError(t, err)
-	require.NotNil(t, policy)
-	assert.Equal(t, HubTokenRoutingModeProvider, policy.Mode)
-	assert.Equal(t, 7, policy.ProviderID)
-	assert.Equal(t, []float64{0.2}, policy.Selections[0].ExactMultipliers)
-	assert.True(t, policy.AllowsMultiplier("anthropic", 0.2))
-	assert.False(t, policy.AllowsMultiplier("anthropic", 0.3))
-}
-
-func TestProviderPolicyAllowsCheaperMultiplierOnlyDuringPlatformFallback(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{0.2},
-		}},
-	}, 7)
-	require.NoError(t, err)
-
-	assert.False(t, policy.AllowsMultiplier("openai", 0.18))
-	assert.True(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.18))
-	assert.True(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.2))
-	assert.False(t, policy.AllowsMultiplierForPlatformFallback("openai", 0.201))
-}
-
-func TestNormalizeHubTokenRoutingPolicyAllowsMultipleProviderMultipliers(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "anthropic",
-			ExactMultipliers: []float64{0.5, 0.2, 0.5},
-		}},
-	}, 7)
-
-	require.NoError(t, err)
-	require.NotNil(t, policy)
-	assert.Equal(t, []float64{0.5, 0.2}, policy.Selections[0].ExactMultipliers)
-	assert.True(t, policy.AllowsMultiplier("anthropic", 0.2))
-	assert.True(t, policy.AllowsMultiplier("anthropic", 0.5))
-	assert.False(t, policy.AllowsMultiplier("anthropic", 0.3))
-}
-
-func TestNormalizeHubTokenRoutingPolicyRejectsDuplicateFamiliesAndInvalidRanges(t *testing.T) {
-	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{
-			{Family: "openai", MinMultiplier: 0.1, MaxMultiplier: 0.2},
-			{Family: "openai", MinMultiplier: 0.3, MaxMultiplier: 0.4},
-		},
-	}, 0)
-	assert.Error(t, err)
-
-	_, err = NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:        "google",
-			MinMultiplier: 0.4,
-			MaxMultiplier: 0.2,
-		}},
-	}, 0)
-	assert.Error(t, err)
-}
-
-func TestNormalizeHubTokenRoutingPolicyDoesNotTrustProviderScopeWithoutHostBinding(t *testing.T) {
-	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Mode:       HubTokenRoutingModeProvider,
-		ProviderID: 99,
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{0.2},
-		}},
-	}, 0)
-
-	assert.Error(t, err)
-}
-
-func TestHubTokenRoutingUsesPublishedGroupsAndKeepsFallbackInsideMultiplierPolicy(t *testing.T) {
-	modelName := "gpt-hub-token-routing-test"
-	originalMemoryCacheEnabled := common.MemoryCacheEnabled
-	common.MemoryCacheEnabled = false
-	t.Cleanup(func() {
-		common.MemoryCacheEnabled = originalMemoryCacheEnabled
-	})
-
-	providers := []HubProvider{
-		{OwnerUserId: 71001, Slot: 0, Name: "Routing Provider A", Slug: "routing-provider-a", Status: HubProviderStatusActive},
-		{OwnerUserId: 71002, Slot: 0, Name: "Routing Provider B", Slug: "routing-provider-b", Status: HubProviderStatusActive},
-	}
-	require.NoError(t, DB.Create(&providers).Error)
-
-	channels := []Channel{
-		{Name: "routing-policy-a", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: modelName, Group: "default"},
-		{Name: "routing-policy-b", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: modelName, Group: "default"},
-		{Name: "routing-policy-expensive", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: modelName, Group: "default"},
-		{Name: "routing-policy-private", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Models: modelName, Group: "vip"},
-	}
-	require.NoError(t, DB.Create(&channels).Error)
-
-	supplyGroups := []HubSupplyGroup{
-		{PublicId: "routing-policy-a", ProviderId: providers[0].Id, NewAPIChannelId: channels[0].Id, PriceMultiplier: 0.2, PublishedModels: modelName, ConfigVersion: 1, Status: HubSupplyGroupStatusAvailable},
-		{PublicId: "routing-policy-b", ProviderId: providers[1].Id, NewAPIChannelId: channels[1].Id, PriceMultiplier: 0.2, PublishedModels: modelName, ConfigVersion: 1, Status: HubSupplyGroupStatusAvailable},
-		{PublicId: "routing-policy-expensive", ProviderId: providers[1].Id, NewAPIChannelId: channels[2].Id, PriceMultiplier: 0.5, PublishedModels: modelName, ConfigVersion: 1, Status: HubSupplyGroupStatusAvailable},
-		{PublicId: "routing-policy-private", ProviderId: providers[0].Id, NewAPIChannelId: channels[3].Id, PriceMultiplier: 0.3, PublishedModels: modelName, ConfigVersion: 1, Status: HubSupplyGroupStatusAvailable},
-	}
-	require.NoError(t, DB.Create(&supplyGroups).Error)
-
-	abilities := []Ability{
-		{Group: "default", Model: modelName, ChannelId: channels[0].Id, Enabled: true},
-		{Group: "default", Model: modelName, ChannelId: channels[1].Id, Enabled: true},
-		{Group: "default", Model: modelName, ChannelId: channels[2].Id, Enabled: true},
-		{Group: "vip", Model: modelName, ChannelId: channels[3].Id, Enabled: true},
-	}
-	require.NoError(t, DB.Create(&abilities).Error)
-	probeTargets := make([]HubSupplyGroupProbeTarget, 0, len(supplyGroups))
-	for _, group := range supplyGroups {
-		probeTargets = append(probeTargets, HubSupplyGroupProbeTarget{
-			GroupId:       group.Id,
-			ConfigVersion: group.ConfigVersion,
-			ModelName:     modelName,
-			EndpointType:  "openai",
-			ProbeKind:     HubSupplyProbeKindText,
-			Status:        HubSupplyProbeStatusAvailable,
-		})
-	}
-	require.NoError(t, DB.Create(&probeTargets).Error)
-	require.NoError(t, RefreshHubSupplyPricingCache())
-	t.Cleanup(func() {
-		groupIDs := make([]int, 0, len(supplyGroups))
-		channelIDs := make([]int, 0, len(channels))
-		providerIDs := make([]int, 0, len(providers))
-		for _, group := range supplyGroups {
-			groupIDs = append(groupIDs, group.Id)
-		}
-		for _, channel := range channels {
-			channelIDs = append(channelIDs, channel.Id)
-		}
-		for _, provider := range providers {
-			providerIDs = append(providerIDs, provider.Id)
-		}
-		DB.Where("group_id IN ?", groupIDs).Delete(&HubSupplyGroupProbeTarget{})
-		DB.Where("channel_id IN ?", channelIDs).Delete(&Ability{})
-		DB.Where("id IN ?", groupIDs).Delete(&HubSupplyGroup{})
-		DB.Where("id IN ?", channelIDs).Delete(&Channel{})
-		DB.Where("id IN ?", providerIDs).Delete(&HubProvider{})
-		require.NoError(t, RefreshHubSupplyPricingCache())
-	})
-
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:        "openai",
-			MinMultiplier: 0.2,
-			MaxMultiplier: 0.2,
-		}},
-	}, 0)
-	require.NoError(t, err)
-
-	channel, _, err := GetRandomSatisfiedChannelWithHubPolicy(
-		policy,
-		modelName,
-		0,
-		"/v1/chat/completions",
-		nil,
-		ChannelProviderFilter{ProviderID: providers[0].Id, Mode: ChannelProviderOnly, StrictExcludedChannels: true},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, channel)
-	assert.Equal(t, channels[0].Id, channel.Id)
-
-	channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
-		policy,
-		modelName,
-		0,
-		"/v1/chat/completions",
-		map[int]struct{}{channels[0].Id: {}},
-		ChannelProviderFilter{ProviderID: providers[0].Id, Mode: ChannelProviderExclude, StrictExcludedChannels: true},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, channel)
-	assert.Equal(t, channels[1].Id, channel.Id)
-	assert.True(t, IsChannelEnabledForHubTokenPolicy(policy, modelName, channels[0].Id))
-	assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, modelName, channels[2].Id))
-	assert.False(t, IsChannelEnabledForHubTokenPolicy(policy, modelName, channels[3].Id))
-	providerPolicy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{
-			Family:           "openai",
-			ExactMultipliers: []float64{0.2},
-		}},
-	}, providers[0].Id)
-	require.NoError(t, err)
-	assert.True(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[0].Id))
-	assert.False(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[1].Id))
-	assert.True(t, IsChannelEnabledForHubTokenPolicyFallback(providerPolicy, modelName, "/v1/chat/completions", channels[1].Id))
-	require.NoError(t, DB.Model(&HubSupplyGroup{}).
-		Where("id = ?", supplyGroups[1].Id).
-		Update("price_multiplier", 0.18).Error)
-	require.NoError(t, RefreshHubSupplyPricingCache())
-	channel, _, err = GetRandomSatisfiedChannelWithHubPolicy(
-		providerPolicy,
-		modelName,
-		0,
-		"/v1/chat/completions",
-		nil,
-		ChannelProviderFilter{ProviderID: providers[0].Id, Mode: ChannelProviderExclude, StrictExcludedChannels: true},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, channel)
-	assert.Equal(t, channels[1].Id, channel.Id)
-	assert.True(t, IsChannelEnabledForHubTokenPolicyFallback(providerPolicy, modelName, "/v1/chat/completions", channels[1].Id))
-	assert.False(t, IsChannelEnabledForHubTokenPolicy(providerPolicy, modelName, channels[1].Id))
-
-	options, err := GetHubTokenRoutingOptions(providers[0].Id)
-	require.NoError(t, err)
-	require.Len(t, options.Families, 1)
-	assert.Equal(t, "openai", options.Families[0].Key)
-	assert.Equal(t, []float64{0.2}, options.Families[0].ExactMultipliers)
-	assert.Equal(t, []int{providers[0].Id}, options.Families[0].Availability[0].ProviderIDs)
-}
-
-func TestHubTokenRoutingPolicyRoundTripsThroughTokenCache(t *testing.T) {
-	useUserCacheMiniRedis(t)
-	policy := &HubTokenRoutingPolicy{
-		Mode: HubTokenRoutingModePublic,
-		Selections: []HubTokenRoutingSelection{{
-			Family:        "anthropic",
-			MinMultiplier: 0.1,
-			MaxMultiplier: 0.3,
-		}},
-	}
-	token := Token{Id: 73, UserId: 9, Key: "hub-routing-policy-cache-key", Name: "hub-routing-cache", Group: "default"}
-	require.NoError(t, token.SetHubRoutingPolicy(policy))
-	require.NoError(t, cacheSetToken(token))
-
-	cached, err := cacheGetTokenByKey(token.Key)
-	require.NoError(t, err)
-	cachedPolicy, err := cached.GetHubRoutingPolicy()
-	require.NoError(t, err)
-	require.NotNil(t, cachedPolicy)
-	assert.Equal(t, policy, cachedPolicy)
+	require.Len(t, options.Channels, 1)
+	assert.Equal(t, 5.5, options.Channels[0].Multiplier)
+	assert.Equal(t, []string{modelName}, options.Channels[0].Models)
 }

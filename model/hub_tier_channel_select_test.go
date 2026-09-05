@@ -18,10 +18,11 @@ func TestHubTierPrerequisites(t *testing.T) {
 }
 
 func TestSelectHubTierChannelByHubPolicyPreservesOrderedMultipliers(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.3, 0.4, 0.6}}},
-	}, 0)
-	require.NoError(t, err)
+	policy := &HubTokenRoutingPolicy{Channels: []HubTokenRoutingChannel{
+		{ChannelID: 1, Multiplier: 0.3, Models: []string{"gpt-4o"}},
+		{ChannelID: 2, Multiplier: 0.4, Models: []string{"gpt-4o"}},
+		{ChannelID: 3, Multiplier: 0.6, Models: []string{"gpt-4o"}},
+	}}
 	candidates := []hubTierChannelCandidate{
 		{ChannelID: 1, Multiplier: 0.3, Priority: 1, Weight: 100, Provider: 1, HardUnavailable: true},
 		{ChannelID: 2, Multiplier: 0.4, Priority: 1, Weight: 100, Provider: 1},
@@ -31,16 +32,43 @@ func TestSelectHubTierChannelByHubPolicyPreservesOrderedMultipliers(t *testing.T
 }
 
 func TestSelectHubTierChannelByHubPolicyPlatformFallbackPrefersLowerPrice(t *testing.T) {
-	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
-		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.6, 0.3, 0.4}}},
-	}, 42)
-	require.NoError(t, err)
+	policy := &HubTokenRoutingPolicy{Channels: []HubTokenRoutingChannel{
+		{ChannelID: 1, Multiplier: 0.6, Models: []string{"gpt-4o"}},
+		{ChannelID: 2, Multiplier: 0.3, Models: []string{"gpt-4o"}},
+		{ChannelID: 3, Multiplier: 0.4, Models: []string{"gpt-4o"}},
+	}}
 	candidates := []hubTierChannelCandidate{
 		{ChannelID: 4, Multiplier: 0.2, Priority: 1, Weight: 100, Provider: 2},
 		{ChannelID: 5, Multiplier: 0.5, Priority: 1, Weight: 100, Provider: 2},
 	}
 	selected := selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, nil, true)
 	assert.Contains(t, []int{4, 5}, selected)
+}
+
+func TestHubPolicyAffinityKeepsMultiplierQualityAndPriorityBoundaries(t *testing.T) {
+	policy := &HubTokenRoutingPolicy{Channels: []HubTokenRoutingChannel{
+		{ChannelID: 1, Multiplier: 0.6, Models: []string{"gpt-4o"}},
+		{ChannelID: 2, Multiplier: 0.6, Models: []string{"gpt-4o"}},
+		{ChannelID: 3, Multiplier: 0.3, Models: []string{"gpt-4o"}},
+	}}
+	assert.Equal(t, []float64{0.6, 0.3}, policy.OrderedMultipliers("gpt-4o"))
+	candidates := []hubTierChannelCandidate{
+		{ChannelID: 1, Multiplier: 0.6, Priority: 1, Weight: 100, Provider: 1},
+		{ChannelID: 2, Multiplier: 0.6, Priority: 1, Weight: 100, Provider: 1},
+		{ChannelID: 3, Multiplier: 0.3, Priority: 100, Weight: 100, Provider: 1},
+	}
+	assert.Equal(t, 2, selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, nil, false, 2))
+	assert.Contains(t, []int{1, 2}, selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, nil, false, 3))
+	candidates[0].Priority = 2
+	assert.Equal(t, 1, selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, nil, false, 2))
+	candidates[0].Priority = 1
+	candidates[0].RealSampleCount = 20
+	candidates[0].RealSuccessRateBps = 10000
+	candidates[1].RealSampleCount = 20
+	candidates[1].RealSuccessRateBps = 8000
+	assert.Equal(t, 1, selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, nil, false, 2))
+	assert.Equal(t, 2, selectHubTierChannelByHubPolicy(policy, "gpt-4o", candidates, map[int]struct{}{1: {}}, false, 2))
+	assert.Zero(t, selectHubTierChannelByHubPolicy(policy, "dall-e-3", candidates, nil, true, 2))
 }
 
 func TestBuildChannelAbilitiesCreatesPriceAndHighQualityRows(t *testing.T) {

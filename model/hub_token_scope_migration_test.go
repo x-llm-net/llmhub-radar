@@ -25,9 +25,9 @@ func TestMigrateHubTokenScopesBackfillsProviderAndRootTokens(t *testing.T) {
 	require.NoError(t, db.Create(&provider).Error)
 	require.NoError(t, db.AutoMigrate(&Token{}))
 
-	providerPolicy := &HubTokenRoutingPolicy{
-		Mode: HubTokenRoutingModeProvider, ProviderID: provider.Id,
-		Selections: []HubTokenRoutingSelection{{Family: "openai", ExactMultipliers: []float64{1}}},
+	providerPolicy := map[string]any{
+		"mode": "provider", "provider_id": provider.Id,
+		"selections": []map[string]any{{"family": "openai", "exact_multipliers": []float64{1}}},
 	}
 	policyJSON, err := common.Marshal(providerPolicy)
 	require.NoError(t, err)

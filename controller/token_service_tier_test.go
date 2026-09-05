@@ -33,7 +33,7 @@ func serviceTierTokenRequest(name, group string) map[string]any {
 	}
 }
 
-func TestAddTokenRequiresMultiplierPolicyWhenRoutingEnabled(t *testing.T) {
+func TestAddTokenRequiresChannelPolicyWhenRoutingEnabled(t *testing.T) {
 	tests := []struct {
 		name  string
 		group string
@@ -96,11 +96,11 @@ func TestUpdateTokenRejectsLegacyGroupWhenRoutingEnabled(t *testing.T) {
 
 	UpdateToken(ctx)
 
-	require.True(t, decodeAPIResponse(t, recorder).Success)
+	require.False(t, decodeAPIResponse(t, recorder).Success)
 	var updated model.Token
 	require.NoError(t, db.First(&updated, token.Id).Error)
-	assert.Equal(t, "valid-update", updated.Name)
-	assert.Equal(t, hub_routing_setting.ServiceTierLow, updated.Group)
+	assert.Equal(t, "legacy-token", updated.Name)
+	assert.Equal(t, "default", updated.Group)
 }
 
 func TestUpdateTokenStatusOnlyPreservesLegacyGroupWhenRoutingEnabled(t *testing.T) {

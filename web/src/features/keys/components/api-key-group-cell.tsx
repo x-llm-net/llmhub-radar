@@ -9,76 +9,58 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import { formatHubMultiplier } from '../lib/multiplier'
-import type { HubTokenRoutingPolicy } from '../types'
-import {
-  // AutoGroupBadge,
-  GroupRatioBadge,
-  type GroupRatio,
-} from './auto-group-visuals'
+import type { ApiKey } from '../types'
+import { GroupRatioBadge, type GroupRatio } from './auto-group-visuals'
 
 type ApiKeyGroupCellProps = {
   crossGroupRetry: boolean
   group: string
   ratio?: GroupRatio
   shouldReduceMotion: boolean
-  policy?: HubTokenRoutingPolicy | null
-}
-
-const HUB_FAMILY_LABELS: Record<string, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Claude',
-  google: 'Gemini',
-  xai: 'Grok',
-  deepseek: 'DeepSeek',
-  alibaba: 'Qwen',
-  bytedance: 'ByteDance',
-  zhipu: 'GLM',
-  other: 'Other models',
+  policy?: ApiKey['hub_routing_policy']
 }
 
 export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   const { t } = useTranslation()
-
-  if (props.policy?.selections.length) {
-    const summary = props.policy.selections
-      .map((selection) => {
-        const model = selection.model || ''
-        const family = t(
-          HUB_FAMILY_LABELS[selection.family || ''] || selection.family || ''
-        )
-        const exact = selection.multipliers || selection.exact_multipliers
-        if (exact?.length) {
-          return `${model || family} ${exact.map(formatHubMultiplier).join(', ')}`
-        }
-        return `${model || family} ${formatHubMultiplier(selection.min_multiplier ?? 0)}-${formatHubMultiplier(
-          selection.max_multiplier ?? 0
-        )}`
-      })
-      .join(' / ')
+  if (props.policy?.mode === 'channels') {
+    if (props.policy.channel_ids?.length) {
+      const summary = props.policy.channel_ids
+        .map((id) => t('Channel #{{id}}', { id }))
+        .join(' / ')
+      return (
+        <TruncatedCell
+          className='max-w-[210px] text-xs'
+          tooltipContent={summary}
+        >
+          {t('{{count}} channels selected', {
+            count: props.policy.channel_ids.length,
+          })}
+        </TruncatedCell>
+      )
+    }
     return (
-      <TruncatedCell
-        className='max-w-[210px] font-mono text-xs'
-        tooltipContent={summary}
-      >
-        {summary}
-      </TruncatedCell>
+      <span className='text-destructive text-xs'>
+        {t('Channel selection required')}
+      </span>
+    )
+  }
+
+  if (props.policy) {
+    return (
+      <span className='text-destructive text-xs'>
+        {t('Channel selection required')}
+      </span>
     )
   }
 
   if (props.group !== 'auto') {
     const ratio = typeof props.ratio === 'number' ? props.ratio : undefined
     return (
-      <TruncatedCell
-        className='-ml-1.5'
-        tooltipContent={props.group || '-'}
-        tooltipClassName='break-all'
-      >
+      <TruncatedCell className='-ml-1.5' tooltipContent={props.group}>
         <GroupBadge group={props.group} ratio={ratio} />
       </TruncatedCell>
     )
   }
-
   return (
     <Tooltip>
       <TooltipTrigger
@@ -90,7 +72,6 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
         }
       >
         <StatusBadge label={t('Cross-group')} variant='info' copyable={false} />
-        {/*<AutoGroupBadge shouldReduceMotion={props.shouldReduceMotion} />*/}
         <GroupRatioBadge
           ratio={props.ratio}
           isAuto
@@ -98,11 +79,9 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
         />
       </TooltipTrigger>
       <TooltipContent>
-        <span className='text-xs'>
-          {t(
-            'Automatically selects the best available group with circuit breaker mechanism'
-          )}
-        </span>
+        {t(
+          'Automatically selects the best available group with circuit breaker mechanism'
+        )}
       </TooltipContent>
     </Tooltip>
   )

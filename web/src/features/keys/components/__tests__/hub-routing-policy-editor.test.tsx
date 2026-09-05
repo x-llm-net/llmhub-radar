@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { after, describe, test } from 'node:test'
+import { after, afterEach, describe, test } from 'node:test'
 
 import { Window } from 'happy-dom'
 
@@ -71,334 +71,178 @@ const reactTestGlobals = globalThis as typeof globalThis & {
 reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 
 const options: HubTokenRoutingOptions = {
-  mode: 'public_pool',
-  families: [
+  mode: 'channels',
+  provider_id: 7,
+  channels: [
     {
-      key: 'openai',
-      min_multiplier: 0.001,
-      max_multiplier: 100,
-      slider_max_multiplier: 1,
-      step: 0.001,
-      available_channel_count: 2,
-      provider_count: 3,
-      availability: [
-        {
-          multiplier: 0.1,
-          channel_count: 1,
-          provider_count: 2,
-          provider_ids: [1, 2],
-        },
-        {
-          multiplier: 0.2,
-          channel_count: 1,
-          provider_count: 2,
-          provider_ids: [2, 3],
-        },
-      ],
+      channel_id: 30,
+      name: 'Premium GPT',
+      multiplier: 0.6,
+      models: ['gpt-5'],
+      available: true,
+    },
+    {
+      channel_id: 10,
+      name: 'Economy GPT',
+      multiplier: 0.3,
+      models: ['gpt-5', 'gpt-image-1'],
+      available: true,
+    },
+    {
+      channel_id: 20,
+      name: 'Claude',
+      multiplier: 0.4,
+      models: ['claude-sonnet-4'],
+      available: true,
+    },
+    {
+      channel_id: 40,
+      name: 'Unpublished',
+      multiplier: 0.2,
+      models: ['gpt-5'],
+      available: false,
     },
   ],
-  tier_ceilings: {
-    openai: { special: 0.1, low: 0.2, medium: 0.5, high: 1 },
-  },
+}
+let root: ReturnType<typeof createRoot> | undefined
+let host: HTMLDivElement | undefined
+let changed: number[] | undefined
+
+async function renderEditor(value: number[] = [], suppliedOptions = options) {
+  host = document.createElement('div')
+  document.body.append(host)
+  root = createRoot(host)
+  await act(async () =>
+    root?.render(
+      <I18nextProvider i18n={i18n}>
+        <HubRoutingPolicyEditor
+          options={suppliedOptions}
+          value={value}
+          onChange={(ids) => {
+            changed = ids
+          }}
+        />
+      </I18nextProvider>
+    )
+  )
 }
 
-describe('Hub routing policy editor', () => {
-  after(() => {
-    domWindow.close()
-  })
+function namedControl(name: string): HTMLElement {
+  const result = [
+    ...document.querySelectorAll<HTMLElement>('[aria-label]'),
+  ].find((element) => element.getAttribute('aria-label') === name)
+  assert.ok(result, name)
+  return result
+}
 
-  test('formats multipliers without insignificant trailing zeroes', () => {
+afterEach(async () => {
+  await act(async () => root?.unmount())
+  host?.remove()
+  root = undefined
+  host = undefined
+  changed = undefined
+})
+after(() => domWindow.close())
+
+describe('Hub channel routing editor', () => {
+  test('formats live multipliers without insignificant trailing zeroes', () => {
     assert.equal(formatHubMultiplier(0.8), '0.8x')
     assert.equal(formatHubMultiplier(0.125), '0.125x')
     assert.equal(formatHubMultiplier(1), '1x')
   })
 
-  test('shows precise range inputs and deduplicates providers across multiplier buckets', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={options}
-            value={[
-              {
-                family: 'openai',
-                min_multiplier: 0.1,
-                max_multiplier: 0.2,
-              },
-            ]}
-            onChange={() => undefined}
-          />
-        </I18nextProvider>
-      )
+  test('sorts the catalog by multiplier and selects the whole channel', async () => {
+    await renderEditor([20])
+    const labels = [
+      ...namedControl('Available channels').querySelectorAll(
+        '[role="checkbox"]'
+      ),
+    ].map((node) => node.getAttribute('aria-label'))
+    assert.deepEqual(labels, [
+      'Select Unpublished',
+      'Select Economy GPT',
+      'Select Claude',
+      'Select Premium GPT',
+    ])
+    assert.ok(
+      namedControl('Available channels').textContent?.includes('gpt-image-1')
     )
+    await act(async () => namedControl('Select Economy GPT').click())
+    assert.deepEqual(changed, [20, 10])
+  })
 
-    const inputs = container.querySelectorAll<HTMLInputElement>(
-      'input[type="number"]'
-    )
-    assert.equal(inputs.length, 2)
-    assert.equal(inputs[0]?.step, '0.001')
-    assert.equal(inputs[1]?.max, '100')
-    assert.equal(inputs[0]?.value, '0.1')
-    assert.equal(inputs[1]?.value, '0.2')
+  test('preserves explicit order and moves a selected channel up', async () => {
+    await renderEditor([30, 10, 20])
     assert.equal(
-      container.textContent?.includes('2 channels / 3 providers'),
+      (namedControl('Move Premium GPT up') as HTMLButtonElement).disabled,
       true
     )
-    assert.equal(container.textContent?.includes('Economy'), true)
-
-    await act(async () => root.unmount())
-    container.remove()
+    assert.equal(
+      (namedControl('Move Claude down') as HTMLButtonElement).disabled,
+      true
+    )
+    await act(async () => namedControl('Move Claude up').click())
+    assert.deepEqual(changed, [30, 20, 10])
   })
 
-  test('keeps premium multiplier ranges editable above the baseline', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={options}
-            value={[
-              {
-                family: 'openai',
-                min_multiplier: 5,
-                max_multiplier: 6,
-              },
-            ]}
-            onChange={() => undefined}
-          />
-        </I18nextProvider>
-      )
-    )
-
-    const inputs = container.querySelectorAll<HTMLInputElement>(
-      'input[type="number"]'
-    )
-    assert.equal(inputs[0]?.value, '5')
-    assert.equal(inputs[1]?.value, '6')
-    assert.equal(inputs[1]?.max, '100')
-    assert.equal(container.textContent?.includes('High quality'), true)
-
-    await act(async () => root.unmount())
-    container.remove()
+  test('filters by exact model text without exposing model selection controls', async () => {
+    await renderEditor()
+    const input = namedControl('Search channels or models') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(
+      domWindow.HTMLInputElement.prototype,
+      'value'
+    )?.set
+    assert.ok(setter)
+    await act(async () => {
+      setter.call(input, 'GPT-IMAGE-1')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const choices =
+      namedControl('Available channels').querySelectorAll('[role="checkbox"]')
+    assert.equal(choices.length, 1)
+    assert.equal(choices[0].getAttribute('aria-label'), 'Select Economy GPT')
   })
 
-  test('offers tier-based range presets without changing the form shape', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    let nextValue: Array<{
-      family: string
-      min_multiplier: number
-      max_multiplier: number
-    }> = []
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={options}
-            value={[
-              {
-                family: 'openai',
-                min_multiplier: 0.1,
-                max_multiplier: 0.2,
-              },
-            ]}
-            onChange={(value) => {
-              nextValue = value
-            }}
-          />
-        </I18nextProvider>
-      )
+  test('keeps an unpublished selected channel removable and blocks selecting another unavailable channel', async () => {
+    await renderEditor([40])
+    assert.equal(
+      namedControl('Select Unpublished').getAttribute('aria-checked'),
+      'true'
     )
-
-    const standardPreset = container.querySelector<HTMLButtonElement>(
-      '[data-multiplier-preset="standard"]'
-    )
-    assert.ok(standardPreset)
-    await act(async () => standardPreset.click())
-
-    assert.deepEqual(nextValue, [
-      {
-        family: 'openai',
-        min_multiplier: 0.2,
-        max_multiplier: 0.5,
-      },
-    ])
-
-    const highPreset = container.querySelector<HTMLButtonElement>(
-      '[data-multiplier-preset="high"]'
-    )
-    assert.ok(highPreset)
-    await act(async () => highPreset.click())
-    assert.deepEqual(nextValue, [
-      {
-        family: 'openai',
-        min_multiplier: 0.5,
-        max_multiplier: 1,
-      },
-    ])
-
-    await act(async () => root.unmount())
-    container.remove()
+    await act(async () => namedControl('Remove Unpublished').click())
+    assert.deepEqual(changed, [])
   })
 
-  test('defaults newly added families to the configured standard tier', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    let nextValue: Array<{
-      family: string
-      min_multiplier: number
-      max_multiplier: number
-    }> = []
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={options}
-            value={[]}
-            onChange={(value) => {
-              nextValue = value
-            }}
-          />
-        </I18nextProvider>
-      )
+  test('blocks unavailable new selections and the ninth selection', async () => {
+    const channels = Array.from({ length: 9 }, (_, index) => ({
+      ...options.channels[0],
+      channel_id: index + 1,
+      name: `Channel ${index + 1}`,
+    }))
+    await renderEditor([1, 2, 3, 4, 5, 6, 7, 8], { ...options, channels })
+    assert.equal(
+      namedControl('Select Channel 9').getAttribute('aria-disabled'),
+      'true'
     )
-
-    const addButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Add model family')
+    assert.notEqual(
+      namedControl('Select Channel 1').getAttribute('aria-disabled'),
+      'true'
     )
-    assert.ok(addButton)
-    await act(async () => addButton.click())
-
-    assert.deepEqual(nextValue, [
-      {
-        family: 'openai',
-        min_multiplier: 0.2,
-        max_multiplier: 0.5,
-        exact_multipliers: undefined,
-      },
-    ])
-
-    await act(async () => root.unmount())
-    container.remove()
   })
 
-  test('initializes premium-only families with a valid range', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    let nextValue: Array<{
-      family: string
-      min_multiplier: number
-      max_multiplier: number
-      exact_multipliers?: number[]
-    }> = []
-    const premiumOptions: HubTokenRoutingOptions = {
-      ...options,
-      families: [
-        {
-          ...options.families[0],
-          min_multiplier: 5,
-          max_multiplier: 6,
-          slider_max_multiplier: 6,
-        },
-      ],
-    }
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={premiumOptions}
-            value={[]}
-            onChange={(value) => {
-              nextValue = value
-            }}
-          />
-        </I18nextProvider>
-      )
-    )
-
-    const addButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Add model family')
-    )
-    assert.ok(addButton)
-    await act(async () => addButton.click())
-
-    assert.equal(nextValue[0]?.min_multiplier, 5)
-    assert.equal(nextValue[0]?.max_multiplier, 5)
-
-    await act(async () => root.unmount())
-    container.remove()
+  test('shows deleted selections and removes them without resetting the remaining order', async () => {
+    await renderEditor([99, 10])
+    assert.ok(document.body.textContent?.includes('Channel no longer exists'))
+    await act(async () => namedControl('Remove Channel #99').click())
+    assert.deepEqual(changed, [10])
   })
 
-  test('allows selecting multiple published provider multipliers', async () => {
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    let nextValue: Array<{
-      family: string
-      min_multiplier: number
-      max_multiplier: number
-      exact_multipliers?: number[]
-    }> = []
-    const baseFamily = options.families[0]
-    assert.ok(baseFamily)
-    const providerOptions: HubTokenRoutingOptions = {
-      ...options,
-      mode: 'provider',
-      provider_id: 7,
-      families: [
-        {
-          ...baseFamily,
-          exact_multipliers: [0.2, 0.5],
-          availability: [
-            { multiplier: 0.2, channel_count: 1, provider_count: 1 },
-            { multiplier: 0.5, channel_count: 1, provider_count: 1 },
-          ],
-        },
-      ],
-    }
-
-    await act(async () =>
-      root.render(
-        <I18nextProvider i18n={i18n}>
-          <HubRoutingPolicyEditor
-            options={providerOptions}
-            value={[
-              {
-                family: 'openai',
-                min_multiplier: 0.2,
-                max_multiplier: 0.2,
-                exact_multipliers: [0.2],
-              },
-            ]}
-            onChange={(value) => {
-              nextValue = value
-            }}
-          />
-        </I18nextProvider>
-      )
+  test('shows an empty catalog state', async () => {
+    await renderEditor([], { ...options, channels: [] })
+    assert.equal(
+      document.querySelector('[role="status"]')?.textContent,
+      'No channels available'
     )
-
-    const checkboxes =
-      container.querySelectorAll<HTMLElement>('[role="checkbox"]')
-    assert.equal(checkboxes.length, 2)
-    await act(async () => checkboxes[1]?.click())
-
-    assert.deepEqual(nextValue[0]?.exact_multipliers, [0.2, 0.5])
-
-    await act(async () => root.unmount())
-    container.remove()
+    assert.equal(document.querySelectorAll('[role="checkbox"]').length, 0)
   })
 })

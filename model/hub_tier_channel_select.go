@@ -32,11 +32,15 @@ type hubTierChannelCandidate struct {
 	HasRealFirstTokenP95  bool
 }
 
-func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName string, candidates []hubTierChannelCandidate, excluded map[int]struct{}, platformFallback bool) int {
+func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName string, candidates []hubTierChannelCandidate, excluded map[int]struct{}, platformFallback bool, preferredChannelIDs ...int) int {
+	preferredChannelID := 0
+	if len(preferredChannelIDs) > 0 {
+		preferredChannelID = preferredChannelIDs[0]
+	}
 	if platformFallback {
 		preferred, ok := policy.ProviderFallbackProtectionMultiplier(modelName)
 		if !ok {
-			return selectHubTierChannel(candidates, excluded)
+			return 0
 		}
 		lower := make([]hubTierChannelCandidate, 0, len(candidates))
 		for _, candidate := range candidates {
@@ -44,7 +48,7 @@ func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName st
 				lower = append(lower, candidate)
 			}
 		}
-		if selected := selectHubTierChannel(lower, excluded); selected != 0 {
+		if selected := selectHubPolicyStageChannel(lower, excluded, preferredChannelID); selected != 0 {
 			return selected
 		}
 		maxMultiplier := preferred
@@ -59,11 +63,11 @@ func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName st
 				eligible = append(eligible, candidate)
 			}
 		}
-		return selectHubTierChannel(eligible, excluded)
+		return selectHubPolicyStageChannel(eligible, excluded, preferredChannelID)
 	}
 	ordered := policy.OrderedMultipliers(modelName)
 	if len(ordered) == 0 {
-		return selectHubTierChannel(candidates, excluded)
+		return 0
 	}
 	for _, multiplier := range ordered {
 		stage := make([]hubTierChannelCandidate, 0)
@@ -72,11 +76,43 @@ func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName st
 				stage = append(stage, candidate)
 			}
 		}
-		if selected := selectHubTierChannel(stage, excluded); selected != 0 {
+		if selected := selectHubPolicyStageChannel(stage, excluded, preferredChannelID); selected != 0 {
 			return selected
 		}
 	}
 	return 0
+}
+
+// Affinity may select within the current price and quality stage, but cannot
+// promote a lower-priority channel over another channel from the same provider.
+func selectHubPolicyStageChannel(candidates []hubTierChannelCandidate, excluded map[int]struct{}, preferredChannelID int) int {
+	if preferredChannelID <= 0 {
+		return selectHubTierChannel(candidates, excluded)
+	}
+	eligible := make([]hubTierChannelCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, failed := excluded[candidate.ChannelID]; failed || candidate.HardUnavailable {
+			continue
+		}
+		eligible = append(eligible, candidate)
+	}
+	eligible = filterHubTierCandidatesByQualityBand(eligible)
+	for _, candidate := range eligible {
+		if candidate.ChannelID != preferredChannelID {
+			continue
+		}
+		priorityAllowed := true
+		for _, other := range eligible {
+			if other.Provider == candidate.Provider && other.Priority > candidate.Priority {
+				priorityAllowed = false
+				break
+			}
+		}
+		if priorityAllowed {
+			return candidate.ChannelID
+		}
+	}
+	return selectHubTierChannelFromEligible(eligible)
 }
 
 // hubTierCandidateBuckets is published with the channel cache. It keeps the

@@ -61,6 +61,19 @@ func (p *RetryParam) ExcludedChannelIDs() map[int]struct{} {
 	return p.excludedChannelIDs
 }
 
+// MaxRetry reserves the configured fallback budget after each selected channel
+// has had at most one attempt. Unavailable selections do not consume attempts.
+func (p *RetryParam) MaxRetry() int {
+	policy := GetHubTokenRoutingPolicy(p.Ctx)
+	if policy == nil {
+		return common.RetryTimes
+	}
+	if common.GetContextKeyBool(p.Ctx, constant.ContextKeyHubRoutingFallback) {
+		return common.GetContextKeyInt(p.Ctx, constant.ContextKeyHubFallbackStartRetry) + common.RetryTimes
+	}
+	return policy.SelectedChannelCount(p.ModelName) + common.RetryTimes
+}
+
 func cloneRetryParamAt(param *RetryParam, retry int) *RetryParam {
 	cloned := *param
 	cloned.Retry = common.GetPointer(retry)
@@ -142,32 +155,17 @@ func GetHubTokenRoutingPolicy(ctx *gin.Context) *model.HubTokenRoutingPolicy {
 }
 
 func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.HubTokenRoutingPolicy) (*model.Channel, string, error) {
-	providerID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyHubRequestedProviderId)
-	if policy.Mode == model.HubTokenRoutingModeProvider && policy.ProviderID > 0 {
-		providerID = policy.ProviderID
-		provider, ok := model.GetHubProviderRoutingByID(providerID)
-		if !ok || provider.Status != model.HubProviderStatusActive {
-			return nil, param.TokenGroup, errors.New("provider is unavailable")
-		}
-	}
 	retry := param.GetRetry()
 	isFallback := common.GetContextKeyBool(param.Ctx, constant.ContextKeyHubRoutingFallback)
-	if providerID <= 0 {
-		common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingPhase, "public_pool")
-		common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingFallback, false)
-		channel, snapshot, err := model.GetRandomSatisfiedChannelWithHubPolicy(
-			policy, param.ModelName, retry, param.RequestPath, param.ExcludedChannelIDs(), model.ChannelProviderFilter{},
-		)
-		if channel != nil {
-			common.SetContextKey(param.Ctx, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
-		}
-		return channel, param.TokenGroup, err
+	preferredChannelID := 0
+	if retry == 0 {
+		preferredChannelID, _ = GetPreferredChannelByAffinity(param.Ctx, param.ModelName, param.TokenGroup)
 	}
 
-	if !isFallback && (common.RetryTimes == 0 || retry < common.RetryTimes) {
+	if !isFallback {
 		channel, snapshot, err := model.GetRandomSatisfiedChannelWithHubPolicy(
 			policy, param.ModelName, retry, param.RequestPath, param.ExcludedChannelIDs(), model.ChannelProviderFilter{
-				ProviderID: providerID, Mode: model.ChannelProviderOnly, StrictExcludedChannels: true,
+				StrictExcludedChannels: true, PreferredChannelID: preferredChannelID,
 			},
 		)
 		if err != nil {
@@ -177,6 +175,9 @@ func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.
 			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingPhase, "preferred")
 			common.SetContextKey(param.Ctx, constant.ContextKeyHubRoutingFallback, false)
 			common.SetContextKey(param.Ctx, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
+			if channel.Id == preferredChannelID {
+				MarkChannelAffinityUsed(param.Ctx, param.TokenGroup, channel.Id)
+			}
 			return channel, param.TokenGroup, nil
 		}
 	}
@@ -193,11 +194,14 @@ func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.
 	}
 	channel, snapshot, err := model.GetRandomSatisfiedChannelWithHubPolicy(
 		policy, param.ModelName, phaseRetry, param.RequestPath, param.ExcludedChannelIDs(), model.ChannelProviderFilter{
-			ProviderID: providerID, Mode: model.ChannelProviderExclude, StrictExcludedChannels: true,
+			PlatformFallback: true, StrictExcludedChannels: true, PreferredChannelID: preferredChannelID,
 		},
 	)
 	if channel != nil {
 		common.SetContextKey(param.Ctx, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
+		if channel.Id == preferredChannelID {
+			MarkChannelAffinityUsed(param.Ctx, param.TokenGroup, channel.Id)
+		}
 	}
 	return channel, param.TokenGroup, err
 }
