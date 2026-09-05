@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -19,14 +19,17 @@ import { Slider } from '@/components/ui/slider'
 import { formatHubMultiplier } from '../lib/multiplier'
 import type {
   HubTokenRoutingFamilyOption,
+  HubTokenRoutingModelOption,
   HubTokenRoutingOptions,
 } from '../types'
 
 export type HubRoutingSelectionFormValue = {
-  family: string
+  model?: string
+  family?: string
   min_multiplier: number
   max_multiplier: number
   exact_multipliers?: number[]
+  multipliers?: number[]
 }
 
 type HubRoutingPolicyEditorProps = {
@@ -191,20 +194,39 @@ export function HubRoutingPolicyEditor({
     () => new Map(options.families.map((option) => [option.key, option])),
     [options.families]
   )
+  const modelOptions = (options.models || []) as HubTokenRoutingModelOption[]
+  const optionByModel = useMemo(
+    () => new Map(modelOptions.map((option) => [option.model, option])),
+    [modelOptions]
+  )
+  const concreteMode = modelOptions.length > 0
 
   const addSelection = () => {
-    const available = options.families.find(
-      (option) => !value.some((selection) => selection.family === option.key)
-    )
+    const available = concreteMode
+      ? modelOptions.find(
+          (option) =>
+            !value.some((selection) => selection.model === option.model)
+        )
+      : options.families.find(
+          (option) =>
+            !value.some((selection) => selection.family === option.key)
+        )
     if (!available || value.length >= 8) return
     onChange([
       ...value,
-      defaultSelection(
-        available,
-        options.mode === 'public_pool'
-          ? options.tier_ceilings[available.key]
-          : undefined
-      ),
+      concreteMode
+        ? {
+            model: (available as HubTokenRoutingModelOption).model,
+            min_multiplier: available.min_multiplier,
+            max_multiplier: Math.min(available.max_multiplier, 1),
+            multipliers: available.exact_multipliers?.slice(0, 1),
+          }
+        : defaultSelection(
+            available,
+            options.mode === 'public_pool'
+              ? options.tier_ceilings[available.key]
+              : undefined
+          ),
     ])
   }
 
@@ -226,7 +248,9 @@ export function HubRoutingPolicyEditor({
           <div className='text-sm font-medium'>
             {options.mode === 'provider'
               ? t('Available provider routes')
-              : t('Model families and multiplier ranges')}
+              : concreteMode
+                ? t('Models and ordered multipliers')
+                : t('Model families and multiplier ranges')}
           </div>
           <p className='text-muted-foreground text-xs'>
             {options.mode === 'provider'
@@ -244,7 +268,9 @@ export function HubRoutingPolicyEditor({
           size='sm'
           onClick={addSelection}
           disabled={
-            value.length >= 8 || value.length >= options.families.length
+            value.length >= 8 ||
+            value.length >=
+              (concreteMode ? modelOptions.length : options.families.length)
           }
         >
           <Plus className='mr-1.5 size-3.5' />
@@ -254,17 +280,23 @@ export function HubRoutingPolicyEditor({
 
       {value.length === 0 && (
         <div className='border-muted-foreground/25 bg-muted/30 text-muted-foreground rounded-md border border-dashed px-3 py-4 text-center text-xs'>
-          {options.families.length === 0
+          {(concreteMode ? modelOptions.length : options.families.length) === 0
             ? t('This provider has no published routes available for API keys.')
             : t(
-                'Add at least one model family to control which channels this key can use.'
+                concreteMode
+                  ? 'Add at least one model to control which channels this key can use.'
+                  : 'Add at least one model family to control which channels this key can use.'
               )}
         </div>
       )}
 
       {value.map((selection, index) => {
         const option = optionByFamily.get(selection.family)
-        if (!option) {
+        const concreteOption =
+          concreteMode && selection.model
+            ? optionByModel.get(selection.model)
+            : undefined
+        if (!option && !concreteOption) {
           return (
             <div
               key={selection.family}
@@ -272,7 +304,7 @@ export function HubRoutingPolicyEditor({
             >
               <div className='min-w-0 flex-1'>
                 <div className='truncate text-sm font-medium'>
-                  {familyLabel(selection.family)}
+                  {selection.model || familyLabel(selection.family || '')}
                 </div>
                 <div className='text-destructive text-xs'>
                   {t('This previously selected route is no longer available.')}
@@ -296,16 +328,19 @@ export function HubRoutingPolicyEditor({
             </div>
           )
         }
+        const activeOption = concreteOption || option
+        if (!activeOption) return null
         const range = [selection.min_multiplier, selection.max_multiplier]
         const sliderMax = Math.max(
-          option.slider_max_multiplier,
+          activeOption.slider_max_multiplier,
           selection.min_multiplier,
           selection.max_multiplier
         )
         const displayValue =
-          options.mode === 'provider'
-            ? (selection.exact_multipliers?.[0] ??
-              option.exact_multipliers?.[0] ??
+          options.mode === 'provider' || concreteMode
+            ? (selection.multipliers?.[0] ??
+              selection.exact_multipliers?.[0] ??
+              activeOption.exact_multipliers?.[0] ??
               0)
             : selection.max_multiplier
         const tier = getHighestTier(
@@ -313,13 +348,13 @@ export function HubRoutingPolicyEditor({
           displayValue
         )
         const multiplierPresets = getMultiplierPresets(
-          option,
+          activeOption,
           options.tier_ceilings[selection.family],
           t
         )
-        const matching = option.availability.filter((bucket) =>
-          options.mode === 'provider'
-            ? (selection.exact_multipliers || []).some(
+        const matching = activeOption.availability.filter((bucket) =>
+          options.mode === 'provider' || concreteMode
+            ? (selection.multipliers || selection.exact_multipliers || []).some(
                 (multiplier) =>
                   Math.abs(bucket.multiplier - multiplier) < 0.0005
               )
@@ -341,38 +376,71 @@ export function HubRoutingPolicyEditor({
           >
             <div className='flex items-center gap-2'>
               <Select
-                value={selection.family}
+                value={concreteMode ? selection.model : selection.family}
                 onValueChange={(family) => {
                   if (!family) return
-                  const next = optionByFamily.get(family)
+                  const next = concreteMode
+                    ? optionByModel.get(family)
+                    : optionByFamily.get(family)
                   if (!next) return
                   updateSelection(
                     index,
-                    defaultSelection(
-                      next,
-                      options.mode === 'public_pool'
-                        ? options.tier_ceilings[next.key]
-                        : undefined
-                    )
+                    concreteMode
+                      ? {
+                          model: (next as HubTokenRoutingModelOption).model,
+                          family: undefined,
+                          min_multiplier: next.min_multiplier,
+                          max_multiplier: Math.min(next.max_multiplier, 1),
+                          multipliers: next.exact_multipliers?.slice(0, 1),
+                        }
+                      : defaultSelection(
+                          next,
+                          options.mode === 'public_pool'
+                            ? options.tier_ceilings[next.key]
+                            : undefined
+                        )
                   )
                 }}
               >
                 <SelectTrigger className='min-w-0 flex-1'>
-                  <SelectValue />
+                  <SelectValue>
+                    {selection.model || familyLabel(selection.family || '')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {options.families.map((familyOption) => (
-                    <SelectItem
-                      key={familyOption.key}
-                      value={familyOption.key}
-                      disabled={
-                        familyOption.key !== selection.family &&
-                        value.some((item) => item.family === familyOption.key)
-                      }
-                    >
-                      {familyLabel(familyOption.key)}
-                    </SelectItem>
-                  ))}
+                  {(concreteMode ? modelOptions : options.families).map(
+                    (familyOption) => (
+                      <SelectItem
+                        key={
+                          concreteMode
+                            ? (familyOption as HubTokenRoutingModelOption).model
+                            : familyOption.key
+                        }
+                        value={
+                          concreteMode
+                            ? (familyOption as HubTokenRoutingModelOption).model
+                            : familyOption.key
+                        }
+                        disabled={
+                          (concreteMode
+                            ? (familyOption as HubTokenRoutingModelOption)
+                                .model !== selection.model
+                            : familyOption.key !== selection.family) &&
+                          value.some((item) =>
+                            concreteMode
+                              ? item.model ===
+                                (familyOption as HubTokenRoutingModelOption)
+                                  .model
+                              : item.family === familyOption.key
+                          )
+                        }
+                      >
+                        {concreteMode
+                          ? (familyOption as HubTokenRoutingModelOption).model
+                          : familyLabel(familyOption.key)}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               </Select>
               <Button
@@ -392,13 +460,13 @@ export function HubRoutingPolicyEditor({
               </Button>
             </div>
 
-            {options.mode === 'provider' ? (
+            {options.mode === 'provider' || concreteMode ? (
               <div
                 className='border-muted-foreground/25 flex flex-wrap gap-x-4 gap-y-2 rounded-md border px-3 py-2'
                 role='group'
                 aria-label={t('Select published multipliers')}
               >
-                {(option.exact_multipliers || []).map((multiplier) => {
+                {(activeOption.exact_multipliers || []).map((multiplier) => {
                   const selected = (selection.exact_multipliers || []).some(
                     (value) => Math.abs(value - multiplier) < 0.0005
                   )
@@ -414,7 +482,10 @@ export function HubRoutingPolicyEditor({
                           (selection.exact_multipliers || []).length === 1
                         }
                         onCheckedChange={(checked) => {
-                          const current = selection.exact_multipliers || []
+                          const current =
+                            selection.multipliers ||
+                            selection.exact_multipliers ||
+                            []
                           const next = checked
                             ? [...current, multiplier]
                             : current.filter(
@@ -422,6 +493,7 @@ export function HubRoutingPolicyEditor({
                                   Math.abs(value - multiplier) >= 0.0005
                               )
                           updateSelection(index, {
+                            multipliers: next.length > 0 ? next : undefined,
                             exact_multipliers:
                               next.length > 0 ? next : undefined,
                             min_multiplier: next[0] ?? 0,
@@ -433,6 +505,76 @@ export function HubRoutingPolicyEditor({
                     </label>
                   )
                 })}
+                {(selection.multipliers || selection.exact_multipliers || [])
+                  .length > 1 && (
+                  <div className='basis-full border-t pt-2 text-xs'>
+                    <span className='text-muted-foreground mr-2'>
+                      {t('Route order (first is preferred)')}
+                    </span>
+                    {(
+                      selection.multipliers ||
+                      selection.exact_multipliers ||
+                      []
+                    ).map((multiplier, multiplierIndex, ordered) => (
+                      <span
+                        key={`${multiplier}-${multiplierIndex}`}
+                        className='mr-1 inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5'
+                      >
+                        {formatHubMultiplier(multiplier)}
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          size='icon'
+                          className='size-4'
+                          disabled={multiplierIndex === 0}
+                          aria-label={t('Move multiplier up')}
+                          title={t('Move multiplier up')}
+                          onClick={() => {
+                            const next = [...ordered]
+                            ;[
+                              next[multiplierIndex - 1],
+                              next[multiplierIndex],
+                            ] = [
+                              next[multiplierIndex],
+                              next[multiplierIndex - 1],
+                            ]
+                            updateSelection(index, {
+                              multipliers: next,
+                              exact_multipliers: next,
+                            })
+                          }}
+                        >
+                          <ChevronUp className='size-3' />
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          size='icon'
+                          className='size-4'
+                          disabled={multiplierIndex === ordered.length - 1}
+                          aria-label={t('Move multiplier down')}
+                          title={t('Move multiplier down')}
+                          onClick={() => {
+                            const next = [...ordered]
+                            ;[
+                              next[multiplierIndex],
+                              next[multiplierIndex + 1],
+                            ] = [
+                              next[multiplierIndex + 1],
+                              next[multiplierIndex],
+                            ]
+                            updateSelection(index, {
+                              multipliers: next,
+                              exact_multipliers: next,
+                            })
+                          }}
+                        >
+                          <ChevronDown className='size-3' />
+                        </Button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className='space-y-2'>

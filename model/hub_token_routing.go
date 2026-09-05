@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -28,10 +27,13 @@ func IsHubTokenRoutingAbilityGroup(group string) bool {
 	return group == HubTokenRoutingAbilityGroup
 }
 
-// HubTokenRoutingSelection is the user-facing supply constraint for one model
-// family. Public keys use an inclusive range; provider-scoped keys use the
-// exact multiplier list supplied by that provider.
+// HubTokenRoutingSelection is the user-facing supply constraint for one model.
+// Multipliers are ordered: the first item is the preferred route and billing
+// protection price. Family/ExactMultipliers remain readable for old tokens.
 type HubTokenRoutingSelection struct {
+	Model       string    `json:"model,omitempty"`
+	Multipliers []float64 `json:"multipliers,omitempty"`
+	// Deprecated legacy fields.
 	Family           string    `json:"family"`
 	MinMultiplier    float64   `json:"min_multiplier,omitempty"`
 	MaxMultiplier    float64   `json:"max_multiplier,omitempty"`
@@ -63,12 +65,25 @@ type HubTokenRoutingFamilyOption struct {
 	Availability          []HubTokenRoutingAvailability `json:"availability"`
 }
 
+type HubTokenRoutingModelOption struct {
+	Model                 string                        `json:"model"`
+	MinMultiplier         float64                       `json:"min_multiplier"`
+	MaxMultiplier         float64                       `json:"max_multiplier"`
+	SliderMaxMultiplier   float64                       `json:"slider_max_multiplier"`
+	Step                  float64                       `json:"step"`
+	AvailableChannelCount int                           `json:"available_channel_count"`
+	ProviderCount         int                           `json:"provider_count"`
+	ExactMultipliers      []float64                     `json:"exact_multipliers,omitempty"`
+	Availability          []HubTokenRoutingAvailability `json:"availability"`
+}
+
 type HubTokenRoutingOptions struct {
 	Mode         string                                            `json:"mode"`
 	ProviderID   int                                               `json:"provider_id,omitempty"`
 	ProviderName string                                            `json:"provider_name,omitempty"`
 	ProviderSlug string                                            `json:"provider_slug,omitempty"`
 	Families     []HubTokenRoutingFamilyOption                     `json:"families"`
+	Models       []HubTokenRoutingModelOption                      `json:"models,omitempty"`
 	TierCeilings map[string]hub_routing_setting.FamilyTierCeilings `json:"tier_ceilings"`
 }
 
@@ -125,8 +140,34 @@ func NormalizeHubTokenRoutingPolicy(input *HubTokenRoutingPolicy, providerID int
 	}
 
 	seenFamilies := make(map[string]struct{}, len(policy.Selections))
+	seenModels := make(map[string]struct{}, len(policy.Selections))
 	for index := range policy.Selections {
 		selection := &policy.Selections[index]
+		selection.Model = strings.TrimSpace(selection.Model)
+		if selection.Model != "" {
+			modelKey := strings.ToLower(selection.Model)
+			if _, exists := seenModels[modelKey]; exists {
+				return nil, fmt.Errorf("model %s is selected more than once", selection.Model)
+			}
+			seenModels[modelKey] = struct{}{}
+			if len(selection.Multipliers) == 0 && len(selection.ExactMultipliers) > 0 {
+				selection.Multipliers = append([]float64(nil), selection.ExactMultipliers...)
+			}
+			selection.Multipliers = normalizeMultipliers(selection.Multipliers)
+			if len(selection.Multipliers) == 0 {
+				return nil, fmt.Errorf("selection %d requires a multiplier", index+1)
+			}
+			for _, multiplier := range selection.Multipliers {
+				if !validHubTokenMultiplier(multiplier) {
+					return nil, fmt.Errorf("invalid multiplier for %s", selection.Model)
+				}
+			}
+			selection.ExactMultipliers = nil
+			selection.Family = ""
+			selection.MinMultiplier = 0
+			selection.MaxMultiplier = 0
+			continue
+		}
 		selection.Family = strings.ToLower(strings.TrimSpace(selection.Family))
 		if selection.Family == "" {
 			return nil, fmt.Errorf("selection %d has no model family", index+1)
@@ -175,7 +216,6 @@ func normalizeMultipliers(values []float64) []float64 {
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}
-	sort.Float64s(result)
 	return result
 }
 
@@ -188,15 +228,26 @@ func validHubTokenMultiplier(value float64) bool {
 		!math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
-func (policy *HubTokenRoutingPolicy) AllowsMultiplier(family string, multiplier float64) bool {
+func (policy *HubTokenRoutingPolicy) AllowsMultiplier(modelName string, multiplier float64) bool {
 	multiplier = roundHubTokenMultiplier(multiplier)
 	if policy == nil || !validHubTokenMultiplier(multiplier) {
 		return false
 	}
-	family = strings.ToLower(strings.TrimSpace(family))
+	modelName = strings.TrimSpace(modelName)
 	for _, selection := range policy.Selections {
-		if selection.Family != family {
+		if selection.Model != "" && !hubRoutingModelMatches(selection.Model, modelName) {
 			continue
+		}
+		if selection.Model == "" && selection.Family != strings.ToLower(modelName) && selection.Family != ClassifyHubPublicModelFamily(modelName) {
+			continue
+		}
+		if len(selection.Multipliers) > 0 {
+			for _, exact := range selection.Multipliers {
+				if math.Abs(exact-multiplier) < 0.0005 {
+					return true
+				}
+			}
+			return false
 		}
 		if policy.Mode == HubTokenRoutingModeProvider {
 			for _, exact := range selection.ExactMultipliers {
@@ -216,20 +267,27 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplier(family string, multiplier 
 // range policies retain their explicit lower bound; provider policies may use
 // a cheaper multiplier during platform fallback, but never a more expensive
 // one.
-func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(family string, multiplier float64) bool {
+func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(modelName string, multiplier float64) bool {
 	if policy == nil || policy.Mode != HubTokenRoutingModeProvider {
-		return policy != nil && policy.AllowsMultiplier(family, multiplier)
+		return policy != nil && policy.AllowsMultiplier(modelName, multiplier)
 	}
 	multiplier = roundHubTokenMultiplier(multiplier)
 	if !validHubTokenMultiplier(multiplier) {
 		return false
 	}
-	family = strings.ToLower(strings.TrimSpace(family))
+	modelName = strings.TrimSpace(modelName)
 	for _, selection := range policy.Selections {
-		if selection.Family != family {
+		if selection.Model != "" && !hubRoutingModelMatches(selection.Model, modelName) {
 			continue
 		}
-		for _, exact := range selection.ExactMultipliers {
+		if selection.Model == "" && selection.Family != strings.ToLower(modelName) && selection.Family != ClassifyHubPublicModelFamily(modelName) {
+			continue
+		}
+		exacts := selection.Multipliers
+		if len(exacts) == 0 {
+			exacts = selection.ExactMultipliers
+		}
+		for _, exact := range exacts {
 			if multiplier <= exact+0.0005 {
 				return true
 			}
@@ -242,35 +300,75 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(family 
 // ProviderFallbackProtectionMultiplier returns the lowest multiplier the
 // user selected for a provider-scoped product. It is the maximum supply price
 // eligible for price-protected fallback billing.
-func (policy *HubTokenRoutingPolicy) ProviderFallbackProtectionMultiplier(family string) (float64, bool) {
+func (policy *HubTokenRoutingPolicy) ProviderFallbackProtectionMultiplier(modelName string) (float64, bool) {
 	if policy == nil || policy.Mode != HubTokenRoutingModeProvider {
 		return 0, false
 	}
-	family = strings.ToLower(strings.TrimSpace(family))
+	modelName = strings.TrimSpace(modelName)
 	for _, selection := range policy.Selections {
-		if selection.Family != family || len(selection.ExactMultipliers) == 0 {
+		if selection.Model != "" && !hubRoutingModelMatches(selection.Model, modelName) {
 			continue
 		}
-		lowest := selection.ExactMultipliers[0]
-		for _, multiplier := range selection.ExactMultipliers[1:] {
-			if multiplier < lowest {
-				lowest = multiplier
-			}
+		if selection.Model == "" && selection.Family != strings.ToLower(modelName) && selection.Family != ClassifyHubPublicModelFamily(modelName) {
+			continue
 		}
-		return lowest, true
+		exacts := selection.Multipliers
+		if len(exacts) == 0 {
+			exacts = selection.ExactMultipliers
+		}
+		if len(exacts) == 0 {
+			continue
+		}
+		return exacts[0], true
 	}
 	return 0, false
+}
+
+func (policy *HubTokenRoutingPolicy) OrderedMultipliers(modelName string) []float64 {
+	if policy == nil {
+		return nil
+	}
+	modelName = strings.TrimSpace(modelName)
+	for _, selection := range policy.Selections {
+		if selection.Model != "" && !hubRoutingModelMatches(selection.Model, modelName) {
+			continue
+		}
+		if selection.Model == "" && selection.Family != strings.ToLower(modelName) && selection.Family != ClassifyHubPublicModelFamily(modelName) {
+			continue
+		}
+		values := selection.Multipliers
+		if len(values) == 0 {
+			values = selection.ExactMultipliers
+		}
+		return append([]float64(nil), values...)
+	}
+	return nil
 }
 
 func (policy *HubTokenRoutingPolicy) AllowsModel(modelName string) bool {
 	if policy == nil {
 		return false
 	}
-	family := ClassifyHubPublicModelFamily(modelName)
 	for _, selection := range policy.Selections {
-		if selection.Family == family {
+		if selection.Model != "" && hubRoutingModelMatches(selection.Model, modelName) {
+			return true
+		}
+		if selection.Model == "" && selection.Family == ClassifyHubPublicModelFamily(modelName) {
 			return true
 		}
 	}
 	return false
+}
+
+func hubRoutingModelMatches(configured, requested string) bool {
+	configured = strings.TrimSpace(configured)
+	requested = strings.TrimSpace(requested)
+	if configured == requested {
+		return true
+	}
+	return ratioMatchingModelName(configured) == requested || ratioMatchingModelName(requested) == configured
+}
+
+func ratioMatchingModelName(modelName string) string {
+	return strings.TrimSpace(modelName)
 }

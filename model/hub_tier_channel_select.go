@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"math/rand"
 	"sort"
 
@@ -20,6 +21,7 @@ type hubTierChannelCandidate struct {
 	Priority              int64
 	Weight                int
 	Provider              int
+	Multiplier            float64
 	AvailabilityFactorBps int
 	LatencyFactorBps      int
 	HardUnavailable       bool
@@ -28,6 +30,53 @@ type hubTierChannelCandidate struct {
 	RealFirstTokenSamples int64
 	RealFirstTokenP95Ms   int64
 	HasRealFirstTokenP95  bool
+}
+
+func selectHubTierChannelByHubPolicy(policy *HubTokenRoutingPolicy, modelName string, candidates []hubTierChannelCandidate, excluded map[int]struct{}, platformFallback bool) int {
+	if platformFallback {
+		preferred, ok := policy.ProviderFallbackProtectionMultiplier(modelName)
+		if !ok {
+			return selectHubTierChannel(candidates, excluded)
+		}
+		lower := make([]hubTierChannelCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.Multiplier > 0 && candidate.Multiplier < preferred-0.0005 {
+				lower = append(lower, candidate)
+			}
+		}
+		if selected := selectHubTierChannel(lower, excluded); selected != 0 {
+			return selected
+		}
+		maxMultiplier := preferred
+		for _, multiplier := range policy.OrderedMultipliers(modelName) {
+			if multiplier > maxMultiplier {
+				maxMultiplier = multiplier
+			}
+		}
+		eligible := make([]hubTierChannelCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.Multiplier > 0 && candidate.Multiplier <= maxMultiplier+0.0005 {
+				eligible = append(eligible, candidate)
+			}
+		}
+		return selectHubTierChannel(eligible, excluded)
+	}
+	ordered := policy.OrderedMultipliers(modelName)
+	if len(ordered) == 0 {
+		return selectHubTierChannel(candidates, excluded)
+	}
+	for _, multiplier := range ordered {
+		stage := make([]hubTierChannelCandidate, 0)
+		for _, candidate := range candidates {
+			if math.Abs(candidate.Multiplier-multiplier) < 0.0005 {
+				stage = append(stage, candidate)
+			}
+		}
+		if selected := selectHubTierChannel(stage, excluded); selected != 0 {
+			return selected
+		}
+	}
+	return 0
 }
 
 // hubTierCandidateBuckets is published with the channel cache. It keeps the

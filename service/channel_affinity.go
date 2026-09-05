@@ -794,6 +794,12 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			if policy.Mode == model.HubTokenRoutingModeProvider {
 				routingScope = append(routingScope, strconv.Itoa(policy.ProviderID))
 			}
+			if len(policy.Selections) > 0 {
+				encoded, err := common.Marshal(policy)
+				if err == nil {
+					routingScope = append(routingScope, affinityFingerprint(string(encoded)))
+				}
+			}
 		}
 		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue, routingScope...)
 		cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix

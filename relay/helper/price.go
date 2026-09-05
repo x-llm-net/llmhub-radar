@@ -127,7 +127,7 @@ func ApplyHubSupplyPricingFromRequest(c *gin.Context, groupRatioInfo hosttypes.G
 	if c != nil {
 		if snapshot, ok := common.GetContextKeyType[model.HubSupplyPricingSnapshot](c, constant.ContextKeyHubSupplyPricingSnapshot); ok && snapshot.ChannelID == channelID {
 			if !snapshot.Found && !snapshot.Configured {
-				return groupRatioInfo, nil
+				return applyHubFallbackPriceProtection(c, groupRatioInfo), nil
 			}
 			priced, err := applyHubSupplyPricingSnapshot(groupRatioInfo, channelID, snapshot.Pricing, snapshot.Found)
 			if err != nil {
@@ -140,7 +140,7 @@ func ApplyHubSupplyPricingFromRequest(c *gin.Context, groupRatioInfo hosttypes.G
 }
 
 func applyHubFallbackPriceProtection(c *gin.Context, groupRatioInfo hosttypes.GroupRatioInfo) hosttypes.GroupRatioInfo {
-	if c == nil || !groupRatioInfo.HasSupplyPricing || groupRatioInfo.SupplyGroupRatio <= 0 {
+	if c == nil || (groupRatioInfo.HasSupplyPricing && groupRatioInfo.SupplyGroupRatio <= 0) {
 		return groupRatioInfo
 	}
 	if !common.GetContextKeyBool(c, constant.ContextKeyHubRoutingFallback) {
@@ -154,8 +154,12 @@ func applyHubFallbackPriceProtection(c *gin.Context, groupRatioInfo hosttypes.Gr
 	if modelName == "" {
 		modelName = c.GetString("model")
 	}
-	protectedMultiplier, ok := policy.ProviderFallbackProtectionMultiplier(model.ClassifyHubPublicModelFamily(modelName))
-	if !ok || groupRatioInfo.SupplyMultiplier >= protectedMultiplier-0.0005 {
+	protectedMultiplier, ok := policy.ProviderFallbackProtectionMultiplier(modelName)
+	currentMultiplier := groupRatioInfo.SupplyMultiplier
+	if !groupRatioInfo.HasSupplyPricing {
+		currentMultiplier = 1
+	}
+	if !ok || currentMultiplier >= protectedMultiplier-0.0005 {
 		return groupRatioInfo
 	}
 	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * protectedMultiplier

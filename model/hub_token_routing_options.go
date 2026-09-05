@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
@@ -152,7 +153,95 @@ func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) 
 		option.ProviderCount = len(providerSet)
 		options.Families = append(options.Families, option)
 	}
+	options.Models = buildHubTokenRoutingModelOptions(rows, providerID)
 	return options, nil
+}
+
+func buildHubTokenRoutingModelOptions(rows []hubTokenRoutingOptionRow, providerID int) []HubTokenRoutingModelOption {
+	type key struct {
+		model   string
+		channel int
+	}
+	seen := make(map[key]struct{})
+	byModel := make(map[string]map[float64]HubTokenRoutingAvailability)
+	providers := make(map[string]map[float64]map[int]struct{})
+	for _, row := range rows {
+		if row.ChannelStatus != common.ChannelStatusEnabled || !isHubTokenRoutingCandidateAbilityGroup(row.AbilityGroup) ||
+			(row.ProviderID > 0 && row.ProviderStatus != HubProviderStatusActive) || (providerID > 0 && row.ProviderID != providerID) {
+			continue
+		}
+		modelName := strings.TrimSpace(row.ModelName)
+		if modelName == "" {
+			continue
+		}
+		if _, ok := seen[key{modelName, row.ChannelID}]; ok {
+			continue
+		}
+		seen[key{modelName, row.ChannelID}] = struct{}{}
+		multiplier := roundHubTokenMultiplier(row.Multiplier)
+		if !validHubTokenMultiplier(multiplier) {
+			continue
+		}
+		if byModel[modelName] == nil {
+			byModel[modelName] = make(map[float64]HubTokenRoutingAvailability)
+		}
+		if providers[modelName] == nil {
+			providers[modelName] = make(map[float64]map[int]struct{})
+		}
+		bucket := byModel[modelName][multiplier]
+		bucket.Multiplier = multiplier
+		bucket.ChannelCount++
+		if row.ProviderID > 0 {
+			if providers[modelName][multiplier] == nil {
+				providers[modelName][multiplier] = make(map[int]struct{})
+			}
+			providers[modelName][multiplier][row.ProviderID] = struct{}{}
+		}
+		byModel[modelName][multiplier] = bucket
+	}
+	models := make([]string, 0, len(byModel))
+	for modelName := range byModel {
+		models = append(models, modelName)
+	}
+	sort.Strings(models)
+	result := make([]HubTokenRoutingModelOption, 0, len(models))
+	for _, modelName := range models {
+		buckets := byModel[modelName]
+		availability := make([]HubTokenRoutingAvailability, 0, len(buckets))
+		for multiplier, bucket := range buckets {
+			ids := make([]int, 0, len(providers[modelName][multiplier]))
+			for id := range providers[modelName][multiplier] {
+				ids = append(ids, id)
+			}
+			sort.Ints(ids)
+			bucket.ProviderIDs = ids
+			bucket.ProviderCount = len(ids)
+			availability = append(availability, bucket)
+		}
+		sort.Slice(availability, func(i, j int) bool { return availability[i].Multiplier < availability[j].Multiplier })
+		option := HubTokenRoutingModelOption{
+			Model: modelName, MinMultiplier: HubTokenRoutingMinMultiplier, MaxMultiplier: HubTokenRoutingMaxMultiplier,
+			SliderMaxMultiplier: 1, Step: HubTokenRoutingMultiplierStep, Availability: availability,
+			ExactMultipliers: make([]float64, 0, len(availability)),
+		}
+		providerSet := make(map[int]struct{})
+		for _, bucket := range availability {
+			option.AvailableChannelCount += bucket.ChannelCount
+			option.ExactMultipliers = append(option.ExactMultipliers, bucket.Multiplier)
+			for _, id := range bucket.ProviderIDs {
+				providerSet[id] = struct{}{}
+			}
+			if bucket.Multiplier > option.SliderMaxMultiplier {
+				option.SliderMaxMultiplier = bucket.Multiplier
+			}
+		}
+		if option.SliderMaxMultiplier < 1 {
+			option.SliderMaxMultiplier = 1
+		}
+		option.ProviderCount = len(providerSet)
+		result = append(result, option)
+	}
+	return result
 }
 
 func ValidateHubTokenProviderSelections(policy *HubTokenRoutingPolicy) error {
@@ -167,17 +256,28 @@ func ValidateHubTokenProviderSelections(policy *HubTokenRoutingPolicy) error {
 	for _, option := range options.Families {
 		available[option.Key] = option.ExactMultipliers
 	}
+	for _, option := range options.Models {
+		available[option.Model] = option.ExactMultipliers
+	}
 	for _, selection := range policy.Selections {
-		for _, requested := range selection.ExactMultipliers {
+		modelKey := selection.Model
+		if modelKey == "" {
+			modelKey = selection.Family
+		}
+		exacts := selection.Multipliers
+		if len(exacts) == 0 {
+			exacts = selection.ExactMultipliers
+		}
+		for _, requested := range exacts {
 			matched := false
-			for _, candidate := range available[selection.Family] {
+			for _, candidate := range available[modelKey] {
 				if math.Abs(candidate-requested) < 0.0005 {
 					matched = true
 					break
 				}
 			}
 			if !matched {
-				return fmt.Errorf("provider does not publish multiplier %.3f for %s", requested, selection.Family)
+				return fmt.Errorf("provider does not publish multiplier %.3f for %s", requested, modelKey)
 			}
 		}
 	}

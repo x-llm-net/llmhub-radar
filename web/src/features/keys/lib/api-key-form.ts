@@ -186,17 +186,25 @@ export function transformFormDataToPayload(
             ? { provider_id: routingOptions.provider_id }
             : {}),
           selections: data.hub_selections.map((selection) => ({
-            family: selection.family,
-            ...(routingOptions?.mode === 'provider'
+            ...(selection.model
+              ? { model: selection.model }
+              : { family: selection.family }),
+            ...(selection.model || selection.multipliers
               ? {
-                  exact_multipliers: requireExactMultipliers(
-                    selection.exact_multipliers
+                  multipliers: requireExactMultipliers(
+                    selection.multipliers || selection.exact_multipliers
                   ),
                 }
-              : {
-                  min_multiplier: selection.min_multiplier,
-                  max_multiplier: selection.max_multiplier,
-                }),
+              : routingOptions?.mode === 'provider'
+                ? {
+                    exact_multipliers: requireExactMultipliers(
+                      selection.exact_multipliers
+                    ),
+                  }
+                : {
+                    min_multiplier: selection.min_multiplier,
+                    max_multiplier: selection.max_multiplier,
+                  }),
           })),
         },
       }),
@@ -238,10 +246,12 @@ export function transformApiKeyToFormDefaults(
     cross_group_retry: !!apiKey.cross_group_retry,
     hub_selections: (apiKey.hub_routing_policy?.selections || []).map(
       (selection) => ({
+        model: selection.model,
         family: selection.family,
         min_multiplier: selection.min_multiplier ?? 0.01,
         max_multiplier: selection.max_multiplier ?? 1,
         exact_multipliers: selection.exact_multipliers,
+        multipliers: selection.multipliers || selection.exact_multipliers,
       })
     ),
     tokenCount: 1,

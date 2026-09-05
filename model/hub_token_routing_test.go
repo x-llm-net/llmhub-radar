@@ -10,6 +10,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHubTokenRoutingPolicyMatchesConcreteModelAndPreservesPreferredMultiplier(t *testing.T) {
+	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.3, 0.4, 0.6, 0.4}}},
+	}, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "gpt-4o", policy.Selections[0].Model)
+	assert.Equal(t, []float64{0.3, 0.4, 0.6}, policy.Selections[0].Multipliers)
+	assert.True(t, policy.AllowsModel("gpt-4o"))
+	assert.False(t, policy.AllowsModel("gpt-4o-mini"))
+	preferred, ok := policy.ProviderFallbackProtectionMultiplier("gpt-4o")
+	assert.False(t, ok)
+	assert.Zero(t, preferred)
+}
+
+func TestHubTokenRoutingProviderProtectionUsesFirstMultiplier(t *testing.T) {
+	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{{Model: "gpt-4o", Multipliers: []float64{0.6, 0.3, 0.4}}},
+	}, 42)
+	require.NoError(t, err)
+	preferred, ok := policy.ProviderFallbackProtectionMultiplier("gpt-4o")
+	assert.True(t, ok)
+	assert.Equal(t, 0.6, preferred)
+}
+
+func TestNormalizeHubTokenRoutingPolicyRejectsDuplicateConcreteModels(t *testing.T) {
+	_, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Selections: []HubTokenRoutingSelection{
+			{Model: "gpt-4o", Multipliers: []float64{0.3}},
+			{Model: " GPT-4O ", Multipliers: []float64{0.4}},
+		},
+	}, 0)
+	require.Error(t, err)
+}
+
 func TestNormalizeHubTokenRoutingPolicyRoundsPublicRangesToThreeDecimals(t *testing.T) {
 	policy, err := NormalizeHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
 		Mode: HubTokenRoutingModePublic,
@@ -236,7 +270,7 @@ func TestNormalizeHubTokenRoutingPolicyAllowsMultipleProviderMultipliers(t *test
 
 	require.NoError(t, err)
 	require.NotNil(t, policy)
-	assert.Equal(t, []float64{0.2, 0.5}, policy.Selections[0].ExactMultipliers)
+	assert.Equal(t, []float64{0.5, 0.2}, policy.Selections[0].ExactMultipliers)
 	assert.True(t, policy.AllowsMultiplier("anthropic", 0.2))
 	assert.True(t, policy.AllowsMultiplier("anthropic", 0.5))
 	assert.False(t, policy.AllowsMultiplier("anthropic", 0.3))

@@ -380,10 +380,16 @@ export function ApiKeysMutateDrawer({
       if (
         routingOptions?.mode === 'provider' &&
         data.hub_selections.some((selection) => {
-          const option = routingOptions.families.find(
-            (family) => family.key === selection.family
+          const modelOption = routingOptions.models?.find(
+            (item) => item.model === selection.model
           )
-          const selectedMultipliers = selection.exact_multipliers || []
+          const option =
+            modelOption ||
+            routingOptions.families.find(
+              (family) => family.key === selection.family
+            )
+          const selectedMultipliers =
+            selection.multipliers || selection.exact_multipliers || []
           return (
             !option ||
             selectedMultipliers.length === 0 ||

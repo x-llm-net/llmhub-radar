@@ -52,10 +52,12 @@ export const apiKeySchema = z.object({
       provider_id: z.number().optional(),
       selections: z.array(
         z.object({
-          family: z.string(),
+          model: z.string().optional(),
+          family: z.string().optional(),
           min_multiplier: z.number().optional(),
           max_multiplier: z.number().optional(),
           exact_multipliers: z.array(z.number()).optional(),
+          multipliers: z.array(z.number()).optional(),
         })
       ),
     })
@@ -112,10 +114,12 @@ export interface ApiKeyFormData {
 }
 
 export interface HubTokenRoutingSelection {
-  family: string
+  model?: string
+  family?: string
   min_multiplier?: number
   max_multiplier?: number
   exact_multipliers?: number[]
+  multipliers?: number[]
 }
 
 export interface HubTokenRoutingPolicy {
@@ -143,12 +147,17 @@ export interface HubTokenRoutingFamilyOption {
   availability: HubTokenRoutingAvailability[]
 }
 
+export interface HubTokenRoutingModelOption extends HubTokenRoutingFamilyOption {
+  model: string
+}
+
 export interface HubTokenRoutingOptions {
   mode: 'public_pool' | 'provider'
   provider_id?: number
   provider_name?: string
   provider_slug?: string
   families: HubTokenRoutingFamilyOption[]
+  models?: HubTokenRoutingModelOption[]
   tier_ceilings: Record<
     string,
     { special: number; low: number; medium: number; high: number }

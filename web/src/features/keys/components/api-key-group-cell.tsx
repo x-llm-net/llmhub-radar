@@ -43,14 +43,15 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   if (props.policy?.selections.length) {
     const summary = props.policy.selections
       .map((selection) => {
+        const model = selection.model || ''
         const family = t(
-          HUB_FAMILY_LABELS[selection.family] || selection.family
+          HUB_FAMILY_LABELS[selection.family || ''] || selection.family || ''
         )
-        const exact = selection.exact_multipliers
+        const exact = selection.multipliers || selection.exact_multipliers
         if (exact?.length) {
-          return `${family} ${exact.map(formatHubMultiplier).join(', ')}`
+          return `${model || family} ${exact.map(formatHubMultiplier).join(', ')}`
         }
-        return `${family} ${formatHubMultiplier(selection.min_multiplier ?? 0)}-${formatHubMultiplier(
+        return `${model || family} ${formatHubMultiplier(selection.min_multiplier ?? 0)}-${formatHubMultiplier(
           selection.max_multiplier ?? 0
         )}`
       })
