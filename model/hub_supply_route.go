@@ -20,6 +20,23 @@ func hubSupplyProbeKindForRequestPath(requestPath string) string {
 	return HubSupplyProbeKindText
 }
 
+// hubSupplyProbeKindForModelRequest keeps the request-path distinction for
+// ordinary models while recognizing image models sent through the Responses
+// API. Codex image generation uses /v1/responses, even though its supply is
+// probed through the image-generation endpoint.
+func hubSupplyProbeKindForModelRequest(modelName, requestPath string) string {
+	probeKind := hubSupplyProbeKindForRequestPath(requestPath)
+	if probeKind == HubSupplyProbeKindImage {
+		return probeKind
+	}
+	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
+	if common.IsImageGenerationModel(modelName) &&
+		(requestPath == "" || strings.HasPrefix(requestPath, "/v1/responses")) {
+		return HubSupplyProbeKindImage
+	}
+	return probeKind
+}
+
 func buildHubSupplyModelProbeKinds(targets []HubSupplyGroupProbeTarget) hubSupplyModelProbeKinds {
 	result := make(hubSupplyModelProbeKinds)
 	seen := make(map[string]map[string]bool)
@@ -111,7 +128,7 @@ func hubSupplyChannelSupportsRequest(
 	if !isSupplyChannel {
 		return true
 	}
-	probeKind := hubSupplyProbeKindForRequestPath(requestPath)
+	probeKind := hubSupplyProbeKindForModelRequest(modelName, requestPath)
 	if hubSupplyProbeKindAvailable(
 		modelKinds,
 		modelName,

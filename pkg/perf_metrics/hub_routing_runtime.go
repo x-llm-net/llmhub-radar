@@ -58,7 +58,7 @@ func buildHubRoutingRuntimeSignals(nowTs int64) ([]model.HubRoutingRuntimeSignal
 		runtimeKey := hubRoutingRuntimeKey{
 			channelID: key.channelID,
 			modelName: model.NormalizeHubRoutingRuntimeModelName(key.modelName),
-			probeKind: hubRoutingRuntimeProbeKind(key.endpointType),
+			probeKind: hubRoutingRuntimeProbeKind(key.modelName, key.endpointType),
 		}
 		if runtimeKey.channelID <= 0 || runtimeKey.modelName == "" {
 			continue
@@ -117,8 +117,13 @@ func buildHubRoutingRuntimeSignals(nowTs int64) ([]model.HubRoutingRuntimeSignal
 	return signals, nil
 }
 
-func hubRoutingRuntimeProbeKind(endpointType string) string {
+func hubRoutingRuntimeProbeKind(modelName, endpointType string) string {
 	if endpointType == string(constant.EndpointTypeImageGeneration) {
+		return model.HubSupplyProbeKindImage
+	}
+	if common.IsImageGenerationModel(modelName) &&
+		(endpointType == string(constant.EndpointTypeOpenAIResponse) ||
+			endpointType == string(constant.EndpointTypeOpenAIResponseCompact)) {
 		return model.HubSupplyProbeKindImage
 	}
 	return model.HubSupplyProbeKindText

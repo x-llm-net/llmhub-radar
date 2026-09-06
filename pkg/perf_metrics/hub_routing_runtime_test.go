@@ -4,6 +4,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,15 @@ func TestHubRoutingRuntimeHealthThresholds(t *testing.T) {
 	assert.Equal(t, model.HubRoutingRealHealthDegraded, hubRoutingRuntimeHealthState(20, 9_499))
 	assert.Equal(t, model.HubRoutingRealHealthDegraded, hubRoutingRuntimeHealthState(20, 8_000))
 	assert.Equal(t, model.HubRoutingRealHealthUnhealthy, hubRoutingRuntimeHealthState(20, 7_999))
+}
+
+func TestHubRoutingRuntimeProbeKindRecognizesCodexImageResponses(t *testing.T) {
+	assert.Equal(t, model.HubSupplyProbeKindImage,
+		hubRoutingRuntimeProbeKind("gpt-image-2", string(constant.EndpointTypeOpenAIResponse)))
+	assert.Equal(t, model.HubSupplyProbeKindImage,
+		hubRoutingRuntimeProbeKind("gpt-image-2", string(constant.EndpointTypeImageGeneration)))
+	assert.Equal(t, model.HubSupplyProbeKindText,
+		hubRoutingRuntimeProbeKind("gpt-5", string(constant.EndpointTypeOpenAIResponse)))
 }
 
 func recordRuntimeAttempts(modelName string, channelID int, timestamp int64, successes, failures int, ttft *int64) {

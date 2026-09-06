@@ -147,7 +147,7 @@ func GetHubRoutingRuntimeSignal(channelID int, modelName, requestPath string) (H
 	if snapshot == nil || snapshot.generatedAt <= 0 || time.Now().Unix()-snapshot.generatedAt > HubRoutingRuntimeSnapshotMaxAgeSeconds {
 		return HubRoutingRuntimeSignal{}, false
 	}
-	signal, ok := snapshot.signals[newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForRequestPath(requestPath))]
+	signal, ok := snapshot.signals[newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForModelRequest(modelName, requestPath))]
 	if !ok {
 		return HubRoutingRuntimeSignal{}, false
 	}
@@ -161,7 +161,7 @@ func GetHubRoutingDecision(channelID int, modelName, requestPath string) HubRout
 		RealLatencyScoreBps:   HubRoutingFactorNeutralBps,
 		LatencyFactorBps:      HubRoutingFactorNeutralBps,
 	}
-	key := newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForRequestPath(requestPath))
+	key := newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForModelRequest(modelName, requestPath))
 	if probes := hubRoutingProbeSnapshotValue.Load(); probes != nil {
 		if probe, ok := probes.signals[key]; ok {
 			decision.HasProbeSignal = true
