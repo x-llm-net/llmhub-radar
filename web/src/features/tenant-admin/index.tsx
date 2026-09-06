@@ -49,12 +49,16 @@ import {
   getHubAdminTenants,
   updateHubAdminTenantDomain,
   updateHubAdminTenantMember,
+  updateHubAdminTenantSettlementSettings,
   updateHubAdminTenantStatus,
   updateHubAdminTenantBrand,
   upsertHubAdminTenantMember,
 } from './api'
 import { TenantFinanceOverview } from './finance-overview'
+import { TenantPlatformFeeEditor } from './platform-fee-editor'
 import type { TenantAdminTenant } from './types'
+
+const EMPTY_TENANTS: TenantAdminTenant[] = []
 
 function statusBadge(
   status: string,
@@ -88,17 +92,18 @@ export function TenantAdmin() {
     queryKey: tenantAdminQueryKey,
     queryFn: getHubAdminTenants,
   })
-  const tenants = tenantsQuery.data?.data?.items ?? []
+  const tenantItems = tenantsQuery.data?.data?.items
+  const tenants = tenantItems ?? EMPTY_TENANTS
   const selectedTenant = useMemo(
-    () => tenants.find((tenant) => tenant.id === selectedTenantId) ?? null,
-    [selectedTenantId, tenants]
+    () => tenantItems?.find((tenant) => tenant.id === selectedTenantId) ?? null,
+    [selectedTenantId, tenantItems]
   )
 
   useEffect(() => {
-    if (selectedTenantId === null && tenants.length > 0) {
-      setSelectedTenantId(tenants[0].id)
+    if (selectedTenantId === null && tenantItems && tenantItems.length > 0) {
+      setSelectedTenantId(tenantItems[0].id)
     }
-  }, [selectedTenantId, tenants])
+  }, [selectedTenantId, tenantItems])
 
   const usersQuery = useQuery({
     queryKey: ['tenant-admin-user-search', userKeyword],
@@ -139,6 +144,28 @@ export function TenantAdmin() {
       }
       await refresh()
       toast.success(t('Tenant status updated'))
+    },
+    onError: (error) => toast.error(error.message || t('Request failed')),
+  })
+
+  const updateTenantSettlementMutation = useMutation({
+    mutationFn: ({
+      tenantId,
+      platformFeeBasisPoints,
+    }: {
+      tenantId: number
+      platformFeeBasisPoints: number | null
+    }) =>
+      updateHubAdminTenantSettlementSettings(tenantId, {
+        platform_fee_basis_points: platformFeeBasisPoints,
+      }),
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(response.message || t('Request failed'))
+        return
+      }
+      await refresh()
+      toast.success(t('Setting updated successfully'))
     },
     onError: (error) => toast.error(error.message || t('Request failed')),
   })
@@ -256,11 +283,56 @@ export function TenantAdmin() {
   const isBusy =
     createTenantMutation.isPending ||
     updateTenantStatusMutation.isPending ||
+    updateTenantSettlementMutation.isPending ||
     updateTenantBrandMutation.isPending ||
     createDomainMutation.isPending ||
     updateDomainMutation.isPending ||
     upsertMemberMutation.isPending ||
     updateMemberMutation.isPending
+
+  const renderTenantList = () => {
+    if (tenantsQuery.isLoading) {
+      return <p className='text-muted-foreground text-sm'>{t('Loading...')}</p>
+    }
+    if (tenants.length === 0) {
+      return (
+        <p className='text-muted-foreground text-sm'>{t('No tenants found')}</p>
+      )
+    }
+    return tenants.map((tenant) => (
+      <div
+        key={tenant.id}
+        className={`flex items-center gap-2 rounded-lg border p-2 ${selectedTenantId === tenant.id ? 'border-primary bg-muted/40' : ''}`}
+      >
+        <button
+          type='button'
+          className='min-w-0 flex-1 text-left'
+          onClick={() => setSelectedTenantId(tenant.id)}
+        >
+          <span className='block truncate font-medium'>{tenant.name}</span>
+          <span className='text-muted-foreground block truncate text-xs'>
+            {tenant.slug}
+          </span>
+        </button>
+        {statusBadge(tenant.status, t)}
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon-sm'
+          disabled={isBusy}
+          onClick={() =>
+            updateTenantStatusMutation.mutate({
+              tenantId: tenant.id,
+              status: tenant.status === 'active' ? 'disabled' : 'active',
+            })
+          }
+          aria-label={tenant.status === 'active' ? t('Disable') : t('Enable')}
+        >
+          <Power />
+        </Button>
+      </div>
+    ))
+  }
 
   return (
     <SectionPageLayout fixedContent>
@@ -333,60 +405,7 @@ export function TenantAdmin() {
                     </Button>
                   </form>
 
-                  <div className='grid gap-1'>
-                    {tenantsQuery.isLoading ? (
-                      <p className='text-muted-foreground text-sm'>
-                        {t('Loading...')}
-                      </p>
-                    ) : tenants.length === 0 ? (
-                      <p className='text-muted-foreground text-sm'>
-                        {t('No tenants found')}
-                      </p>
-                    ) : (
-                      tenants.map((tenant) => (
-                        <div
-                          key={tenant.id}
-                          className={`flex items-center gap-2 rounded-lg border p-2 ${selectedTenantId === tenant.id ? 'border-primary bg-muted/40' : ''}`}
-                        >
-                          <button
-                            type='button'
-                            className='min-w-0 flex-1 text-left'
-                            onClick={() => setSelectedTenantId(tenant.id)}
-                          >
-                            <span className='block truncate font-medium'>
-                              {tenant.name}
-                            </span>
-                            <span className='text-muted-foreground block truncate text-xs'>
-                              {tenant.slug}
-                            </span>
-                          </button>
-                          {statusBadge(tenant.status, t)}
-                          <Button
-                            type='button'
-                            variant='ghost'
-                            size='icon-sm'
-                            disabled={isBusy}
-                            onClick={() =>
-                              updateTenantStatusMutation.mutate({
-                                tenantId: tenant.id,
-                                status:
-                                  tenant.status === 'active'
-                                    ? 'disabled'
-                                    : 'active',
-                              })
-                            }
-                            aria-label={
-                              tenant.status === 'active'
-                                ? t('Disable')
-                                : t('Enable')
-                            }
-                          >
-                            <Power />
-                          </Button>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <div className='grid gap-1'>{renderTenantList()}</div>
                 </CardContent>
               </Card>
 
@@ -445,6 +464,12 @@ export function TenantAdmin() {
                       logoFile,
                     })
                   }
+                  onUpdateSettlement={(platformFeeBasisPoints) =>
+                    updateTenantSettlementMutation.mutate({
+                      tenantId: selectedTenant.id,
+                      platformFeeBasisPoints,
+                    })
+                  }
                 />
               ) : (
                 <Card className='flex min-h-60 items-center justify-center'>
@@ -488,10 +513,16 @@ function TenantDetails(props: {
     input: { status?: string; role?: string }
   ) => void
   onUpdateBrand: (brand: TenantBrand, logoFile?: File) => void
+  onUpdateSettlement: (platformFeeBasisPoints: number | null) => void
 }) {
   const { t } = useTranslation()
   return (
     <div className='grid gap-4'>
+      <TenantPlatformFeeEditor
+        tenant={props.tenant}
+        isBusy={props.isBusy}
+        onSave={props.onUpdateSettlement}
+      />
       <TenantBrandEditor
         brand={props.tenant.brand}
         saving={props.isBusy}

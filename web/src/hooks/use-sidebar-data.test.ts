@@ -19,52 +19,20 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { ROLE } from '@/lib/roles'
+import { isProviderSurfaceVisible } from '@/lib/provider-domain'
 
-import { shouldShowProviderNavigation } from './use-sidebar-data'
-
-describe('shouldShowProviderNavigation', () => {
-  test('shows provider navigation for every authorized context', () => {
-    const authorizedContexts = [
-      {
-        hasProvider: true,
-        providerSlug: 'provider-a',
-        tenantMemberRole: null,
-        userRole: ROLE.USER,
-      },
-      {
-        hasProvider: false,
-        providerSlug: null,
-        tenantMemberRole: null,
-        userRole: ROLE.USER,
-      },
-      {
-        hasProvider: false,
-        providerSlug: 'provider-a',
-        tenantMemberRole: 'owner',
-        userRole: ROLE.USER,
-      },
-      {
-        hasProvider: false,
-        providerSlug: 'provider-a',
-        tenantMemberRole: null,
-        userRole: ROLE.SUPER_ADMIN,
-      },
-    ]
-
-    for (const context of authorizedContexts) {
-      assert.equal(shouldShowProviderNavigation(context), true)
-    }
+describe('provider navigation host scope', () => {
+  test('shows provider navigation on the tenant root', () => {
+    assert.equal(isProviderSurfaceVisible(null, '343246113.xyz'), true)
   })
 
-  test('hides provider navigation from regular users on provider domains', () => {
+  test('shows it on the current provider subdomain only', () => {
     assert.equal(
-      shouldShowProviderNavigation({
-        hasProvider: false,
-        providerSlug: 'provider-a',
-        tenantMemberRole: 'member',
-        userRole: ROLE.USER,
-      }),
+      isProviderSurfaceVisible('provider-a', 'provider-a.343246113.xyz'),
+      true
+    )
+    assert.equal(
+      isProviderSurfaceVisible('provider-a', 'provider-b.343246113.xyz'),
       false
     )
   })

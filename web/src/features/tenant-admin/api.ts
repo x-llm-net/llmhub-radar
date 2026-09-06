@@ -63,6 +63,23 @@ export async function updateHubAdminTenantStatus(
   return response.data
 }
 
+export async function updateHubAdminTenantSettlementSettings(
+  tenantId: number,
+  input: { platform_fee_basis_points: number | null }
+): Promise<
+  TenantAdminResponse<{
+    id: number
+    platform_fee_basis_points: number | null
+    effective_platform_fee_basis_points: number
+  }>
+> {
+  const response = await api.put(
+    `/api/hub/admin/tenants/${tenantId}/settlement-settings`,
+    input
+  )
+  return response.data
+}
+
 export async function updateHubAdminTenantBrand(
   tenantId: number,
   brand: TenantBrand,

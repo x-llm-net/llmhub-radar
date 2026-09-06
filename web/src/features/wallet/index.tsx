@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProvider } from '@/features/provider/hooks/use-provider'
+import { canViewProviderEarnings } from '@/features/provider/lib/provider-visibility'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
@@ -89,7 +90,12 @@ export function Wallet(props: WalletProps) {
   )
 
   const { status } = useStatus()
-  const { provider } = useProvider()
+  const providerQuery = useProvider()
+  const { provider } = providerQuery
+  const showProviderEarnings =
+    !providerQuery.isLoading &&
+    !providerQuery.isError &&
+    canViewProviderEarnings(provider)
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
 
@@ -297,13 +303,13 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <Tabs
-            value={provider ? activeTab : 'balance'}
+            value={showProviderEarnings ? activeTab : 'balance'}
             onValueChange={(value) =>
               setActiveTab(value as 'balance' | 'earnings')
             }
             className='mx-auto w-full max-w-7xl gap-4'
           >
-            {provider && (
+            {showProviderEarnings && (
               <TabsList className='grid w-full max-w-sm grid-cols-2 group-data-horizontal/tabs:h-9'>
                 <TabsTrigger value='balance'>
                   <WalletCards />
@@ -379,7 +385,7 @@ export function Wallet(props: WalletProps) {
                 />
               </div>
             </TabsContent>
-            {provider && (
+            {showProviderEarnings && (
               <TabsContent value='earnings'>
                 <ProviderEarnings onBalanceChanged={fetchUser} />
               </TabsContent>

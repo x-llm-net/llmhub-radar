@@ -176,6 +176,45 @@ export function getProviderSlugFromHostname(hostname?: string): string | null {
   return slug
 }
 
+function getRuntimeHostname(hostname?: string): string {
+  if (hostname !== undefined) return normalizeHostname(hostname)
+  if (typeof window === 'undefined') return ''
+  return normalizeHostname(window.location.hostname)
+}
+
+export function isTenantRootHostname(hostname?: string): boolean {
+  const currentHostname = getRuntimeHostname(hostname)
+  if (!currentHostname) return false
+  if (
+    currentHostname === 'localhost' ||
+    currentHostname === '127.0.0.1' ||
+    currentHostname === '[::1]'
+  ) {
+    return true
+  }
+  if (currentHostname.endsWith('.localhost')) return false
+  return getTenantRootDomainFromHostname(currentHostname) === currentHostname
+}
+
+/**
+ * Provider management is scoped to the current tenant, but a provider
+ * subdomain still provides page context. Keep the management entry on the
+ * tenant root and on the provider's own subdomain only.
+ */
+export function isProviderSurfaceVisible(
+  providerSlug: string | null | undefined,
+  hostname?: string
+): boolean {
+  if (isTenantRootHostname(hostname)) return true
+  const currentProviderSlug = getProviderSlugFromHostname(
+    getRuntimeHostname(hostname)
+  )
+  return (
+    currentProviderSlug !== null &&
+    providerSlug?.trim().toLowerCase() === currentProviderSlug
+  )
+}
+
 export function isHubFirstPartyOrigin(
   value: string,
   referenceOrigin = window.location.origin

@@ -41,32 +41,9 @@ import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
 import { useProvider } from '@/features/provider/hooks/use-provider'
-import { getProviderSlugFromHostname } from '@/lib/provider-domain'
+import { isProviderSurfaceVisible } from '@/lib/provider-domain'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
-
-import { useHubAdminAccess } from './use-hub-admin-access'
-
-type ProviderNavigationAccess = {
-  hasProvider: boolean
-  providerSlug: string | null
-  tenantMemberRole?: string | null
-  userRole: number
-}
-
-export function shouldShowProviderNavigation({
-  hasProvider,
-  providerSlug,
-  tenantMemberRole,
-  userRole,
-}: ProviderNavigationAccess): boolean {
-  return (
-    hasProvider ||
-    providerSlug === null ||
-    tenantMemberRole === 'owner' ||
-    userRole >= ROLE.SUPER_ADMIN
-  )
-}
 
 /**
  * Root navigation groups for the application sidebar.
@@ -77,8 +54,6 @@ export function shouldShowProviderNavigation({
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const isAuthenticated = useAuthStore((state) => Boolean(state.auth.user))
-  const userRole = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST)
-  const hubAdminAccess = useHubAdminAccess()
   const providerQuery = useProvider({ enabled: isAuthenticated })
   const providerUrl = providerQuery.provider
     ? '/provider'
@@ -86,12 +61,10 @@ export function useSidebarData(): SidebarData {
   const providerTitle = providerQuery.provider
     ? t('Channel Supply')
     : t('Become a Provider')
-  const showProviderNavigation = shouldShowProviderNavigation({
-    hasProvider: Boolean(providerQuery.provider),
-    providerSlug: getProviderSlugFromHostname(),
-    tenantMemberRole: hubAdminAccess.data?.tenant_member_role,
-    userRole,
-  })
+  const showProviderNavigation =
+    !providerQuery.isLoading &&
+    !providerQuery.isError &&
+    isProviderSurfaceVisible(providerQuery.provider?.slug)
 
   return {
     navGroups: [

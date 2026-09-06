@@ -54,6 +54,11 @@ export type TenantAdminTenant = {
   }
   domains: TenantAdminDomain[]
   members: TenantAdminMember[]
+  settlement: {
+    platform_fee_basis_points: number | null
+    effective_platform_fee_basis_points: number
+    global_platform_fee_basis_points: number
+  }
 }
 
 export type TenantAdminResponse<T = unknown> = {

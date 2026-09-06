@@ -27,6 +27,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -83,9 +84,16 @@ type hubAdminTenantMemberItem struct {
 
 type hubAdminTenantItem struct {
 	model.Tenant
-	Domains []model.TenantDomain       `json:"domains"`
-	Members []hubAdminTenantMemberItem `json:"members"`
-	Brand   model.TenantBrandConfig    `json:"brand"`
+	Domains    []model.TenantDomain       `json:"domains"`
+	Members    []hubAdminTenantMemberItem `json:"members"`
+	Brand      model.TenantBrandConfig    `json:"brand"`
+	Settlement hubAdminTenantSettlement   `json:"settlement"`
+}
+
+type hubAdminTenantSettlement struct {
+	PlatformFeeBasisPoints          *int `json:"platform_fee_basis_points"`
+	EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points"`
+	GlobalPlatformFeeBasisPoints    int  `json:"global_platform_fee_basis_points"`
 }
 
 func normalizeTenantSlug(slug string) (string, error) {
@@ -122,7 +130,21 @@ func adminTenantMembers(tenantID int) ([]hubAdminTenantMemberItem, error) {
 }
 
 func adminTenantItem(tenant model.Tenant) (hubAdminTenantItem, error) {
-	item := hubAdminTenantItem{Tenant: tenant, Domains: make([]model.TenantDomain, 0), Members: make([]hubAdminTenantMemberItem, 0), Brand: tenant.Brand()}
+	effectiveFee, err := model.ResolveHubTenantPlatformFeeBasisPoints(tenant.Id)
+	if err != nil {
+		return hubAdminTenantItem{}, err
+	}
+	item := hubAdminTenantItem{
+		Tenant:  tenant,
+		Domains: make([]model.TenantDomain, 0),
+		Members: make([]hubAdminTenantMemberItem, 0),
+		Brand:   tenant.Brand(),
+		Settlement: hubAdminTenantSettlement{
+			PlatformFeeBasisPoints:          tenant.PlatformFeeBasisPoints,
+			EffectivePlatformFeeBasisPoints: effectiveFee,
+			GlobalPlatformFeeBasisPoints:    hub_provider_settlement_setting.PlatformFeeBasisPoints(),
+		},
+	}
 	if err := model.DB.Where("tenant_id = ?", tenant.Id).Order("id ASC").Find(&item.Domains).Error; err != nil {
 		return item, err
 	}

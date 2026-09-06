@@ -25,10 +25,74 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/hub_provider_settlement_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAdminTenantSettlementSettingsExposeOverrideAndReset(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.TenantMember{}, &model.User{}))
+
+	settings := hub_provider_settlement_setting.Get()
+	originalSettings := *settings
+	settings.PlatformFeeBasisPoints = 3000
+	t.Cleanup(func() { *settings = originalSettings })
+
+	tenant := &model.Tenant{Name: "Settlement tenant", Slug: "settlement-tenant", Status: model.TenantStatusActive}
+	require.NoError(t, model.DB.Create(tenant).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/settlement-settings", map[string]any{
+		"platform_fee_basis_points": 2000,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenant.Id)}}
+	AdminUpdateHubTenantSettlementSettings(ctx)
+	var updateResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			PlatformFeeBasisPoints          *int `json:"platform_fee_basis_points"`
+			EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, recorder.Body.String())
+	require.NotNil(t, updateResponse.Data.PlatformFeeBasisPoints)
+	assert.Equal(t, 2000, *updateResponse.Data.PlatformFeeBasisPoints)
+	assert.Equal(t, 2000, updateResponse.Data.EffectivePlatformFeeBasisPoints)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodGet, "/api/hub/admin/tenants", nil, 1)
+	AdminListHubTenants(ctx)
+	var listResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []hubAdminTenantItem `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &listResponse))
+	require.True(t, listResponse.Success, recorder.Body.String())
+	require.Len(t, listResponse.Data.Items, 1)
+	assert.Equal(t, 2000, *listResponse.Data.Items[0].Settlement.PlatformFeeBasisPoints)
+	assert.Equal(t, 2000, listResponse.Data.Items[0].Settlement.EffectivePlatformFeeBasisPoints)
+	assert.Equal(t, 3000, listResponse.Data.Items[0].Settlement.GlobalPlatformFeeBasisPoints)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/tenants/1/settlement-settings", map[string]any{
+		"platform_fee_basis_points": nil,
+	}, 1)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(tenant.Id)}}
+	AdminUpdateHubTenantSettlementSettings(ctx)
+	updateResponse = struct {
+		Success bool `json:"success"`
+		Data    struct {
+			PlatformFeeBasisPoints          *int `json:"platform_fee_basis_points"`
+			EffectivePlatformFeeBasisPoints int  `json:"effective_platform_fee_basis_points"`
+		} `json:"data"`
+	}{}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, recorder.Body.String())
+	assert.Nil(t, updateResponse.Data.PlatformFeeBasisPoints)
+	assert.Equal(t, 3000, updateResponse.Data.EffectivePlatformFeeBasisPoints)
+}
 
 func TestAdminTenantLifecycleAndOwnerProtection(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
