@@ -37,12 +37,13 @@ type HubTokenRoutingPolicy struct {
 }
 
 type HubTokenRoutingChannel struct {
-	ChannelID     int      `json:"channel_id"`
-	Name          string   `json:"name"`
-	Multiplier    float64  `json:"multiplier"`
-	Models        []string `json:"models"`
-	ModelFamilies []string `json:"model_families,omitempty"`
-	Available     bool     `json:"available"`
+	ChannelID        int      `json:"channel_id"`
+	Name             string   `json:"name"`
+	Multiplier       float64  `json:"multiplier"`
+	Models           []string `json:"models"`
+	ConfiguredModels []string `json:"-"`
+	ModelFamilies    []string `json:"model_families,omitempty"`
+	Available        bool     `json:"available"`
 }
 
 type HubTokenRoutingOptions struct {
@@ -160,6 +161,14 @@ func (policy *HubTokenRoutingPolicy) AllowsChannel(channelID int) bool {
 }
 
 func (policy *HubTokenRoutingPolicy) OrderedMultipliers(modelName string) []float64 {
+	return policy.orderedMultipliers(modelName, false)
+}
+
+// orderedMultipliers returns the selected channels' current pricing basis for
+// a model. Published models drive preferred routing. Configured models are
+// also retained privately so an intentional unpublication can fall back to a
+// different healthy channel without losing the key's pricing ceiling.
+func (policy *HubTokenRoutingPolicy) orderedMultipliers(modelName string, configured bool) []float64 {
 	if policy == nil {
 		return nil
 	}
@@ -169,7 +178,11 @@ func (policy *HubTokenRoutingPolicy) OrderedMultipliers(modelName string) []floa
 		if !validHubTokenMultiplier(channel.Multiplier) {
 			continue
 		}
-		for _, published := range channel.Models {
+		models := channel.Models
+		if configured && len(channel.ConfiguredModels) > 0 {
+			models = channel.ConfiguredModels
+		}
+		for _, published := range models {
 			if !hubRoutingModelMatches(published, modelName) {
 				continue
 			}
@@ -182,6 +195,10 @@ func (policy *HubTokenRoutingPolicy) OrderedMultipliers(modelName string) []floa
 		}
 	}
 	return values
+}
+
+func (policy *HubTokenRoutingPolicy) AllowsConfiguredModel(modelName string) bool {
+	return len(policy.orderedMultipliers(modelName, true)) > 0
 }
 
 func (policy *HubTokenRoutingPolicy) AllowsModel(modelName string) bool {
@@ -234,7 +251,8 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(modelNa
 	if !validHubTokenMultiplier(multiplier) {
 		return false
 	}
-	for _, selected := range policy.OrderedMultipliers(modelName) {
+	selectedMultipliers := policy.orderedMultipliers(modelName, true)
+	for _, selected := range selectedMultipliers {
 		if multiplier <= selected+0.0005 {
 			return true
 		}
@@ -243,7 +261,7 @@ func (policy *HubTokenRoutingPolicy) AllowsMultiplierForPlatformFallback(modelNa
 }
 
 func (policy *HubTokenRoutingPolicy) ProviderFallbackProtectionMultiplier(modelName string) (float64, bool) {
-	values := policy.OrderedMultipliers(modelName)
+	values := policy.orderedMultipliers(modelName, true)
 	if len(values) == 0 {
 		return 0, false
 	}

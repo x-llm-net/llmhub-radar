@@ -30,7 +30,7 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 			return nil, HubSupplyPricingSnapshot{}, err
 		}
 	}
-	if !policy.AllowsModel(modelName) {
+	if !policy.AllowsModel(modelName) && !policy.AllowsConfiguredModel(modelName) {
 		return nil, HubSupplyPricingSnapshot{}, nil
 	}
 	if common.MemoryCacheEnabled {
@@ -52,7 +52,7 @@ func IsModelAvailableForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName 
 			return false, err
 		}
 	}
-	if !policy.AllowsModel(modelName) {
+	if !policy.AllowsModel(modelName) && !policy.AllowsConfiguredModel(modelName) {
 		return false, nil
 	}
 	for _, requestPath := range []string{"", "/v1/images/generations"} {
@@ -85,7 +85,7 @@ func HasConfiguredSupplyForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelNa
 			return false, err
 		}
 	}
-	return policy.AllowsModel(modelName), nil
+	return policy.AllowsModel(modelName) || policy.AllowsConfiguredModel(modelName), nil
 }
 
 func getHubPolicyChannelFromCache(
@@ -298,7 +298,7 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 			return false
 		}
 	}
-	if !policy.AllowsModel(modelName) {
+	if !policy.AllowsModel(modelName) && !policy.AllowsConfiguredModel(modelName) {
 		return false
 	}
 	multiplier := 1.0

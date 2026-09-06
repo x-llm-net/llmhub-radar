@@ -87,6 +87,36 @@ func TestHubTokenRoutingRuntimeFollowsCurrentPublishedChannelDefinitions(t *test
 	require.Error(t, ValidateHubTokenProviderSelections(deleted))
 }
 
+func TestHubTokenRoutingFallsBackWhenSelectedModelIsUnpublished(t *testing.T) {
+	providers, channels, groups := createHubTokenRoutingSupply(t)
+	policy, err := ResolveHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id,
+		ChannelIDs: []int{channels[0].Id},
+	})
+	require.NoError(t, err)
+	require.NoError(t, UpdateHubSupplyGroupModelPublication(groups[0].Id, "gpt-routing-text", false))
+	policy, err = ResolveHubTokenRoutingPolicy(&HubTokenRoutingPolicy{
+		Mode: HubTokenRoutingModeChannels, ProviderID: providers[0].Id,
+		ChannelIDs: []int{channels[0].Id},
+	})
+	require.NoError(t, err)
+
+	assert.False(t, policy.AllowsModel("gpt-routing-text"), "the unpublished selected channel must leave preferred routing")
+	assert.True(t, policy.AllowsConfiguredModel("gpt-routing-text"), "the configured selected channel must retain fallback pricing basis")
+	protected, ok := policy.ProviderFallbackProtectionMultiplier("gpt-routing-text")
+	require.True(t, ok)
+	assert.Equal(t, 0.3, protected)
+
+	selected, snapshot, err := GetRandomSatisfiedChannelWithHubPolicy(
+		policy, "gpt-routing-text", 0, "/v1/chat/completions", nil,
+		ChannelProviderFilter{PlatformFallback: true, StrictExcludedChannels: true},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	assert.Equal(t, channels[3].Id, selected.Id, "fallback should use the cheaper healthy channel from another provider")
+	assert.Equal(t, 0.2, snapshot.Pricing.PriceMultiplier)
+}
+
 func TestHubTokenRoutingSelectsExactChannelsAndGlobalFallbackWithCacheParity(t *testing.T) {
 	providers, channels, groups := createHubTokenRoutingSupply(t)
 	for _, memoryCache := range []bool{false, true} {
