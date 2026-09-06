@@ -233,6 +233,7 @@ export function ImageGenerationGuide() {
             <CopyButton
               value={installPrompt}
               variant='default'
+              size='default'
               className='w-full gap-2 lg:w-auto'
               tooltip={t('Copy installation prompt')}
             >
