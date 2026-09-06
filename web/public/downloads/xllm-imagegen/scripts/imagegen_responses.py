@@ -121,6 +121,10 @@ def request_image(args: argparse.Namespace) -> bytes:
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json; charset=utf-8",
+            # Cloudflare in front of some OpenAI-compatible providers rejects
+            # Python's default ``Python-urllib`` user agent. Match the Codex
+            # client user agent used by the active provider instead.
+            "User-Agent": "codex_cli_rs/0.56.0",
         },
         method="POST",
     )
