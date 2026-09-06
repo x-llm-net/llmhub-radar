@@ -252,6 +252,7 @@ function Get-CommittedInfrastructureHashes {
     return [pscustomobject]@{
       Compose = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tempDir 'scripts\llm-hub\production\compose.yml')).Hash.ToLowerInvariant()
       Caddy = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tempDir 'scripts\llm-hub\caddy\Caddyfile')).Hash.ToLowerInvariant()
+      CaddyLines = @(Get-Content -LiteralPath (Join-Path $tempDir 'scripts\llm-hub\caddy\Caddyfile'))
     }
   } finally {
     if (Test-Path -LiteralPath $tempDir) {
@@ -264,16 +265,28 @@ function Assert-RemoteInfrastructure {
   param([Parameter(Mandatory)][string]$CommitSha)
 
   $committed = Get-CommittedInfrastructureHashes -CommitSha $CommitSha
-  $remote = Invoke-Ssh -Command 'sha256sum /opt/llm-hub/compose.yml /opt/llm-hub/Caddyfile'
-  $remoteComposeMatch = [regex]::Match($remote, '(?m)^([0-9a-f]{64})\s+/opt/llm-hub/compose\.yml$')
-  $remoteCaddyMatch = [regex]::Match($remote, '(?m)^([0-9a-f]{64})\s+/opt/llm-hub/Caddyfile$')
+  $remoteCompose = Invoke-Ssh -Command 'sha256sum /opt/llm-hub/compose.yml'
+  $remoteComposeMatch = [regex]::Match($remoteCompose, '(?m)^([0-9a-f]{64})\s+/opt/llm-hub/compose\.yml$')
   if (-not $remoteComposeMatch.Success -or $remoteComposeMatch.Groups[1].Value -ne $committed.Compose) {
     throw "Remote production compose does not match commit $CommitSha."
   }
-  if (-not $remoteCaddyMatch.Success -or $remoteCaddyMatch.Groups[1].Value -ne $committed.Caddy) {
-    throw "Remote production Caddyfile does not match commit $CommitSha."
+
+  # Caddy is shared with independently managed edge services. Preserve those
+  # routes while still rejecting edits to the LLM-Hub-owned configuration by
+  # requiring the committed lines to appear in order on the remote host.
+  $remoteCaddyLines = @(Invoke-Ssh -Command 'cat /opt/llm-hub/Caddyfile') -split "`r?`n"
+  $managedLineIndex = 0
+  foreach ($remoteLine in $remoteCaddyLines) {
+    if ($managedLineIndex -lt $committed.CaddyLines.Count -and $remoteLine -ceq $committed.CaddyLines[$managedLineIndex]) {
+      $managedLineIndex++
+    }
   }
-  Write-Host "INFRASTRUCTURE_OK commit=$CommitSha compose=$($committed.Compose) caddy=$($committed.Caddy)"
+  if ($managedLineIndex -ne $committed.CaddyLines.Count) {
+    throw "Remote production Caddyfile is missing or reordering LLM-Hub-managed configuration from commit $CommitSha."
+  }
+
+  $remoteCaddyHash = (Invoke-Ssh -Command 'sha256sum /opt/llm-hub/Caddyfile').Trim().Split(' ')[0]
+  Write-Host "INFRASTRUCTURE_OK commit=$CommitSha compose=$($committed.Compose) caddy=$remoteCaddyHash managed_caddy_lines=$managedLineIndex/$($committed.CaddyLines.Count)"
 }
 
 function Test-PublicStatus {
