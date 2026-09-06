@@ -63,3 +63,23 @@ func TestHubSupplyRoutingUsesImageProbeForCodexImageResponses(t *testing.T) {
 	}
 	assert.False(t, hubSupplyChannelSupportsRequest(textOnly, 91, "gpt-image-2", "/v1/responses"))
 }
+
+func TestHubSupplyRoutingHonorsManualTextProbeOverrideForImageModel(t *testing.T) {
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() { common.MemoryCacheEnabled = originalMemoryCacheEnabled })
+	PublishHubRoutingProbeSignals([]HubRoutingProbeSignal{
+		{ChannelID: 92, ModelName: "gpt-image-2", ProbeKind: HubSupplyProbeKindText, Routable: true},
+	})
+	t.Cleanup(func() { PublishHubRoutingProbeSignals(nil) })
+
+	availability := hubSupplyChannelProbeKinds{
+		92: {"gpt-image-2": {HubSupplyProbeKindText: true}},
+	}
+	assert.True(t, hubSupplyChannelSupportsRequest(availability, 92, "gpt-image-2", "/v1/responses"))
+}
+
+func TestHubSupplyProbeRecoveryDelayUsesModelAwareProbeKind(t *testing.T) {
+	assert.Equal(t, 30*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("gpt-image-2", "/v1/responses", 30)))
+	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("gpt-5", "/v1/responses", 10)))
+}

@@ -520,7 +520,7 @@ func putChannelAffinityFallbackState(c *gin.Context, channelID int, recoveryFail
 	if recoveryFailures <= 0 {
 		recoveryFailures = 1
 	}
-	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForRequestPath(meta.RequestPath, recoveryFailures)
+	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForModelRequest(meta.ModelName, meta.RequestPath, recoveryFailures)
 	preferredID := verifiedChannelAffinityPreferredID(meta)
 	if preferredID <= 0 {
 		if existing, found := getChannelAffinityFallbackState(meta.CacheKeySuffix); found {

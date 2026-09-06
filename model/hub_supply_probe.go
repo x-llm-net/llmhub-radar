@@ -818,8 +818,14 @@ func HubSupplyProbeRecoveryDelaySeconds(consecutiveFailures int) int64 {
 // defaults as scheduled probes: text uses 10 minutes and image uses 30
 // minutes before the shared failure backoff is applied.
 func HubSupplyProbeRecoveryDelaySecondsForRequestPath(requestPath string, consecutiveFailures int) int64 {
+	return HubSupplyProbeRecoveryDelaySecondsForModelRequest("", requestPath, consecutiveFailures)
+}
+
+// HubSupplyProbeRecoveryDelaySecondsForModelRequest follows the same
+// model-aware endpoint classification used by routing and runtime health.
+func HubSupplyProbeRecoveryDelaySecondsForModelRequest(modelName, requestPath string, consecutiveFailures int) int64 {
 	baseMinutes := HubSupplyGroupDefaultTextProbeMinutes
-	if hubSupplyProbeKindForRequestPath(requestPath) == HubSupplyProbeKindImage {
+	if hubSupplyProbeKindForModelRequest(modelName, requestPath) == HubSupplyProbeKindImage {
 		baseMinutes = HubSupplyGroupDefaultImageProbeMinutes
 	}
 	return int64(HubSupplyProbeRetryDelayMinutes(baseMinutes, consecutiveFailures) * 60)

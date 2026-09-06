@@ -136,6 +136,22 @@ func hubSupplyChannelSupportsRequest(
 	) {
 		return true
 	}
+	// An explicit endpoint override may intentionally probe an image-named
+	// model through a text-compatible endpoint. The configured probe kind is
+	// authoritative for that channel, so preserve that existing compatibility
+	// when no image probe target exists.
+	modelProbeKinds := hubSupplyModelProbeKindsForModel(modelKinds, modelName)
+	_, hasImageProbe := modelProbeKinds[HubSupplyProbeKindImage]
+	_, hasTextProbe := modelProbeKinds[HubSupplyProbeKindText]
+	if probeKind == HubSupplyProbeKindImage && common.IsImageGenerationModel(modelName) &&
+		!hasImageProbe && hasTextProbe {
+		textDecision := GetHubRoutingDecision(channelID, modelName, "/v1/chat/completions")
+		if !textDecision.HardUnavailable &&
+			(textDecision.ProbeRoutable ||
+				(textDecision.HasRuntimeSignal && textDecision.RuntimeSignal.RealHealthState == HubRoutingRealHealthHealthy)) {
+			return true
+		}
+	}
 	return decision.HasRuntimeSignal && decision.RuntimeSignal.RealHealthState == HubRoutingRealHealthHealthy
 }
 
