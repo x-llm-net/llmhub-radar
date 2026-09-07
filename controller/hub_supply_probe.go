@@ -388,7 +388,11 @@ func preflightHubSupplyProbePricing(ctx context.Context, job model.HubSupplyProb
 	}
 	channel.Models = job.ConfiguredModels
 	startedAt := time.Now()
-	testResult := testChannelPricingPreflight(ctx, channel, testUserID, job.ModelName, job.EndpointType)
+	probeEndpointType := strings.TrimSpace(job.ResolvedEndpointType)
+	if probeEndpointType == "" {
+		probeEndpointType = job.EndpointType
+	}
+	testResult := testChannelPricingPreflight(ctx, channel, testUserID, job.ModelName, probeEndpointType)
 	result.latencyMs = time.Since(startedAt).Milliseconds()
 	if testResult.newAPIError != nil {
 		result.errorCode = string(testResult.newAPIError.GetErrorCode())

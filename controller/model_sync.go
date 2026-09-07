@@ -378,6 +378,7 @@ func SyncUpstreamModels(c *gin.Context) {
 			Icon:        up.Icon,
 			Tags:        up.Tags,
 			VendorID:    vendorID,
+			Endpoints:   model.NormalizeModelMetadataEndpoints(up.Endpoints),
 			Status:      chooseStatus(up.Status, 1),
 			NameRule:    up.NameRule,
 		}
@@ -433,6 +434,10 @@ func SyncUpstreamModels(c *gin.Context) {
 					local.NameRule = up.NameRule
 					needUpdate = true
 				}
+				if containsField(ow.Fields, "endpoints") {
+					local.Endpoints = model.NormalizeModelMetadataEndpoints(up.Endpoints)
+					needUpdate = true
+				}
 				if containsField(ow.Fields, "status") {
 					local.Status = chooseStatus(up.Status, local.Status)
 					needUpdate = true
@@ -447,6 +452,11 @@ func SyncUpstreamModels(c *gin.Context) {
 				updatedList = append(updatedList, ow.ModelName)
 				return nil
 			})
+		}
+	}
+	if createdModels > 0 || updatedModels > 0 {
+		if err := model.RefreshModelMetadataRouting(); err != nil {
+			common.SysError("failed to reconcile hub supply probe targets after upstream model sync: " + err.Error())
 		}
 	}
 
@@ -593,7 +603,7 @@ func SyncUpstreamPreview(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		fields := make([]conflictField, 0, 6)
+		fields := make([]conflictField, 0, 7)
 		if strings.TrimSpace(local.Description) != strings.TrimSpace(up.Description) {
 			fields = append(fields, conflictField{Field: "description", Local: local.Description, Upstream: up.Description})
 		}
@@ -610,6 +620,11 @@ func SyncUpstreamPreview(c *gin.Context) {
 		}
 		if local.NameRule != up.NameRule {
 			fields = append(fields, conflictField{Field: "name_rule", Local: local.NameRule, Upstream: up.NameRule})
+		}
+		localEndpoints := model.NormalizeModelMetadataEndpoints(json.RawMessage(local.Endpoints))
+		upstreamEndpoints := model.NormalizeModelMetadataEndpoints(up.Endpoints)
+		if localEndpoints != upstreamEndpoints {
+			fields = append(fields, conflictField{Field: "endpoints", Local: local.Endpoints, Upstream: upstreamEndpoints})
 		}
 		if local.Status != chooseStatus(up.Status, local.Status) {
 			fields = append(fields, conflictField{Field: "status", Local: local.Status, Upstream: up.Status})

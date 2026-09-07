@@ -63,8 +63,10 @@ func TestHubRoutingRuntimeHealthThresholds(t *testing.T) {
 	assert.Equal(t, model.HubRoutingRealHealthUnhealthy, hubRoutingRuntimeHealthState(20, 7_999))
 }
 
-func TestHubRoutingRuntimeProbeKindRecognizesCodexImageResponses(t *testing.T) {
-	assert.Equal(t, model.HubSupplyProbeKindImage,
+func TestHubRoutingRuntimeProbeKindUsesEndpointOnly(t *testing.T) {
+	// Responses tools run inside the selected upstream. Only direct Images
+	// requests use the image health pool, regardless of the model name.
+	assert.Equal(t, model.HubSupplyProbeKindText,
 		hubRoutingRuntimeProbeKind("gpt-image-2", string(constant.EndpointTypeOpenAIResponse)))
 	assert.Equal(t, model.HubSupplyProbeKindImage,
 		hubRoutingRuntimeProbeKind("gpt-image-2", string(constant.EndpointTypeImageGeneration)))

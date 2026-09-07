@@ -366,7 +366,7 @@ func TestHubProviderModelAutoProbeSwitchReturnsSkippedState(t *testing.T) {
 	require.Len(t, response.Data.Models, 1)
 	assert.False(t, response.Data.Models[0].AutoProbeEnabled)
 	assert.Equal(t, model.HubSupplyProbeStatusSkipped, response.Data.Models[0].Status)
-	assert.True(t, response.Data.Models[0].Online)
+	assert.False(t, response.Data.Models[0].Online)
 
 	updateCtx, updateRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/provider/channels/1/model-auto-probe", map[string]any{
 		"model_name": "compact", "enabled": true,

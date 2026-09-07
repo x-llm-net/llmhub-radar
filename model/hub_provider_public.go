@@ -213,9 +213,7 @@ func GetHubProviderPublicProfile(providerSlug string, tenantID *int, now int64) 
 			modelTargets := targetsByGroupModel[hubProviderPublicGroupModelKey{groupID: group.Id, modelName: modelName}]
 			autoProbeDisabledKinds := map[string]bool(nil)
 			if group.IsAutoProbeDisabled(modelName, group.ChannelModels) {
-				autoProbeDisabledKinds = hubSupplyAutoProbeDisabledModelKinds(
-					group.ChannelType, modelName, group.GetProbeEndpointOverrides(group.ChannelModels),
-				)
+				autoProbeDisabledKinds = hubSupplyAutoProbeDisabledModelKinds(modelName, modelTargets)
 			}
 			online := group.ChannelStatus == common.ChannelStatusEnabled && hubSupplyPublicModelRoutable(
 				group.NewAPIChannelId,

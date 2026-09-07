@@ -1,13 +1,164 @@
 package model
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 
 	"gorm.io/gorm"
 )
+
+// modelMetadataEndpointResolver is a read-only snapshot of the model metadata
+// needed while one probe target set is reconciled. A single snapshot avoids a
+// full models-table query for every configured model in a supply channel.
+type modelMetadataEndpointResolver struct {
+	metadata []Model
+	err      error
+}
+
+func newModelMetadataEndpointResolver(tx *gorm.DB) *modelMetadataEndpointResolver {
+	if tx == nil {
+		return nil
+	}
+	// Some lightweight callers (and older installations during migration) may
+	// reconcile supply targets before the optional model metadata table exists.
+	// Preserve the legacy cache-backed behavior in that case; once the table is
+	// present, query failures fail closed rather than reusing a stale union.
+	if !tx.Migrator().HasTable(&Model{}) {
+		return nil
+	}
+	resolver := &modelMetadataEndpointResolver{}
+	if err := tx.Select("id", "model_name", "name_rule", "endpoints").
+		Order("id ASC").Find(&resolver.metadata).Error; err != nil {
+		// A metadata lookup failure must not fall back to the process-wide
+		// endpoint union: that union can contain an image capability inferred
+		// from a different channel. Fail closed for this concrete channel.
+		resolver.err = err
+	}
+	return resolver
+}
+
+// endpointTypes resolves the explicit endpoint declaration for a concrete
+// model name from the snapshot. The second element reports whether a usable
+// canonical endpoint declaration (or a lookup failure) was found. Empty,
+// malformed, and legacy array values are treated as unspecified metadata so
+// they do not erase the channel adapter's normal capability.
+func (resolver *modelMetadataEndpointResolver) endpointTypes(modelName string) ([]constant.EndpointType, bool) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return nil, false
+	}
+	if resolver == nil {
+		return nil, false
+	}
+	if resolver.err != nil {
+		return nil, true
+	}
+
+	var matched *Model
+	// Existing pricing semantics are exact > prefix > suffix > contains.
+	// NameRuleSuffix is numerically after contains, so use an explicit order.
+	rules := []int{NameRuleExact, NameRulePrefix, NameRuleSuffix, NameRuleContains}
+	for _, rule := range rules {
+		for i := range resolver.metadata {
+			candidate := &resolver.metadata[i]
+			if candidate.NameRule != rule {
+				continue
+			}
+			matches := false
+			switch rule {
+			case NameRuleExact:
+				matches = candidate.ModelName == modelName
+			case NameRulePrefix:
+				matches = strings.HasPrefix(modelName, candidate.ModelName)
+			case NameRuleSuffix:
+				matches = strings.HasSuffix(modelName, candidate.ModelName)
+			case NameRuleContains:
+				matches = strings.Contains(modelName, candidate.ModelName)
+			}
+			if matches {
+				matched = candidate
+				break
+			}
+		}
+		if matched != nil {
+			break
+		}
+	}
+	if matched == nil {
+		return nil, false
+	}
+
+	return parseModelMetadataEndpointTypesWithDeclaration(matched.Endpoints)
+}
+
+// modelMetadataEndpointTypes resolves metadata directly for callers that do
+// not already have a reconciliation snapshot.
+func modelMetadataEndpointTypes(tx *gorm.DB, modelName string) ([]constant.EndpointType, bool) {
+	if tx == nil {
+		tx = DB
+	}
+	return newModelMetadataEndpointResolver(tx).endpointTypes(modelName)
+}
+
+// parseModelMetadataEndpointTypes accepts the endpoint object format used by
+// the model metadata editor. Values may be a path string or an object carrying
+// path/method fields; other JSON values are ignored just as pricing refresh
+// ignores them. Endpoint names are returned in JSON decoder order-independent
+// form and de-duplicated for callers that append them to adapter defaults.
+func parseModelMetadataEndpointTypes(raw string) []constant.EndpointType {
+	endpoints, _ := parseModelMetadataEndpointTypesWithDeclaration(raw)
+	return endpoints
+}
+
+func parseModelMetadataEndpointTypesWithDeclaration(raw string) ([]constant.EndpointType, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, false
+	}
+	var endpoints map[string]interface{}
+	if err := common.Unmarshal([]byte(raw), &endpoints); err != nil || endpoints == nil {
+		return nil, false
+	}
+	result := make([]constant.EndpointType, 0, len(endpoints))
+	seen := make(map[constant.EndpointType]struct{}, len(endpoints))
+	for endpointName, value := range endpoints {
+		switch value.(type) {
+		case string, map[string]interface{}:
+			endpoint := constant.EndpointType(strings.TrimSpace(endpointName))
+			if endpoint == "" {
+				continue
+			}
+			if _, exists := seen[endpoint]; exists {
+				continue
+			}
+			seen[endpoint] = struct{}{}
+			result = append(result, endpoint)
+		}
+	}
+	return result, len(result) > 0
+}
+
+// NormalizeModelMetadataEndpoints is shared by official synchronization and
+// keeps the database representation constrained to a JSON object. Empty,
+// null, malformed, or non-object values are stored as an empty string.
+func NormalizeModelMetadataEndpoints(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	var object map[string]interface{}
+	if err := common.Unmarshal([]byte(trimmed), &object); err != nil || object == nil {
+		return ""
+	}
+	encoded, err := common.Marshal(object)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
 
 const (
 	NameRuleExact = iota
@@ -38,7 +189,12 @@ type Model struct {
 	BoundChannels []BoundChannel `json:"bound_channels,omitempty" gorm:"-"`
 	EnableGroups  []string       `json:"enable_groups,omitempty" gorm:"-"`
 	QuotaTypes    []int          `json:"quota_types,omitempty" gorm:"-"`
-	NameRule      int            `json:"name_rule" gorm:"default:0"`
+	// InferredEndpoints is populated for read-only API responses when the
+	// persisted Endpoints declaration is empty. It is deliberately excluded
+	// from GORM so inferred channel capabilities can never be written back as
+	// model metadata by an edit form.
+	InferredEndpoints string `json:"inferred_endpoints,omitempty" gorm:"-"`
+	NameRule          int    `json:"name_rule" gorm:"default:0"`
 
 	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
 	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`

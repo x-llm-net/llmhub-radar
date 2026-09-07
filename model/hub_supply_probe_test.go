@@ -24,6 +24,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,17 +75,159 @@ func TestHubSupplyProbeDefinitionsSeparateTextAndImage(t *testing.T) {
 	assert.Equal(t, string(constant.EndpointTypeImageGeneration), definitions[1].EndpointType)
 }
 
-func TestHubSupplyProbeDefinitionsTreatGPTImageModelsAsImageOnly(t *testing.T) {
-	definitions := hubSupplyProbeDefinitions(constant.ChannelTypeOpenAI, []string{
-		"gpt-image-1",
-		"gpt-image-2",
-		"gpt-image-2-4K",
-	})
-	require.Len(t, definitions, 3)
-	for _, definition := range definitions {
-		assert.Equal(t, HubSupplyProbeKindImage, definition.ProbeKind)
-		assert.Equal(t, string(constant.EndpointTypeImageGeneration), definition.EndpointType)
+func TestHubSupplyProbeDefinitionsUseExplicitImageEndpointWithoutModelNameInference(t *testing.T) {
+	modelSupportEndpointsLock.Lock()
+	original := modelSupportEndpointTypes
+	modelSupportEndpointTypes = map[string][]constant.EndpointType{
+		"arbitrary-image-model": {constant.EndpointTypeImageGeneration},
 	}
+	modelSupportEndpointsLock.Unlock()
+	t.Cleanup(func() {
+		modelSupportEndpointsLock.Lock()
+		modelSupportEndpointTypes = original
+		modelSupportEndpointsLock.Unlock()
+	})
+
+	definitions := hubSupplyProbeDefinitions(constant.ChannelTypeOpenAI, []string{"arbitrary-image-model"})
+	require.Len(t, definitions, 1)
+	assert.Equal(t, HubSupplyProbeKindImage, definitions[0].ProbeKind)
+	assert.Equal(t, string(constant.EndpointTypeImageGeneration), definitions[0].EndpointType)
+
+	// A familiar image-looking name without an explicit image endpoint is a
+	// normal text probe; model names must not select the health pool.
+	definitions = hubSupplyProbeDefinitions(constant.ChannelTypeOpenAI, []string{"gpt-image-2"})
+	require.Len(t, definitions, 1)
+	assert.Equal(t, HubSupplyProbeKindText, definitions[0].ProbeKind)
+	assert.Equal(t, string(constant.EndpointTypeOpenAI), definitions[0].EndpointType)
+}
+
+func TestHubSupplyProbeDefinitionsDoNotCreateCodexToolImageTarget(t *testing.T) {
+	modelSupportEndpointsLock.Lock()
+	original := modelSupportEndpointTypes
+	modelSupportEndpointTypes = map[string][]constant.EndpointType{
+		"arbitrary-image-model": {constant.EndpointTypeOpenAIResponse, constant.EndpointTypeImageGeneration},
+	}
+	modelSupportEndpointsLock.Unlock()
+	t.Cleanup(func() {
+		modelSupportEndpointsLock.Lock()
+		modelSupportEndpointTypes = original
+		modelSupportEndpointsLock.Unlock()
+	})
+
+	definitions := hubSupplyProbeDefinitions(constant.ChannelTypeCodex, []string{"arbitrary-image-model"})
+	require.Len(t, definitions, 1)
+	assert.Equal(t, HubSupplyProbeKindText, definitions[0].ProbeKind)
+	assert.Equal(t, string(constant.EndpointTypeOpenAIResponse), definitions[0].EndpointType)
+}
+
+func TestHubSupplyProbeDefinitionsSupportCompactOnlyAdvancedCustomRoute(t *testing.T) {
+	channel := &Channel{Type: constant.ChannelTypeAdvancedCustom}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		AdvancedCustom: &dto.AdvancedCustomConfig{
+			Routes: []dto.AdvancedCustomRoute{
+				{
+					IncomingPath: "/v1/responses/compact",
+					UpstreamPath: "/v1/responses/compact",
+					Models:       []string{"compact-model"},
+				},
+			},
+		},
+	})
+
+	definitions := hubSupplyProbeDefinitionsForChannel(
+		channel,
+		constant.ChannelTypeAdvancedCustom,
+		[]string{"compact-model"},
+		nil,
+	)
+
+	// A compact route is a text capability. It must produce one executable
+	// /v1/responses/compact probe target and must never enter the image pool.
+	require.Len(t, definitions, 1)
+	assert.Equal(t, string(constant.EndpointTypeOpenAIResponseCompact), definitions[0].EndpointType)
+	assert.Equal(t, HubSupplyProbeEndpointModeAuto, definitions[0].EndpointMode)
+	assert.Equal(t, HubSupplyProbeKindText, definitions[0].ProbeKind)
+}
+
+func TestHubSupplyProbeDefinitionsDoNotInferProtocolFromModelName(t *testing.T) {
+	models := []string{
+		"o3-pro",
+		"o3-pro-2025-06-10",
+		"o3-deep-research",
+		"o4-mini-deep-research-2025-06-26",
+	}
+	for _, channelType := range []int{constant.ChannelTypeNewAPI, constant.ChannelTypeSub2API} {
+		t.Run(constant.GetChannelTypeName(channelType), func(t *testing.T) {
+			channel := &Channel{Type: channelType}
+			for _, modelName := range models {
+				definitions := hubSupplyProbeDefinitionsForChannel(channel, channelType, []string{modelName}, nil)
+				require.Len(t, definitions, 1)
+				assert.Equal(t, HubSupplyProbeKindText, definitions[0].ProbeKind)
+				assert.Equal(t, string(constant.EndpointTypeOpenAI), definitions[0].EndpointType)
+			}
+
+			ordinary := hubSupplyProbeDefinitionsForChannel(channel, channelType, []string{"gpt-5"}, nil)
+			require.Len(t, ordinary, 1)
+			assert.Equal(t, string(constant.EndpointTypeOpenAI), ordinary[0].EndpointType)
+		})
+	}
+}
+
+func TestHubSupplyConcreteChannelUsesExplicitEndpointWithCompatibilityCheck(t *testing.T) {
+	resolver := &modelMetadataEndpointResolver{metadata: []Model{
+		{Id: 1, ModelName: "arbitrary-image-model", NameRule: NameRuleExact,
+			Endpoints: `{"image-generation":"/v1/images/generations"}`},
+		{Id: 2, ModelName: "responses-model", NameRule: NameRuleExact,
+			Endpoints: `{"openai-response":"/v1/responses"}`},
+	}}
+
+	openAI := hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(
+		nil, &Channel{Type: constant.ChannelTypeOpenAI}, "arbitrary-image-model", resolver,
+	)
+	// Explicit probe hints must not add an untested default text target to an
+	// image-only model. These hints are not a client protocol allowlist.
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeImageGeneration,
+	}, openAI)
+
+	responses := hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(
+		nil, &Channel{Type: constant.ChannelTypeOpenAI}, "responses-model", resolver,
+	)
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAIResponse,
+	}, responses)
+
+	// An Anthropic adapter must not inherit an image endpoint merely because
+	// another channel or the model metadata exposes one.
+	anthropic := hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(
+		nil, &Channel{Type: constant.ChannelTypeAnthropic}, "arbitrary-image-model", resolver,
+	)
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeAnthropic,
+		constant.EndpointTypeOpenAI,
+	}, anthropic)
+}
+
+func TestHubSupplyConcreteChannelDoesNotUseGlobalEndpointUnionWhenMetadataHasNoMatch(t *testing.T) {
+	modelSupportEndpointsLock.Lock()
+	originalExplicit := modelExplicitEndpointTypes
+	modelExplicitEndpointTypes = map[string][]constant.EndpointType{
+		"other-channel-model": {constant.EndpointTypeImageGeneration},
+	}
+	modelSupportEndpointsLock.Unlock()
+	t.Cleanup(func() {
+		modelSupportEndpointsLock.Lock()
+		modelExplicitEndpointTypes = originalExplicit
+		modelSupportEndpointsLock.Unlock()
+	})
+
+	resolver := &modelMetadataEndpointResolver{metadata: []Model{
+		{Id: 1, ModelName: "unlisted-model", NameRule: NameRuleExact, Endpoints: ""},
+	}}
+	endpoints := hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(
+		nil, &Channel{Type: constant.ChannelTypeOpenAI}, "different-model", resolver,
+	)
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, endpoints)
 }
 
 func TestHubSupplyProbeDefinitionsHonorManualEndpointOverride(t *testing.T) {
@@ -112,16 +255,25 @@ func TestHubSupplyRoutingIsolatesTextAndImageProbeKinds(t *testing.T) {
 		InitChannelCache()
 	})
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Model{}))
+	metadata := Model{ModelName: "gpt-5", Endpoints: `{"openai":"/v1/chat/completions","image-generation":"/v1/images/generations"}`}
+	require.NoError(t, DB.Create(&metadata).Error)
+	t.Cleanup(func() { require.NoError(t, DB.Unscoped().Delete(&metadata).Error) })
 
 	modelSupportEndpointsLock.Lock()
 	originalEndpoints := modelSupportEndpointTypes
+	originalExplicitEndpoints := modelExplicitEndpointTypes
 	modelSupportEndpointTypes = map[string][]constant.EndpointType{
+		"gpt-5": {constant.EndpointTypeOpenAI, constant.EndpointTypeImageGeneration},
+	}
+	modelExplicitEndpointTypes = map[string][]constant.EndpointType{
 		"gpt-5": {constant.EndpointTypeOpenAI, constant.EndpointTypeImageGeneration},
 	}
 	modelSupportEndpointsLock.Unlock()
 	t.Cleanup(func() {
 		modelSupportEndpointsLock.Lock()
 		modelSupportEndpointTypes = originalEndpoints
+		modelExplicitEndpointTypes = originalExplicitEndpoints
 		modelSupportEndpointsLock.Unlock()
 	})
 
@@ -1236,11 +1388,11 @@ func TestUpdateHubSupplyGroupModelAutoProbeControlsTargetsAndRouting(t *testing.
 	var skippedTargets int64
 	require.NoError(t, DB.Model(&HubSupplyGroupProbeTarget{}).
 		Where("group_id = ? AND model_name = ?", group.Id, "gpt-5").Count(&skippedTargets).Error)
-	assert.Zero(t, skippedTargets)
-	assert.Equal(t, []string{"gpt-5"}, getChannelAbilityModels(t, channel.Id))
+	assert.EqualValues(t, 1, skippedTargets)
+	assert.Empty(t, getChannelAbilityModels(t, channel.Id))
 	availability, _, err := loadHubSupplyChannelProbeKinds(DB, []int{channel.Id})
 	require.NoError(t, err)
-	assert.True(t, hubSupplyChannelSupportsRequest(availability, channel.Id, "gpt-5", "/v1/responses"))
+	assert.False(t, hubSupplyChannelSupportsRequest(availability, channel.Id, "gpt-5", "/v1/responses"))
 	assert.False(t, hubSupplyChannelSupportsRequest(availability, channel.Id, "gpt-5", "/v1/images/generations"))
 
 	require.NoError(t, UpdateHubSupplyGroupModelAutoProbe(group.Id, "gpt-5", true))

@@ -625,7 +625,7 @@ func testChannelWithOptions(ctx context.Context, channel *model.Channel, testUse
 			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
 		}
 	}
-	if bodyErr := validateTestResponseBody(respBody, isStream); bodyErr != nil {
+	if bodyErr := validateTestResponseBody(respBody, isStream, info.RelayMode); bodyErr != nil {
 		return testResult{
 			context:     c,
 			localErr:    bodyErr,
@@ -796,9 +796,22 @@ func validateStreamTestResponseBody(respBody []byte) error {
 	return errors.New("stream response body does not contain a valid stream event")
 }
 
-func validateTestResponseBody(respBody []byte, isStream bool) error {
+func validateTestResponseBody(respBody []byte, isStream bool, relayMode int) error {
 	if bodyErr := detectErrorFromTestResponseBody(respBody); bodyErr != nil {
 		return bodyErr
+	}
+	if relayMode == relayconstant.RelayModeImagesGenerations || relayMode == relayconstant.RelayModeImagesEdits {
+		data := gjson.GetBytes(respBody, "data")
+		if data.IsArray() {
+			for _, item := range data.Array() {
+				base64Data, imageURL := item.Get("b64_json"), item.Get("url")
+				if (base64Data.Type == gjson.String && strings.TrimSpace(base64Data.String()) != "") ||
+					(imageURL.Type == gjson.String && strings.TrimSpace(imageURL.String()) != "") {
+					return nil
+				}
+			}
+		}
+		return errors.New("image response does not contain image data or an image URL")
 	}
 	if isStream {
 		return validateStreamTestResponseBody(respBody)

@@ -225,7 +225,7 @@ func ListHubRoutingHealth(options HubRoutingHealthListOptions, now int64) ([]Hub
 				if providerOwned {
 					overrides = group.GetProbeEndpointOverrides(channel.Models)
 				}
-				targets = hubSupplyProbeDefinitionsWithOverrides(channel.Type, []string{modelName}, overrides)
+				targets = hubSupplyProbeDefinitionsForChannel(&channel, channel.Type, []string{modelName}, overrides)
 				for index := range targets {
 					if autoProbeDisabled {
 						targets[index].Status = HubSupplyProbeStatusSkipped

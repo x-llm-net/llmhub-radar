@@ -22,7 +22,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -152,6 +151,11 @@ func NormalizeHubSupplyProbeEndpointMode(endpointType string) string {
 		return HubSupplyProbeEndpointModeAuto
 	case string(constant.EndpointTypeOpenAI),
 		string(constant.EndpointTypeOpenAIResponse),
+		string(constant.EndpointTypeOpenAIResponseCompact),
+		string(constant.EndpointTypeAnthropic),
+		string(constant.EndpointTypeGemini),
+		string(constant.EndpointTypeJinaRerank),
+		string(constant.EndpointTypeEmbeddings),
 		string(constant.EndpointTypeImageGeneration):
 		return endpointType
 	default:
@@ -163,85 +167,282 @@ func hubSupplyProbeDefinitions(channelType int, models []string) []HubSupplyGrou
 	return hubSupplyProbeDefinitionsWithOverrides(channelType, models, nil)
 }
 
+func hubSupplyProbeEndpointTypesForChannelModel(channelType int, modelName string) []constant.EndpointType {
+	endpoints := common.GetEndpointTypesByChannelType(channelType, modelName)
+	seen := make(map[constant.EndpointType]struct{}, len(endpoints))
+	result := make([]constant.EndpointType, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if endpoint == constant.EndpointTypeOpenAIVideo || endpoint == constant.EndpointTypeOpenAIAlphaSearch {
+			continue
+		}
+		if _, exists := seen[endpoint]; exists {
+			continue
+		}
+		seen[endpoint] = struct{}{}
+		result = append(result, endpoint)
+	}
+	return result
+}
+
+func appendHubSupplyProbeEndpointType(endpoints []constant.EndpointType, endpoint constant.EndpointType) []constant.EndpointType {
+	if endpoint == "" || endpoint == constant.EndpointTypeOpenAIVideo || endpoint == constant.EndpointTypeOpenAIAlphaSearch {
+		return endpoints
+	}
+	for _, existing := range endpoints {
+		if existing == endpoint {
+			return endpoints
+		}
+	}
+	return append(endpoints, endpoint)
+}
+
+// Initial probe hints come from this channel's configuration or explicit model
+// metadata. An endpoint inferred from another channel is not a valid hint.
+func hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(tx *gorm.DB, channel *Channel, modelName string, resolver *modelMetadataEndpointResolver) []constant.EndpointType {
+	if channel == nil {
+		return nil
+	}
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
+		if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
+			endpoints := config.SupportedEndpointTypesForModel(modelName)
+			result := make([]constant.EndpointType, 0, len(endpoints))
+			for _, endpoint := range endpoints {
+				result = appendHubSupplyProbeEndpointType(result, constant.EndpointType(endpoint))
+			}
+			return result
+		}
+	}
+
+	result := hubSupplyProbeEndpointTypesForChannelModel(channel.Type, modelName)
+	explicitEndpoints := make([]constant.EndpointType, 0)
+	explicitDeclared := false
+	if resolver == nil && tx != nil {
+		resolver = newModelMetadataEndpointResolver(tx)
+	}
+	if resolver != nil {
+		// Once the models table is available, resolve only from that transaction
+		// snapshot. The process-wide pricing union contains capabilities from
+		// unrelated channels and must never fill a concrete channel's target set.
+		if resolver.err != nil {
+			return nil
+		}
+		if metadataEndpoints, found := resolver.endpointTypes(modelName); found {
+			explicitEndpoints = metadataEndpoints
+			explicitDeclared = true
+		}
+	} else {
+		explicitEndpoints = GetModelExplicitEndpointTypes(modelName)
+		explicitDeclared = len(explicitEndpoints) > 0
+	}
+	if explicitDeclared {
+		declared := make([]constant.EndpointType, 0, len(explicitEndpoints))
+		for _, endpoint := range explicitEndpoints {
+			// Metadata guides the first probe, not actual request eligibility.
+			if common.IsEndpointTypeCompatible(channel.Type, endpoint) {
+				declared = appendHubSupplyProbeEndpointType(declared, endpoint)
+			}
+		}
+		if len(declared) > 0 {
+			return declared
+		}
+	}
+	return result
+}
+
+// legacyHubSupplyProbeEndpointTypes preserves the model-only helper used by
+// older in-package callers and tests. Production paths pass a concrete Channel
+// and never use this model-wide union.
+func legacyHubSupplyProbeEndpointTypes(channelType int, modelName string) []constant.EndpointType {
+	modelEndpoints := GetModelSupportEndpointTypes(modelName)
+	if len(modelEndpoints) > 0 {
+		result := make([]constant.EndpointType, 0, len(modelEndpoints))
+		for _, endpoint := range modelEndpoints {
+			result = appendHubSupplyProbeEndpointType(result, endpoint)
+		}
+		return result
+	}
+	return hubSupplyProbeEndpointTypesForChannelModel(channelType, modelName)
+}
+
+func hubSupplyProbeDefinition(modelName, endpointType, endpointMode, probeKind string) HubSupplyGroupProbeTarget {
+	return HubSupplyGroupProbeTarget{
+		ModelName: modelName, EndpointType: endpointType, EndpointMode: endpointMode, ProbeKind: probeKind,
+	}
+}
+
+// hubSupplyPrimaryProbeEndpoint chooses the automatic text probe adapter for a
+// concrete channel. Protocol order comes from the channel adapter and any
+// explicit endpoint declaration; model names never select a protocol.
+func hubSupplyPrimaryProbeEndpoint(_ int, endpoints []constant.EndpointType) constant.EndpointType {
+	for _, endpoint := range endpoints {
+		if endpoint == constant.EndpointTypeImageGeneration ||
+			endpoint == constant.EndpointTypeOpenAIVideo ||
+			endpoint == constant.EndpointTypeOpenAIAlphaSearch {
+			continue
+		}
+		switch endpoint {
+		case constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse,
+			constant.EndpointTypeOpenAIResponseCompact,
+			constant.EndpointTypeAnthropic, constant.EndpointTypeGemini,
+			constant.EndpointTypeEmbeddings, constant.EndpointTypeJinaRerank:
+			return endpoint
+		}
+	}
+	return ""
+}
+
 func hubSupplyProbeDefinitionsWithOverrides(channelType int, models []string, overrides map[string]string) []HubSupplyGroupProbeTarget {
+	return hubSupplyProbeDefinitionsForChannel(nil, channelType, models, overrides)
+}
+
+func hubSupplyProbeDefinitionsForChannel(channel *Channel, channelType int, models []string, overrides map[string]string) []HubSupplyGroupProbeTarget {
+	definitions, _ := hubSupplyProbeDefinitionsForChannelTx(nil, channel, channelType, models, overrides)
+	return definitions
+}
+
+func hubSupplyProbeDefinitionsForChannelTx(tx *gorm.DB, channel *Channel, channelType int, models []string, overrides map[string]string) ([]HubSupplyGroupProbeTarget, error) {
 	definitions := make([]HubSupplyGroupProbeTarget, 0, len(models))
+	if len(models) == 0 {
+		return definitions, nil
+	}
+	var metadataResolver *modelMetadataEndpointResolver
+	if tx != nil && channel != nil && channel.Type != constant.ChannelTypeAdvancedCustom {
+		for _, modelName := range models {
+			if NormalizeHubSupplyProbeEndpointMode(overrides[modelName]) == HubSupplyProbeEndpointModeAuto {
+				metadataResolver = newModelMetadataEndpointResolver(tx)
+				break
+			}
+		}
+		if metadataResolver != nil && metadataResolver.err != nil {
+			return nil, metadataResolver.err
+		}
+	}
+	concreteChannel := channel
+	if concreteChannel == nil {
+		concreteChannel = &Channel{Type: channelType}
+	}
 	for _, modelName := range models {
 		if endpointType := NormalizeHubSupplyProbeEndpointMode(overrides[modelName]); endpointType != "" && endpointType != HubSupplyProbeEndpointModeAuto {
 			probeKind := HubSupplyProbeKindText
 			if endpointType == string(constant.EndpointTypeImageGeneration) {
 				probeKind = HubSupplyProbeKindImage
 			}
-			definitions = append(definitions, HubSupplyGroupProbeTarget{
-				ModelName: modelName, EndpointType: endpointType, EndpointMode: endpointType, ProbeKind: probeKind,
-			})
+			definitions = append(definitions, hubSupplyProbeDefinition(modelName, endpointType, endpointType, probeKind))
 			continue
 		}
-		if common.IsImageGenerationModel(modelName) {
-			definitions = append(definitions, HubSupplyGroupProbeTarget{
-				ModelName: modelName, EndpointType: string(constant.EndpointTypeImageGeneration), EndpointMode: HubSupplyProbeEndpointModeAuto, ProbeKind: HubSupplyProbeKindImage,
-			})
-			continue
+		var endpoints []constant.EndpointType
+		if channel == nil {
+			endpoints = legacyHubSupplyProbeEndpointTypes(channelType, modelName)
+		} else {
+			endpoints = hubSupplyProbeEndpointTypesForConcreteChannelTxWithResolver(tx, concreteChannel, modelName, metadataResolver)
 		}
-		endpoints := GetModelSupportEndpointTypes(modelName)
-		var primary constant.EndpointType
-		hasImage := false
-		for _, endpoint := range endpoints {
-			if endpoint == constant.EndpointTypeImageGeneration {
-				hasImage = true
-				continue
-			}
-			if endpoint == constant.EndpointTypeOpenAIVideo || endpoint == constant.EndpointTypeOpenAIAlphaSearch {
-				continue
-			}
-			if primary == "" {
-				primary = endpoint
-			}
-			if channelType == constant.ChannelTypeAnthropic && endpoint == constant.EndpointTypeAnthropic {
-				primary = endpoint
-			}
-		}
-		if primary == "" && !hasImage {
-			if channelType == constant.ChannelTypeAnthropic {
-				primary = constant.EndpointTypeAnthropic
-			} else {
-				primary = constant.EndpointTypeOpenAI
-			}
-		}
+		primary := hubSupplyPrimaryProbeEndpoint(channelType, endpoints)
 		if primary != "" {
-			definitions = append(definitions, HubSupplyGroupProbeTarget{
-				ModelName: modelName, EndpointType: string(primary), EndpointMode: HubSupplyProbeEndpointModeAuto, ProbeKind: HubSupplyProbeKindText,
-			})
+			definitions = append(definitions, hubSupplyProbeDefinition(modelName, string(primary), HubSupplyProbeEndpointModeAuto, HubSupplyProbeKindText))
 		}
-		if hasImage {
-			definitions = append(definitions, HubSupplyGroupProbeTarget{
-				ModelName: modelName, EndpointType: string(constant.EndpointTypeImageGeneration), EndpointMode: HubSupplyProbeEndpointModeAuto, ProbeKind: HubSupplyProbeKindImage,
-			})
+
+		for _, endpoint := range endpoints {
+			if endpoint != constant.EndpointTypeImageGeneration {
+				continue
+			}
+			if channelType == constant.ChannelTypeCodex {
+				continue
+			}
+			definitions = append(definitions, hubSupplyProbeDefinition(modelName, string(endpoint), HubSupplyProbeEndpointModeAuto, HubSupplyProbeKindImage))
+			break
 		}
 	}
-	return definitions
+	return definitions, nil
 }
 
 func syncHubSupplyGroupProbeTargetsTx(tx *gorm.DB, group *HubSupplyGroup, channel *Channel) error {
-	models := make([]string, 0)
-	for _, modelName := range channel.GetModels() {
-		if !group.IsAutoProbeDisabled(modelName, channel.Models) {
-			models = append(models, modelName)
-		}
-	}
-	definitions := hubSupplyProbeDefinitionsWithOverrides(channel.Type, models, group.GetProbeEndpointOverrides(channel.Models))
 	now := common.GetTimestamp()
 
 	var existing []HubSupplyGroupProbeTarget
 	if err := tx.Where("group_id = ? AND config_version = ?", group.Id, group.ConfigVersion).Find(&existing).Error; err != nil {
 		return err
 	}
+	// Existing targets belong to this configuration version. Cache or metadata
+	// refreshes must not replace their selected endpoint or successful history.
+	configured := make(map[string]bool)
+	for _, modelName := range channel.GetModels() {
+		configured[modelName] = true
+	}
+	known := make(map[string]bool)
+	definitions := make([]HubSupplyGroupProbeTarget, 0, len(existing))
+	for _, target := range existing {
+		if configured[target.ModelName] {
+			known[target.ModelName] = true
+			definitions = append(definitions, target)
+		}
+	}
+	// Older versions removed targets when periodic probing was disabled. Restore
+	// only successful evidence for the same configuration and selected endpoint.
+	missingDisabled := make([]string, 0)
+	for _, modelName := range group.GetAutoProbeDisabledModels(channel.Models) {
+		if !known[modelName] {
+			missingDisabled = append(missingDisabled, modelName)
+		}
+	}
+	if len(missingDisabled) > 0 {
+		var samples []HubSupplyGroupProbeSample
+		if err := tx.Where("group_id = ? AND config_version = ? AND model_name IN ? AND success = ?", group.Id, group.ConfigVersion, missingDisabled, true).
+			Order("probed_at DESC, id DESC").Find(&samples).Error; err != nil {
+			return err
+		}
+		restoredKinds := make(map[string]bool)
+		overrides := group.GetProbeEndpointOverrides(channel.Models)
+		for _, sample := range samples {
+			if NormalizeHubSupplyProbeKind(sample.ProbeKind) == "" {
+				continue
+			}
+			mode := NormalizeHubSupplyProbeEndpointMode(overrides[sample.ModelName])
+			if mode != HubSupplyProbeEndpointModeAuto && mode != sample.EndpointType {
+				continue
+			}
+			if sample.ProbeKind == HubSupplyProbeKindImage && sample.EndpointType != string(constant.EndpointTypeImageGeneration) {
+				continue
+			}
+			if sample.ProbedAt <= 0 || NormalizeHubSupplyProbeEndpointMode(sample.EndpointType) == "" {
+				continue
+			}
+			key := sample.ModelName + "\n" + sample.ProbeKind
+			if restoredKinds[key] {
+				continue
+			}
+			restoredKinds[key] = true
+			known[sample.ModelName] = true
+			definition := hubSupplyProbeDefinition(sample.ModelName, sample.EndpointType, mode, sample.ProbeKind)
+			definition.ResolvedEndpointType = sample.EndpointType
+			definition.Status = HubSupplyProbeStatusAvailable
+			definition.LastSuccessAt = sample.ProbedAt
+			definition.LastProbeAt = sample.ProbedAt
+			definition.LastLatencyMs = sample.LatencyMs
+			definition.LastFirstTokenMs = sample.FirstTokenMs
+			definitions = append(definitions, definition)
+		}
+	}
+	models := make([]string, 0)
+	for _, modelName := range channel.GetModels() {
+		if !known[modelName] {
+			models = append(models, modelName)
+		}
+	}
+	newDefinitions, err := hubSupplyProbeDefinitionsForChannelTx(tx, channel, channel.Type, models, group.GetProbeEndpointOverrides(channel.Models))
+	if err != nil {
+		return err
+	}
+	definitions = append(definitions, newDefinitions...)
 	desired := make(map[string]HubSupplyGroupProbeTarget, len(definitions))
 	for _, definition := range definitions {
-		desired[definition.ModelName+"\n"+definition.EndpointType] = definition
+		desired[definition.ModelName+"\n"+definition.EndpointType+"\n"+definition.ProbeKind] = definition
 	}
 	existingKeys := make(map[string]struct{}, len(existing))
 	for _, target := range existing {
-		key := target.ModelName + "\n" + target.EndpointType
+		// ProbeKind is part of the in-memory reconciliation identity. This
+		// prevents a future text/image pair that shares a protocol endpoint
+		// from silently reusing or deleting the other capability's target.
+		key := target.ModelName + "\n" + target.EndpointType + "\n" + target.ProbeKind
 		if _, keep := desired[key]; !keep {
 			if err := tx.Delete(&HubSupplyGroupProbeTarget{}, target.Id).Error; err != nil {
 				return err
@@ -262,7 +463,9 @@ func syncHubSupplyGroupProbeTargetsTx(tx *gorm.DB, group *HubSupplyGroup, channe
 		}
 		definition.GroupId = group.Id
 		definition.ConfigVersion = group.ConfigVersion
-		definition.Status = HubSupplyProbeStatusPending
+		if definition.Status == "" {
+			definition.Status = HubSupplyProbeStatusPending
+		}
 		definition.NextProbeAt = now
 		definition.CreatedAt = now
 		definition.UpdatedAt = now
@@ -279,6 +482,12 @@ func rescheduleHubSupplyGroupProbeTargetsTx(tx *gorm.DB, group *HubSupplyGroup, 
 		return err
 	}
 	for _, target := range targets {
+		if group.IsAutoProbeDisabled(target.ModelName, target.ModelName) && !target.ManualProbeRequested {
+			if err := tx.Model(&HubSupplyGroupProbeTarget{Id: target.Id}).Update("next_probe_at", 0).Error; err != nil {
+				return err
+			}
+			continue
+		}
 		nextProbeAt := target.NextProbeAt
 		if target.Status == HubSupplyProbeStatusSuspended || target.ConsecutiveFailures >= HubSupplyProbeFailureSuspendLimit {
 			nextProbeAt = 0
@@ -333,7 +542,10 @@ func EnsureHubSupplyGroupProbeTargets() error {
 			if err := createHubSupplyGroupRevisionTx(tx, &group, channel); err != nil {
 				return err
 			}
-			return syncHubSupplyGroupProbeTargetsTx(tx, &group, channel)
+			if err := syncHubSupplyGroupProbeTargetsTx(tx, &group, channel); err != nil {
+				return err
+			}
+			return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
 		}); err != nil {
 			return err
 		}
@@ -471,11 +683,40 @@ func UpdateHubSupplyGroupModelProbeEndpoint(groupID int, modelName, endpointMode
 		} else {
 			overrides[modelName] = endpointMode
 		}
-		encodedOverrides, err := json.Marshal(overrides)
+		encodedOverrides, err := common.Marshal(overrides)
 		if err != nil {
 			return err
 		}
 		group.ProbeEndpointOverrides = string(encodedOverrides)
+		if endpointMode == HubSupplyProbeEndpointModeAuto {
+			if err := tx.Model(&HubSupplyGroup{Id: group.Id}).Updates(map[string]any{
+				"probe_endpoint_overrides": group.ProbeEndpointOverrides,
+				"updated_at":               common.GetTimestamp(),
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&HubSupplyGroupProbeTarget{}).
+				Where("group_id = ? AND config_version = ? AND model_name = ?", group.Id, group.ConfigVersion, modelName).
+				Update("endpoint_mode", HubSupplyProbeEndpointModeAuto).Error; err != nil {
+				return err
+			}
+			var verifiedCount int64
+			if err := tx.Model(&HubSupplyGroupProbeTarget{}).
+				Where("group_id = ? AND config_version = ? AND model_name = ? AND (last_success_at > 0 OR status = ?)", group.Id, group.ConfigVersion, modelName, HubSupplyProbeStatusAvailable).
+				Count(&verifiedCount).Error; err != nil {
+				return err
+			}
+			if verifiedCount == 0 {
+				if err := tx.Where("group_id = ? AND config_version = ? AND model_name = ?", group.Id, group.ConfigVersion, modelName).
+					Delete(&HubSupplyGroupProbeTarget{}).Error; err != nil {
+					return err
+				}
+			}
+			if err := syncHubSupplyGroupProbeTargetsTx(tx, &group, &channel); err != nil {
+				return err
+			}
+			return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
+		}
 
 		if err := tx.Where("group_id = ? AND config_version = ? AND model_name = ?", group.Id, group.ConfigVersion, modelName).
 			Delete(&HubSupplyGroupProbeSample{}).Error; err != nil {
@@ -492,7 +733,10 @@ func UpdateHubSupplyGroupModelProbeEndpoint(groupID int, modelName, endpointMode
 			return err
 		}
 
-		definitions := hubSupplyProbeDefinitionsWithOverrides(channel.Type, []string{modelName}, overrides)
+		definitions, err := hubSupplyProbeDefinitionsForChannelTx(tx, &channel, channel.Type, []string{modelName}, overrides)
+		if err != nil {
+			return err
+		}
 		now := common.GetTimestamp()
 		for _, definition := range definitions {
 			probeMinutes := group.TextProbeMinutes
@@ -509,13 +753,16 @@ func UpdateHubSupplyGroupModelProbeEndpoint(groupID int, modelName, endpointMode
 			definition.ConfigVersion = group.ConfigVersion
 			definition.Status = HubSupplyProbeStatusWaiting
 			definition.NextProbeAt = now + int64(probeMinutes*60)
+			if group.IsAutoProbeDisabled(modelName, channel.Models) {
+				definition.NextProbeAt = 0
+			}
 			definition.CreatedAt = now
 			definition.UpdatedAt = now
 			if err := tx.Create(&definition).Error; err != nil {
 				return err
 			}
 		}
-		return nil
+		return reconcileHubSupplyGroupRouteStateTx(tx, group.Id)
 	})
 }
 
@@ -710,7 +957,7 @@ func recordHubSupplyProbeResultWithLease(targetID int, leaseToken string, succes
 			suspensionReason = HubSupplyProbeSuspensionReasonFailureLimit
 		}
 		nextProbeAt := int64(0)
-		if isCurrent && status != HubSupplyProbeStatusSuspended {
+		if isCurrent && status != HubSupplyProbeStatusSuspended && !group.IsAutoProbeDisabled(target.ModelName, target.ModelName) {
 			nextProbeAt = hubSupplyProbeNextProbeAt(&group, &target, now, consecutiveFailures)
 		}
 		updates := map[string]any{
@@ -822,10 +1069,10 @@ func HubSupplyProbeRecoveryDelaySecondsForRequestPath(requestPath string, consec
 }
 
 // HubSupplyProbeRecoveryDelaySecondsForModelRequest follows the same
-// model-aware endpoint classification used by routing and runtime health.
+// request-path classification used by routing and runtime health.
 func HubSupplyProbeRecoveryDelaySecondsForModelRequest(modelName, requestPath string, consecutiveFailures int) int64 {
 	baseMinutes := HubSupplyGroupDefaultTextProbeMinutes
-	if hubSupplyProbeKindForModelRequest(modelName, requestPath) == HubSupplyProbeKindImage {
+	if HubSupplyProbeKindForRequest(requestPath) == HubSupplyProbeKindImage {
 		baseMinutes = HubSupplyGroupDefaultImageProbeMinutes
 	}
 	return int64(HubSupplyProbeRetryDelayMinutes(baseMinutes, consecutiveFailures) * 60)
@@ -878,10 +1125,11 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 	autoProbeDisabled := make(map[string]struct{})
 	for _, modelName := range group.GetAutoProbeDisabledModels(channel.Models) {
 		autoProbeDisabled[modelName] = struct{}{}
+		probeKinds[modelName] = hubSupplyAutoProbeDisabledModelKinds(modelName, targets)
 	}
 	fullyAvailableCount, availableCount, errorCount, pendingCount, waitingCount := 0, 0, 0, 0, 0
 	for _, modelName := range configuredModels {
-		if _, disabled := autoProbeDisabled[modelName]; disabled {
+		if _, disabled := autoProbeDisabled[modelName]; disabled && hubSupplyModelHasAvailableProbeKind(probeKinds, modelName) {
 			fullyAvailableCount++
 			availableCount++
 			continue
@@ -938,8 +1186,7 @@ func reconcileHubSupplyGroupRouteStateTx(tx *gorm.DB, groupID int) error {
 	}
 	routableModelCount := 0
 	for modelName := range publishedModels {
-		_, probeDisabled := autoProbeDisabled[modelName]
-		if probeDisabled || hubSupplyModelHasAvailableProbeKindForChannel(channel.Id, probeKinds, modelName) {
+		if hubSupplyModelHasAvailableProbeKindForChannel(channel.Id, probeKinds, modelName) {
 			routableModelCount++
 		}
 	}

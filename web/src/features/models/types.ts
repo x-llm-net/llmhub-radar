@@ -41,6 +41,8 @@ export interface Model {
   tags?: string
   vendor_id?: number
   endpoints?: string
+  /** Runtime channel inference; never submitted as persisted metadata. */
+  inferred_endpoints?: string
   status: number
   sync_official: number
   created_time: number

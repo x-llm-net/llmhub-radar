@@ -305,7 +305,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
       meta: { mobileHidden: true },
       cell: ({ row }) => {
         const endpoints = row.getValue('endpoints') as string
-        const endpointArray = formatEndpointsDisplay(endpoints)
+        const endpointArray = formatEndpointsDisplay(
+          endpoints,
+          row.original.inferred_endpoints
+        )
         return (
           <BadgeListCell
             max={3}

@@ -2,8 +2,10 @@ package common
 
 import "github.com/QuantumNous/new-api/constant"
 
-// GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
+// GetEndpointTypesByChannelType provides default endpoint hints for a channel.
+// This is not an exhaustive list of its adapters' protocol conversions.
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
+	_ = modelName
 	var endpointTypes []constant.EndpointType
 	switch channelType {
 	case constant.ChannelTypeJina:
@@ -46,15 +48,75 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			constant.EndpointTypeOpenAIAlphaSearch,
 		}
 	default:
-		if IsOpenAIResponseOnlyModel(modelName) {
-			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}
-		} else {
-			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
-		}
-	}
-	if IsImageGenerationModel(modelName) {
-		// add to first
-		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeImageGeneration}, endpointTypes...)
+		// Protocol selection is based on the channel adapter and the request
+		// endpoint. A model name must never silently switch a channel from
+		// Chat Completions to Responses.
+		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
 	}
 	return endpointTypes
+}
+
+// IsEndpointTypeCompatible reports whether an explicitly declared model
+// endpoint can be attempted through the selected channel adapter. The model
+// name is intentionally absent: endpoint compatibility belongs to the
+// channel/protocol boundary, while model matching is handled by Ability.
+//
+// Used for initial probe hints only, never as a request routing allowlist.
+func IsEndpointTypeCompatible(channelType int, endpointType constant.EndpointType) bool {
+	for _, supported := range GetEndpointTypesByChannelType(channelType, "") {
+		if supported == endpointType {
+			return true
+		}
+	}
+
+	switch endpointType {
+	case constant.EndpointTypeOpenAIResponse:
+		switch channelType {
+		case constant.ChannelTypeOpenAI,
+			constant.ChannelTypeAzure,
+			constant.ChannelTypeOpenAIMax,
+			constant.ChannelTypeGemini,
+			constant.ChannelTypeOpenRouter,
+			constant.ChannelTypeXai,
+			constant.ChannelTypeNewAPI,
+			constant.ChannelTypeSub2API,
+			constant.ChannelTypeCodex:
+			return true
+		}
+	case constant.EndpointTypeOpenAIResponseCompact:
+		switch channelType {
+		case constant.ChannelTypeOpenAI,
+			constant.ChannelTypeAzure,
+			constant.ChannelTypeOpenAIMax,
+			constant.ChannelTypeOpenRouter,
+			constant.ChannelTypeXai,
+			constant.ChannelTypeNewAPI,
+			constant.ChannelTypeSub2API,
+			constant.ChannelTypeCodex:
+			return true
+		}
+	case constant.EndpointTypeImageGeneration:
+		switch channelType {
+		case constant.ChannelTypeOpenAI,
+			constant.ChannelTypeAzure,
+			constant.ChannelTypeOpenAIMax,
+			constant.ChannelTypeOpenRouter,
+			constant.ChannelTypeGemini,
+			constant.ChannelTypeVertexAi,
+			constant.ChannelTypeXai,
+			constant.ChannelTypeSiliconFlow,
+			constant.ChannelTypeVolcEngine,
+			constant.ChannelTypeBaiduV2,
+			constant.ChannelTypeNewAPI,
+			constant.ChannelTypeSub2API:
+			return true
+		}
+	case constant.EndpointTypeGemini, constant.EndpointTypeAnthropic,
+		constant.EndpointTypeEmbeddings, constant.EndpointTypeJinaRerank:
+		switch channelType {
+		case constant.ChannelTypeOpenAI, constant.ChannelTypeAzure, constant.ChannelTypeOpenAIMax:
+			return true
+		}
+	}
+	return false
 }

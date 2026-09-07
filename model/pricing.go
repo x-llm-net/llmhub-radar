@@ -63,7 +63,12 @@ var (
 
 var (
 	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
-	modelSupportEndpointsLock = sync.RWMutex{}
+	// modelExplicitEndpointTypes contains only endpoint declarations from the
+	// models metadata table.  It is intentionally separate from
+	// modelSupportEndpointTypes, which is a model-wide union of all enabled
+	// channel abilities and is therefore not safe for per-channel probing.
+	modelExplicitEndpointTypes = make(map[string][]constant.EndpointType)
+	modelSupportEndpointsLock  = sync.RWMutex{}
 )
 
 func GetPricing() []Pricing {
@@ -83,10 +88,14 @@ func GetPricing() []Pricing {
 func InvalidatePricingCache() {
 	updatePricingLock.Lock()
 	defer updatePricingLock.Unlock()
+	modelSupportEndpointsLock.Lock()
+	defer modelSupportEndpointsLock.Unlock()
 
 	pricingMap = nil
 	vendorsList = nil
 	lastGetPricingTime = time.Time{}
+	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
+	modelExplicitEndpointTypes = make(map[string][]constant.EndpointType)
 }
 
 // GetVendors 返回当前定价接口使用到的供应商信息
@@ -108,6 +117,23 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 		return endpoints
 	}
 	return make([]constant.EndpointType, 0)
+}
+
+// GetModelExplicitEndpointTypes returns only endpoint types explicitly
+// declared in the model metadata.  Unlike GetModelSupportEndpointTypes, this
+// does not include endpoints inferred from other channels' abilities, so it
+// is safe to use when constructing a probe target for one concrete channel.
+func GetModelExplicitEndpointTypes(model string) []constant.EndpointType {
+	if model == "" {
+		return make([]constant.EndpointType, 0)
+	}
+	modelSupportEndpointsLock.RLock()
+	defer modelSupportEndpointsLock.RUnlock()
+	endpoints := modelExplicitEndpointTypes[model]
+	if len(endpoints) == 0 {
+		return make([]constant.EndpointType, 0)
+	}
+	return append([]constant.EndpointType(nil), endpoints...)
 }
 
 func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
@@ -281,6 +307,7 @@ func updatePricing() {
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
+	modelExplicitEndpointsStr := make(map[string][]string)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
 
 	// 先根据已有能力填充原生端点
@@ -302,6 +329,14 @@ func updatePricing() {
 		}
 		var raw map[string]interface{}
 		if err := common.Unmarshal([]byte(meta.Endpoints), &raw); err == nil {
+			for endpointName, value := range raw {
+				switch value.(type) {
+				case string, map[string]interface{}:
+					if !common.StringsContains(modelExplicitEndpointsStr[modelName], endpointName) {
+						modelExplicitEndpointsStr[modelName] = append(modelExplicitEndpointsStr[modelName], endpointName)
+					}
+				}
+			}
 			endpoints := modelSupportEndpointsStr[modelName]
 			for k, v := range raw {
 				switch v.(type) {
@@ -316,6 +351,7 @@ func updatePricing() {
 	}
 
 	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
+	modelExplicitEndpointTypes = make(map[string][]constant.EndpointType)
 	for model, endpoints := range modelSupportEndpointsStr {
 		supportedEndpoints := make([]constant.EndpointType, 0)
 		for _, endpointStr := range endpoints {
@@ -323,6 +359,13 @@ func updatePricing() {
 			supportedEndpoints = append(supportedEndpoints, endpointType)
 		}
 		modelSupportEndpointTypes[model] = supportedEndpoints
+	}
+	for model, endpoints := range modelExplicitEndpointsStr {
+		explicit := make([]constant.EndpointType, 0, len(endpoints))
+		for _, endpointStr := range endpoints {
+			explicit = append(explicit, constant.EndpointType(endpointStr))
+		}
+		modelExplicitEndpointTypes[model] = explicit
 	}
 
 	// 构建全局 supportedEndpointMap（默认 + 自定义覆盖）

@@ -371,6 +371,49 @@ func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T
 	})
 }
 
+func TestDistributeResponsesImageToolUsesTextSupply(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	for _, useCache := range []bool{false, true} {
+		for _, fixedChannel := range []bool{false, true} {
+			t.Run(fmt.Sprintf("cache=%t/fixed=%t", useCache, fixedChannel), func(t *testing.T) {
+				db := setupDistributorServiceTierTestDB(t)
+				const modelName = "mixed-capability-model"
+				provider, channel := createFixedChannelServiceTierFixture(t, db, modelName)
+				require.NoError(t, db.Model(&model.HubSupplyGroup{}).
+					Where("new_api_channel_id = ?", channel.Id).
+					Updates(map[string]any{"tenant_published": true, "published_models": modelName}).Error)
+				common.MemoryCacheEnabled = useCache
+				for _, probeKind := range []string{model.HubSupplyProbeKindText, model.HubSupplyProbeKindImage} {
+					require.NoError(t, db.Model(&model.HubSupplyGroupProbeTarget{}).
+						Where("model_name = ?", modelName).Update("probe_kind", probeKind).Error)
+					model.InitChannelCache()
+					for _, request := range []struct {
+						path      string
+						body      string
+						probeKind string
+					}{
+						{"/v1/responses", `{"model":"mixed-capability-model","input":"Draw a square","tools":[{"type":"image_generation"}]}`, model.HubSupplyProbeKindText},
+						{"/v1/images/generations", `{"model":"mixed-capability-model","prompt":"Draw a square"}`, model.HubSupplyProbeKindImage},
+					} {
+						ctx, recorder := newFixedChannelServiceTierContext(channel.Id, modelName, request.path, request.body, provider.Id)
+						if !fixedChannel {
+							delete(ctx.Keys, string(constant.ContextKeyTokenSpecificChannelId))
+						}
+						Distribute()(ctx)
+						if request.probeKind != probeKind {
+							assertServiceTierUnavailable(t, recorder)
+							continue
+						}
+						require.False(t, ctx.IsAborted(), "%s with %s supply: %s", request.path, probeKind, recorder.Body.String())
+						assert.Equal(t, channel.Id, common.GetContextKeyInt(ctx, constant.ContextKeyChannelId))
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestSetupContextRejectsLegacyProviderMidjourneyChannel(t *testing.T) {
 	db := setupDistributorServiceTierTestDB(t)
 	provider := &model.HubProvider{

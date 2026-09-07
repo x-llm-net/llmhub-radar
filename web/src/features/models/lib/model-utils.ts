@@ -101,10 +101,29 @@ export function parseEndpoints(
  * Format endpoints to display
  */
 export function formatEndpointsDisplay(
-  endpoints: string | undefined
+  endpoints: string | undefined,
+  inferredEndpoints?: string | undefined
 ): string[] {
   const parsed = parseEndpoints(endpoints)
-  if (!parsed) return []
+  // A non-empty persisted value is authoritative, including an explicit
+  // empty object or null. Only an absent value may fall back to runtime
+  // inference supplied by the API.
+  if (endpoints && endpoints.trim() !== '') {
+    if (!parsed) return []
+  } else {
+    const inferred = parseEndpoints(inferredEndpoints)
+    if (inferred) {
+      return formatParsedEndpoints(inferred)
+    }
+    return []
+  }
+
+  return formatParsedEndpoints(parsed)
+}
+
+function formatParsedEndpoints(
+  parsed: Record<string, unknown> | unknown[]
+): string[] {
 
   if (typeof parsed === 'object' && !Array.isArray(parsed)) {
     return Object.keys(parsed)

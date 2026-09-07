@@ -208,7 +208,12 @@ export type HubSupplyProbeEndpointMode =
   | 'auto'
   | 'openai'
   | 'openai-response'
+  | 'openai-response-compact'
+  | 'anthropic'
+  | 'gemini'
+  | 'jina-rerank'
   | 'image-generation'
+  | 'embeddings'
 
 export type HubSupplyModelProbe = {
   model_name: string

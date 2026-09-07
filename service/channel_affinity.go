@@ -789,6 +789,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			ttlSeconds = setting.DefaultTTLSeconds
 		}
 		routingScope := []string(nil)
+		probeKind := model.HubSupplyProbeKindForRequest(path)
 		if policy := GetHubTokenRoutingPolicy(c); policy != nil {
 			routingScope = []string{"hub", policy.Mode, strconv.Itoa(policy.ProviderID),
 				strconv.Itoa(common.GetContextKeyInt(c, constant.ContextKeyTenantId))}
@@ -797,6 +798,20 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 				if err == nil {
 					routingScope = append(routingScope, affinityFingerprint(string(encoded)))
 				}
+			}
+			// Keep the established text affinity key so existing cached
+			// preferences continue to work. Image requests need a separate
+			// namespace because the same model/key may be used by both APIs.
+			if probeKind == model.HubSupplyProbeKindImage {
+				routingScope = append(routingScope, "probe="+probeKind)
+			}
+		} else if IsHubServiceTierRequest(c) {
+			// Service-tier affinity is tenant-scoped. Preserve the text key
+			// shape introduced for that isolation and only add a capability
+			// suffix for image requests.
+			routingScope = []string{"hub", "service-tier", strconv.Itoa(common.GetContextKeyInt(c, constant.ContextKeyTenantId))}
+			if probeKind == model.HubSupplyProbeKindImage {
+				routingScope = append(routingScope, "probe="+probeKind)
 			}
 		}
 		cacheKeySuffix := buildChannelAffinityCacheKeySuffix(rule, modelName, usingGroup, affinityValue, routingScope...)

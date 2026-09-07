@@ -117,13 +117,8 @@ func buildHubRoutingRuntimeSignals(nowTs int64) ([]model.HubRoutingRuntimeSignal
 	return signals, nil
 }
 
-func hubRoutingRuntimeProbeKind(modelName, endpointType string) string {
+func hubRoutingRuntimeProbeKind(_ string, endpointType string) string {
 	if endpointType == string(constant.EndpointTypeImageGeneration) {
-		return model.HubSupplyProbeKindImage
-	}
-	if common.IsImageGenerationModel(modelName) &&
-		(endpointType == string(constant.EndpointTypeOpenAIResponse) ||
-			endpointType == string(constant.EndpointTypeOpenAIResponseCompact)) {
 		return model.HubSupplyProbeKindImage
 	}
 	return model.HubSupplyProbeKindText

@@ -132,12 +132,24 @@ function summarizeProbeError(error: string) {
 function endpointLabel(endpoint: HubSupplyProbeEndpoint) {
   const endpointType = endpoint.resolved_endpoint_type || endpoint.endpoint_type
   switch (endpointType) {
+    case 'openai':
+      return 'Chat endpoint'
     case 'openai-response':
       return 'Responses endpoint'
+    case 'openai-response-compact':
+      return 'Responses compact endpoint'
+    case 'anthropic':
+      return 'Anthropic endpoint'
+    case 'gemini':
+      return 'Gemini endpoint'
+    case 'jina-rerank':
+      return 'Rerank endpoint'
     case 'image-generation':
       return 'Image endpoint'
+    case 'embeddings':
+      return 'Embeddings endpoint'
     default:
-      return 'Chat endpoint'
+      return endpointType || 'Unknown endpoint'
   }
 }
 
@@ -148,7 +160,12 @@ const endpointModeOptions: Array<{
   { value: 'auto', label: 'Auto detect endpoint' },
   { value: 'openai', label: 'Chat endpoint' },
   { value: 'openai-response', label: 'Responses endpoint' },
+  { value: 'openai-response-compact', label: 'Responses compact endpoint' },
+  { value: 'anthropic', label: 'Anthropic endpoint' },
+  { value: 'gemini', label: 'Gemini endpoint' },
+  { value: 'jina-rerank', label: 'Rerank endpoint' },
   { value: 'image-generation', label: 'Image endpoint' },
+  { value: 'embeddings', label: 'Embeddings endpoint' },
 ]
 
 function ProbeStatus(props: { model: HubSupplyModelProbe; running?: boolean }) {

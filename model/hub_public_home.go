@@ -267,9 +267,7 @@ func GetHubPublicHomeForTenant(now int64, tenantID int) (*HubPublicHome, error) 
 			modelTargets := targetsByGroupModel[hubProviderPublicGroupModelKey{groupID: group.Id, modelName: modelName}]
 			autoProbeDisabledKinds := map[string]bool(nil)
 			if group.IsAutoProbeDisabled(modelName, group.ChannelModels) {
-				autoProbeDisabledKinds = hubSupplyAutoProbeDisabledModelKinds(
-					group.ChannelType, modelName, group.GetProbeEndpointOverrides(group.ChannelModels),
-				)
+				autoProbeDisabledKinds = hubSupplyAutoProbeDisabledModelKinds(modelName, modelTargets)
 			}
 			online := group.ChannelStatus == common.ChannelStatusEnabled && hubSupplyPublicModelRoutable(
 				group.NewAPIChannelId,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 )
 
 type hubTokenRoutingChannelRow struct {
@@ -43,7 +44,12 @@ func getHubTokenRoutingChannels(providerID int, channelIDs []int) ([]HubTokenRou
 		modelFamilies := make([]string, 0)
 		for _, modelName := range models {
 			family := ClassifyHubPublicModelFamily(modelName)
-			if common.IsImageGenerationModel(modelName) {
+			// Image is a capability label, so only expose it when the model's
+			// explicit endpoint metadata declares image-generation support. A
+			// model name such as "gpt-image-*" is not sufficient: one channel
+			// can carry text and image models together, and vendors may choose
+			// arbitrary names for image models.
+			if modelSupportsExplicitImageEndpoint(modelName) {
 				family = "image"
 			}
 			if _, exists := familySet[family]; !exists {
@@ -58,6 +64,15 @@ func getHubTokenRoutingChannels(providerID int, channelIDs []int) ([]HubTokenRou
 		})
 	}
 	return channels, nil
+}
+
+func modelSupportsExplicitImageEndpoint(modelName string) bool {
+	for _, endpoint := range GetModelSupportEndpointTypes(modelName) {
+		if endpoint == constant.EndpointTypeImageGeneration {
+			return true
+		}
+	}
+	return false
 }
 
 func GetHubTokenRoutingOptions(providerID int) (*HubTokenRoutingOptions, error) {

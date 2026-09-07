@@ -245,11 +245,11 @@ func GetHubProviderChannelProbes(c *gin.Context) {
 			}
 		}
 		switch {
-		case !autoProbeEnabled:
-			item.Status = model.HubSupplyProbeStatusSkipped
 		case hasTesting:
 			item.Status = model.HubSupplyProbeStatusTesting
 			running = true
+		case !autoProbeEnabled:
+			item.Status = model.HubSupplyProbeStatusSkipped
 		case hasPending:
 			item.Status = model.HubSupplyProbeStatusPending
 			running = true

@@ -354,6 +354,13 @@ func TestPremiumMultiplierSupplyIsPublishedOnlyToHubTokenRouting(t *testing.T) {
 		Status:                  HubSupplyGroupStatusAvailable,
 	}
 	require.NoError(t, DB.Create(&supplyGroup).Error)
+	target := HubSupplyGroupProbeTarget{
+		GroupId: supplyGroup.Id, ConfigVersion: supplyGroup.ConfigVersion, ModelName: modelName,
+		EndpointType: string(constant.EndpointTypeOpenAI), ProbeKind: HubSupplyProbeKindText,
+		Status: HubSupplyProbeStatusAvailable, LastSuccessAt: common.GetTimestamp(),
+	}
+	require.NoError(t, DB.Create(&target).Error)
+	t.Cleanup(func() { DB.Delete(&HubSupplyGroupProbeTarget{}, target.Id) })
 	require.NoError(t, channel.UpdateAbilities(nil))
 	require.NoError(t, RefreshHubSupplyPricingCache())
 	t.Cleanup(func() {

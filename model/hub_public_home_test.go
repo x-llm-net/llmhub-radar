@@ -214,9 +214,14 @@ func TestHubPublicHomeFiltersBlacklistedModelsAndHydratesUploadedLogo(t *testing
 	)
 }
 
-func TestHubSupplyPublicModelRoutableAllowsAutoProbeDisabledModel(t *testing.T) {
+func TestHubSupplyPublicModelRoutableRequiresSuccessBeforeDisablingProbe(t *testing.T) {
 	resetHubRoutingSnapshotsForTest(t)
-	kinds := hubSupplyAutoProbeDisabledModelKinds(constant.ChannelTypeOpenAI, "gpt-internal", nil)
+	kinds := hubSupplyAutoProbeDisabledModelKinds("gpt-internal", nil)
+	assert.Empty(t, kinds)
+	assert.False(t, hubSupplyPublicModelRoutable(11, "gpt-internal", kinds, nil))
+	kinds = hubSupplyAutoProbeDisabledModelKinds("gpt-internal", []HubSupplyGroupProbeTarget{
+		{ModelName: "gpt-internal", ProbeKind: HubSupplyProbeKindText, LastSuccessAt: 1},
+	})
 	assert.Equal(t, map[string]bool{HubSupplyProbeKindText: true}, kinds)
 	assert.True(t, hubSupplyPublicModelRoutable(11, "gpt-internal", kinds, nil))
 }
@@ -229,7 +234,9 @@ func TestHubSupplyPublicModelRoutableDoesNotUseFakeImageFallback(t *testing.T) {
 			RealHealthState: HubRoutingRealHealthQuarantined,
 		},
 	})
-	kinds := hubSupplyAutoProbeDisabledModelKinds(constant.ChannelTypeOpenAI, "gpt-internal", nil)
+	kinds := hubSupplyAutoProbeDisabledModelKinds("gpt-internal", []HubSupplyGroupProbeTarget{
+		{ModelName: "gpt-internal", ProbeKind: HubSupplyProbeKindText, LastSuccessAt: 1},
+	})
 	assert.False(t, hubSupplyPublicModelRoutable(13, "gpt-internal", kinds, nil))
 }
 

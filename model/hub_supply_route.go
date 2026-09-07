@@ -11,7 +11,23 @@ import (
 type hubSupplyModelProbeKinds map[string]map[string]bool
 type hubSupplyChannelProbeKinds map[int]hubSupplyModelProbeKinds
 
-func hubSupplyProbeKindForRequestPath(requestPath string) string {
+// NormalizeHubSupplyProbeKind accepts the two routing health dimensions.
+// Unknown values are intentionally rejected so callers fall back to the
+// request path instead of silently creating a third health pool.
+func NormalizeHubSupplyProbeKind(probeKind string) string {
+	switch strings.ToLower(strings.TrimSpace(probeKind)) {
+	case HubSupplyProbeKindText:
+		return HubSupplyProbeKindText
+	case HubSupplyProbeKindImage:
+		return HubSupplyProbeKindImage
+	default:
+		return ""
+	}
+}
+
+// HubSupplyProbeKindForRequest keeps direct Images health separate from other
+// requests. Tools executed inside Responses do not select another health pool.
+func HubSupplyProbeKindForRequest(requestPath string) string {
 	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
 	if strings.HasPrefix(requestPath, "/v1/images/generations") ||
 		strings.HasPrefix(requestPath, "/v1/images/edits") {
@@ -20,27 +36,18 @@ func hubSupplyProbeKindForRequestPath(requestPath string) string {
 	return HubSupplyProbeKindText
 }
 
-// hubSupplyProbeKindForModelRequest keeps the request-path distinction for
-// ordinary models while recognizing image models sent through the Responses
-// API. Codex image generation uses /v1/responses, even though its supply is
-// probed through the image-generation endpoint.
-func hubSupplyProbeKindForModelRequest(modelName, requestPath string) string {
-	probeKind := hubSupplyProbeKindForRequestPath(requestPath)
-	if probeKind == HubSupplyProbeKindImage {
-		return probeKind
-	}
-	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
-	if common.IsImageGenerationModel(modelName) &&
-		(requestPath == "" || strings.HasPrefix(requestPath, "/v1/responses")) {
-		return HubSupplyProbeKindImage
-	}
-	return probeKind
+// Model names do not determine the request protocol.
+func hubSupplyProbeKindForModelRequest(_ string, requestPath string) string {
+	return HubSupplyProbeKindForRequest(requestPath)
 }
 
 func buildHubSupplyModelProbeKinds(targets []HubSupplyGroupProbeTarget) hubSupplyModelProbeKinds {
 	result := make(hubSupplyModelProbeKinds)
 	seen := make(map[string]map[string]bool)
 	for _, target := range targets {
+		if target.LastSuccessAt <= 0 && target.Status != HubSupplyProbeStatusAvailable {
+			continue
+		}
 		if result[target.ModelName] == nil {
 			result[target.ModelName] = make(map[string]bool)
 			seen[target.ModelName] = make(map[string]bool)
@@ -90,11 +97,11 @@ func hubSupplyProbeKindAvailable(kinds hubSupplyModelProbeKinds, modelName, prob
 	return hubSupplyModelProbeKindsForModel(kinds, modelName)[probeKind]
 }
 
-func hubSupplyAutoProbeDisabledModelKinds(channelType int, modelName string, overrides map[string]string) map[string]bool {
+func hubSupplyAutoProbeDisabledModelKinds(modelName string, targets []HubSupplyGroupProbeTarget) map[string]bool {
 	kinds := make(map[string]bool)
-	for _, definition := range hubSupplyProbeDefinitionsWithOverrides(channelType, []string{modelName}, overrides) {
-		if strings.TrimSpace(definition.ProbeKind) != "" {
-			kinds[definition.ProbeKind] = true
+	for _, target := range targets {
+		if target.ModelName == modelName && (target.LastSuccessAt > 0 || target.Status == HubSupplyProbeStatusAvailable) {
+			kinds[target.ProbeKind] = true
 		}
 	}
 	return kinds
@@ -128,29 +135,16 @@ func hubSupplyChannelSupportsRequest(
 	if !isSupplyChannel {
 		return true
 	}
-	probeKind := hubSupplyProbeKindForModelRequest(modelName, requestPath)
+	probeKind := HubSupplyProbeKindForRequest(requestPath)
+	if _, verified := hubSupplyModelProbeKindsForModel(modelKinds, modelName)[probeKind]; !verified {
+		return false
+	}
 	if hubSupplyProbeKindAvailable(
 		modelKinds,
 		modelName,
 		probeKind,
 	) {
 		return true
-	}
-	// An explicit endpoint override may intentionally probe an image-named
-	// model through a text-compatible endpoint. The configured probe kind is
-	// authoritative for that channel, so preserve that existing compatibility
-	// when no image probe target exists.
-	modelProbeKinds := hubSupplyModelProbeKindsForModel(modelKinds, modelName)
-	_, hasImageProbe := modelProbeKinds[HubSupplyProbeKindImage]
-	_, hasTextProbe := modelProbeKinds[HubSupplyProbeKindText]
-	if probeKind == HubSupplyProbeKindImage && common.IsImageGenerationModel(modelName) &&
-		!hasImageProbe && hasTextProbe {
-		textDecision := GetHubRoutingDecision(channelID, modelName, "/v1/chat/completions")
-		if !textDecision.HardUnavailable &&
-			(textDecision.ProbeRoutable ||
-				(textDecision.HasRuntimeSignal && textDecision.RuntimeSignal.RealHealthState == HubRoutingRealHealthHealthy)) {
-			return true
-		}
 	}
 	return decision.HasRuntimeSignal && decision.RuntimeSignal.RealHealthState == HubRoutingRealHealthHealthy
 }
@@ -202,20 +196,10 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 
 	groupByID := make(map[int]HubSupplyGroup, len(groups))
 	groupIDs := make([]int, 0, len(groups))
-	groupChannelIDs := make([]int, 0, len(groups))
 	for _, group := range groups {
 		groupByID[group.Id] = group
 		groupIDs = append(groupIDs, group.Id)
-		groupChannelIDs = append(groupChannelIDs, group.NewAPIChannelId)
 		result[group.NewAPIChannelId] = make(hubSupplyModelProbeKinds)
-	}
-	channels := make([]Channel, 0, len(groups))
-	if err := query.Select("id", "type", "models").Where("id IN ?", groupChannelIDs).Find(&channels).Error; err != nil {
-		return nil, nil, err
-	}
-	channelsByID := make(map[int]Channel, len(channels))
-	for _, channel := range channels {
-		channelsByID[channel.Id] = channel
 	}
 
 	targets := make([]HubSupplyGroupProbeTarget, 0)
@@ -230,9 +214,13 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 			continue
 		}
 		targetsByChannel[group.NewAPIChannelId] = append(targetsByChannel[group.NewAPIChannelId], target)
+		routable := hubSupplyProbeTargetRoutable(target)
+		if group.IsAutoProbeDisabled(target.ModelName, target.ModelName) {
+			routable = target.LastSuccessAt > 0 || target.Status == HubSupplyProbeStatusAvailable
+		}
 		probeSignals = append(probeSignals, HubRoutingProbeSignal{
 			ChannelID: group.NewAPIChannelId, ModelName: target.ModelName, ProbeKind: target.ProbeKind,
-			Routable: hubSupplyProbeTargetRoutable(target), ConsecutiveFailures: target.ConsecutiveFailures,
+			Routable: routable, ConsecutiveFailures: target.ConsecutiveFailures,
 			LastFirstTokenMs: target.LastFirstTokenMs,
 		})
 	}
@@ -241,15 +229,8 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 	}
 	for _, group := range groups {
 		modelKinds := result[group.NewAPIChannelId]
-		channel := channelsByID[group.NewAPIChannelId]
-		overrides := group.GetProbeEndpointOverrides(channel.Models)
 		for _, modelName := range normalizeHubSupplyModelNames(group.AutoProbeDisabledModels) {
-			modelKinds[modelName] = hubSupplyAutoProbeDisabledModelKinds(channel.Type, modelName, overrides)
-			for probeKind := range modelKinds[modelName] {
-				probeSignals = append(probeSignals, HubRoutingProbeSignal{
-					ChannelID: group.NewAPIChannelId, ModelName: modelName, ProbeKind: probeKind, Routable: true,
-				})
-			}
+			modelKinds[modelName] = hubSupplyAutoProbeDisabledModelKinds(modelName, targetsByChannel[group.NewAPIChannelId])
 		}
 	}
 	return result, probeSignals, nil

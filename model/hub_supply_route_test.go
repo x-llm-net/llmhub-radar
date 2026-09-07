@@ -8,28 +8,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHubSupplyProbeKindForModelRequest(t *testing.T) {
+func TestHubSupplyProbeKindForRequestUsesPath(t *testing.T) {
 	tests := []struct {
 		name     string
-		model    string
 		path     string
 		expected string
 	}{
-		{name: "images endpoint", model: "gpt-5", path: "/v1/images/generations", expected: HubSupplyProbeKindImage},
-		{name: "codex image responses", model: "gpt-image-2", path: "/v1/responses", expected: HubSupplyProbeKindImage},
-		{name: "codex image responses compact", model: "gpt-image-2", path: "/v1/responses/compact", expected: HubSupplyProbeKindImage},
-		{name: "image model without path", model: "gpt-image-2", path: "", expected: HubSupplyProbeKindImage},
-		{name: "text responses", model: "gpt-5", path: "/v1/responses", expected: HubSupplyProbeKindText},
-		{name: "text chat", model: "claude-sonnet-5", path: "/v1/chat/completions", expected: HubSupplyProbeKindText},
+		{name: "images endpoint", path: "/v1/images/generations", expected: HubSupplyProbeKindImage},
+		{name: "images edits", path: "/v1/images/edits", expected: HubSupplyProbeKindImage},
+		{name: "responses compact", path: "/v1/responses/compact", expected: HubSupplyProbeKindText},
+		{name: "messages", path: "/v1/messages", expected: HubSupplyProbeKindText},
+		{name: "gemini", path: "/v1beta/models/example:generateContent", expected: HubSupplyProbeKindText},
+		{name: "text responses", path: "/v1/responses", expected: HubSupplyProbeKindText},
+		{name: "text chat", path: "/v1/chat/completions", expected: HubSupplyProbeKindText},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, hubSupplyProbeKindForModelRequest(tt.model, tt.path))
+			assert.Equal(t, tt.expected, HubSupplyProbeKindForRequest(tt.path))
 		})
 	}
 }
 
-func TestHubSupplyRoutingUsesImageProbeForCodexImageResponses(t *testing.T) {
+func TestHubSupplyRoutingKeepsDirectImagesHealthSeparate(t *testing.T) {
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
 	t.Cleanup(func() { common.MemoryCacheEnabled = originalMemoryCacheEnabled })
@@ -45,7 +45,7 @@ func TestHubSupplyRoutingUsesImageProbeForCodexImageResponses(t *testing.T) {
 		PublishHubRoutingRuntimeSignals(time.Now().Unix(), nil)
 	})
 
-	decision := GetHubRoutingDecision(91, "gpt-image-2", "/v1/responses")
+	decision := GetHubRoutingDecision(91, "gpt-image-2", "/v1/images/generations")
 	assert.True(t, decision.HasProbeSignal)
 	assert.True(t, decision.ProbeRoutable)
 	assert.True(t, decision.HasRuntimeSignal)
@@ -55,16 +55,17 @@ func TestHubSupplyRoutingUsesImageProbeForCodexImageResponses(t *testing.T) {
 	availability := hubSupplyChannelProbeKinds{
 		91: {"gpt-image-2": {HubSupplyProbeKindImage: true}},
 	}
-	assert.True(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/responses"))
+	assert.True(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/images/generations"))
+	assert.False(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/responses"))
 	assert.False(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/chat/completions"))
 	PublishHubRoutingRuntimeSignals(now, nil)
 	textOnly := hubSupplyChannelProbeKinds{
 		91: {"gpt-image-2": {HubSupplyProbeKindText: true}},
 	}
-	assert.False(t, hubSupplyChannelSupportsRequest(textOnly, 91, "gpt-image-2", "/v1/responses"))
+	assert.False(t, hubSupplyChannelSupportsRequest(textOnly, 91, "gpt-image-2", "/v1/images/generations"))
 }
 
-func TestHubSupplyRoutingHonorsManualTextProbeOverrideForImageModel(t *testing.T) {
+func TestHubSupplyRoutingDoesNotInferImageHealthFromModelName(t *testing.T) {
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
 	t.Cleanup(func() { common.MemoryCacheEnabled = originalMemoryCacheEnabled })
@@ -79,7 +80,7 @@ func TestHubSupplyRoutingHonorsManualTextProbeOverrideForImageModel(t *testing.T
 	assert.True(t, hubSupplyChannelSupportsRequest(availability, 92, "gpt-image-2", "/v1/responses"))
 }
 
-func TestHubSupplyProbeRecoveryDelayUsesModelAwareProbeKind(t *testing.T) {
-	assert.Equal(t, 30*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("gpt-image-2", "/v1/responses", 30)))
-	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("gpt-5", "/v1/responses", 10)))
+func TestHubSupplyProbeRecoveryDelayUsesRequestPath(t *testing.T) {
+	assert.Equal(t, 30*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("custom-image", "/v1/images/generations", 30)))
+	assert.Equal(t, 10*60, int(HubSupplyProbeRecoveryDelaySecondsForModelRequest("gpt-image-2", "/v1/responses", 10)))
 }

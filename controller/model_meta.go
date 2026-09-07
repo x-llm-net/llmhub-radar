@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +11,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// refreshModelMetadataRouting updates the public pricing cache and the
+// provider-owned probe target shape after a model metadata mutation. Keep the
+// mutation successful even if one unrelated supply group cannot be reconciled;
+// the error is logged with context and the cache refresh still runs inside the
+// model-layer helper.
+func refreshModelMetadataRouting() {
+	if err := model.RefreshModelMetadataRouting(); err != nil {
+		common.SysError("failed to reconcile hub supply probe targets after model metadata update: " + err.Error())
+	}
+}
 
 // GetAllModelsMeta 获取模型列表（分页）
 func GetAllModelsMeta(c *gin.Context) {
@@ -110,7 +120,7 @@ func CreateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.RefreshPricing()
+	refreshModelMetadataRouting()
 	common.ApiSuccess(c, &m)
 }
 
@@ -149,7 +159,7 @@ func UpdateModelMeta(c *gin.Context) {
 			return
 		}
 	}
-	model.RefreshPricing()
+	refreshModelMetadataRouting()
 	common.ApiSuccess(c, &m)
 }
 
@@ -165,7 +175,7 @@ func DeleteModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.RefreshPricing()
+	refreshModelMetadataRouting()
 	common.ApiSuccess(c, nil)
 }
 
@@ -199,11 +209,13 @@ func enrichModels(models []*model.Model) {
 		chs := channelsByModel[name]
 		for _, idx := range indices {
 			mm := models[idx]
+			// Keep inferred capabilities separate from the persisted metadata.
+			// The detail form submits Endpoints back to the API, so putting a
+			// cache-derived value there would silently turn an inference into a
+			// user declaration on the next save.
+			mm.InferredEndpoints = ""
 			if mm.Endpoints == "" {
-				eps := model.GetModelSupportEndpointTypes(mm.ModelName)
-				if b, err := json.Marshal(eps); err == nil {
-					mm.Endpoints = string(b)
-				}
+				mm.InferredEndpoints = marshalInferredEndpoints(model.GetModelSupportEndpointTypes(mm.ModelName))
 			}
 			mm.BoundChannels = chs
 			mm.EnableGroups = model.GetModelEnableGroups(mm.ModelName)
@@ -284,6 +296,7 @@ func enrichModels(models []*model.Model) {
 	// 6) 回填每个规则模型的并集信息
 	for _, idx := range ruleIndices {
 		mm := models[idx]
+		mm.InferredEndpoints = ""
 
 		// 端点并集 -> 序列化
 		if es, ok := endpointSetByIdx[idx]; ok && mm.Endpoints == "" {
@@ -291,9 +304,7 @@ func enrichModels(models []*model.Model) {
 			for et := range es {
 				eps = append(eps, et)
 			}
-			if b, err := json.Marshal(eps); err == nil {
-				mm.Endpoints = string(b)
-			}
+			mm.InferredEndpoints = marshalInferredEndpoints(eps)
 		}
 
 		// 分组并集
@@ -336,4 +347,22 @@ func enrichModels(models []*model.Model) {
 		mm.MatchedModels = names
 		mm.MatchedCount = len(names)
 	}
+}
+
+// marshalInferredEndpoints serializes runtime endpoint inference for API
+// consumers without changing the persisted model metadata. Sorting keeps the
+// response stable even when the source is a map-backed union.
+func marshalInferredEndpoints(endpoints []constant.EndpointType) string {
+	if len(endpoints) == 0 {
+		return ""
+	}
+	copyEndpoints := append([]constant.EndpointType(nil), endpoints...)
+	sort.Slice(copyEndpoints, func(i, j int) bool {
+		return string(copyEndpoints[i]) < string(copyEndpoints[j])
+	})
+	b, err := common.Marshal(copyEndpoints)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
