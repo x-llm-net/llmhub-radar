@@ -16,20 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  Check,
-  Download,
-  Laptop,
-  ExternalLink,
-  Image,
-  MousePointerClick,
-  RefreshCw,
-} from 'lucide-react'
+import { Check, Laptop, ExternalLink, MousePointerClick } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent } from '@/components/ui/card'
-import { getServerAddress } from '@/features/keys/lib/server-address'
 
 function GuideStep(props: {
   number: string
@@ -197,112 +187,6 @@ export function DesktopGuide() {
             )}
           </p>
         </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-export function ImageGenerationGuide() {
-  const { t } = useTranslation()
-  const skillDownloadUrl = `${getServerAddress()}/downloads/xllm-imagegen.zip`
-  const installPrompt = t(
-    'Please download and install the X-LLM image generation capability from {{url}}. You may download the ZIP, extract the xllm-imagegen folder, and install it into the Codex skills directory. Ask me for confirmation before writing files if needed. After installation, tell me when it is ready.',
-    { url: skillDownloadUrl }
-  )
-
-  return (
-    <Card>
-      <CardContent className='space-y-6 p-5 md:p-6'>
-        <div className='flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between'>
-          <div className='flex min-w-0 flex-1 items-start gap-3'>
-            <div className='bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg'>
-              <Image className='size-4' aria-hidden='true' />
-            </div>
-            <div className='space-y-1'>
-              <h3 className='text-sm font-semibold'>
-                {t('Recommended: generate images in Codex')}
-              </h3>
-              <p className='text-muted-foreground text-sm leading-6'>
-                {t(
-                  'Install the image capability once, then use a normal sentence to generate or edit images. No separate API key is required.'
-                )}
-              </p>
-            </div>
-          </div>
-          <div className='flex w-full shrink-0 flex-col gap-2 lg:w-auto lg:flex-row'>
-            <CopyButton
-              value={installPrompt}
-              variant='default'
-              size='default'
-              className='w-full gap-2 lg:w-auto'
-              tooltip={t('Copy installation prompt')}
-            >
-              {t('Copy installation prompt')}
-            </CopyButton>
-            <a
-              href={skillDownloadUrl}
-              download
-              className='border-border hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors lg:w-auto'
-            >
-              <Download className='size-4' aria-hidden='true' />
-              {t('Direct download')}
-            </a>
-          </div>
-        </div>
-
-        <div className='border-border/70 bg-foreground text-background overflow-hidden rounded-xl border'>
-          <div className='border-background/15 flex items-center justify-between gap-3 border-b px-4 py-3'>
-            <p className='text-background/70 text-xs font-semibold tracking-wider uppercase'>
-              {t('Copy this prompt to Codex')}
-            </p>
-          </div>
-          <p className='break-words p-4 text-sm leading-6 [overflow-wrap:anywhere]'>
-            {installPrompt}
-          </p>
-        </div>
-
-        <div className='grid gap-5 md:grid-cols-2'>
-          <GuideStep number='1' title={t('Confirm the installation')}>
-            {t(
-              'Codex will download and install the capability. Approve the download or file-writing confirmation when Codex asks.'
-            )}
-          </GuideStep>
-          <GuideStep number='2' title={t('Restart Codex and create an image')}>
-            {t(
-              'After installation, restart Codex and say: Use xllm-imagegen to create an image of ... Then add the subject, style, size, and any text you need.'
-            )}
-          </GuideStep>
-        </div>
-
-        <div className='grid gap-3 sm:grid-cols-2'>
-          <div className='border-border/70 bg-muted/25 rounded-xl border p-4'>
-            <p className='text-muted-foreground mb-2 text-xs font-semibold tracking-wider uppercase'>
-              {t('Example prompt')}
-            </p>
-            <p className='text-sm leading-6'>
-              {t(
-                'Use xllm-imagegen to create a clean technology illustration for a homepage, 16:9, dark background, no extra words.'
-              )}
-            </p>
-          </div>
-          <div className='border-border/70 bg-muted/25 rounded-xl border p-4'>
-            <p className='text-muted-foreground mb-2 flex items-center gap-2 text-xs font-semibold tracking-wider uppercase'>
-              <RefreshCw className='size-3.5' aria-hidden='true' />
-              {t('Edit an existing image')}
-            </p>
-            <p className='text-sm leading-6'>
-              {t(
-                'Attach an image in Codex and say what to change, such as: keep the layout, replace the background with a bright studio scene.'
-              )}
-            </p>
-          </div>
-        </div>
-
-        <p className='text-muted-foreground border-border/70 border-t pt-5 text-xs leading-5'>
-          {t(
-            'The installation prompt uses the current site address. The package contains instructions and a helper script only; it does not contain your API key. It uses the provider already configured in Codex. Image generation must also be supported by the selected model and route.'
-          )}
-        </p>
       </CardContent>
     </Card>
   )
