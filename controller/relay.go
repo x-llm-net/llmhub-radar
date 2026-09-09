@@ -198,6 +198,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
 		RequestPath: c.Request.URL.Path,
+		ProbeKind:   common.GetContextKeyString(c, constant.ContextKeyHubRequestProbeKind),
 		Retry:       common.GetPointer(0),
 	}
 	relayInfo.RetryIndex = 0
@@ -729,6 +730,7 @@ func RelayTask(c *gin.Context) {
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
 		RequestPath: c.Request.URL.Path,
+		ProbeKind:   common.GetContextKeyString(c, constant.ContextKeyHubRequestProbeKind),
 		Retry:       common.GetPointer(0),
 	}
 
@@ -906,8 +908,9 @@ func taskRelayMaxRetry(retryParam *service.RetryParam, channelLocked bool) int {
 
 func setupLockedTaskChannel(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel, snapshot model.HubSupplyPricingSnapshot) *taskdto.TaskError {
 	if policy := service.GetHubTokenRoutingPolicy(c); policy != nil {
-		preferred := model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, false)
-		if !preferred && !model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, true) {
+		probeKind := common.GetContextKeyString(c, constant.ContextKeyHubRequestProbeKind)
+		preferred := model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, false, probeKind)
+		if !preferred && !model.IsChannelEnabledForHubTokenPolicySnapshot(policy, info.OriginModelName, c.Request.URL.Path, snapshot, true, probeKind) {
 			return taskErrorFromChannelSelection(c, newServiceTierUnavailableError(
 				c,
 				errors.New("the channel of the origin task does not satisfy the token routing policy"),

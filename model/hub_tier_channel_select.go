@@ -344,8 +344,8 @@ func selectHubTierProviderChannel(candidates []hubTierChannelCandidate) int {
 	return targets[len(targets)-1].ChannelID
 }
 
-func decorateHubTierCandidateWithRuntimeHealth(candidate hubTierChannelCandidate, modelName, requestPath string) hubTierChannelCandidate {
-	decision := GetHubRoutingDecision(candidate.ChannelID, modelName, requestPath)
+func decorateHubTierCandidateWithRuntimeHealth(candidate hubTierChannelCandidate, modelName, requestPath string, probeKind ...string) hubTierChannelCandidate {
+	decision := GetHubRoutingDecision(candidate.ChannelID, modelName, requestPath, probeKind...)
 	candidate.AvailabilityFactorBps = decision.AvailabilityFactorBps
 	candidate.LatencyFactorBps = decision.LatencyFactorBps
 	candidate.HardUnavailable = decision.HardUnavailable

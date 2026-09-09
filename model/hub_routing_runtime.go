@@ -142,26 +142,26 @@ func PublishHubRoutingProbeSignals(signals []HubRoutingProbeSignal) {
 	hubRoutingProbeSnapshotValue.Store(published)
 }
 
-func GetHubRoutingRuntimeSignal(channelID int, modelName, requestPath string) (HubRoutingRuntimeSignal, bool) {
+func GetHubRoutingRuntimeSignal(channelID int, modelName, requestPath string, explicitProbeKind ...string) (HubRoutingRuntimeSignal, bool) {
 	snapshot := hubRoutingRuntimeSnapshotValue.Load()
 	if snapshot == nil || snapshot.generatedAt <= 0 || time.Now().Unix()-snapshot.generatedAt > HubRoutingRuntimeSnapshotMaxAgeSeconds {
 		return HubRoutingRuntimeSignal{}, false
 	}
-	signal, ok := snapshot.signals[newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForModelRequest(modelName, requestPath))]
+	signal, ok := snapshot.signals[newHubRoutingRuntimeKey(channelID, modelName, HubSupplyProbeKindForRequest(requestPath, explicitProbeKind...))]
 	if !ok {
 		return HubRoutingRuntimeSignal{}, false
 	}
 	return cloneHubRoutingRuntimeSignal(signal), true
 }
 
-func GetHubRoutingDecision(channelID int, modelName, requestPath string) HubRoutingDecision {
+func GetHubRoutingDecision(channelID int, modelName, requestPath string, explicitProbeKind ...string) HubRoutingDecision {
 	decision := HubRoutingDecision{
 		AvailabilityFactorBps: HubRoutingFactorNeutralBps,
 		ProbeLatencyScoreBps:  HubRoutingFactorNeutralBps,
 		RealLatencyScoreBps:   HubRoutingFactorNeutralBps,
 		LatencyFactorBps:      HubRoutingFactorNeutralBps,
 	}
-	key := newHubRoutingRuntimeKey(channelID, modelName, hubSupplyProbeKindForModelRequest(modelName, requestPath))
+	key := newHubRoutingRuntimeKey(channelID, modelName, HubSupplyProbeKindForRequest(requestPath, explicitProbeKind...))
 	if probes := hubRoutingProbeSnapshotValue.Load(); probes != nil {
 		if probe, ok := probes.signals[key]; ok {
 			decision.HasProbeSignal = true
@@ -172,7 +172,7 @@ func GetHubRoutingDecision(channelID int, modelName, requestPath string) HubRout
 			}
 		}
 	}
-	if runtimeSignal, ok := GetHubRoutingRuntimeSignal(channelID, modelName, requestPath); ok {
+	if runtimeSignal, ok := GetHubRoutingRuntimeSignal(channelID, modelName, requestPath, explicitProbeKind...); ok {
 		decision.RuntimeSignal = runtimeSignal
 		decision.HasRuntimeSignal = true
 		if runtimeSignal.RealFirstTokenSampleCount >= 20 {

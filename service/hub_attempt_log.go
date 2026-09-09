@@ -46,6 +46,7 @@ type HubRelayAttempt struct {
 	AttemptIndex int    `json:"attempt_index"`
 	Model        string `json:"model"`
 	EndpointType string `json:"endpoint_type"`
+	ProbeKind    string `json:"probe_kind,omitempty"`
 	SampleSource string `json:"sample_source"`
 	SkipReason   string `json:"skip_reason,omitempty"`
 	// ServiceTier is retained for legacy service-tier requests. New routing
@@ -354,6 +355,7 @@ func RecordHubRelayAttemptMetrics(ctx *gin.Context, relayInfo *relaycommon.Relay
 		samples = append(samples, perfmetrics.HubRoutingAttempt{
 			Model:          attempt.Model,
 			EndpointType:   attempt.EndpointType,
+			ProbeKind:      attempt.ProbeKind,
 			ProviderID:     attempt.ProviderID,
 			ChannelID:      attempt.ChannelID,
 			Success:        attempt.Result == HubAttemptResultSuccess,
@@ -415,6 +417,7 @@ func buildHubRelayAttempt(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) Hu
 		AttemptIndex:      common.GetContextKeyInt(ctx, constant.ContextKeyHubRelayAttemptRetry),
 		Model:             hubAttemptModel(ctx, relayInfo),
 		EndpointType:      hubAttemptEndpointType(relayInfo),
+		ProbeKind:         common.GetContextKeyString(ctx, constant.ContextKeyHubRequestProbeKind),
 		SampleSource:      HubSampleSourceRealRequest,
 		RoutingPhase:      common.GetContextKeyString(ctx, constant.ContextKeyHubRoutingPhase),
 		OriginProviderID:  common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId),
