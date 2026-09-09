@@ -6047,6 +6047,7 @@
     "Channels unpublished": "チャンネルを一括非公開にしました",
     "Tenant unpublished": "テナントで非公開",
     "Publish selected channels": "選択したチャンネルを公開",
-    "Unpublish selected channels": "選択したチャンネルを非公開"
+    "Unpublish selected channels": "選択したチャンネルを非公開",
+    "Tenant direct": "テナント直通"
   }
 }

@@ -6047,6 +6047,7 @@
     "Channels unpublished": "Каналы сняты с публикации",
     "Tenant unpublished": "Не опубликовано у арендатора",
     "Publish selected channels": "Опубликовать выбранные каналы",
-    "Unpublish selected channels": "Снять выбранные каналы с публикации"
+    "Unpublish selected channels": "Снять выбранные каналы с публикации",
+    "Tenant direct": "Прямая регистрация у арендатора"
   }
 }

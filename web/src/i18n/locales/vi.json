@@ -6047,6 +6047,7 @@
     "Channels unpublished": "Đã bỏ công khai các kênh",
     "Tenant unpublished": "Tenant chưa công khai",
     "Publish selected channels": "Công khai các kênh đã chọn",
-    "Unpublish selected channels": "Bỏ công khai các kênh đã chọn"
+    "Unpublish selected channels": "Bỏ công khai các kênh đã chọn",
+    "Tenant direct": "Đăng ký trực tiếp từ tenant"
   }
 }

@@ -132,6 +132,8 @@ func TestGenerateOAuthCodeCarriesValidatedProviderReturnLocation(t *testing.T) {
 	require.NoError(t, common.UnmarshalJsonStr(flow.Payload, &payload))
 	assert.Equal(t, "http://llm-routers.localhost:3100", payload.ReturnOrigin)
 	assert.Equal(t, "/keys?from=provider", payload.ReturnPath)
+	assert.Equal(t, model.RegistrationSourceProviderDomain, payload.RegistrationSource.Kind)
+	assert.Equal(t, provider.Id, payload.RegistrationSource.ProviderID)
 }
 
 func TestGenerateOAuthCodeBindsFlowToAuthenticatedSession(t *testing.T) {

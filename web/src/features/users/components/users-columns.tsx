@@ -219,6 +219,39 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { mobileOrder: 20 },
     },
     {
+      id: 'registration_source',
+      header: t('Source'),
+      cell: ({ row }) => {
+        const user = row.original
+        const providerName = user.registration_provider_name?.trim()
+        const tenantName = user.registration_tenant_name?.trim()
+        const sourceName = providerName || tenantName || t('Unknown')
+        const displayName =
+          user.registration_source === 'tenant_direct' && tenantName
+            ? t('Tenant direct')
+            : sourceName
+        const sourceCell = (
+          <LongText className='max-w-[220px] text-sm'>{displayName}</LongText>
+        )
+
+        if (!tenantName || (!providerName && displayName === sourceName)) {
+          return sourceCell
+        }
+
+        return (
+          <Tooltip>
+            <TooltipTrigger render={sourceCell} />
+            <TooltipContent>
+              <p className='text-xs'>{tenantName}</p>
+            </TooltipContent>
+          </Tooltip>
+        )
+      },
+      enableSorting: false,
+      size: 200,
+      meta: { mobileHidden: true },
+    },
+    {
       id: 'invite_info',
       header: t('Invite Info'),
       cell: ({ row }) => {

@@ -6192,6 +6192,7 @@
     "Download Codex desktop from the official website and install it. Do not open it yet.": "Download Codex desktop from the official website and install it. Do not open it yet.",
     "A step-by-step setup for users who do not want to edit configuration files.": "A step-by-step setup for users who do not want to edit configuration files.",
     "Recommended desktop path": "Recommended desktop path",
+    "Get Codex desktop": "Get Codex desktop",
     "Get CC Switch": "Get CC Switch",
     "Codex desktop does not need you to edit configuration files. Use CC Switch to import the site address and API key, then open Codex normally.": "Codex desktop does not need you to edit configuration files. Use CC Switch to import the site address and API key, then open Codex normally.",
     "Install and open CC Switch": "Install and open CC Switch",
@@ -6270,6 +6271,7 @@
     "Select at most {{max}} channels": "Select at most {{max}} channels",
     "Channels must not contain duplicates": "Channels must not contain duplicates",
     "Remove deleted channels before saving": "Remove deleted channels before saving",
-    "Select channels to reactivate this API key.": "Select channels to reactivate this API key."
+    "Select channels to reactivate this API key.": "Select channels to reactivate this API key.",
+    "Tenant direct": "Tenant direct"
   }
 }

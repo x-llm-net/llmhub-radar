@@ -27,6 +27,7 @@ export const STATIC_I18N_KEYS = [
   'Docs',
   'About',
   'Usage guide',
+  'Tenant direct',
 
   // Sidebar views (drill-in workspaces)
   'System Settings',

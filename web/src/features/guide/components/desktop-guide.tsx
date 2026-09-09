@@ -79,15 +79,26 @@ export function DesktopGuide() {
                 'Codex desktop does not need you to edit configuration files. Use CC Switch to import the site address and API key, then open Codex normally.'
               )}
             </p>
-            <a
-              href='https://ccswitch.io'
-              target='_blank'
-              rel='noreferrer'
-              className='text-primary inline-flex items-center gap-1.5 pt-1 text-sm font-medium hover:underline'
-            >
-              {t('Get CC Switch')}
-              <ExternalLink className='size-3.5' aria-hidden='true' />
-            </a>
+            <div className='flex flex-wrap items-center gap-x-4 gap-y-1 pt-1'>
+              <a
+                href='https://chatgpt.com/download/'
+                target='_blank'
+                rel='noreferrer'
+                className='text-primary inline-flex items-center gap-1.5 text-sm font-medium hover:underline'
+              >
+                {t('Get Codex desktop')}
+                <ExternalLink className='size-3.5' aria-hidden='true' />
+              </a>
+              <a
+                href='https://ccswitch.io'
+                target='_blank'
+                rel='noreferrer'
+                className='text-primary inline-flex items-center gap-1.5 text-sm font-medium hover:underline'
+              >
+                {t('Get CC Switch')}
+                <ExternalLink className='size-3.5' aria-hidden='true' />
+              </a>
+            </div>
           </div>
         </div>
 

@@ -6047,6 +6047,7 @@
     "Channels unpublished": "Canaux retires",
     "Tenant unpublished": "Non publie par le locataire",
     "Publish selected channels": "Publier les canaux selectionnes",
-    "Unpublish selected channels": "Retirer les canaux selectionnes"
+    "Unpublish selected channels": "Retirer les canaux selectionnes",
+    "Tenant direct": "Accès direct au tenant"
   }
 }

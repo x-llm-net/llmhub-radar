@@ -30,9 +30,10 @@ type oauthStateRequest struct {
 }
 
 type oauthFlowPayload struct {
-	AffiliateCode string `json:"affiliate_code,omitempty"`
-	ReturnOrigin  string `json:"return_origin,omitempty"`
-	ReturnPath    string `json:"return_path,omitempty"`
+	AffiliateCode      string                       `json:"affiliate_code,omitempty"`
+	ReturnOrigin       string                       `json:"return_origin,omitempty"`
+	ReturnPath         string                       `json:"return_path,omitempty"`
+	RegistrationSource model.UserRegistrationSource `json:"registration_source,omitempty"`
 }
 
 const oauthReturnOriginContextKey = "oauth_return_origin"
@@ -131,11 +132,18 @@ func GenerateOAuthCode(c *gin.Context) {
 		userID = identity.UserID
 		sessionID = identity.SessionID
 	}
-	payload, err := common.Marshal(oauthFlowPayload{
+	flowPayload := oauthFlowPayload{
 		AffiliateCode: request.Aff,
 		ReturnOrigin:  request.ReturnOrigin,
 		ReturnPath:    request.ReturnPath,
-	})
+	}
+	if request.Intent == model.AuthFlowIntentLogin {
+		// Capture the originating host before leaving for the OAuth provider.
+		// The callback may arrive on a different host, especially when a
+		// provider uses a centralized callback URL.
+		flowPayload.RegistrationSource = model.ResolveUserRegistrationSource(c.Request.Host)
+	}
+	payload, err := common.Marshal(flowPayload)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -266,7 +274,13 @@ func HandleOAuth(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	user, err := findOrCreateOAuthUser(c, provider, oauthUser, payload.AffiliateCode)
+	registrationSource := payload.RegistrationSource
+	if registrationSource.Kind == "" {
+		// Flows created before registration attribution was introduced do not
+		// contain a snapshot. Fall back to the callback host for compatibility.
+		registrationSource = model.ResolveUserRegistrationSource(c.Request.Host)
+	}
+	user, err := findOrCreateOAuthUser(c, provider, oauthUser, payload.AffiliateCode, registrationSource)
 	if err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
@@ -371,7 +385,7 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider, pendingFlow *model
 }
 
 // findOrCreateOAuthUser finds existing user or creates new user
-func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, affiliateCode string) (*model.User, error) {
+func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, affiliateCode string, registrationSource model.UserRegistrationSource) (*model.User, error) {
 	user := &model.User{}
 
 	// Check if user already exists with new ID
@@ -442,6 +456,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
+	user.SetRegistrationSource(registrationSource)
 
 	// Handle affiliate code
 	inviterId := 0
