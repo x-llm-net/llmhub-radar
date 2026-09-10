@@ -187,10 +187,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 
 // GetRandomSatisfiedChannelWithFilter returns the selected channel and its
 // supply pricing from the same published cache generation.
-func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter, probeKind ...string) (*Channel, HubSupplyPricingSnapshot, error) {
+func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter) (*Channel, HubSupplyPricingSnapshot, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		channel, err := GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, providerFilter, probeKind...)
+		channel, err := GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, providerFilter)
 		if channel == nil {
 			return nil, HubSupplyPricingSnapshot{}, err
 		}
@@ -202,12 +202,12 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 
 	// First, try to find channels with the exact model name.
 	selectedModel := model
-	channels := filterChannelsByRequestPathAndModel(group2model2channels[group][model], requestPath, model, probeKind...)
+	channels := filterChannelsByRequestPathAndModel(group2model2channels[group][model], requestPath, model)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model, probeKind...)
+		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
 		selectedModel = normalizedModel
 	}
 	if hub_routing_setting.IsServiceTier(group) {
@@ -217,7 +217,7 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 			if !ok || channel.Status != common.ChannelStatusEnabled {
 				return false
 			}
-			if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, candidate.ChannelID, model, requestPath, probeKind...) {
+			if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, candidate.ChannelID, model, requestPath) {
 				return false
 			}
 			if channel.Type == constant.ChannelTypeAdvancedCustom && requestPath != "" {
@@ -229,7 +229,7 @@ func GetRandomSatisfiedChannelWithFilter(group string, model string, retry int, 
 			providerID, eligible := hubTierProviderForChannel(candidate.ChannelID, providerFilter)
 			return eligible && providerID == candidate.Provider
 		}, func(candidate hubTierChannelCandidate) hubTierChannelCandidate {
-			return decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath, probeKind...)
+			return decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath)
 		})
 		if channelID == 0 {
 			return nil, HubSupplyPricingSnapshot{}, nil
@@ -357,13 +357,13 @@ func filterChannelIDsByProvider(channelIDs []int, providerFilter ChannelProvider
 // filterChannelsByRequestPathAndModel restricts candidates by the current Hub
 // probe kind and, for Advanced Custom channels, the configured request path.
 // Caller must hold channelSyncLock (read lock). The cached slice is never mutated.
-func filterChannelsByRequestPathAndModel(channels []int, requestPath string, model string, probeKind ...string) []int {
+func filterChannelsByRequestPathAndModel(channels []int, requestPath string, model string) []int {
 	if len(channels) == 0 {
 		return channels
 	}
 	filtered := make([]int, 0, len(channels))
 	for _, channelId := range channels {
-		if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelId, model, requestPath, probeKind...) {
+		if !hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelId, model, requestPath) {
 			continue
 		}
 		channel, ok := channelsIDM[channelId]

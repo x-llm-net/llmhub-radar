@@ -19,7 +19,6 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 	requestPath string,
 	excludedChannelIDs map[int]struct{},
 	providerFilter ChannelProviderFilter,
-	probeKind ...string,
 ) (*Channel, HubSupplyPricingSnapshot, error) {
 	if policy == nil || strings.TrimSpace(modelName) == "" {
 		return nil, HubSupplyPricingSnapshot{}, nil
@@ -35,9 +34,9 @@ func GetRandomSatisfiedChannelWithHubPolicy(
 		return nil, HubSupplyPricingSnapshot{}, nil
 	}
 	if common.MemoryCacheEnabled {
-		return getHubPolicyChannelFromCache(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter, probeKind...)
+		return getHubPolicyChannelFromCache(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter)
 	}
-	return getHubPolicyChannelFromDB(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter, probeKind...)
+	return getHubPolicyChannelFromDB(policy, modelName, retry, requestPath, excludedChannelIDs, providerFilter)
 }
 
 // IsModelAvailableForHubTokenPolicy keeps model discovery aligned with the
@@ -96,7 +95,6 @@ func getHubPolicyChannelFromCache(
 	requestPath string,
 	excludedChannelIDs map[int]struct{},
 	providerFilter ChannelProviderFilter,
-	probeKind ...string,
 ) (*Channel, HubSupplyPricingSnapshot, error) {
 	_ = retry
 	channelSyncLock.RLock()
@@ -123,7 +121,7 @@ func getHubPolicyChannelFromCache(
 				if !ok || channel.Status != common.ChannelStatusEnabled ||
 					!hubPolicyChannelMatchesSelection(policy, channelID, providerFilter.PlatformFallback) ||
 					!ChannelMatchesProviderFilter(channelID, providerFilter) ||
-					!hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath, probeKind...) {
+					!hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath) {
 					continue
 				}
 				if channel.Type == constant.ChannelTypeAdvancedCustom && requestPath != "" {
@@ -156,7 +154,7 @@ func getHubPolicyChannelFromCache(
 					Provider:   providerID,
 					Multiplier: multiplier,
 				}
-				candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath, probeKind...))
+				candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath))
 			}
 		}
 	}
@@ -175,7 +173,6 @@ func getHubPolicyChannelFromDB(
 	requestPath string,
 	excludedChannelIDs map[int]struct{},
 	providerFilter ChannelProviderFilter,
-	probeKind ...string,
 ) (*Channel, HubSupplyPricingSnapshot, error) {
 	_ = retry
 	var abilities []Ability
@@ -194,7 +191,7 @@ func getHubPolicyChannelFromDB(
 		}
 		if !hubPolicyChannelMatchesSelection(policy, ability.ChannelId, providerFilter.PlatformFallback) ||
 			!ChannelMatchesProviderFilter(ability.ChannelId, providerFilter) ||
-			!IsHubSupplyChannelRoutableForRequest(ability.ChannelId, modelName, requestPath, probeKind...) {
+			!IsHubSupplyChannelRoutableForRequest(ability.ChannelId, modelName, requestPath) {
 			continue
 		}
 		filtered = append(filtered, ability)
@@ -261,7 +258,7 @@ func getHubPolicyChannelFromDB(
 			Provider:   providerID,
 			Multiplier: multiplier,
 		}
-		candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath, probeKind...))
+		candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, modelName, requestPath))
 	}
 	selectedID := selectHubTierChannelByHubPolicy(policy, modelName, candidates, excludedChannelIDs, allowCheaperMultiplier, providerFilter.PreferredChannelID)
 	if selectedID == 0 {
@@ -273,23 +270,23 @@ func getHubPolicyChannelFromDB(
 
 // IsChannelEnabledForHubTokenPolicy is used by affinity and fixed-channel
 // paths so they cannot bypass a token's selected channels or current multiplier boundary.
-func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string, channelID int, probeKind ...string) bool {
-	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", CaptureHubSupplyPricingSnapshot(channelID), false, probeKind...)
+func IsChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName string, channelID int) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, "", CaptureHubSupplyPricingSnapshot(channelID), false)
 }
 
 // IsChannelEnabledForHubTokenPolicyFallback validates an origin task channel
 // against the selected model's current price ceiling and endpoint support.
-func IsChannelEnabledForHubTokenPolicyFallback(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int, probeKind ...string) bool {
-	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, CaptureHubSupplyPricingSnapshot(channelID), true, probeKind...)
+func IsChannelEnabledForHubTokenPolicyFallback(policy *HubTokenRoutingPolicy, modelName, requestPath string, channelID int) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, CaptureHubSupplyPricingSnapshot(channelID), true)
 }
 
 // IsChannelEnabledForHubTokenPolicySnapshot validates an affinity channel
 // against the same pricing generation captured with the Channel itself.
-func IsChannelEnabledForHubTokenPolicySnapshot(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool, probeKind ...string) bool {
-	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, snapshot, allowProviderFallback, probeKind...)
+func IsChannelEnabledForHubTokenPolicySnapshot(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool) bool {
+	return isChannelEnabledForHubTokenPolicy(policy, modelName, requestPath, snapshot, allowProviderFallback)
 }
 
-func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool, probeKind ...string) bool {
+func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName, requestPath string, snapshot HubSupplyPricingSnapshot, allowProviderFallback bool) bool {
 	channelID := snapshot.ChannelID
 	if policy == nil || channelID <= 0 {
 		return false
@@ -327,7 +324,7 @@ func isChannelEnabledForHubTokenPolicy(policy *HubTokenRoutingPolicy, modelName,
 	} else if !policy.AllowsPreferredChannel(modelName, channelID, multiplier) {
 		return false
 	}
-	if requestPath != "" && !IsHubSupplyChannelRoutableForRequest(channelID, modelName, requestPath, probeKind...) {
+	if requestPath != "" && !IsHubSupplyChannelRoutableForRequest(channelID, modelName, requestPath) {
 		return false
 	}
 

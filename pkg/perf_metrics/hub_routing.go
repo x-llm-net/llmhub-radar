@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/hub_routing_setting"
 )
@@ -23,7 +22,6 @@ import (
 type HubRoutingAttempt struct {
 	Model          string
 	EndpointType   string
-	ProbeKind      string
 	ProviderID     int
 	ChannelID      int
 	Success        bool
@@ -154,27 +152,12 @@ func (a *hubRoutingAtomicBucket) addCounters(c hubRoutingCounters) {
 
 var hubRoutingBuckets sync.Map
 
-func normalizeHubRoutingAttempt(attempt HubRoutingAttempt) HubRoutingAttempt {
-	if model.NormalizeHubSupplyProbeKind(attempt.ProbeKind) == model.HubSupplyProbeKindImage ||
-		attempt.EndpointType == string(constant.EndpointTypeImageGeneration) {
-		attempt.ProbeKind = model.HubSupplyProbeKindImage
-		// Runtime health is keyed by the existing endpoint dimension. Mapping a
-		// Responses image tool call to the logical image endpoint keeps it out
-		// of the text pool without changing the metrics schema.
-		attempt.EndpointType = string(constant.EndpointTypeImageGeneration)
-		return attempt
-	}
-	attempt.ProbeKind = model.HubSupplyProbeKindText
-	return attempt
-}
-
 func RecordHubRoutingAttempts(attempts []HubRoutingAttempt) {
 	if !hub_routing_setting.Snapshot().Enabled {
 		return
 	}
 	now := time.Now().Unix()
 	for _, attempt := range attempts {
-		attempt = normalizeHubRoutingAttempt(attempt)
 		if attempt.Model == "" || attempt.EndpointType == "" || attempt.ChannelID <= 0 {
 			continue
 		}

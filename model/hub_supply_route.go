@@ -25,18 +25,13 @@ func NormalizeHubSupplyProbeKind(probeKind string) string {
 	}
 }
 
-// HubSupplyProbeKindForRequest resolves the health pool from request facts.
-// Callers that parsed a shared endpoint such as Responses may provide an
-// explicit kind; otherwise the URL remains the compatibility fallback.
-func HubSupplyProbeKindForRequest(requestPath string, explicitProbeKind ...string) string {
+// HubSupplyProbeKindForRequest keeps direct Images health separate from other
+// requests. Tools executed inside Responses do not select another health pool.
+func HubSupplyProbeKindForRequest(requestPath string) string {
 	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
-	if requestPath == "/v1/images" || strings.HasPrefix(requestPath, "/v1/images/") {
+	if strings.HasPrefix(requestPath, "/v1/images/generations") ||
+		strings.HasPrefix(requestPath, "/v1/images/edits") {
 		return HubSupplyProbeKindImage
-	}
-	if len(explicitProbeKind) > 0 {
-		if normalized := NormalizeHubSupplyProbeKind(explicitProbeKind[0]); normalized != "" {
-			return normalized
-		}
 	}
 	return HubSupplyProbeKindText
 }
@@ -128,20 +123,19 @@ func hubSupplyChannelSupportsRequest(
 	channelID int,
 	modelName string,
 	requestPath string,
-	explicitProbeKind ...string,
 ) bool {
 	modelKinds, isSupplyChannel := availability[channelID]
 	if isSupplyChannel && !IsHubSupplyChannelTenantPublished(channelID) {
 		return false
 	}
-	decision := GetHubRoutingDecision(channelID, modelName, requestPath, explicitProbeKind...)
+	decision := GetHubRoutingDecision(channelID, modelName, requestPath)
 	if decision.HardUnavailable {
 		return false
 	}
 	if !isSupplyChannel {
 		return true
 	}
-	probeKind := HubSupplyProbeKindForRequest(requestPath, explicitProbeKind...)
+	probeKind := HubSupplyProbeKindForRequest(requestPath)
 	if _, verified := hubSupplyModelProbeKindsForModel(modelKinds, modelName)[probeKind]; !verified {
 		return false
 	}
@@ -242,15 +236,15 @@ func loadHubSupplyChannelProbeKinds(query *gorm.DB, channelIDs []int) (hubSupply
 	return result, probeSignals, nil
 }
 
-func IsHubSupplyChannelRoutableForRequest(channelID int, modelName, requestPath string, explicitProbeKind ...string) bool {
+func IsHubSupplyChannelRoutableForRequest(channelID int, modelName, requestPath string) bool {
 	if channelID <= 0 || strings.TrimSpace(modelName) == "" {
 		return false
 	}
 	if common.MemoryCacheEnabled {
 		channelSyncLock.RLock()
 		defer channelSyncLock.RUnlock()
-		return hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath, explicitProbeKind...)
+		return hubSupplyChannelSupportsRequest(channel2HubSupplyProbeKinds, channelID, modelName, requestPath)
 	}
 	availability, _, err := loadHubSupplyChannelProbeKinds(DB, []int{channelID})
-	return err == nil && hubSupplyChannelSupportsRequest(availability, channelID, modelName, requestPath, explicitProbeKind...)
+	return err == nil && hubSupplyChannelSupportsRequest(availability, channelID, modelName, requestPath)
 }

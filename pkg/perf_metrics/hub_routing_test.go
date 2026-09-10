@@ -5,23 +5,12 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
-
-func TestNormalizeHubRoutingAttemptKeepsResponsesImageOutOfTextHealth(t *testing.T) {
-	attempt := normalizeHubRoutingAttempt(HubRoutingAttempt{
-		Model:        "mixed-capability-model",
-		EndpointType: string(constant.EndpointTypeOpenAIResponse),
-		ProbeKind:    model.HubSupplyProbeKindImage,
-	})
-	assert.Equal(t, model.HubSupplyProbeKindImage, attempt.ProbeKind)
-	assert.Equal(t, string(constant.EndpointTypeImageGeneration), attempt.EndpointType)
-}
 
 func TestHubRoutingAtomicBucketAccumulatesAttempts(t *testing.T) {
 	ttft := int64(240)

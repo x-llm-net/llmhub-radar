@@ -122,7 +122,7 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 	return GetChannelWithFilter(group, model, retry, requestPath, excludedChannelIDs, ChannelProviderFilter{})
 }
 
-func GetChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter, probeKind ...string) (*Channel, error) {
+func GetChannelWithFilter(group string, model string, retry int, requestPath string, excludedChannelIDs map[int]struct{}, providerFilter ChannelProviderFilter) (*Channel, error) {
 	var abilities []Ability
 	query := DB.Where(abilityGroupColumn()+" = ? and model = ? and enabled = ?", group, model, true)
 	if err := query.Order("priority DESC, weight DESC").Find(&abilities).Error; err != nil {
@@ -139,7 +139,7 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 	}
 	abilities = filterAbilitiesByProvider(abilities, providerFilter)
 	var filterErr error
-	abilities, filterErr = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model, probeKind...)
+	abilities, filterErr = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	if filterErr != nil {
 		return nil, filterErr
 	}
@@ -163,7 +163,7 @@ func GetChannelWithFilter(group string, model string, retry int, requestPath str
 				Weight:    int(ability.Weight),
 				Provider:  providerID,
 			}
-			candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath, probeKind...))
+			candidates = append(candidates, decorateHubTierCandidateWithRuntimeHealth(candidate, model, requestPath))
 		}
 		channelID := selectHubTierChannel(candidates, excludedChannelIDs)
 		if channelID == 0 {
@@ -266,7 +266,7 @@ func filterAbilitiesByProvider(abilities []Ability, providerFilter ChannelProvid
 
 // filterAbilitiesByRequestPathAndModel applies Hub probe-kind eligibility and
 // Advanced Custom path rules to the DB (non-memory-cache) selection path.
-func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string, probeKind ...string) ([]Ability, error) {
+func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) ([]Ability, error) {
 	if len(abilities) == 0 {
 		return abilities, nil
 	}
@@ -302,7 +302,7 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 		if !IsHubSupplyChannelTenantPublished(ability.ChannelId) {
 			continue
 		}
-		if !hubSupplyChannelSupportsRequest(supplyAvailability, ability.ChannelId, model, requestPath, probeKind...) {
+		if !hubSupplyChannelSupportsRequest(supplyAvailability, ability.ChannelId, model, requestPath) {
 			continue
 		}
 		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]

@@ -12,22 +12,19 @@ func TestHubSupplyProbeKindForRequestUsesPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
-		explicit string
 		expected string
 	}{
 		{name: "images endpoint", path: "/v1/images/generations", expected: HubSupplyProbeKindImage},
-		{name: "images endpoint overrides explicit text", path: "/v1/images/generations", explicit: HubSupplyProbeKindText, expected: HubSupplyProbeKindImage},
 		{name: "images edits", path: "/v1/images/edits", expected: HubSupplyProbeKindImage},
 		{name: "responses compact", path: "/v1/responses/compact", expected: HubSupplyProbeKindText},
 		{name: "messages", path: "/v1/messages", expected: HubSupplyProbeKindText},
 		{name: "gemini", path: "/v1beta/models/example:generateContent", expected: HubSupplyProbeKindText},
 		{name: "text responses", path: "/v1/responses", expected: HubSupplyProbeKindText},
-		{name: "responses image capability", path: "/v1/responses", explicit: HubSupplyProbeKindImage, expected: HubSupplyProbeKindImage},
 		{name: "text chat", path: "/v1/chat/completions", expected: HubSupplyProbeKindText},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, HubSupplyProbeKindForRequest(tt.path, tt.explicit))
+			assert.Equal(t, tt.expected, HubSupplyProbeKindForRequest(tt.path))
 		})
 	}
 }
@@ -59,7 +56,6 @@ func TestHubSupplyRoutingKeepsDirectImagesHealthSeparate(t *testing.T) {
 		91: {"gpt-image-2": {HubSupplyProbeKindImage: true}},
 	}
 	assert.True(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/images/generations"))
-	assert.True(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/responses", HubSupplyProbeKindImage))
 	assert.False(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/responses"))
 	assert.False(t, hubSupplyChannelSupportsRequest(availability, 91, "gpt-image-2", "/v1/chat/completions"))
 	PublishHubRoutingRuntimeSignals(now, nil)

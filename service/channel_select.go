@@ -16,7 +16,6 @@ type RetryParam struct {
 	TokenGroup         string
 	ModelName          string
 	RequestPath        string
-	ProbeKind          string
 	Retry              *int
 	resetNextTry       bool
 	excludedChannelIDs map[int]struct{}
@@ -167,7 +166,7 @@ func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.
 		channel, snapshot, err := model.GetRandomSatisfiedChannelWithHubPolicy(
 			policy, param.ModelName, retry, param.RequestPath, param.ExcludedChannelIDs(), model.ChannelProviderFilter{
 				StrictExcludedChannels: true, PreferredChannelID: preferredChannelID,
-			}, param.ProbeKind,
+			},
 		)
 		if err != nil {
 			return nil, param.TokenGroup, err
@@ -196,7 +195,7 @@ func cacheGetRandomSatisfiedChannelByHubPolicy(param *RetryParam, policy *model.
 	channel, snapshot, err := model.GetRandomSatisfiedChannelWithHubPolicy(
 		policy, param.ModelName, phaseRetry, param.RequestPath, param.ExcludedChannelIDs(), model.ChannelProviderFilter{
 			PlatformFallback: true, StrictExcludedChannels: true, PreferredChannelID: preferredChannelID,
-		}, param.ProbeKind,
+		},
 	)
 	if channel != nil {
 		common.SetContextKey(param.Ctx, constant.ContextKeyHubSupplyPricingSnapshot, snapshot)
@@ -285,7 +284,6 @@ func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter 
 				param.RequestPath,
 				param.ExcludedChannelIDs(),
 				providerFilter,
-				param.ProbeKind,
 			)
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -331,7 +329,6 @@ func cacheGetRandomSatisfiedChannelWithFilter(param *RetryParam, providerFilter 
 			param.RequestPath,
 			param.ExcludedChannelIDs(),
 			providerFilter,
-			param.ProbeKind,
 		)
 		if err != nil {
 			return nil, param.TokenGroup, err

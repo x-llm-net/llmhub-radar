@@ -371,7 +371,7 @@ func TestDistributeFixedChannelServiceTierEnforcesRoutingBoundaries(t *testing.T
 	})
 }
 
-func TestDistributeResponsesImageToolUsesImageSupply(t *testing.T) {
+func TestDistributeResponsesImageToolUsesTextSupply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	require.NoError(t, i18n.Init())
 	for _, useCache := range []bool{false, true} {
@@ -389,23 +389,20 @@ func TestDistributeResponsesImageToolUsesImageSupply(t *testing.T) {
 						Where("model_name = ?", modelName).Update("probe_kind", probeKind).Error)
 					model.InitChannelCache()
 					for _, request := range []struct {
-						name      string
 						path      string
 						body      string
 						probeKind string
 					}{
-						{"responses image tool", "/v1/responses", `{"model":"mixed-capability-model","input":"Draw a square","tools":[{"type":"image_generation"}]}`, model.HubSupplyProbeKindImage},
-						{"responses text", "/v1/responses", `{"model":"mixed-capability-model","input":"Explain image_generation without calling it"}`, model.HubSupplyProbeKindText},
-						{"images endpoint", "/v1/images/generations", `{"model":"mixed-capability-model","prompt":"Draw a square"}`, model.HubSupplyProbeKindImage},
+						{"/v1/responses", `{"model":"mixed-capability-model","input":"Draw a square","tools":[{"type":"image_generation"}]}`, model.HubSupplyProbeKindText},
+						{"/v1/images/generations", `{"model":"mixed-capability-model","prompt":"Draw a square"}`, model.HubSupplyProbeKindImage},
 					} {
 						ctx, recorder := newFixedChannelServiceTierContext(channel.Id, modelName, request.path, request.body, provider.Id)
 						if !fixedChannel {
 							delete(ctx.Keys, string(constant.ContextKeyTokenSpecificChannelId))
 						}
 						Distribute()(ctx)
-						require.Equal(t, request.probeKind, common.GetContextKeyString(ctx, constant.ContextKeyHubRequestProbeKind), request.name)
 						if request.probeKind != probeKind {
-							require.Equalf(t, http.StatusServiceUnavailable, recorder.Code, "%s with %s supply", request.name, probeKind)
+							assertServiceTierUnavailable(t, recorder)
 							continue
 						}
 						require.False(t, ctx.IsAborted(), "%s with %s supply: %s", request.path, probeKind, recorder.Body.String())

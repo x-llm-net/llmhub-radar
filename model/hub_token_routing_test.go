@@ -180,13 +180,6 @@ func TestHubTokenRoutingSelectsExactChannelsAndGlobalFallbackWithCacheParity(t *
 			imageAvailable, err := IsModelAvailableForHubTokenPolicy(imagePolicy, "gpt-routing-image")
 			require.NoError(t, err)
 			assert.True(t, imageAvailable, "model discovery includes selected image-only supply")
-			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(
-				imagePolicy, "gpt-routing-image", 0, "/v1/responses", nil,
-				ChannelProviderFilter{}, HubSupplyProbeKindImage,
-			)
-			require.NoError(t, err)
-			require.NotNil(t, selected, "Responses image tools must use image-only supply")
-			assert.Equal(t, channels[6].Id, selected.Id)
 			selected, _, err = GetRandomSatisfiedChannelWithHubPolicy(policy, "gpt-routing-text", 0, "/v1/images/generations", nil, ChannelProviderFilter{})
 			require.NoError(t, err)
 			assert.Nil(t, selected, "text-only supply cannot satisfy an image endpoint")

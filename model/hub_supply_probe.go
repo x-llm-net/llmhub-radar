@@ -1071,12 +1071,8 @@ func HubSupplyProbeRecoveryDelaySecondsForRequestPath(requestPath string, consec
 // HubSupplyProbeRecoveryDelaySecondsForModelRequest follows the same
 // request-path classification used by routing and runtime health.
 func HubSupplyProbeRecoveryDelaySecondsForModelRequest(modelName, requestPath string, consecutiveFailures int) int64 {
-	return HubSupplyProbeRecoveryDelaySecondsForModelRequestWithProbeKind(modelName, requestPath, "", consecutiveFailures)
-}
-
-func HubSupplyProbeRecoveryDelaySecondsForModelRequestWithProbeKind(modelName, requestPath, probeKind string, consecutiveFailures int) int64 {
 	baseMinutes := HubSupplyGroupDefaultTextProbeMinutes
-	if HubSupplyProbeKindForRequest(requestPath, probeKind) == HubSupplyProbeKindImage {
+	if HubSupplyProbeKindForRequest(requestPath) == HubSupplyProbeKindImage {
 		baseMinutes = HubSupplyGroupDefaultImageProbeMinutes
 	}
 	return int64(HubSupplyProbeRetryDelayMinutes(baseMinutes, consecutiveFailures) * 60)

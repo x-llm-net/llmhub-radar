@@ -67,7 +67,6 @@ type channelAffinityMeta struct {
 	UsingGroup     string
 	ModelName      string
 	RequestPath    string
-	ProbeKind      string
 	Role           string
 	PreferredID    int
 	FallbackID     int
@@ -521,7 +520,7 @@ func putChannelAffinityFallbackState(c *gin.Context, channelID int, recoveryFail
 	if recoveryFailures <= 0 {
 		recoveryFailures = 1
 	}
-	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForModelRequestWithProbeKind(meta.ModelName, meta.RequestPath, meta.ProbeKind, recoveryFailures)
+	recoveryDelaySeconds := model.HubSupplyProbeRecoveryDelaySecondsForModelRequest(meta.ModelName, meta.RequestPath, recoveryFailures)
 	preferredID := verifiedChannelAffinityPreferredID(meta)
 	if preferredID <= 0 {
 		if existing, found := getChannelAffinityFallbackState(meta.CacheKeySuffix); found {
@@ -790,7 +789,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			ttlSeconds = setting.DefaultTTLSeconds
 		}
 		routingScope := []string(nil)
-		probeKind := model.HubSupplyProbeKindForRequest(path, common.GetContextKeyString(c, constant.ContextKeyHubRequestProbeKind))
+		probeKind := model.HubSupplyProbeKindForRequest(path)
 		if policy := GetHubTokenRoutingPolicy(c); policy != nil {
 			routingScope = []string{"hub", policy.Mode, strconv.Itoa(policy.ProviderID),
 				strconv.Itoa(common.GetContextKeyInt(c, constant.ContextKeyTenantId))}
@@ -832,7 +831,6 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			UsingGroup:     usingGroup,
 			ModelName:      modelName,
 			RequestPath:    path,
-			ProbeKind:      probeKind,
 		})
 
 		cache := getChannelAffinityCache()
@@ -845,7 +843,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		isHubRequest := IsHubServiceTierRequest(c)
 		preferredRoutable := found
 		if isHubRequest && found {
-			preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path, probeKind)
+			preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path)
 		}
 		fallbackState := channelAffinityFallbackState{}
 		fallbackFound := false
@@ -855,7 +853,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			fallbackRoutable = fallbackFound
 		}
 		if isHubRequest && fallbackFound {
-			fallbackRoutable = model.IsHubSupplyChannelRoutableForRequest(fallbackState.ChannelID, modelName, path, probeKind)
+			fallbackRoutable = model.IsHubSupplyChannelRoutableForRequest(fallbackState.ChannelID, modelName, path)
 			if !fallbackRoutable {
 				deleteChannelAffinityFallbackState(cacheKeySuffix)
 				fallbackFound = false
@@ -866,7 +864,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			if !found && fallbackState.PreferredID > 0 {
 				channelID = fallbackState.PreferredID
 				found = true
-				preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path, probeKind)
+				preferredRoutable = model.IsHubSupplyChannelRoutableForRequest(channelID, modelName, path)
 			}
 			if preferredRoutable && found && fallbackState.NextRecoveryAt <= time.Now().Unix() {
 				setChannelAffinityRouteMeta(c, channelAffinityRoleRecovery, channelID, fallbackState.ChannelID)

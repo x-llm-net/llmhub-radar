@@ -28,9 +28,8 @@ import (
 )
 
 type ModelRequest struct {
-	Model     string `json:"model"`
-	Group     string `json:"group,omitempty"`
-	ProbeKind string `json:"-"`
+	Model string `json:"model"`
+	Group string `json:"group,omitempty"`
 }
 
 func Distribute() func(c *gin.Context) {
@@ -42,7 +41,6 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		common.SetContextKey(c, constant.ContextKeyHubRequestProbeKind, modelRequest.ProbeKind)
 		if shouldSelectChannel {
 			c.Set("original_model", modelRequest.Model)
 		}
@@ -58,7 +56,7 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 			if service.IsHubServiceTierRequest(c) && shouldSelectChannel {
-				if !validateSpecificChannelForServiceTier(c, channel, modelRequest.Model, modelRequest.ProbeKind) {
+				if !validateSpecificChannelForServiceTier(c, channel, modelRequest.Model) {
 					return
 				}
 			}
@@ -129,7 +127,7 @@ func Distribute() func(c *gin.Context) {
 							})
 						}
 						if providerAllowed && providerActive && err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-							channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model, modelRequest.ProbeKind) {
+							channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
 							if usingGroup == "auto" {
 								userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 								autoGroups := service.GetRequestAutoGroups(c, userGroup)
@@ -172,7 +170,6 @@ func Distribute() func(c *gin.Context) {
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
 						RequestPath: c.Request.URL.Path,
-						ProbeKind:   modelRequest.ProbeKind,
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -232,7 +229,7 @@ func affinityRoutingPhase(c *gin.Context) string {
 // validateSpecificChannelForServiceTier keeps an administrator's fixed-channel
 // token inside the same service-tier and provider boundaries as normal routing.
 // Legacy groups intentionally retain the historical fixed-channel bypass.
-func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channel, modelName, probeKind string) bool {
+func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channel, modelName string) bool {
 	if strings.TrimSpace(modelName) == "" {
 		abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
 		return false
@@ -246,11 +243,11 @@ func validateSpecificChannelForServiceTier(c *gin.Context, channel *model.Channe
 	}
 	channelEnabled := model.IsChannelEnabledForGroupModel(group, modelName, channel.Id)
 	if routingPolicy != nil {
-		channelEnabled = model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelName, channel.Id, probeKind)
+		channelEnabled = model.IsChannelEnabledForHubTokenPolicy(routingPolicy, modelName, channel.Id)
 	}
 	available := channel.Status == common.ChannelStatusEnabled &&
 		channelEnabled &&
-		channelSupportsRequestPath(channel, c.Request.URL.Path, modelName, probeKind) &&
+		channelSupportsRequestPath(channel, c.Request.URL.Path, modelName) &&
 		model.IsHubSupplyChannelProviderActive(channel.Id)
 	if providerID > 0 {
 		available = available && model.ChannelMatchesProviderFilter(channel.Id, model.ChannelProviderFilter{
@@ -321,11 +318,11 @@ func abortChannelSelectionFailure(c *gin.Context, group, modelName, fallbackMess
 // channelSupportsRequestPath reports whether a channel can serve the request path.
 // Only Advanced Custom (type 58) channels are path-checked; all other channel types
 // always pass. A type-58 channel is usable only when one of its routes matches.
-func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string, probeKind ...string) bool {
+func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false
 	}
-	if !model.IsHubSupplyChannelRoutableForRequest(channel.Id, requestModel, requestPath, probeKind...) {
+	if !model.IsHubSupplyChannelRoutableForRequest(channel.Id, requestModel, requestPath) {
 		return false
 	}
 	if channel.Type != constant.ChannelTypeAdvancedCustom {
@@ -370,7 +367,7 @@ func getModelFromJSONBody(c *gin.Context) (*ModelRequest, error) {
 		return nil, errors.New("invalid JSON request body")
 	}
 
-	values := gjson.GetManyBytes(requestBody, "model", "group", "tools")
+	values := gjson.GetManyBytes(requestBody, "model", "group")
 	model, err := getJSONStringValue(values[0], "model")
 	if err != nil {
 		return nil, err
@@ -386,26 +383,9 @@ func getModelFromJSONBody(c *gin.Context) (*ModelRequest, error) {
 	c.Request.Body = io.NopCloser(storage)
 
 	return &ModelRequest{
-		Model:     model,
-		Group:     group,
-		ProbeKind: hubRequestProbeKind(c.Request.URL.Path, values[2]),
+		Model: model,
+		Group: group,
 	}, nil
-}
-
-// hubRequestProbeKind derives the routing health dimension from request facts.
-// Responses shares one path for text and image generation, so its declared
-// tool is authoritative; model names are intentionally ignored.
-func hubRequestProbeKind(requestPath string, tools gjson.Result) string {
-	path := strings.ToLower(strings.TrimSpace(requestPath))
-	if path == "/v1/responses" || path == "/v1/responses/" {
-		for _, tool := range tools.Array() {
-			toolType := tool.Get("type")
-			if toolType.Type == gjson.String && toolType.String() == dto.BuildInToolImageGeneration {
-				return model.HubSupplyProbeKindImage
-			}
-		}
-	}
-	return model.HubSupplyProbeKindForRequest(path)
 }
 
 func getJSONStringValue(result gjson.Result, field string) (string, error) {
@@ -518,7 +498,6 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			return nil, false, err
 		}
 		modelRequest.Model = req.Model
-		modelRequest.ProbeKind = req.ProbeKind
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/realtime") {
 		//wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01
@@ -582,7 +561,6 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {
 		modelRequest.Model = ratio_setting.WithCompactModelSuffix(modelRequest.Model)
 	}
-	modelRequest.ProbeKind = model.HubSupplyProbeKindForRequest(c.Request.URL.Path, modelRequest.ProbeKind)
 	return &modelRequest, shouldSelectChannel, nil
 }
 
