@@ -36,7 +36,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getServerAddress } from '@/features/keys/lib/server-address'
 
-import { DesktopGuide } from './components/desktop-guide'
+import { DesktopGuide, ImageGenerationGuide } from './components/desktop-guide'
 
 type GuideSectionProps = {
   id: string
@@ -227,6 +227,17 @@ export function Guide() {
             </GuideSection>
 
             <GuideSection
+              id='image-generation'
+              icon={<Play className='size-4' aria-hidden='true' />}
+              title={t('Generate images')}
+              description={t(
+                'Use Codex to generate an image through the standard Images API.'
+              )}
+            >
+              <ImageGenerationGuide />
+            </GuideSection>
+
+            <GuideSection
               id='api-access'
               icon={<Code2 className='size-4' aria-hidden='true' />}
               title={t('API access')}
@@ -360,6 +371,7 @@ export function Guide() {
                 {[
                   ['quick-start', t('Quick start')],
                   ['codex-desktop', t('Codex desktop')],
+                  ['image-generation', t('Generate images')],
                   ['api-access', t('API access')],
                   ['faq', t('Common questions')],
                 ].map(([id, label]) => (

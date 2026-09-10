@@ -1,0 +1,8 @@
+interface:
+  display_name: 'LLM-Hub Image Gen'
+  short_description: 'Generate images through your active LLM-Hub provider'
+  brand_color: '#146C43'
+  default_prompt: 'Use $llmhub-imagegen to generate an image through my active LLM-Hub provider.'
+
+policy:
+  allow_implicit_invocation: true

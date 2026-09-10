@@ -16,6 +16,7 @@
     "copyright:check": "node scripts/add-copyright.mjs --check",
     "copyright": "node scripts/add-copyright.mjs",
     "i18n:sync": "node scripts/sync-i18n.mjs",
+    "test:llmhub-imagegen": "python -B scripts/test-llmhub-imagegen.py",
     "knip": "knip"
   },
   "dependencies": {

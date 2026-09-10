@@ -16,10 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Laptop, ExternalLink, MousePointerClick } from 'lucide-react'
+import {
+  Check,
+  Download,
+  Image,
+  Laptop,
+  ExternalLink,
+  MousePointerClick,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent } from '@/components/ui/card'
+import { getServerAddress } from '@/features/keys/lib/server-address'
 
 function GuideStep(props: {
   number: string
@@ -198,6 +207,93 @@ export function DesktopGuide() {
             )}
           </p>
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+export function ImageGenerationGuide() {
+  const { t } = useTranslation()
+  const skillDownloadUrl = `${getServerAddress()}/downloads/llmhub-imagegen.zip`
+  const generationPrompt = 'Use $llmhub-imagegen to generate an image of ...'
+  const installPrompt = t(
+    'Please download and install the LLM-Hub image generation skill from {{url}}. Extract the llmhub-imagegen folder into the Codex skills directory, then tell me when it is ready.',
+    { url: skillDownloadUrl }
+  )
+
+  return (
+    <Card>
+      <CardContent className='space-y-5 p-5 md:p-6'>
+        <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
+          <div className='flex min-w-0 items-start gap-3'>
+            <div className='bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg'>
+              <Image className='size-4' aria-hidden='true' />
+            </div>
+            <div className='space-y-1'>
+              <h3 className='text-sm font-semibold'>
+                {t('Generate images with your LLM-Hub key')}
+              </h3>
+              <p className='text-muted-foreground text-sm leading-6'>
+                {t(
+                  'Install the skill once, then invoke it by name in a Codex task. The skill uses the provider and API key already configured in Codex.'
+                )}
+              </p>
+            </div>
+          </div>
+          <div className='flex w-full shrink-0 gap-2 sm:w-auto'>
+            <CopyButton
+              value={installPrompt}
+              variant='default'
+              size='default'
+              className='min-w-0 flex-1 gap-2 sm:flex-none'
+              tooltip={t('Copy installation prompt')}
+            >
+              {t('Copy installation prompt')}
+            </CopyButton>
+            <a
+              href={skillDownloadUrl}
+              download
+              className='border-border hover:bg-muted inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition-colors'
+              title={t('Direct download')}
+              aria-label={t('Direct download')}
+            >
+              <Download className='size-4' aria-hidden='true' />
+            </a>
+          </div>
+        </div>
+
+        <div className='border-border/70 grid gap-4 border-t pt-5 sm:grid-cols-2'>
+          <GuideStep number='1' title={t('Install the image skill')}>
+            {t(
+              'Copy the installation prompt into a Codex task, or download and extract the package manually.'
+            )}
+          </GuideStep>
+          <GuideStep number='2' title={t('Describe the image')}>
+            {t(
+              'After restarting Codex, start with “Use $llmhub-imagegen”, then describe the subject, style, size, and any required text.'
+            )}
+          </GuideStep>
+        </div>
+
+        <div className='border-border/70 bg-muted/30 flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5'>
+          <code className='min-w-0 flex-1 text-xs break-words'>
+            {generationPrompt}
+          </code>
+          <CopyButton
+            value={generationPrompt}
+            size='icon'
+            variant='ghost'
+            className='size-7 shrink-0'
+            iconClassName='size-3.5'
+            tooltip={t('Copy example prompt')}
+          />
+        </div>
+
+        <p className='text-muted-foreground border-border/70 border-t pt-5 text-xs leading-5'>
+          {t(
+            'The skill sends one request to the standard Images API with gpt-image-2. It does not contain or display your API key.'
+          )}
+        </p>
       </CardContent>
     </Card>
   )
