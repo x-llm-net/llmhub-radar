@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+from contextlib import closing
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 import tomllib
@@ -19,6 +21,7 @@ from typing import NoReturn
 
 
 DEFAULT_MODEL = "gpt-image-2"
+CC_SWITCH_PROVIDER_ID_KEY = "currentProviderCodex"
 
 
 def fail(message: str) -> NoReturn:
@@ -28,6 +31,70 @@ def fail(message: str) -> NoReturn:
 
 def codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+
+
+def load_cc_switch_provider(proxy_base_url: str) -> tuple[str, str] | None:
+    parsed = urllib.parse.urlsplit(proxy_base_url)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return None
+
+    switch_home = Path(
+        os.environ.get("CC_SWITCH_HOME", Path.home() / ".cc-switch")
+    )
+    database_path = switch_home / "cc-switch.db"
+    settings_path = switch_home / "settings.json"
+    if not database_path.exists() or not settings_path.exists():
+        return None
+
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        provider_id = settings.get(CC_SWITCH_PROVIDER_ID_KEY)
+        with closing(
+            sqlite3.connect(f"file:{database_path.as_posix()}?mode=ro", uri=True)
+        ) as database:
+            proxy = database.execute(
+                """
+                SELECT listen_address, listen_port, proxy_enabled, enabled
+                FROM proxy_config
+                WHERE app_type = 'codex'
+                """
+            ).fetchone()
+            provider = database.execute(
+                """
+                SELECT settings_config
+                FROM providers
+                WHERE id = ? AND app_type = 'codex'
+                """,
+                (provider_id,),
+            ).fetchone()
+    except (OSError, json.JSONDecodeError, sqlite3.Error):
+        return None
+
+    if not proxy or not provider or not proxy[2] or not proxy[3]:
+        return None
+    listen_address, listen_port = str(proxy[0]), int(proxy[1])
+    normalized_host = "127.0.0.1" if parsed.hostname == "localhost" else parsed.hostname
+    normalized_listen = "127.0.0.1" if listen_address == "localhost" else listen_address
+    if normalized_host != normalized_listen or (parsed.port or 80) != listen_port:
+        return None
+
+    try:
+        provider_settings = json.loads(provider[0])
+        provider_config = tomllib.loads(provider_settings.get("config", ""))
+    except (TypeError, json.JSONDecodeError, tomllib.TOMLDecodeError):
+        return None
+    provider_name = provider_config.get("model_provider", "openai")
+    provider_details = provider_config.get("model_providers", {}).get(
+        provider_name, {}
+    )
+    upstream_url = provider_details.get("base_url")
+    auth = provider_settings.get("auth", {})
+    token = auth.get("OPENAI_API_KEY") if isinstance(auth, dict) else None
+    if not isinstance(upstream_url, str) or not upstream_url.strip():
+        return None
+    if not isinstance(token, str) or not token.strip():
+        return None
+    return upstream_url.rstrip("/"), token.strip()
 
 
 def load_provider() -> tuple[str, str]:
@@ -65,6 +132,9 @@ def load_provider() -> tuple[str, str]:
 
     if not base_url:
         fail(f"base_url is not configured for provider {provider_id!r}")
+    cc_switch_provider = load_cc_switch_provider(str(base_url))
+    if cc_switch_provider:
+        return cc_switch_provider
     token = token.strip() if isinstance(token, str) else ""
     if not token:
         if env_key:
@@ -85,20 +155,7 @@ def images_endpoint(base_url: str) -> str:
     )
 
 
-def image_bytes_from_response(result: object) -> bytes:
-    if not isinstance(result, dict):
-        fail("provider returned an invalid JSON response")
-    data = result.get("data")
-    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
-        fail("provider response contained no generated image")
-
-    encoded = data[0].get("b64_json")
-    if not isinstance(encoded, str) or not encoded.strip():
-        fail("provider response did not contain base64 image data")
-    try:
-        image = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        fail(f"provider returned invalid image data: {exc}")
+def validate_png(image: bytes) -> bytes:
     if (
         len(image) < 24
         or image[:8] != b"\x89PNG\r\n\x1a\n"
@@ -106,8 +163,46 @@ def image_bytes_from_response(result: object) -> bytes:
         or int.from_bytes(image[16:20], "big") <= 0
         or int.from_bytes(image[20:24], "big") <= 0
     ):
-        fail("provider returned Base64 data that is not a valid PNG image")
+        fail("provider returned data that is not a valid PNG image")
     return image
+
+
+def download_image(url: str, timeout: int) -> bytes:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        fail("provider returned an invalid image URL")
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "codex_cli_rs/0.56.0"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return validate_png(response.read())
+    except urllib.error.HTTPError as exc:
+        fail(f"image download returned HTTP {exc.code}")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        fail(f"image download failed: {exc}")
+
+
+def image_bytes_from_response(result: object, timeout: int) -> bytes:
+    if not isinstance(result, dict):
+        fail("provider returned an invalid JSON response")
+    data = result.get("data")
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        fail("provider response contained no generated image")
+
+    encoded = data[0].get("b64_json")
+    if isinstance(encoded, str) and encoded.strip():
+        try:
+            return validate_png(base64.b64decode(encoded, validate=True))
+        except (binascii.Error, ValueError) as exc:
+            fail(f"provider returned invalid image data: {exc}")
+
+    image_url = data[0].get("url")
+    if isinstance(image_url, str) and image_url.strip():
+        return download_image(image_url, timeout)
+    fail("provider response contained neither base64 image data nor an image URL")
 
 
 def request_image(args: argparse.Namespace) -> bytes:
@@ -166,7 +261,7 @@ def request_image(args: argparse.Namespace) -> bytes:
         fail(f"provider returned HTTP {exc.code}: {details[:2000]}")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         fail(f"image request failed: {exc}")
-    return image_bytes_from_response(result)
+    return image_bytes_from_response(result, args.timeout)
 
 
 def write_output(path: Path, data: bytes, force: bool) -> None:

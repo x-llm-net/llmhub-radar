@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import base64
+from contextlib import closing
 import http.server
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -44,6 +46,16 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"error":"Bearer fixture-token"}')
             return
+        if prompt == "url-image":
+            payload = json.dumps(
+                {"data": [{"url": f"http://{self.headers['Host']}/generated.png"}]}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         encoded = (
             base64.b64encode(b"not an image").decode("ascii")
             if prompt == "invalid-image"
@@ -55,6 +67,16 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def do_GET(self) -> None:
+        if self.path != "/generated.png":
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(PNG)))
+        self.end_headers()
+        self.wfile.write(PNG)
 
     def log_message(self, *_: object) -> None:
         pass
@@ -136,6 +158,14 @@ class ImagegenContractTest(unittest.TestCase):
         self.assertIn("not a valid PNG image", result.stderr)
         self.assertFalse(output.exists())
 
+    def test_downloads_standard_image_url_response(self) -> None:
+        output = Path(self.temp_dir.name) / "url-result.png"
+        result = self.run_script("url-image", output)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), PNG)
+        self.assertEqual(len(FixtureHandler.requests), 1)
+
     def test_redacts_token_from_http_error(self) -> None:
         output = Path(self.temp_dir.name) / "failed.png"
         result = self.run_script("http-error", output)
@@ -155,6 +185,57 @@ class ImagegenContractTest(unittest.TestCase):
         self.assertIn("MISSING_FIXTURE_KEY", result.stderr)
         self.assertEqual(FixtureHandler.requests, [])
         self.assertFalse(output.exists())
+
+    def test_resolves_active_cc_switch_upstream(self) -> None:
+        switch_home = Path(self.temp_dir.name) / "cc-switch"
+        switch_home.mkdir()
+        provider_id = "fixture-provider"
+        (switch_home / "settings.json").write_text(
+            json.dumps({"currentProviderCodex": provider_id}), encoding="utf-8"
+        )
+        with closing(sqlite3.connect(switch_home / "cc-switch.db")) as database:
+            database.execute(
+                "CREATE TABLE proxy_config "
+                "(app_type TEXT, listen_address TEXT, listen_port INTEGER, "
+                "proxy_enabled INTEGER, enabled INTEGER)"
+            )
+            database.execute(
+                "INSERT INTO proxy_config VALUES ('codex', '127.0.0.1', 15721, 1, 1)"
+            )
+            database.execute(
+                "CREATE TABLE providers "
+                "(id TEXT, app_type TEXT, settings_config TEXT)"
+            )
+            settings = {
+                "auth": {"OPENAI_API_KEY": "cc-switch-token"},
+                "config": (
+                    'model_provider = "fixture"\n\n'
+                    '[model_providers.fixture]\n'
+                    f'base_url = "http://127.0.0.1:{self.server.server_port}/gateway/v1"\n'
+                ),
+            }
+            database.execute(
+                "INSERT INTO providers VALUES (?, 'codex', ?)",
+                (provider_id, json.dumps(settings)),
+            )
+            database.commit()
+        (self.home / "config.toml").write_text(
+            'model_provider = "custom"\n\n'
+            '[model_providers.custom]\n'
+            'base_url = "http://127.0.0.1:15721/v1"\n',
+            encoding="utf-8",
+        )
+        self.env["CC_SWITCH_HOME"] = str(switch_home)
+        output = Path(self.temp_dir.name) / "cc-switch-result.png"
+
+        result = self.run_script("draw", output)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), PNG)
+        self.assertEqual(len(FixtureHandler.requests), 1)
+        path, _, authorization = FixtureHandler.requests[0]
+        self.assertEqual(path, "/gateway/v1/images/generations")
+        self.assertEqual(authorization, "Bearer cc-switch-token")
 
 
 if __name__ == "__main__":
