@@ -25,6 +25,7 @@ import {
   claimSessionExpirationHandling,
   clearAuthentication,
   refreshAuthentication,
+  shouldRefreshAccessToken,
 } from '@/lib/auth-session'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
@@ -146,7 +147,17 @@ api.interceptors.response.use(
   }
 )
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
+  if (!config.skipAuthRefresh && !config.authRetry) {
+    const auth = useAuthStore.getState().auth
+    if (shouldRefreshAccessToken(auth.accessToken, auth.accessExpiresAt)) {
+      const outcome = await refreshAuthentication()
+      if (outcome.kind === 'anonymous' || outcome.kind === 'out_of_sync') {
+        handleSessionExpiration(config.skipErrorHandler)
+      }
+    }
+  }
+
   const accessToken = useAuthStore.getState().auth.accessToken
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`

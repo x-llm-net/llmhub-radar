@@ -406,13 +406,22 @@ export function getCommonHeaders(): Record<string, string> {
   return headers
 }
 
+export function shouldRefreshAccessToken(
+  accessToken: string | null,
+  accessExpiresAt: number | null,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): boolean {
+  return Boolean(
+    accessToken && accessExpiresAt && accessExpiresAt <= nowSeconds + 60
+  )
+}
+
 export async function getFreshAuthHeaders(): Promise<Record<string, string>> {
   const auth = useAuthStore.getState().auth
-  const refreshBefore = Math.floor(Date.now() / 1000) + 60
   if (
     auth.accessToken &&
     auth.accessExpiresAt &&
-    auth.accessExpiresAt > refreshBefore
+    !shouldRefreshAccessToken(auth.accessToken, auth.accessExpiresAt)
   ) {
     return getCommonHeaders()
   }
