@@ -31,7 +31,15 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { BUSINESS_CONTACT_TYPES } from '@/features/tenant-brand/types'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -52,6 +60,16 @@ const _systemInfoSchema = z.object({
   Footer: z.string().optional(),
   About: z.string().optional(),
   HomePageContent: z.string().optional(),
+  HubBusinessContactName: z.string().max(80).optional(),
+  HubBusinessContactType: z.enum([
+    'wechat',
+    'wecom',
+    'email',
+    'telegram',
+    'other',
+  ]),
+  HubBusinessContactValue: z.string().max(256).optional(),
+  HubBusinessContactDescription: z.string().max(240).optional(),
   legal: z.object({
     user_agreement: z.string().optional(),
     privacy_policy: z.string().optional(),
@@ -80,6 +98,16 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     Footer: normalizeValue(defaultValues.Footer),
     About: normalizeValue(defaultValues.About),
     HomePageContent: normalizeValue(defaultValues.HomePageContent),
+    HubBusinessContactName: normalizeValue(
+      defaultValues.HubBusinessContactName
+    ),
+    HubBusinessContactType: defaultValues.HubBusinessContactType || 'other',
+    HubBusinessContactValue: normalizeValue(
+      defaultValues.HubBusinessContactValue
+    ),
+    HubBusinessContactDescription: normalizeValue(
+      defaultValues.HubBusinessContactDescription
+    ),
     legal: {
       user_agreement: normalizeValue(defaultValues.legal?.user_agreement),
       privacy_policy: normalizeValue(defaultValues.legal?.privacy_policy),
@@ -95,6 +123,16 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     Footer: z.string().optional(),
     About: z.string().optional(),
     HomePageContent: z.string().optional(),
+    HubBusinessContactName: z.string().max(80).optional(),
+    HubBusinessContactType: z.enum([
+      'wechat',
+      'wecom',
+      'email',
+      'telegram',
+      'other',
+    ]),
+    HubBusinessContactValue: z.string().max(256).optional(),
+    HubBusinessContactDescription: z.string().max(240).optional(),
     legal: z.object({
       user_agreement: z.string().optional(),
       privacy_policy: z.string().optional(),
@@ -266,6 +304,98 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                   )}
                 />
               </SettingsFormGridItem>
+
+              <SettingsFormGridItem span='full'>
+                <div className='border-t pt-5'>
+                  <h3 className='text-sm font-semibold'>
+                    {t('Default business contact')}
+                  </h3>
+                  <p className='text-muted-foreground mt-1 text-sm'>
+                    {t(
+                      'Used in the store-opening guide when the current tenant has not configured its own contact.'
+                    )}
+                  </p>
+                </div>
+              </SettingsFormGridItem>
+
+              <FormField
+                control={form.control}
+                name='HubBusinessContactName'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Contact name or team')}</FormLabel>
+                    <FormControl>
+                      <Input maxLength={80} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='HubBusinessContactType'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Contact method')}</FormLabel>
+                    <Select
+                      items={BUSINESS_CONTACT_TYPES.map((item) => ({
+                        ...item,
+                        label: t(item.label),
+                      }))}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger className='w-full'>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        {BUSINESS_CONTACT_TYPES.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {t(item.label)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='HubBusinessContactValue'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Contact account or address')}</FormLabel>
+                    <FormControl>
+                      <Input maxLength={256} {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Leave empty to hide the contact entry when no tenant contact is configured.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='HubBusinessContactDescription'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Contact note (optional)')}</FormLabel>
+                    <FormControl>
+                      <Textarea maxLength={240} rows={3} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

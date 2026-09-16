@@ -31,9 +31,22 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
-import type { TenantBrand } from './types'
+import {
+  BUSINESS_CONTACT_TYPES,
+  EMPTY_BUSINESS_CONTACT,
+  type BusinessContact,
+  type TenantBrand,
+} from './types'
 
 type TenantBrandEditorProps = {
   brand: TenantBrand
@@ -60,14 +73,18 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
   )
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [filePreview, setFilePreview] = useState('')
+  const [contact, setContact] = useState<BusinessContact>(
+    props.brand.business_contact ?? EMPTY_BUSINESS_CONTACT
+  )
 
   useEffect(() => {
     setName(props.brand.name)
     setLogoURL(isUploadedLogo(props.brand.logo_url) ? '' : props.brand.logo_url)
     setKeepUploadedLogo(isUploadedLogo(props.brand.logo_url))
     setLogoFile(null)
+    setContact(props.brand.business_contact ?? EMPTY_BUSINESS_CONTACT)
     if (logoInputRef.current) logoInputRef.current.value = ''
-  }, [props.brand.logo_url, props.brand.name])
+  }, [props.brand.business_contact, props.brand.logo_url, props.brand.name])
 
   useEffect(() => {
     if (!logoFile) {
@@ -109,6 +126,7 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
               {
                 name: name.trim(),
                 logo_url: submittedLogoURL,
+                business_contact: contact,
               },
               logoFile ?? undefined
             )
@@ -198,6 +216,93 @@ export function TenantBrandEditor(props: TenantBrandEditorProps) {
               }}
             />
           </div>
+
+          <fieldset
+            disabled={props.saving}
+            className='grid gap-4 border-t pt-5'
+          >
+            <legend className='px-1 text-sm font-semibold'>
+              {t('Business contact')}
+            </legend>
+            <p className='text-muted-foreground text-xs leading-5'>
+              {t(
+                'Shown in the store-opening guide on the tenant root domain. Leave the account or address empty to use the platform contact.'
+              )}
+            </p>
+            <div className='grid gap-4 sm:grid-cols-2'>
+              <div className='grid gap-2'>
+                <Label htmlFor='tenant-contact-name'>
+                  {t('Contact name or team')}
+                </Label>
+                <Input
+                  id='tenant-contact-name'
+                  value={contact.name}
+                  maxLength={80}
+                  onChange={(event) =>
+                    setContact({ ...contact, name: event.target.value })
+                  }
+                />
+              </div>
+              <div className='grid gap-2'>
+                <Label htmlFor='tenant-contact-type'>
+                  {t('Contact method')}
+                </Label>
+                <Select
+                  items={BUSINESS_CONTACT_TYPES.map((item) => ({
+                    ...item,
+                    label: t(item.label),
+                  }))}
+                  value={contact.type || 'other'}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setContact({
+                        ...contact,
+                        type: value as BusinessContact['type'],
+                      })
+                    }
+                  }}
+                >
+                  <SelectTrigger id='tenant-contact-type' className='w-full'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {BUSINESS_CONTACT_TYPES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {t(item.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className='grid gap-2'>
+              <Label htmlFor='tenant-contact-value'>
+                {t('Contact account or address')}
+              </Label>
+              <Input
+                id='tenant-contact-value'
+                value={contact.value}
+                maxLength={256}
+                onChange={(event) =>
+                  setContact({ ...contact, value: event.target.value })
+                }
+              />
+            </div>
+            <div className='grid gap-2'>
+              <Label htmlFor='tenant-contact-description'>
+                {t('Contact note (optional)')}
+              </Label>
+              <Textarea
+                id='tenant-contact-description'
+                value={contact.description}
+                maxLength={240}
+                rows={3}
+                onChange={(event) =>
+                  setContact({ ...contact, description: event.target.value })
+                }
+              />
+            </div>
+          </fieldset>
 
           <div>
             <Button type='submit' disabled={props.saving}>

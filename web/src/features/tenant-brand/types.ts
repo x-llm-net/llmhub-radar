@@ -17,9 +17,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+export type BusinessContact = {
+  name: string
+  type: 'wechat' | 'wecom' | 'email' | 'telegram' | 'other'
+  value: string
+  description: string
+}
+
+export const BUSINESS_CONTACT_TYPES = [
+  { value: 'wechat', label: 'WeChat' },
+  { value: 'wecom', label: 'WeCom' },
+  { value: 'email', label: 'Email' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'other', label: 'Other' },
+] as const
+
+export const EMPTY_BUSINESS_CONTACT: BusinessContact = {
+  name: '',
+  type: 'other',
+  value: '',
+  description: '',
+}
+
 export type TenantBrand = {
   name: string
   logo_url: string
+  business_contact?: BusinessContact
 }
 
 export type TenantBrandData = {

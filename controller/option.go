@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -43,6 +44,30 @@ func isPositiveOptionValue(value string) bool {
 	}
 	floatValue, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	return err == nil && floatValue > 0
+}
+
+func normalizeBusinessContactOption(key, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	switch key {
+	case model.HubBusinessContactNameOption:
+		if len([]rune(value)) > 80 {
+			return value, errors.New("business contact name must be at most 80 characters")
+		}
+	case model.HubBusinessContactTypeOption:
+		value = strings.ToLower(value)
+		if _, ok := businessContactTypes[value]; !ok {
+			return value, errors.New("business contact type is invalid")
+		}
+	case model.HubBusinessContactValueOption:
+		if len([]rune(value)) > 256 {
+			return value, errors.New("business contact value must be at most 256 characters")
+		}
+	case model.HubBusinessContactDescriptionOption:
+		if len([]rune(value)) > 240 {
+			return value, errors.New("business contact description must be at most 240 characters")
+		}
+	}
+	return value, nil
 }
 
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
@@ -311,6 +336,15 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": "Classic 前端已移除，主题只能设置为 default",
 			})
+			return
+		}
+	case model.HubBusinessContactNameOption,
+		model.HubBusinessContactTypeOption,
+		model.HubBusinessContactValueOption,
+		model.HubBusinessContactDescriptionOption:
+		option.Value, err = normalizeBusinessContactOption(option.Key, option.Value.(string))
+		if err != nil {
+			common.ApiError(c, err)
 			return
 		}
 	case "GroupRatio":

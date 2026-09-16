@@ -18,11 +18,26 @@ For commercial licensing, please contact support@quantumnous.com
 */
 package model
 
-import "encoding/json"
+import "github.com/QuantumNous/new-api/common"
+
+const (
+	HubBusinessContactNameOption        = "HubBusinessContactName"
+	HubBusinessContactTypeOption        = "HubBusinessContactType"
+	HubBusinessContactValueOption       = "HubBusinessContactValue"
+	HubBusinessContactDescriptionOption = "HubBusinessContactDescription"
+)
+
+type BusinessContact struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Value       string `json:"value"`
+	Description string `json:"description"`
+}
 
 type TenantBrandConfig struct {
-	Name    string `json:"name"`
-	LogoURL string `json:"logo_url"`
+	Name            string          `json:"name"`
+	LogoURL         string          `json:"logo_url"`
+	BusinessContact BusinessContact `json:"business_contact"`
 }
 
 func (tenant Tenant) Brand() TenantBrandConfig {
@@ -30,14 +45,14 @@ func (tenant Tenant) Brand() TenantBrandConfig {
 	if tenant.BrandConfig == "" {
 		return brand
 	}
-	if err := json.Unmarshal([]byte(tenant.BrandConfig), &brand); err != nil {
+	if err := common.UnmarshalJsonStr(tenant.BrandConfig, &brand); err != nil {
 		return TenantBrandConfig{}
 	}
 	return brand
 }
 
 func EncodeTenantBrandConfig(brand TenantBrandConfig) (string, error) {
-	data, err := json.Marshal(brand)
+	data, err := common.Marshal(brand)
 	if err != nil {
 		return "", err
 	}

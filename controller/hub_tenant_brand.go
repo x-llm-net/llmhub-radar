@@ -34,9 +34,20 @@ import (
 
 const tenantBrandAssetPathPrefix = "/api/hub/public/brand-assets/"
 
+const tenantBrandConfigMaxCharacters = 2048
+
+var businessContactTypes = map[string]struct{}{
+	"wechat":   {},
+	"wecom":    {},
+	"email":    {},
+	"telegram": {},
+	"other":    {},
+}
+
 type tenantBrandRequest struct {
-	Name    string `json:"name"`
-	LogoURL string `json:"logo_url"`
+	Name            string                 `json:"name"`
+	LogoURL         string                 `json:"logo_url"`
+	BusinessContact *model.BusinessContact `json:"business_contact"`
 }
 
 type tenantBrandResponse struct {
@@ -44,10 +55,47 @@ type tenantBrandResponse struct {
 	Brand        model.TenantBrandConfig `json:"brand"`
 }
 
-func normalizeTenantBrand(request tenantBrandRequest) (model.TenantBrandConfig, error) {
+type publicBusinessContactResponse struct {
+	Contact model.BusinessContact `json:"contact"`
+	Source  string                `json:"source"`
+}
+
+func normalizeBusinessContact(contact model.BusinessContact) (model.BusinessContact, error) {
+	contact.Name = strings.TrimSpace(contact.Name)
+	contact.Type = strings.ToLower(strings.TrimSpace(contact.Type))
+	contact.Value = strings.TrimSpace(contact.Value)
+	contact.Description = strings.TrimSpace(contact.Description)
+	if contact.Type == "" {
+		contact.Type = "other"
+	}
+	if _, ok := businessContactTypes[contact.Type]; !ok {
+		return contact, errors.New("business contact type is invalid")
+	}
+	if len([]rune(contact.Name)) > 80 {
+		return contact, errors.New("business contact name must be at most 80 characters")
+	}
+	if len([]rune(contact.Value)) > 256 {
+		return contact, errors.New("business contact value must be at most 256 characters")
+	}
+	if len([]rune(contact.Description)) > 240 {
+		return contact, errors.New("business contact description must be at most 240 characters")
+	}
+	return contact, nil
+}
+
+func normalizeTenantBrand(request tenantBrandRequest, currentContact model.BusinessContact) (model.TenantBrandConfig, error) {
+	contact := currentContact
+	if request.BusinessContact != nil {
+		contact = *request.BusinessContact
+	}
+	contact, err := normalizeBusinessContact(contact)
+	if err != nil {
+		return model.TenantBrandConfig{}, err
+	}
 	brand := model.TenantBrandConfig{
-		Name:    strings.TrimSpace(request.Name),
-		LogoURL: strings.TrimSpace(request.LogoURL),
+		Name:            strings.TrimSpace(request.Name),
+		LogoURL:         strings.TrimSpace(request.LogoURL),
+		BusinessContact: contact,
 	}
 	if len([]rune(brand.Name)) > 120 {
 		return brand, errors.New("brand name must be at most 120 characters")
@@ -55,7 +103,30 @@ func normalizeTenantBrand(request tenantBrandRequest) (model.TenantBrandConfig, 
 	if len(brand.LogoURL) > 1024 || !isTenantBrandLogoURL(brand.LogoURL) {
 		return brand, errors.New("brand logo must be an HTTP or HTTPS URL")
 	}
+	encoded, err := model.EncodeTenantBrandConfig(brand)
+	if err != nil {
+		return brand, err
+	}
+	if len([]rune(encoded)) > tenantBrandConfigMaxCharacters {
+		return brand, errors.New("brand settings are too long")
+	}
 	return brand, nil
+}
+
+func platformBusinessContact() model.BusinessContact {
+	common.OptionMapRWMutex.RLock()
+	contact := model.BusinessContact{
+		Name:        common.OptionMap[model.HubBusinessContactNameOption],
+		Type:        common.OptionMap[model.HubBusinessContactTypeOption],
+		Value:       common.OptionMap[model.HubBusinessContactValueOption],
+		Description: common.OptionMap[model.HubBusinessContactDescriptionOption],
+	}
+	common.OptionMapRWMutex.RUnlock()
+	contact, err := normalizeBusinessContact(contact)
+	if err != nil {
+		return model.BusinessContact{}
+	}
+	return contact
 }
 
 func tenantBrandAssetPath(assetID int) string {
@@ -115,7 +186,7 @@ func updateTenantBrand(c *gin.Context, tenant *model.Tenant) {
 	if len(logoData) > 0 {
 		request.LogoURL = ""
 	}
-	brand, err := normalizeTenantBrand(request)
+	brand, err := normalizeTenantBrand(request, tenant.Brand().BusinessContact)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -132,6 +203,9 @@ func updateTenantBrand(c *gin.Context, tenant *model.Tenant) {
 		encoded, encodeErr := model.EncodeTenantBrandConfig(brand)
 		if encodeErr != nil {
 			return encodeErr
+		}
+		if len([]rune(encoded)) > tenantBrandConfigMaxCharacters {
+			return errors.New("brand settings are too long")
 		}
 		tenant.BrandConfig = encoded
 		tenant.UpdatedAt = time.Now().Unix()
@@ -184,7 +258,37 @@ func GetPublicHubTenantBrand(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, tenantBrandData(tenant))
+	brand := tenant.Brand()
+	common.ApiSuccess(c, gin.H{
+		"is_tenant_host": true,
+		"brand":          gin.H{"name": brand.Name, "logo_url": brand.LogoURL},
+	})
+}
+
+func GetPublicHubBusinessContact(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	resolution, err := model.ResolveTenantHost(c.Request.Host)
+	if err != nil || !resolution.IsTenantHost || resolution.DomainID <= 0 {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	tenant, err := model.GetActiveTenantByID(resolution.TenantID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	contact := tenant.Brand().BusinessContact
+	contact, err = normalizeBusinessContact(contact)
+	if err != nil || contact.Value == "" {
+		contact = platformBusinessContact()
+		if contact.Value == "" {
+			common.ApiSuccess(c, publicBusinessContactResponse{})
+			return
+		}
+		common.ApiSuccess(c, publicBusinessContactResponse{Contact: contact, Source: "platform"})
+		return
+	}
+	common.ApiSuccess(c, publicBusinessContactResponse{Contact: contact, Source: "tenant"})
 }
 
 func GetCurrentHubTenantBrand(c *gin.Context) {

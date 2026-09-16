@@ -136,6 +136,10 @@ export type SiteSettings = {
   About: string
   HomePageContent: string
   ServerAddress: string
+  HubBusinessContactName: string
+  HubBusinessContactType: 'wechat' | 'wecom' | 'email' | 'telegram' | 'other'
+  HubBusinessContactValue: string
+  HubBusinessContactDescription: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
   HeaderNavModules: string

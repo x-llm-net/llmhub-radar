@@ -11,6 +11,9 @@ func TestTenantBrandConfigRoundTripAndMalformedFallback(t *testing.T) {
 	encoded, err := EncodeTenantBrandConfig(TenantBrandConfig{
 		Name:    "Brand A",
 		LogoURL: "https://brand-a.example/logo.png",
+		BusinessContact: BusinessContact{
+			Name: "Sales", Type: "email", Value: "sales@example.com", Description: "Weekdays",
+		},
 	})
 	require.NoError(t, err)
 
@@ -18,6 +21,9 @@ func TestTenantBrandConfigRoundTripAndMalformedFallback(t *testing.T) {
 	assert.Equal(t, TenantBrandConfig{
 		Name:    "Brand A",
 		LogoURL: "https://brand-a.example/logo.png",
+		BusinessContact: BusinessContact{
+			Name: "Sales", Type: "email", Value: "sales@example.com", Description: "Weekdays",
+		},
 	}, tenant.Brand())
 
 	tenant.BrandConfig = "not-json"

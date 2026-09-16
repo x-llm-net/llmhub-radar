@@ -42,6 +42,10 @@ const SITE_SECTIONS = [
           About: settings.About,
           HomePageContent: settings.HomePageContent,
           ServerAddress: settings.ServerAddress,
+          HubBusinessContactName: settings.HubBusinessContactName,
+          HubBusinessContactType: settings.HubBusinessContactType,
+          HubBusinessContactValue: settings.HubBusinessContactValue,
+          HubBusinessContactDescription: settings.HubBusinessContactDescription,
           legal: {
             user_agreement: settings['legal.user_agreement'],
             privacy_policy: settings['legal.privacy_policy'],

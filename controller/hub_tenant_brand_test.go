@@ -128,6 +128,9 @@ func TestTenantBrandUpdatesCurrentTenantWithoutTouchingAnother(t *testing.T) {
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/brand", map[string]any{
 		"name":     "  New A  ",
 		"logo_url": "https://a.example.com/new-logo.png",
+		"business_contact": map[string]any{
+			"name": " Sales ", "type": "EMAIL", "value": " sales@a.example ", "description": " Weekdays ",
+		},
 	}, 42)
 	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenantA.Id)
 	UpdateCurrentHubTenantBrand(ctx)
@@ -138,13 +141,119 @@ func TestTenantBrandUpdatesCurrentTenantWithoutTouchingAnother(t *testing.T) {
 	require.NoError(t, model.DB.First(&tenantA, tenantA.Id).Error)
 	require.NoError(t, model.DB.First(&tenantB, tenantB.Id).Error)
 	assert.Equal(t, "New A", tenantA.Brand().Name)
+	assert.Equal(t, model.BusinessContact{
+		Name: "Sales", Type: "email", Value: "sales@a.example", Description: "Weekdays",
+	}, tenantA.Brand().BusinessContact)
 	assert.Equal(t, "Brand B", tenantB.Brand().Name)
+}
+
+func TestPublicBusinessContactUsesTenantThenPlatformFallbackOnRootHost(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.HubProvider{}))
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{
+		Name: "Tenant",
+		BusinessContact: model.BusinessContact{
+			Name: "Tenant sales", Type: "wechat", Value: "tenant-sales", Description: "Tenant contact",
+		},
+	})
+	t.Setenv("HUB_PROVIDER_ROOT_DOMAIN", "llm-hub.store")
+	provider := &model.HubProvider{
+		OwnerUserId: 94005,
+		TenantId:    &tenant.Id,
+		Name:        "Tenant provider",
+		Slug:        "tenant-provider",
+		Status:      model.HubProviderStatusActive,
+	}
+	require.NoError(t, model.CreateHubProvider(provider))
+
+	common.OptionMapRWMutex.Lock()
+	var previousOptionMap map[string]string
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	} else {
+		previousOptionMap = make(map[string]string, len(common.OptionMap))
+		for key, value := range common.OptionMap {
+			previousOptionMap[key] = value
+		}
+	}
+	for key, value := range map[string]string{
+		model.HubBusinessContactNameOption:        "Platform sales",
+		model.HubBusinessContactTypeOption:        "email",
+		model.HubBusinessContactValueOption:       "platform@example.com",
+		model.HubBusinessContactDescriptionOption: "Platform contact",
+	} {
+		common.OptionMap[key] = value
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		defer common.OptionMapRWMutex.Unlock()
+		if previousOptionMap == nil {
+			common.OptionMap = nil
+			return
+		}
+		common.OptionMap = previousOptionMap
+	})
+
+	requestContact := func(host string) (*httptest.ResponseRecorder, struct {
+		Success bool                          `json:"success"`
+		Data    publicBusinessContactResponse `json:"data"`
+	}) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/hub/public/business-contact", nil, 0)
+		ctx.Request.Host = host
+		middleware.TenantHostContextRequired()(ctx)
+		if !ctx.IsAborted() {
+			GetPublicHubBusinessContact(ctx)
+		}
+		var response struct {
+			Success bool                          `json:"success"`
+			Data    publicBusinessContactResponse `json:"data"`
+		}
+		if recorder.Code == http.StatusOK {
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		}
+		return recorder, response
+	}
+
+	recorder, response := requestContact("tenant.example")
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, response.Success)
+	assert.Equal(t, "tenant", response.Data.Source)
+	assert.Equal(t, "tenant-sales", response.Data.Contact.Value)
+
+	brand := tenant.Brand()
+	brand.BusinessContact = model.BusinessContact{}
+	encoded, err := model.EncodeTenantBrandConfig(brand)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&tenant).Update("brand_config", encoded).Error)
+	recorder, response = requestContact("tenant.example")
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, response.Success)
+	assert.Equal(t, "platform", response.Data.Source)
+	assert.Equal(t, "platform@example.com", response.Data.Contact.Value)
+
+	recorder, _ = requestContact("tenant-provider.llm-hub.store")
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[model.HubBusinessContactValueOption] = ""
+	common.OptionMapRWMutex.Unlock()
+	recorder, response = requestContact("tenant.example")
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, response.Success)
+	assert.Empty(t, response.Data.Source)
+	assert.Empty(t, response.Data.Contact.Value)
 }
 
 func TestTenantBrandRejectsInvalidLogoAndRootCanUpdateSelectedTenant(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
-	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{Name: "Before"})
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{
+		Name: "Before",
+		BusinessContact: model.BusinessContact{
+			Name: "Existing", Type: "wechat", Value: "existing-contact",
+		},
+	})
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/brand", map[string]any{
 		"name": "After", "logo_url": "file:///tmp/logo.png",
@@ -162,6 +271,7 @@ func TestTenantBrandRejectsInvalidLogoAndRootCanUpdateSelectedTenant(t *testing.
 	response = decodeTenantBrandResponse(t, recorder.Body.Bytes())
 	require.True(t, response.Success, recorder.Body.String())
 	assert.Equal(t, "Root updated", response.Data.Brand.Name)
+	assert.Equal(t, "existing-contact", response.Data.Brand.BusinessContact.Value)
 }
 
 func TestTenantBrandAcceptsLogoUploadAndServesPublicAsset(t *testing.T) {

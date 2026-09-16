@@ -77,6 +77,10 @@ func InitOptionMap() {
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
 	common.OptionMap["ServerAddress"] = ""
+	common.OptionMap[HubBusinessContactNameOption] = ""
+	common.OptionMap[HubBusinessContactTypeOption] = "other"
+	common.OptionMap[HubBusinessContactValueOption] = ""
+	common.OptionMap[HubBusinessContactDescriptionOption] = ""
 	common.OptionMap[hub_provider_notification_setting.OptionKey] = "{}"
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
   BookOpen,
@@ -25,6 +26,7 @@ import {
   HelpCircle,
   KeyRound,
   Play,
+  Store,
   ShieldCheck,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -35,7 +37,10 @@ import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getServerAddress } from '@/features/keys/lib/server-address'
+import { BUSINESS_CONTACT_TYPES } from '@/features/tenant-brand/types'
+import { isTenantRootHostname } from '@/lib/provider-domain'
 
+import { getPublicBusinessContact } from './api'
 import { DesktopGuide, ImageGenerationGuide } from './components/desktop-guide'
 
 type GuideSectionProps = {
@@ -138,6 +143,30 @@ function FaqItem(props: { question: string; answer: string }) {
 export function Guide() {
   const { t } = useTranslation()
   const [showExample, setShowExample] = useState(false)
+  const isTenantRoot = isTenantRootHostname()
+  const businessContactQuery = useQuery({
+    queryKey: ['public', 'business-contact'],
+    queryFn: getPublicBusinessContact,
+    enabled: isTenantRoot,
+    retry: false,
+  })
+  const businessContact = businessContactQuery.data?.success
+    ? businessContactQuery.data.data?.contact
+    : undefined
+  const contactHref = useMemo(() => {
+    if (!businessContact?.value) return null
+    if (businessContact.type === 'email') {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessContact.value)
+        ? `mailto:${businessContact.value}`
+        : null
+    }
+    try {
+      const url = new URL(businessContact.value)
+      return url.protocol === 'https:' ? url.toString() : null
+    } catch {
+      return null
+    }
+  }, [businessContact])
   const apiOrigin = useMemo(() => getServerAddress(), [])
   const openAiEndpoint = `${apiOrigin}/v1`
   const exampleRequest = `curl ${apiOrigin}/v1/chat/completions \\
@@ -178,6 +207,12 @@ export function Guide() {
                   <Code2 className='size-4' aria-hidden='true' />
                   {t('View API access')}
                 </Button>
+                {isTenantRoot && (
+                  <Button variant='outline' render={<a href='#open-store' />}>
+                    <Store className='size-4' aria-hidden='true' />
+                    {t('Open a store')}
+                  </Button>
+                )}
               </div>
             </header>
 
@@ -214,6 +249,116 @@ export function Guide() {
                 </CardContent>
               </Card>
             </GuideSection>
+
+            {isTenantRoot && (
+              <GuideSection
+                id='open-store'
+                icon={<Store className='size-4' aria-hidden='true' />}
+                title={t('Open a store with no setup costs')}
+                description={t(
+                  'Sell your AI channels without building a relay service, server, or billing dashboard. Usage costs and applicable service fees still apply.'
+                )}
+              >
+                <div className='space-y-5 border-t pt-5'>
+                  <div className='grid gap-5 sm:grid-cols-2'>
+                    <Step number='1' title={t('Register an account')}>
+                      {t('Create an account on this site to get started.')}
+                    </Step>
+                    <Step
+                      number='2'
+                      title={t('Apply to become a channel provider')}
+                    >
+                      {t(
+                        'Submit your provider application and set up your store profile.'
+                      )}
+                    </Step>
+                    <Step number='3' title={t('Create and test a channel')}>
+                      {t(
+                        'Add your upstream channel and test the models you want to sell.'
+                      )}
+                    </Step>
+                    <Step number='4' title={t('Publish tested models')}>
+                      {t(
+                        'Once a model passes testing, publish it for customers to use.'
+                      )}
+                    </Step>
+                    <Step
+                      number='5'
+                      title={t('Start selling from your provider page')}
+                    >
+                      {t(
+                        'Your provider page lets customers find and use your channels.'
+                      )}
+                    </Step>
+                    <Step
+                      number='6'
+                      title={t('Receive earnings in your provider wallet')}
+                    >
+                      {t(
+                        'Track income from real usage in your provider wallet.'
+                      )}
+                    </Step>
+                  </div>
+                  <Button render={<a href='/provider/onboarding' />}>
+                    {t('Apply to become a channel provider')}
+                    <ArrowRight className='size-4' aria-hidden='true' />
+                  </Button>
+                  {businessContact?.value && (
+                    <div className='border-border/70 flex flex-wrap items-center justify-between gap-4 border-t pt-5'>
+                      <div className='min-w-0 space-y-1'>
+                        <p className='text-sm font-semibold'>
+                          {t('Questions or business cooperation?')}
+                        </p>
+                        <p className='text-muted-foreground text-sm'>
+                          {businessContact.name && `${businessContact.name} · `}
+                          {t(
+                            BUSINESS_CONTACT_TYPES.find(
+                              (item) => item.value === businessContact.type
+                            )?.label ?? 'Other'
+                          )}
+                        </p>
+                        <p className='text-sm break-all'>
+                          {businessContact.value}
+                        </p>
+                        {businessContact.description && (
+                          <p className='text-muted-foreground text-xs whitespace-pre-wrap'>
+                            {businessContact.description}
+                          </p>
+                        )}
+                      </div>
+                      {contactHref ? (
+                        <Button
+                          variant='outline'
+                          render={
+                            <a
+                              href={contactHref}
+                              target={
+                                contactHref.startsWith('https:')
+                                  ? '_blank'
+                                  : undefined
+                              }
+                              rel='noreferrer'
+                            />
+                          }
+                        >
+                          <ExternalLink className='size-4' aria-hidden='true' />
+                          {t('Contact us')}
+                        </Button>
+                      ) : (
+                        <CopyButton
+                          value={businessContact.value}
+                          variant='outline'
+                          size='sm'
+                          tooltip={t('Copy contact')}
+                        >
+                          {t('Copy contact')}
+                        </CopyButton>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </GuideSection>
+            )}
 
             <GuideSection
               id='codex-desktop'
@@ -370,6 +515,7 @@ export function Guide() {
               >
                 {[
                   ['quick-start', t('Quick start')],
+                  ...(isTenantRoot ? [['open-store', t('Open a store')]] : []),
                   ['codex-desktop', t('Codex desktop')],
                   ['image-generation', t('Generate images')],
                   ['api-access', t('API access')],

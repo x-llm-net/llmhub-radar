@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import type { TenantBrand } from '../tenant-brand/types'
+
 export type TenantAdminDomain = {
   id: number
   tenant_id: number
@@ -48,10 +50,7 @@ export type TenantAdminTenant = {
   status: 'active' | 'disabled' | string
   created_at: number
   updated_at: number
-  brand: {
-    name: string
-    logo_url: string
-  }
+  brand: TenantBrand
   domains: TenantAdminDomain[]
   members: TenantAdminMember[]
   settlement: {
