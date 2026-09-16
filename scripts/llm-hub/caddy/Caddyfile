@@ -39,6 +39,37 @@ llm-hub.store, 343246113.xyz {
 	}
 }
 
+# Fixed platform hostnames use publicly trusted certificates and bypass
+# tenant on-demand authorization.
+app.llm-hub.store, edge.llm-hub.store, zz-infra-check.llm-hub.store {
+	log {
+		output file /var/log/caddy/llm-hub-access.json {
+			roll_size 100MiB
+			roll_keep 7
+			roll_keep_for 168h
+		}
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Proxy-Authorization delete
+			request>headers>X-Api-Key delete
+			request>headers>X-Goog-Api-Key delete
+			request>headers>X-Auth-Token delete
+			request>uri query {
+				delete access_token
+				delete api_key
+				delete key
+				delete token
+			}
+		}
+	}
+	encode zstd gzip
+	reverse_proxy new-api:3000 {
+		flush_interval -1
+	}
+}
+
 # Custom tenant domains not listed above use an on-demand, publicly trusted
 # certificate. The ask callback prevents arbitrary domains from being served.
 https:// {
