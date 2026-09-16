@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useTheme } from '@/context/theme-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { useAuthStore } from '@/stores/auth-store'
 
 const navigation = [
   { label: 'Homepage', href: '#top' },
@@ -35,9 +36,14 @@ export function PublicHomeHeader() {
   const { t } = useTranslation()
   const { resolvedTheme, setTheme } = useTheme()
   const { systemName, tenantBrand } = useSystemConfig()
+  const user = useAuthStore((state) => state.auth.user)
   const [mobileOpen, setMobileOpen] = useState(false)
   const brandName = systemName || 'LLMHub'
   const brandLogo = tenantBrand?.logo_url?.trim()
+  const accountHref = user ? '/dashboard/overview' : '/sign-in'
+  const accountLabel = user
+    ? t('Open console')
+    : `${t('Sign in')}/${t('Sign up')}`
 
   return (
     <header className='hub-header'>
@@ -98,8 +104,8 @@ export function PublicHomeHeader() {
               <Moon aria-hidden='true' />
             )}
           </button>
-          <a className='hub-console-link' href='/dashboard/overview'>
-            {t('Open console')}
+          <a className='hub-console-link' href={accountHref}>
+            {accountLabel}
             <ArrowUpRight aria-hidden='true' />
           </a>
         </div>
@@ -130,8 +136,8 @@ export function PublicHomeHeader() {
               {t(item.label)}
             </a>
           ))}
-          <a href='/dashboard/overview' onClick={() => setMobileOpen(false)}>
-            {t('Open console')}
+          <a href={accountHref} onClick={() => setMobileOpen(false)}>
+            {accountLabel}
             <ArrowUpRight aria-hidden='true' />
           </a>
         </nav>

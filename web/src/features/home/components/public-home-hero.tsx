@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, ArrowDown } from 'lucide-react'
+import { ArrowDown, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useSystemConfig } from '@/hooks/use-system-config'
@@ -115,9 +115,9 @@ export function PublicHomeHero(props: { home: PublicHomeData }) {
               {t('View model rankings')}
               <ArrowDown aria-hidden='true' />
             </a>
-            <a className='hub-secondary-button' href='#ranking-rules'>
-              {t('How rankings work')}
-              <Activity aria-hidden='true' />
+            <a className='hub-secondary-button' href='/keys'>
+              {t('Create API key')}
+              <KeyRound aria-hidden='true' />
             </a>
           </div>
         </div>
