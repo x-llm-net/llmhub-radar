@@ -158,6 +158,7 @@ func TestFallbackReferralSettingControlsEarningPreparation(t *testing.T) {
 			require.NoError(t, err)
 			var earning model.HubProviderEarning
 			require.NoError(t, model.DB.Where("request_id = ?", requestID).First(&earning).Error)
+			assert.Equal(t, test.fallback, earning.RoutingFallback)
 			assert.Equal(t, test.wantReferral, earning.ReferralIncomeQuota)
 			if test.wantReferral == 0 {
 				assert.Zero(t, earning.ReferralProviderId)

@@ -26,7 +26,6 @@ import {
   ChevronUp,
   Circle,
   Copy,
-  CreditCard,
   FileText,
   KeyRound,
   ListChecks,
@@ -88,6 +87,7 @@ type DashboardActionPath =
   | '/channels'
   | '/usage-logs'
   | '/pricing'
+  | '/guide'
 
 interface StartStep {
   title: string
@@ -470,8 +470,6 @@ export function OverviewDashboard() {
   >(() => getSavedSetupGuideExpanded())
 
   const requestCount = Number(user?.request_count ?? 0)
-  const remainQuota = Number(user?.quota ?? 0)
-  const usedQuota = Number(user?.used_quota ?? 0)
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
 
   const apiKeysQuery = useQuery({
@@ -501,17 +499,17 @@ export function OverviewDashboard() {
     () => [
       {
         title: t('Create API Key'),
-        description: t('Create a key for your app or service'),
+        description: t('Choose the channels this key can use'),
         to: '/keys',
         icon: KeyRound,
         completed: Boolean(preferredKey),
       },
       {
-        title: t('Add credits'),
-        description: t('Keep enough balance before production traffic'),
-        to: '/wallet',
-        icon: CreditCard,
-        completed: remainQuota > 0 || usedQuota > 0,
+        title: t('Connect your client'),
+        description: t('Copy the Base URL or import it into CC Switch'),
+        to: '/guide',
+        icon: BookOpen,
+        completed: requestCount > 0,
       },
       {
         title: t('Send a request'),
@@ -521,7 +519,7 @@ export function OverviewDashboard() {
         completed: requestCount > 0,
       },
     ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota]
+    [preferredKey, requestCount, t]
   )
 
   const quickActions = useMemo<QuickAction[]>(
@@ -633,11 +631,11 @@ export function OverviewDashboard() {
                         {t('Get started')}
                       </div>
                       <h3 className='text-xl font-semibold tracking-tight sm:text-2xl'>
-                        {t('Build on your API gateway in minutes')}
+                        {t('Start using LLM-Hub in three steps')}
                       </h3>
                       <p className='text-muted-foreground max-w-xl text-sm leading-relaxed'>
                         {t(
-                          'A focused home for keys, balance, routing, and service health.'
+                          'Create one API key, connect your client, and send your first request.'
                         )}
                       </p>
                     </div>

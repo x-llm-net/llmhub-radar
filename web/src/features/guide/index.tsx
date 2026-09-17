@@ -304,56 +304,75 @@ export function Guide() {
                     <ArrowRight className='size-4' aria-hidden='true' />
                   </Button>
                   {businessContact?.value && (
-                    <div className='border-border/70 flex flex-wrap items-center justify-between gap-4 border-t pt-5'>
-                      <div className='min-w-0 space-y-1'>
-                        <p className='text-sm font-semibold'>
-                          {t('Questions or business cooperation?')}
-                        </p>
-                        <p className='text-muted-foreground text-sm'>
-                          {businessContact.name && `${businessContact.name} · `}
-                          {t(
-                            BUSINESS_CONTACT_TYPES.find(
-                              (item) => item.value === businessContact.type
-                            )?.label ?? 'Other'
-                          )}
-                        </p>
-                        <p className='text-sm break-all'>
-                          {businessContact.value}
-                        </p>
-                        {businessContact.description && (
-                          <p className='text-muted-foreground text-xs whitespace-pre-wrap'>
-                            {businessContact.description}
+                    <div className='border-border/70 border-t pt-4'>
+                      <div className='flex flex-wrap items-start justify-between gap-x-4 gap-y-3'>
+                        <div className='min-w-0 flex-1 space-y-1'>
+                          <p className='text-sm font-semibold'>
+                            {t('Questions or business cooperation')}
                           </p>
+                          <p className='text-muted-foreground text-sm break-all'>
+                            {businessContact.name && (
+                              <>
+                                <span className='text-foreground'>
+                                  {businessContact.name}
+                                </span>
+                                <span className='mx-1.5' aria-hidden='true'>
+                                  ·
+                                </span>
+                              </>
+                            )}
+                            <span>
+                              {t(
+                                BUSINESS_CONTACT_TYPES.find(
+                                  (item) => item.value === businessContact.type
+                                )?.label ?? 'Other'
+                              )}
+                            </span>
+                            <span className='mx-1.5' aria-hidden='true'>
+                              ·
+                            </span>
+                            <span className='text-foreground'>
+                              {businessContact.value}
+                            </span>
+                          </p>
+                          {businessContact.description && (
+                            <p className='text-muted-foreground text-xs whitespace-pre-wrap'>
+                              {businessContact.description}
+                            </p>
+                          )}
+                        </div>
+                        {contactHref ? (
+                          <Button
+                            variant='outline'
+                            render={
+                              <a
+                                href={contactHref}
+                                target={
+                                  contactHref.startsWith('https:')
+                                    ? '_blank'
+                                    : undefined
+                                }
+                                rel='noreferrer'
+                              />
+                            }
+                          >
+                            <ExternalLink
+                              className='size-4'
+                              aria-hidden='true'
+                            />
+                            {t('Contact us')}
+                          </Button>
+                        ) : (
+                          <CopyButton
+                            value={businessContact.value}
+                            variant='outline'
+                            size='sm'
+                            tooltip={t('Copy contact')}
+                          >
+                            {t('Copy contact')}
+                          </CopyButton>
                         )}
                       </div>
-                      {contactHref ? (
-                        <Button
-                          variant='outline'
-                          render={
-                            <a
-                              href={contactHref}
-                              target={
-                                contactHref.startsWith('https:')
-                                  ? '_blank'
-                                  : undefined
-                              }
-                              rel='noreferrer'
-                            />
-                          }
-                        >
-                          <ExternalLink className='size-4' aria-hidden='true' />
-                          {t('Contact us')}
-                        </Button>
-                      ) : (
-                        <CopyButton
-                          value={businessContact.value}
-                          variant='outline'
-                          size='sm'
-                          tooltip={t('Copy contact')}
-                        >
-                          {t('Copy contact')}
-                        </CopyButton>
-                      )}
                     </div>
                   )}
                 </div>

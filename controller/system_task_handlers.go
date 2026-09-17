@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/hub_provider_notification_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
@@ -23,6 +24,47 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(hubSupplyProbeHandler{})
+	service.RegisterSystemTaskHandler(hubWeeklyDigestHandler{})
+}
+
+type hubWeeklyDigestHandler struct{}
+
+func (hubWeeklyDigestHandler) Type() string { return model.SystemTaskTypeHubWeeklyBusinessDigest }
+
+func (hubWeeklyDigestHandler) Enabled() bool {
+	return hub_provider_notification_setting.Get().WeeklyDigestEnabled
+}
+
+func (hubWeeklyDigestHandler) Due(now time.Time, latest *model.SystemTask) (any, bool) {
+	payload, due := service.CurrentHubWeeklyDigestPayload(now)
+	if !due {
+		return nil, false
+	}
+	if latest == nil {
+		return payload, true
+	}
+	latestPayload := service.HubWeeklyDigestPayload{}
+	if err := latest.DecodePayload(&latestPayload); err != nil {
+		return payload, true
+	}
+	if latestPayload.WeekStart != payload.WeekStart || latestPayload.WeekEnd != payload.WeekEnd {
+		return payload, true
+	}
+	return payload, latest.Status == model.SystemTaskStatusFailed && now.Unix()-latest.UpdatedAt >= int64((15*time.Minute).Seconds())
+}
+
+func (hubWeeklyDigestHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	payload := service.HubWeeklyDigestPayload{}
+	if err := task.DecodePayload(&payload); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	result, err := service.RunHubWeeklyDigest(ctx, payload, service.NewSystemTaskProgressReporter(task, runnerID))
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, result, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
 }
 
 // hubSupplyProbeHandler is scheduled only while a provider-owned target is due.

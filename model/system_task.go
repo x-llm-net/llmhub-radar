@@ -26,6 +26,7 @@ const (
 	SystemTaskTypeBillingTokenAdjustmentRecovery = "billing_token_adjustment_recovery"
 	SystemTaskTypeBillingTaskSettlementRecovery  = "billing_task_settlement_recovery"
 	SystemTaskTypeHubProviderEarningRecovery     = "hub_provider_earning_recovery"
+	SystemTaskTypeHubWeeklyBusinessDigest        = "hub_weekly_business_digest"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")

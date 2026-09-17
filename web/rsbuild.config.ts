@@ -14,13 +14,16 @@ export default defineConfig(({ envMode }) => {
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
     'http://localhost:3000'
+  const proxyingLocalServer =
+    /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(serverUrl)
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
-      // Preserve provider.localhost so the backend can resolve provider scope.
-      { target: serverUrl, changeOrigin: false },
+      // Preserve provider.localhost for local backends; remote previews need the
+      // target host so the backend can resolve the correct tenant.
+      { target: serverUrl, changeOrigin: !proxyingLocalServer },
     ])
   ) as Record<string, { target: string; changeOrigin: boolean }>
 

@@ -47,6 +47,7 @@ type Config struct {
 	Enabled             bool            `json:"enabled"`
 	NotifyOnApplication bool            `json:"notify_on_application"`
 	NotifyOnReview      bool            `json:"notify_on_review"`
+	WeeklyDigestEnabled bool            `json:"weekly_digest_enabled"`
 	EmailRecipients     []string        `json:"email_recipients"`
 	Webhooks            []WebhookTarget `json:"webhooks"`
 }
@@ -56,6 +57,7 @@ func Default() Config {
 		Enabled:             true,
 		NotifyOnApplication: true,
 		NotifyOnReview:      true,
+		WeeklyDigestEnabled: true,
 		EmailRecipients:     []string{},
 		Webhooks:            []WebhookTarget{},
 	}

@@ -119,6 +119,10 @@ export interface UserSettings {
   record_ip_log?: boolean
   /** Receive upstream model update notifications (admin only) */
   upstream_model_update_notify_enabled?: boolean
+  /** Receive the weekly provider business digest */
+  weekly_provider_digest_enabled?: boolean
+  /** Receive the weekly tenant business digest */
+  weekly_tenant_digest_enabled?: boolean
   /** Preferred interface/API response language */
   language?: string
 }
@@ -149,6 +153,8 @@ export interface UpdateUserSettingsRequest {
   accept_unset_model_ratio_model?: boolean
   record_ip_log?: boolean
   upstream_model_update_notify_enabled?: boolean
+  weekly_provider_digest_enabled?: boolean
+  weekly_tenant_digest_enabled?: boolean
 }
 
 /**

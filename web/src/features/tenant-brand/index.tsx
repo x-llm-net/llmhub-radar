@@ -84,7 +84,7 @@ export function TenantBrandSettings() {
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Brand Settings')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='min-h-0 flex-1 overflow-y-auto'>
+        <div className='h-full min-h-0 flex-1 overflow-y-auto'>
           <div className='mx-auto max-w-3xl pb-6'>{content}</div>
         </div>
       </SectionPageLayout.Content>

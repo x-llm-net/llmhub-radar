@@ -29,6 +29,7 @@ export type ProviderNotificationSettings = {
   enabled: boolean
   notify_on_application: boolean
   notify_on_review: boolean
+  weekly_digest_enabled: boolean
   email_recipients: string[]
   webhooks: ProviderNotificationWebhook[]
 }

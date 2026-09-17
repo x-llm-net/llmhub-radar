@@ -47,6 +47,7 @@ const EMPTY_SETTINGS: ProviderNotificationSettings = {
   enabled: true,
   notify_on_application: true,
   notify_on_review: true,
+  weekly_digest_enabled: true,
   email_recipients: [],
   webhooks: [],
 }
@@ -248,6 +249,23 @@ export function ProviderNotificationSettingsSection() {
                 setSettings((current) => ({ ...current, notify_on_review }))
               }
               disabled={!settings.enabled}
+            />
+          </SettingsSwitchRow>
+          <SettingsSwitchRow>
+            <SettingsSwitchContent>
+              <Label>{t('Weekly business digest')}</Label>
+              <p className='text-muted-foreground text-xs'>
+                {t('Email tenant and provider owners every Monday at 09:30.')}
+              </p>
+            </SettingsSwitchContent>
+            <Switch
+              checked={settings.weekly_digest_enabled}
+              onCheckedChange={(weekly_digest_enabled) =>
+                setSettings((current) => ({
+                  ...current,
+                  weekly_digest_enabled,
+                }))
+              }
             />
           </SettingsSwitchRow>
         </div>

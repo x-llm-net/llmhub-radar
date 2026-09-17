@@ -37,6 +37,20 @@ type stubScheduledHandler struct {
 	onRun    func(ctx context.Context, task *model.SystemTask, runnerID string)
 }
 
+type stubCalendarScheduledHandler struct {
+	taskType string
+	enabled  bool
+	due      bool
+	payload  any
+}
+
+func (h *stubCalendarScheduledHandler) Type() string                                   { return h.taskType }
+func (h *stubCalendarScheduledHandler) Run(context.Context, *model.SystemTask, string) {}
+func (h *stubCalendarScheduledHandler) Enabled() bool                                  { return h.enabled }
+func (h *stubCalendarScheduledHandler) Due(time.Time, *model.SystemTask) (any, bool) {
+	return h.payload, h.due
+}
+
 type stubSystemTaskRunResult struct {
 	taskID   string
 	taskType string
@@ -105,6 +119,27 @@ func TestSystemTaskSchedulerSkipsDisabled(t *testing.T) {
 
 	runSystemTaskScheduler()
 	assert.Equal(t, int64(0), countSystemTasks(t, handler.taskType))
+}
+
+func TestSystemTaskSchedulerUsesCalendarDueDecision(t *testing.T) {
+	truncate(t)
+	handler := &stubCalendarScheduledHandler{
+		taskType: "test_calendar_scheduled",
+		enabled:  true,
+		payload:  map[string]int{"week": 1},
+	}
+	withSystemTaskRegistry(t, handler)
+
+	runSystemTaskScheduler()
+	assert.Equal(t, int64(0), countSystemTasks(t, handler.taskType))
+
+	handler.due = true
+	runSystemTaskScheduler()
+	assert.Equal(t, int64(1), countSystemTasks(t, handler.taskType))
+
+	// Calendar jobs retain the same active-row deduplication as interval jobs.
+	runSystemTaskScheduler()
+	assert.Equal(t, int64(1), countSystemTasks(t, handler.taskType))
 }
 
 func TestSystemTaskClaimPassDispatchesByType(t *testing.T) {

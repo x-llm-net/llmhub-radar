@@ -46,6 +46,15 @@ type ScheduledSystemTaskHandler interface {
 	NewPayload() any
 }
 
+// CalendarScheduledSystemTaskHandler is for jobs tied to a natural calendar
+// boundary. Due decides whether the current calendar period still needs a task
+// and returns the immutable payload for that period.
+type CalendarScheduledSystemTaskHandler interface {
+	SystemTaskHandler
+	Enabled() bool
+	Due(now time.Time, latest *model.SystemTask) (payload any, due bool)
+}
+
 var (
 	systemTaskHandlersMu sync.RWMutex
 	systemTaskHandlers   = map[string]SystemTaskHandler{}
@@ -260,22 +269,26 @@ func runSystemTaskClaimPass(runnerID string) {
 	}
 }
 
-// runSystemTaskScheduler creates a new task row for each enabled scheduled
-// handler whose interval has elapsed since its last run and that has no active
-// row. The task active_key unique index deduplicates concurrent creation while
-// the per-type lock guarantees only one runner executes the task.
+// runSystemTaskScheduler creates interval and calendar based task rows. The
+// active_key unique index deduplicates concurrent creation while the per-type
+// lock guarantees only one runner executes the task.
 func runSystemTaskScheduler() {
-	now := common.GetTimestamp()
+	now := time.Now()
 	handlers := registeredSystemTaskHandlers()
-	scheduledHandlers := make([]ScheduledSystemTaskHandler, 0, len(handlers))
+	scheduledHandlers := make([]SystemTaskHandler, 0, len(handlers))
 	taskTypes := make([]string, 0, len(handlers))
 	for _, handler := range handlers {
-		scheduled, ok := handler.(ScheduledSystemTaskHandler)
-		if !ok || !scheduled.Enabled() {
+		enabled := false
+		if scheduled, ok := handler.(ScheduledSystemTaskHandler); ok {
+			enabled = scheduled.Enabled()
+		} else if scheduled, ok := handler.(CalendarScheduledSystemTaskHandler); ok {
+			enabled = scheduled.Enabled()
+		}
+		if !enabled {
 			continue
 		}
-		scheduledHandlers = append(scheduledHandlers, scheduled)
-		taskTypes = append(taskTypes, scheduled.Type())
+		scheduledHandlers = append(scheduledHandlers, handler)
+		taskTypes = append(taskTypes, handler.Type())
 	}
 	latestTasks, err := model.GetLatestSystemTasks(taskTypes)
 	if err != nil {
@@ -288,11 +301,22 @@ func runSystemTaskScheduler() {
 			if latest.Status == model.SystemTaskStatusPending || latest.Status == model.SystemTaskStatusRunning {
 				continue // an active row already exists
 			}
-			if now-latest.UpdatedAt < int64(scheduled.Interval().Seconds()) {
+		}
+		var payload any
+		if calendar, ok := scheduled.(CalendarScheduledSystemTaskHandler); ok {
+			var due bool
+			payload, due = calendar.Due(now, latest)
+			if !due {
+				continue
+			}
+		} else {
+			interval := scheduled.(ScheduledSystemTaskHandler)
+			if latest != nil && now.Unix()-latest.UpdatedAt < int64(interval.Interval().Seconds()) {
 				continue // not due yet
 			}
+			payload = interval.NewPayload()
 		}
-		if _, err := model.CreateSystemTask(scheduled.Type(), scheduled.NewPayload(), nil); err != nil {
+		if _, err := model.CreateSystemTask(scheduled.Type(), payload, nil); err != nil {
 			activeTask, activeErr := model.GetActiveSystemTask(scheduled.Type())
 			if activeErr == nil && activeTask != nil {
 				continue

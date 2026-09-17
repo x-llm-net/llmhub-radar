@@ -500,7 +500,13 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	if !requireHubProviderAdminScope(c, providerID) {
+	providerBeforeReview, err := getHubProviderForAdminScope(c, providerID)
+	if err != nil {
+		if errors.Is(err, model.ErrHubProviderNotFound) {
+			common.ApiErrorI18n(c, i18n.MsgNotFound)
+		} else {
+			common.ApiError(c, err)
+		}
 		return
 	}
 	var req hubProviderStatusUpdateRequest
@@ -547,7 +553,7 @@ func AdminUpdateHubProviderStatus(c *gin.Context) {
 			return
 		}
 	}
-	service.NotifyHubProviderReview(providerID, req.Status, req.ReviewRemark)
+	service.NotifyHubProviderReview(providerID, providerBeforeReview.Status, req.Status, req.ReviewRemark)
 	common.ApiSuccess(c, gin.H{"id": providerID, "status": req.Status})
 }
 

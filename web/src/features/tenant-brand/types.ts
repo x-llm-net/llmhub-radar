@@ -19,12 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 
 export type BusinessContact = {
   name: string
-  type: 'wechat' | 'wecom' | 'email' | 'telegram' | 'other'
+  type: 'qq' | 'wechat' | 'wecom' | 'email' | 'telegram' | 'other'
   value: string
   description: string
 }
 
 export const BUSINESS_CONTACT_TYPES = [
+  { value: 'qq', label: 'QQ' },
   { value: 'wechat', label: 'WeChat' },
   { value: 'wecom', label: 'WeCom' },
   { value: 'email', label: 'Email' },

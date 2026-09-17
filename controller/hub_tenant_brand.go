@@ -37,6 +37,7 @@ const tenantBrandAssetPathPrefix = "/api/hub/public/brand-assets/"
 const tenantBrandConfigMaxCharacters = 2048
 
 var businessContactTypes = map[string]struct{}{
+	"qq":       {},
 	"wechat":   {},
 	"wecom":    {},
 	"email":    {},

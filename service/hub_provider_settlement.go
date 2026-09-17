@@ -52,9 +52,9 @@ func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 	referralProviderId := 0
 	referralBasisPoints := 0
+	routingFallback := common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback)
 	fallbackReferralEnabled, configuredReferralBasisPoints := hub_provider_settlement_setting.FallbackReferralPolicy()
-	if fallbackReferralEnabled &&
-		common.GetContextKeyBool(ctx, constant.ContextKeyHubRoutingFallback) {
+	if fallbackReferralEnabled && routingFallback {
 		requestedProviderId := common.GetContextKeyInt(ctx, constant.ContextKeyHubRequestedProviderId)
 		if requestedProviderId <= 0 {
 			if policy := GetHubTokenRoutingPolicy(ctx); policy != nil {
@@ -91,6 +91,7 @@ func prepareHubProviderEarning(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			HasPlatformFeeBasisPoints:        pricing.HasPlatformFeeBasisPoints,
 			ReferralProviderId:               referralProviderId,
 			ReferralBasisPoints:              referralBasisPoints,
+			RoutingFallback:                  routingFallback,
 			FallbackPriceProtection:          pricing.FallbackPriceProtection,
 			SettlementDeferred:               settlementDeferred,
 		})

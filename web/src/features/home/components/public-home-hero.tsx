@@ -103,21 +103,21 @@ export function PublicHomeHero(props: { home: PublicHomeData }) {
           </p>
           <h1>
             <span>{brandName}</span>
-            <strong>{t('AI API relay field-test rankings')}</strong>
+            <strong>{t('One API key for your AI models')}</strong>
           </h1>
           <p className='hub-hero-lede'>
             {t(
-              'Continuously test mainstream models from different providers, comparing seven-day availability, first-token latency, and current status so every choice has evidence.'
+              'Use one OpenAI-compatible endpoint for multiple models. LLM-Hub routes requests across your selected channels using live availability and retry rules.'
             )}
           </p>
           <div className='hub-hero-actions'>
-            <a className='hub-primary-button' href='#model-rankings'>
-              {t('View model rankings')}
-              <ArrowDown aria-hidden='true' />
-            </a>
-            <a className='hub-secondary-button' href='/keys'>
+            <a className='hub-primary-button' href='/keys'>
               {t('Create API key')}
               <KeyRound aria-hidden='true' />
+            </a>
+            <a className='hub-secondary-button' href='#model-rankings'>
+              {t('View model rankings')}
+              <ArrowDown aria-hidden='true' />
             </a>
           </div>
         </div>

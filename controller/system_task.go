@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -32,6 +33,29 @@ func CreateLogCleanupSystemTask(c *gin.Context) {
 		"message": "",
 		"data":    task.ToResponse(),
 	})
+}
+
+func RetryFailedHubWeeklyDigestSystemTask(c *gin.Context) {
+	weekStart, _ := strconv.ParseInt(c.Query("week_start"), 10, 64)
+	payload := service.HubWeeklyDigestPayload{}
+	if weekStart > 0 {
+		payload.WeekStart = weekStart
+		payload.WeekEnd = weekStart + int64((7 * 24 * time.Hour).Seconds())
+	} else {
+		var due bool
+		payload, due = service.CurrentHubWeeklyDigestPayload(time.Now())
+		if !due {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "weekly digest is not due yet"})
+			return
+		}
+	}
+	payload.RetryFailed = true
+	task, _, err := service.EnqueueSystemTask(model.SystemTaskTypeHubWeeklyBusinessDigest, payload)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, task.ToResponse())
 }
 
 func GetCurrentSystemTask(c *gin.Context) {

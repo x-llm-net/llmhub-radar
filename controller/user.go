@@ -1453,6 +1453,8 @@ type UpdateUserSettingRequest struct {
 	GotifyToken                      string  `json:"gotify_token,omitempty"`
 	GotifyPriority                   int     `json:"gotify_priority,omitempty"`
 	UpstreamModelUpdateNotifyEnabled *bool   `json:"upstream_model_update_notify_enabled,omitempty"`
+	WeeklyProviderDigestEnabled      *bool   `json:"weekly_provider_digest_enabled,omitempty"`
+	WeeklyTenantDigestEnabled        *bool   `json:"weekly_tenant_digest_enabled,omitempty"`
 	AcceptUnsetModelRatioModel       bool    `json:"accept_unset_model_ratio_model"`
 	RecordIpLog                      bool    `json:"record_ip_log"`
 }
@@ -1555,13 +1557,26 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	// 构建设置
-	settings := dto.UserSetting{
-		NotifyType:                       req.QuotaWarningType,
-		QuotaWarningThreshold:            req.QuotaWarningThreshold,
-		UpstreamModelUpdateNotifyEnabled: upstreamModelUpdateNotifyEnabled,
-		AcceptUnsetRatioModel:            req.AcceptUnsetModelRatioModel,
-		RecordIpLog:                      req.RecordIpLog,
+	settings := existingSettings
+	settings.NotifyType = req.QuotaWarningType
+	settings.QuotaWarningThreshold = req.QuotaWarningThreshold
+	settings.UpstreamModelUpdateNotifyEnabled = upstreamModelUpdateNotifyEnabled
+	settings.AcceptUnsetRatioModel = req.AcceptUnsetModelRatioModel
+	settings.RecordIpLog = req.RecordIpLog
+	if req.WeeklyProviderDigestEnabled != nil {
+		settings.WeeklyProviderDigestEnabled = req.WeeklyProviderDigestEnabled
 	}
+	if req.WeeklyTenantDigestEnabled != nil {
+		settings.WeeklyTenantDigestEnabled = req.WeeklyTenantDigestEnabled
+	}
+	settings.WebhookUrl = ""
+	settings.WebhookSecret = ""
+	settings.WebhookProvider = ""
+	settings.NotificationEmail = ""
+	settings.BarkUrl = ""
+	settings.GotifyUrl = ""
+	settings.GotifyToken = ""
+	settings.GotifyPriority = 0
 
 	// 如果是webhook类型,添加webhook相关设置
 	if req.QuotaWarningType == dto.NotifyTypeWebhook {

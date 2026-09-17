@@ -40,6 +40,8 @@ const (
 
 const hubModelPriceNotificationSuppressWindowSeconds = int64(time.Hour / time.Second)
 
+var sendHubProviderApplicantEmail = common.SendEmail
+
 func NotifyHubProviderApplication(provider *model.HubProvider) {
 	config := hub_provider_notification_setting.Get()
 	if !config.Enabled || !config.NotifyOnApplication {
@@ -54,9 +56,11 @@ func NotifyHubProviderApplication(provider *model.HubProvider) {
 	)
 }
 
-func NotifyHubProviderReview(providerID int, status string, reviewRemark string) {
+func NotifyHubProviderReview(providerID int, previousStatus string, status string, reviewRemark string) {
 	config := hub_provider_notification_setting.Get()
-	if !config.Enabled || !config.NotifyOnReview {
+	notifyAdministrators := config.Enabled && config.NotifyOnReview
+	notifyApplicant := shouldNotifyHubProviderApplicant(previousStatus, status)
+	if !notifyAdministrators && !notifyApplicant {
 		return
 	}
 	var provider model.HubProvider
@@ -64,9 +68,52 @@ func NotifyHubProviderReview(providerID int, status string, reviewRemark string)
 		common.SysLog(fmt.Sprintf("failed to load provider %d for review notification: %v", providerID, err))
 		return
 	}
-	title := fmt.Sprintf("渠道商审核结果：%s", hubProviderStatusLabel(status))
-	content := formatHubProviderReviewContent(&provider, status, reviewRemark)
-	notifyHubProviderEvent(config, HubProviderReviewNotificationType, title, content, providerNotificationLink())
+	if notifyAdministrators {
+		title := fmt.Sprintf("渠道商审核结果：%s", hubProviderStatusLabel(status))
+		content := formatHubProviderReviewContent(&provider, status, reviewRemark)
+		notifyHubProviderEvent(config, HubProviderReviewNotificationType, title, content, providerNotificationLink())
+	}
+	if notifyApplicant {
+		gopool.Go(func() {
+			if err := deliverHubProviderApplicantReview(&provider, status, reviewRemark); err != nil {
+				common.SysLog(fmt.Sprintf("failed to notify provider applicant %d: %v", provider.OwnerUserId, err))
+			}
+		})
+	}
+}
+
+func shouldNotifyHubProviderApplicant(previousStatus string, status string) bool {
+	if previousStatus != model.HubProviderStatusPending {
+		return false
+	}
+	return status == model.HubProviderStatusActive || status == model.HubProviderStatusRejected
+}
+
+func deliverHubProviderApplicantReview(provider *model.HubProvider, status string, reviewRemark string) error {
+	email, err := model.GetUserEmail(provider.OwnerUserId)
+	if err != nil {
+		return fmt.Errorf("load applicant email: %w", err)
+	}
+	if strings.TrimSpace(email) == "" {
+		return nil
+	}
+	subject, content := formatHubProviderApplicantReviewEmail(provider, status, reviewRemark)
+	return sendHubProviderApplicantEmail(subject, email, content)
+}
+
+func formatHubProviderApplicantReviewEmail(provider *model.HubProvider, status string, reviewRemark string) (string, string) {
+	result := hubProviderStatusLabel(status)
+	subject := "渠道商申请" + result
+	details := fmt.Sprintf(
+		"<p>你的渠道商申请审核已完成。</p><p><strong>渠道商：</strong>%s<br><strong>审核结果：</strong>%s</p>",
+		html.EscapeString(provider.Name),
+		html.EscapeString(result),
+	)
+	if reviewRemark = strings.TrimSpace(reviewRemark); reviewRemark != "" {
+		details += fmt.Sprintf("<p><strong>审核备注：</strong>%s</p>", html.EscapeString(reviewRemark))
+	}
+	details += "<p>请登录提交申请时使用的站点查看详情。</p>"
+	return subject, details
 }
 
 // NotifyHubModelPriceMissing alerts the same administrator targets used by

@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useProvider } from '@/features/provider/hooks/use-provider'
+import { useHubAdminAccess } from '@/hooks/use-hub-admin-access'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 import {
@@ -112,6 +114,10 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   const currencyConfig = useSystemConfigStore((state) => state.config.currency)
   const currencyLabel = getQuotaCurrencyLabel(currencyConfig)
   const isAdmin = (profile?.role ?? 0) >= ROLE.ADMIN
+  const providerQuery = useProvider()
+  const hubAdminAccess = useHubAdminAccess()
+  const isProviderOwner = providerQuery.provider?.status === 'active'
+  const isTenantOwner = hubAdminAccess.data?.tenant_member_role === 'owner'
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<UserSettings>({
     notify_type: 'email',
@@ -127,6 +133,8 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
     accept_unset_model_ratio_model: false,
     record_ip_log: false,
     upstream_model_update_notify_enabled: false,
+    weekly_provider_digest_enabled: true,
+    weekly_tenant_digest_enabled: true,
   })
   const [thresholdInput, setThresholdInput] = useState(
     formatThresholdInput(DEFAULT_QUOTA_WARNING_THRESHOLD)
@@ -160,6 +168,10 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
         record_ip_log: parsed.record_ip_log || false,
         upstream_model_update_notify_enabled:
           parsed.upstream_model_update_notify_enabled || false,
+        weekly_provider_digest_enabled:
+          parsed.weekly_provider_digest_enabled ?? true,
+        weekly_tenant_digest_enabled:
+          parsed.weekly_tenant_digest_enabled ?? true,
       })
       setThresholdInput(
         formatThresholdInput(
@@ -419,6 +431,65 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
 
       {/* Divider */}
       <div className='border-t' />
+
+      {(isProviderOwner || isTenantOwner) && (
+        <div className='space-y-3'>
+          <div>
+            <h4 className='text-sm font-medium'>
+              {t('Weekly business digest')}
+            </h4>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t('Receive last week business results by email every Monday.')}
+            </p>
+          </div>
+          {isTenantOwner && (
+            <div className='flex items-start justify-between gap-3 rounded-lg border p-3 sm:items-center sm:p-4'>
+              <div className='space-y-0.5'>
+                <Label htmlFor='weeklyTenantDigest'>
+                  {t('Tenant business digest')}
+                </Label>
+                <p className='text-muted-foreground text-xs sm:text-sm'>
+                  {t(
+                    'Includes site consumption, income, active users, and fallback usage.'
+                  )}
+                </p>
+              </div>
+              <Switch
+                id='weeklyTenantDigest'
+                className='shrink-0'
+                checked={settings.weekly_tenant_digest_enabled}
+                onCheckedChange={(checked) =>
+                  updateField('weekly_tenant_digest_enabled', checked)
+                }
+              />
+            </div>
+          )}
+          {isProviderOwner && (
+            <div className='flex items-start justify-between gap-3 rounded-lg border p-3 sm:items-center sm:p-4'>
+              <div className='space-y-0.5'>
+                <Label htmlFor='weeklyProviderDigest'>
+                  {t('Provider business digest')}
+                </Label>
+                <p className='text-muted-foreground text-xs sm:text-sm'>
+                  {t(
+                    'Includes settled income, pending income, calls, and channel status.'
+                  )}
+                </p>
+              </div>
+              <Switch
+                id='weeklyProviderDigest'
+                className='shrink-0'
+                checked={settings.weekly_provider_digest_enabled}
+                onCheckedChange={(checked) =>
+                  updateField('weekly_provider_digest_enabled', checked)
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {(isProviderOwner || isTenantOwner) && <div className='border-t' />}
 
       {/* Preferences Section */}
       <div className='space-y-3'>

@@ -102,6 +102,7 @@ type HubProviderEarning struct {
 	ReferralBasisPoints           int     `json:"referral_basis_points" gorm:"not null;default:0"`
 	ReferralIncomeQuota           int     `json:"referral_income_quota" gorm:"not null;default:0"`
 	FallbackSpreadPlatformQuota   int     `json:"fallback_spread_platform_quota" gorm:"not null;default:0"`
+	RoutingFallback               bool    `json:"routing_fallback" gorm:"not null;default:false"`
 	FallbackPriceProtection       bool    `json:"fallback_price_protection" gorm:"not null;default:false"`
 	BaseGroupRatio                float64 `json:"base_group_ratio" gorm:"type:real;not null;default:0"`
 	SupplyMultiplier              float64 `json:"supply_multiplier" gorm:"type:real;not null;default:0"`
@@ -222,6 +223,7 @@ type HubProviderEarningParams struct {
 	HasPlatformFeeBasisPoints        bool
 	ReferralProviderId               int
 	ReferralBasisPoints              int
+	RoutingFallback                  bool
 	FallbackPriceProtection          bool
 	SettlementDeferred               *bool
 }
@@ -561,6 +563,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 		ReferralProviderId:            referralProviderId,
 		ReferralOwnerUserId:           referralOwnerUserId,
 		ReferralBasisPoints:           referralBasisPoints,
+		RoutingFallback:               params.RoutingFallback,
 		FallbackPriceProtection:       params.FallbackPriceProtection,
 		ReferralIncomeQuota:           0,
 		BaseGroupRatio:                params.BaseGroupRatio,
@@ -618,6 +621,7 @@ func PrepareHubProviderEarning(params HubProviderEarningParams) (*HubProviderEar
 				"referral_basis_points":             referralBasisPoints,
 				"referral_income_quota":             referralIncome,
 				"fallback_spread_platform_quota":    fallbackSpreadPlatformQuota,
+				"routing_fallback":                  params.RoutingFallback,
 				"fallback_price_protection":         params.FallbackPriceProtection,
 				"base_group_ratio":                  params.BaseGroupRatio,
 				"supply_multiplier":                 params.SupplyMultiplier,

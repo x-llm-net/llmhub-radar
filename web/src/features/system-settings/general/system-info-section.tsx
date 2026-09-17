@@ -62,6 +62,7 @@ const _systemInfoSchema = z.object({
   HomePageContent: z.string().optional(),
   HubBusinessContactName: z.string().max(80).optional(),
   HubBusinessContactType: z.enum([
+    'qq',
     'wechat',
     'wecom',
     'email',
@@ -125,6 +126,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     HomePageContent: z.string().optional(),
     HubBusinessContactName: z.string().max(80).optional(),
     HubBusinessContactType: z.enum([
+      'qq',
       'wechat',
       'wecom',
       'email',

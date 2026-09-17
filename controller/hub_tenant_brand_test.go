@@ -147,6 +147,25 @@ func TestTenantBrandUpdatesCurrentTenantWithoutTouchingAnother(t *testing.T) {
 	assert.Equal(t, "Brand B", tenantB.Brand().Name)
 }
 
+func TestTenantBrandAcceptsQQBusinessContact(t *testing.T) {
+	setupHubSupplyGroupControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}))
+	tenant := createTenantBrandFixture(t, "Tenant", "tenant", "tenant.example", model.TenantBrandConfig{})
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/hub/admin/brand", map[string]any{
+		"business_contact": map[string]any{
+			"name": "Sales", "type": "QQ", "value": "123456", "description": "Weekdays",
+		},
+	}, 42)
+	common.SetContextKey(ctx, constant.ContextKeyTenantId, tenant.Id)
+	UpdateCurrentHubTenantBrand(ctx)
+	response := decodeTenantBrandResponse(t, recorder.Body.Bytes())
+	require.True(t, response.Success, recorder.Body.String())
+	assert.Equal(t, model.BusinessContact{
+		Name: "Sales", Type: "qq", Value: "123456", Description: "Weekdays",
+	}, response.Data.Brand.BusinessContact)
+}
+
 func TestPublicBusinessContactUsesTenantThenPlatformFallbackOnRootHost(t *testing.T) {
 	setupHubSupplyGroupControllerTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Tenant{}, &model.TenantDomain{}, &model.HubProvider{}))
