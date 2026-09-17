@@ -288,14 +288,14 @@ func GetHubWeeklyDigestProviderSummary(providerID int, weekStart, weekEnd int64)
 		return summary, err
 	}
 
-	channels := DB.Table("hub_supply_groups AS groups").
-		Joins("JOIN channels ON channels.id = groups.new_api_channel_id").
-		Where("groups.provider_id = ?", providerID)
+	channels := DB.Table("hub_supply_groups AS supply_groups").
+		Joins("JOIN channels ON channels.id = supply_groups.new_api_channel_id").
+		Where("supply_groups.provider_id = ?", providerID)
 	if err := channels.Count(&summary.TotalChannels).Error; err != nil {
 		return summary, err
 	}
 	if err := channels.Where(
-		"channels.status <> ? OR groups.tenant_published = ? OR groups.status NOT IN ? OR groups.error_model_count > 0",
+		"channels.status <> ? OR supply_groups.tenant_published = ? OR supply_groups.status NOT IN ? OR supply_groups.error_model_count > 0",
 		common.ChannelStatusEnabled,
 		commonFalseVal,
 		[]string{HubSupplyGroupStatusAvailable, HubSupplyGroupStatusPartial},

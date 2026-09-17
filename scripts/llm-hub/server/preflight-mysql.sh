@@ -26,7 +26,8 @@ cleanup
 docker exec llm-hub-mysql sh -c 'exec mysqldump --no-tablespaces --single-transaction --quick --routines --triggers --events --hex-blob -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --databases "$MYSQL_DATABASE"' > "$dump_file"
 test -s "$dump_file"
 
-docker network create "$network" >/dev/null
+docker network create --internal "$network" >/dev/null
+test "$(docker network inspect "$network" --format '{{.Internal}}')" = "true"
 docker run -d \
   --name "$mysql_container" \
   --network "$network" \
@@ -55,6 +56,7 @@ docker run -d \
   -e SESSION_COOKIE_SECURE=true \
   -e SESSION_COOKIE_TRUSTED_URL=https://llm-hub.store \
   -e TRUSTED_PROXIES=none \
+  -e BACKGROUND_TASKS_ENABLED=false \
   -e TZ=Asia/Shanghai \
   "$image" \
   --log-dir /tmp/logs >/dev/null
@@ -75,6 +77,10 @@ done
 docker exec "$app_container" grep -q '"success":true' /tmp/status.json
 docker exec "$app_container" grep -q "\"version\":\"$release_tag\"" /tmp/status.json
 docker exec "$app_container" grep -q '"server_address":"https://llm-hub.store"' /tmp/status.json
+docker logs "$app_container" 2>&1 | grep -q 'background tasks disabled'
+# Exercise the MySQL-specific query shape used by provider weekly summaries.
+docker exec "$mysql_container" mysql -uroot -p"$mysql_password" llm_hub --batch --skip-column-names -e \
+  "SELECT COUNT(*) FROM hub_supply_groups AS supply_groups JOIN channels ON channels.id = supply_groups.new_api_channel_id WHERE supply_groups.provider_id = -1;" >/dev/null
 docker logs --tail 50 "$app_container"
 
 # A failed release must be able to start the previous image after migrations.
@@ -83,6 +89,7 @@ docker rm -fv "$app_container" >/dev/null
 docker run -d \
   --name "$app_container" \
   --network "$network" \
+  -e NODE_TYPE=slave \
   -e 'SQL_DSN=root:llmhub-preflight-only@tcp(llm-hub-mysql-preflight:3306)/llm_hub?charset=utf8mb4&parseTime=True&loc=Local' \
   -e SESSION_SECRET=llmhub-preflight-session-secret \
   -e SESSION_COOKIE_SECURE=true \

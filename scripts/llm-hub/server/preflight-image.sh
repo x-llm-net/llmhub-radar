@@ -18,6 +18,8 @@ test "$actual_version" = "$release_tag"
 
 docker run -d \
   --name "$container" \
+  --network none \
+  -e BACKGROUND_TASKS_ENABLED=false \
   -e TZ=Asia/Shanghai \
   "$image" \
   --log-dir /tmp/logs >/dev/null
@@ -34,5 +36,6 @@ done
 docker exec "$container" test -s "$status_file"
 docker exec "$container" grep -q '"success":true' "$status_file"
 docker exec "$container" grep -q "\"version\":\"$release_tag\"" "$status_file"
+docker logs "$container" 2>&1 | grep -q 'background tasks disabled'
 printf 'IMAGE_PREFLIGHT_OK image=%s attempts=%s\n' "$image" "$attempt"
 docker logs --tail 30 "$container"

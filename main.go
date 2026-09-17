@@ -138,16 +138,6 @@ func main() {
 		go controller.AutomaticallyUpdateChannels(frequency)
 	}
 
-	// Codex credential auto-refresh check every 10 minutes, refresh when expires within 1 day
-	service.StartCodexCredentialAutoRefreshTask()
-
-	// Subscription quota reset task (daily/weekly/monthly/custom)
-	service.StartSubscriptionQuotaResetTask()
-
-	// Report this process as a system instance so the System Info page can show
-	// all currently alive nodes in multi-instance deployments.
-	service.StartSystemInstanceReporter()
-
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
 	// calls service.RunTaskPollingOnce, which needs this factory set.
@@ -159,13 +149,23 @@ func main() {
 		return a
 	}
 
-	// Register the periodic channel test, upstream model update, and async task
-	// polling (Midjourney / Suno / video) jobs as scheduled system tasks
-	// (DB-lease dedup across masters + run history), then start the runner that
-	// schedules and executes them. Master-only execution and the UpdateTask
-	// switch are enforced inside the runner and each handler's Enabled().
-	controller.RegisterScheduledSystemTasks()
-	service.StartSystemTaskRunner()
+	if common.GetEnvOrDefaultBool("BACKGROUND_TASKS_ENABLED", true) {
+		// Codex credential auto-refresh check every 10 minutes, refresh when expires within 1 day.
+		service.StartCodexCredentialAutoRefreshTask()
+
+		// Subscription quota reset task (daily/weekly/monthly/custom).
+		service.StartSubscriptionQuotaResetTask()
+
+		// Report this process as a system instance so the System Info page can show
+		// all currently alive nodes in multi-instance deployments.
+		service.StartSystemInstanceReporter()
+
+		// Register scheduled tasks, then start the DB-leased runner.
+		controller.RegisterScheduledSystemTasks()
+		service.StartSystemTaskRunner()
+	} else {
+		common.SysLog("background tasks disabled")
+	}
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
