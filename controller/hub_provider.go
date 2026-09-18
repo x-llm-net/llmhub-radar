@@ -244,6 +244,10 @@ func CreateHubProvider(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderAlreadyExists)
 			return
 		}
+		if err == model.ErrHubProviderNameAlreadyExists {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderNameAlreadyExists)
+			return
+		}
 		if err == model.ErrHubProviderSlugAlreadyExists {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderSlugAlreadyExists)
 			return
@@ -316,6 +320,10 @@ func UpdateHubProviderProfile(c *gin.Context) {
 	if err != nil {
 		if err == model.ErrHubProviderNotFound {
 			common.ApiErrorI18n(c, i18n.MsgHubProviderRequired)
+			return
+		}
+		if err == model.ErrHubProviderNameAlreadyExists {
+			common.ApiErrorI18n(c, i18n.MsgHubProviderNameAlreadyExists)
 			return
 		}
 		if err == model.ErrHubProviderSlugAlreadyExists {

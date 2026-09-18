@@ -41,6 +41,7 @@ const (
 
 var ErrHubProviderAlreadyExists = errors.New("hub provider already exists")
 var ErrHubProviderNotFound = errors.New("hub provider not found")
+var ErrHubProviderNameAlreadyExists = errors.New("hub provider name already exists")
 var ErrHubProviderSlugInvalid = errors.New("hub provider slug is invalid")
 var ErrHubProviderSlugAlreadyExists = errors.New("hub provider slug already exists")
 
@@ -56,10 +57,11 @@ var hubProviderReservedSlugs = map[string]struct{}{
 type HubProvider struct {
 	Id                           int    `json:"id" gorm:"primaryKey"`
 	OwnerUserId                  int    `json:"-" gorm:"not null;uniqueIndex:idx_hub_provider_tenant_owner,priority:2"`
-	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index;uniqueIndex:idx_hub_provider_tenant_owner,priority:1;uniqueIndex:idx_hub_provider_tenant_slug,priority:1"`
+	TenantId                     *int   `json:"-" gorm:"column:tenant_id;index;uniqueIndex:idx_hub_provider_tenant_owner,priority:1"`
 	Slot                         int    `json:"-" gorm:"not null"`
 	Name                         string `json:"name" gorm:"type:varchar(80);not null"`
-	Slug                         string `json:"slug" gorm:"type:varchar(63);uniqueIndex:idx_hub_provider_tenant_slug,priority:2"`
+	NameKey                      string `json:"-" gorm:"type:varchar(80)"`
+	Slug                         string `json:"slug" gorm:"type:varchar(63)"`
 	SlugBase                     string `json:"slug_base" gorm:"type:varchar(63);not null;default:''"`
 	SlugCode                     string `json:"-" gorm:"type:varchar(8);not null;default:''"`
 	Website                      string `json:"website" gorm:"type:varchar(512);not null"`
@@ -138,6 +140,8 @@ func (HubProvider) TableName() string {
 }
 
 func (p *HubProvider) BeforeCreate(tx *gorm.DB) error {
+	p.Name = strings.TrimSpace(p.Name)
+	p.NameKey = normalizeHubProviderNameKey(p.Name)
 	slug, err := NormalizeHubProviderSlug(p.Slug)
 	if err != nil {
 		return err
@@ -233,6 +237,10 @@ func NormalizeHubProviderSlug(value string) (string, error) {
 	return slug, nil
 }
 
+func normalizeHubProviderNameKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func hubProviderSlugFromName(name string) string {
 	var builder strings.Builder
 	lastWasHyphen := false
@@ -290,8 +298,8 @@ func hubProviderSlugWithSuffix(base, suffix string) string {
 	return fmt.Sprintf("%s-%s", base, suffix)
 }
 
-func hubProviderSlugTaken(tenantID *int, slug string, excludeProviderID int) (bool, error) {
-	query := ApplyHubProviderTenantScope(DB.Model(&HubProvider{}), tenantID).Where("slug = ?", slug)
+func hubProviderNameTaken(db *gorm.DB, nameKey string, excludeProviderID int) (bool, error) {
+	query := db.Model(&HubProvider{}).Where("name_key = ?", nameKey)
 	if excludeProviderID > 0 {
 		query = query.Where("id <> ?", excludeProviderID)
 	}
@@ -302,7 +310,19 @@ func hubProviderSlugTaken(tenantID *int, slug string, excludeProviderID int) (bo
 	return count > 0, nil
 }
 
-func prepareHubProviderSlug(tenantID *int, requestedSlug, providerName, website string, excludeProviderID int) (string, error) {
+func hubProviderSlugTaken(slug string, excludeProviderID int) (bool, error) {
+	query := DB.Model(&HubProvider{}).Where("slug = ?", slug)
+	if excludeProviderID > 0 {
+		query = query.Where("id <> ?", excludeProviderID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func prepareHubProviderSlug(requestedSlug, providerName, website string, excludeProviderID int) (string, error) {
 	requestedSlug = strings.TrimSpace(requestedSlug)
 	candidate := requestedSlug
 	if candidate == "" {
@@ -315,7 +335,7 @@ func prepareHubProviderSlug(tenantID *int, requestedSlug, providerName, website 
 	if err != nil {
 		return "", err
 	}
-	taken, err := hubProviderSlugTaken(tenantID, normalized, excludeProviderID)
+	taken, err := hubProviderSlugTaken(normalized, excludeProviderID)
 	if err != nil {
 		return "", err
 	}
@@ -327,7 +347,7 @@ func prepareHubProviderSlug(tenantID *int, requestedSlug, providerName, website 
 	}
 	for range 10 {
 		candidate = hubProviderSlugWithSuffix(normalized, strings.ToLower(common.GetRandomString(5)))
-		taken, err = hubProviderSlugTaken(tenantID, candidate, excludeProviderID)
+		taken, err = hubProviderSlugTaken(candidate, excludeProviderID)
 		if err != nil {
 			return "", err
 		}
@@ -338,7 +358,7 @@ func prepareHubProviderSlug(tenantID *int, requestedSlug, providerName, website 
 	return "", ErrHubProviderSlugAlreadyExists
 }
 
-func prepareProvisionalHubProviderSlug(tenantID *int, requestedSlug, providerName, website string) (string, string, string, error) {
+func prepareProvisionalHubProviderSlug(requestedSlug, providerName, website string) (string, string, string, error) {
 	candidate := strings.TrimSpace(requestedSlug)
 	if candidate == "" {
 		candidate = hubProviderSlugFromWebsite(website)
@@ -353,7 +373,7 @@ func prepareProvisionalHubProviderSlug(tenantID *int, requestedSlug, providerNam
 	for range 10 {
 		code := strings.ToLower(common.GetRandomString(4))
 		slug := hubProviderSlugWithSuffix(base, code)
-		taken, lookupErr := hubProviderSlugTaken(tenantID, slug, 0)
+		taken, lookupErr := hubProviderSlugTaken(slug, 0)
 		if lookupErr != nil {
 			return "", "", "", lookupErr
 		}
@@ -376,14 +396,23 @@ func prepareHubProviderForCreate(provider *HubProvider) error {
 	if existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
+	provider.Name = strings.TrimSpace(provider.Name)
+	provider.NameKey = normalizeHubProviderNameKey(provider.Name)
+	nameTaken, err := hubProviderNameTaken(DB, provider.NameKey, 0)
+	if err != nil {
+		return err
+	}
+	if nameTaken {
+		return ErrHubProviderNameAlreadyExists
+	}
 	var slug string
 	if provider.UseProvisionalSlug {
 		var base, code string
-		slug, base, code, err = prepareProvisionalHubProviderSlug(provider.TenantId, provider.Slug, provider.Name, provider.Website)
+		slug, base, code, err = prepareProvisionalHubProviderSlug(provider.Slug, provider.Name, provider.Website)
 		provider.SlugBase = base
 		provider.SlugCode = code
 	} else {
-		slug, err = prepareHubProviderSlug(provider.TenantId, provider.Slug, provider.Name, provider.Website, 0)
+		slug, err = prepareHubProviderSlug(provider.Slug, provider.Name, provider.Website, 0)
 		provider.SlugBase = slug
 	}
 	if err != nil {
@@ -402,7 +431,11 @@ func mapHubProviderCreateError(provider *HubProvider, createErr error) error {
 	if lookupErr == nil && existing != nil {
 		return ErrHubProviderAlreadyExists
 	}
-	slugTaken, lookupErr := hubProviderSlugTaken(provider.TenantId, provider.Slug, 0)
+	nameTaken, lookupErr := hubProviderNameTaken(DB, provider.NameKey, 0)
+	if lookupErr == nil && nameTaken {
+		return ErrHubProviderNameAlreadyExists
+	}
+	slugTaken, lookupErr := hubProviderSlugTaken(provider.Slug, 0)
 	if lookupErr == nil && slugTaken {
 		return ErrHubProviderSlugAlreadyExists
 	}
@@ -446,8 +479,18 @@ func updateHubProviderProfile(
 		}
 		return nil, err
 	}
+	name = strings.TrimSpace(name)
+	nameKey := normalizeHubProviderNameKey(name)
+	nameTaken, err := hubProviderNameTaken(db, nameKey, provider.Id)
+	if err != nil {
+		return nil, err
+	}
+	if nameTaken {
+		return nil, ErrHubProviderNameAlreadyExists
+	}
 	updates := map[string]any{
 		"name":          name,
+		"name_key":      nameKey,
 		"website":       website,
 		"description":   description,
 		"logo_url":      logoURL,
@@ -480,6 +523,10 @@ func updateHubProviderProfile(
 		Where("id = ? AND owner_user_id = ?", provider.Id, ownerUserID).
 		Updates(updates)
 	if result.Error != nil {
+		nameTaken, lookupErr := hubProviderNameTaken(db, nameKey, provider.Id)
+		if lookupErr == nil && nameTaken {
+			return nil, ErrHubProviderNameAlreadyExists
+		}
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
@@ -870,7 +917,7 @@ func updateHubProviderStatus(providerID int, status string, reviewerUserID int, 
 					return err
 				}
 				var count int64
-				if err := ApplyHubProviderTenantScope(tx.Model(&HubProvider{}), provider.TenantId).
+				if err := tx.Model(&HubProvider{}).
 					Where("slug = ? AND id <> ?", cleanSlug, providerID).
 					Count(&count).Error; err != nil {
 					return err

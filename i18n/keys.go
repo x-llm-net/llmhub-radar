@@ -364,6 +364,7 @@ const (
 const (
 	MsgHubProviderNameEmpty                  = "hub_provider.name_empty"
 	MsgHubProviderNameTooLong                = "hub_provider.name_too_long"
+	MsgHubProviderNameAlreadyExists          = "hub_provider.name_already_exists"
 	MsgHubProviderSlugInvalid                = "hub_provider.slug_invalid"
 	MsgHubProviderSlugAlreadyExists          = "hub_provider.slug_already_exists"
 	MsgHubProviderWebsiteInvalid             = "hub_provider.website_invalid"

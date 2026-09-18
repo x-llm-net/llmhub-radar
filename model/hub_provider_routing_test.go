@@ -49,7 +49,7 @@ func TestResolveHubProviderHostReturnsDisabledProviderForMiddlewareDecision(t *t
 	assert.Equal(t, HubProviderStatusDisabled, resolution.Provider.Status)
 }
 
-func TestResolveHubProviderHostScopesDuplicateSlugByTenantDomain(t *testing.T) {
+func TestResolveHubProviderHostScopesGlobalSlugByTenantDomain(t *testing.T) {
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
 	t.Cleanup(func() {
@@ -65,21 +65,22 @@ func TestResolveHubProviderHostScopesDuplicateSlugByTenantDomain(t *testing.T) {
 		{TenantId: tenantA.Id, Host: "routing-a.example", IsPrimary: true, VerificationStatus: TenantDomainVerificationVerified, Status: TenantDomainStatusActive},
 		{TenantId: tenantB.Id, Host: "routing-b.example", IsPrimary: true, VerificationStatus: TenantDomainVerificationVerified, Status: TenantDomainStatusActive},
 	}).Error)
-	providerA := &HubProvider{OwnerUserId: 95001, TenantId: &tenantA.Id, Name: "Provider A", Slug: "shared"}
-	providerB := &HubProvider{OwnerUserId: 95002, TenantId: &tenantB.Id, Name: "Provider B", Slug: "shared"}
+	providerA := &HubProvider{OwnerUserId: 95001, TenantId: &tenantA.Id, Name: "Provider A", Slug: "provider-a"}
+	providerB := &HubProvider{OwnerUserId: 95002, TenantId: &tenantB.Id, Name: "Provider B", Slug: "provider-b"}
 	require.NoError(t, CreateHubProvider(providerA))
 	require.NoError(t, CreateHubProvider(providerB))
 	InitChannelCache()
 
-	resolution, err := ResolveHubProviderHost("shared.routing-a.example")
+	resolution, err := ResolveHubProviderHost("provider-a.routing-a.example")
 	require.NoError(t, err)
 	assert.Equal(t, providerA.Id, resolution.Provider.Id)
-	resolution, err = ResolveHubProviderHost("shared.routing-b.example")
+	resolution, err = ResolveHubProviderHost("provider-b.routing-b.example")
 	require.NoError(t, err)
 	assert.Equal(t, providerB.Id, resolution.Provider.Id)
 
 	_, err = ResolveHubProviderHost("missing.routing-b.example")
 	assert.ErrorIs(t, err, ErrHubProviderHostNotFound)
-	_, found := GetHubProviderRoutingBySlug("shared")
-	assert.False(t, found, "a duplicate slug must be ambiguous without tenant context")
+	resolved, found := GetHubProviderRoutingBySlug("provider-a")
+	require.True(t, found)
+	assert.Equal(t, providerA.Id, resolved.Id)
 }

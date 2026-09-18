@@ -85,7 +85,7 @@ func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *test
 	assert.Equal(t, "https://skyhope.example/admin", PublicHubProviderWebsite(*stored))
 }
 
-func TestHubProviderWebsiteApprovalScopesCleanSlugByTenant(t *testing.T) {
+func TestHubProviderWebsiteApprovalRejectsGloballyClaimedCleanSlug(t *testing.T) {
 	truncateTables(t)
 	tenantA, tenantB := 31, 32
 	existing := &HubProvider{
@@ -108,11 +108,12 @@ func TestHubProviderWebsiteApprovalScopesCleanSlugByTenant(t *testing.T) {
 	_, err = UpdateHubProviderStatusWithReviewAndWebsite(
 		pending.Id, HubProviderStatusActive, 1, "Verified", true,
 	)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrHubProviderSlugAlreadyExists)
 	stored, err := GetHubProviderByOwnerUserIDInTenant(pending.OwnerUserId, tenantB)
 	require.NoError(t, err)
 	require.NotNil(t, stored)
-	assert.Equal(t, "shared", stored.Slug)
+	assert.NotEqual(t, "shared", stored.Slug)
+	assert.Equal(t, HubProviderStatusPending, stored.Status)
 }
 
 func TestHubProviderApprovalCanKeepUnverifiedWebsitePrivate(t *testing.T) {

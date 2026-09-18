@@ -66,7 +66,7 @@ func setupHubSupplyGroupControllerTestDB(t *testing.T) {
 
 func seedHubProvider(t *testing.T, ownerUserID int) *model.HubProvider {
 	t.Helper()
-	provider := &model.HubProvider{OwnerUserId: ownerUserID, Name: "Acme AI"}
+	provider := &model.HubProvider{OwnerUserId: ownerUserID, Name: fmt.Sprintf("Acme AI %d", ownerUserID)}
 	require.NoError(t, model.CreateHubProvider(provider))
 	return provider
 }

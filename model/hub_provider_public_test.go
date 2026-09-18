@@ -56,34 +56,45 @@ func TestHubProviderSlugValidationAndUniqueness(t *testing.T) {
 	assert.True(t, errors.Is(CreateHubProvider(duplicate), ErrHubProviderSlugAlreadyExists))
 }
 
-func TestHubProviderSlugUniquenessIsScopedByTenant(t *testing.T) {
+func TestHubProviderIdentityUniquenessIsGlobal(t *testing.T) {
 	truncateTables(t)
 	tenantA, tenantB := 101, 202
 	providerA := &HubProvider{OwnerUserId: 1101, TenantId: &tenantA, Name: "Provider A", Slug: "shared"}
-	providerB := &HubProvider{OwnerUserId: 1102, TenantId: &tenantB, Name: "Provider B", Slug: "shared"}
 	require.NoError(t, CreateHubProvider(providerA))
-	require.NoError(t, CreateHubProvider(providerB))
 
-	duplicateA := &HubProvider{OwnerUserId: 1103, TenantId: &tenantA, Name: "Duplicate A", Slug: "shared"}
-	assert.ErrorIs(t, CreateHubProvider(duplicateA), ErrHubProviderSlugAlreadyExists)
+	duplicateSlug := &HubProvider{OwnerUserId: 1102, TenantId: &tenantB, Name: "Provider B", Slug: "shared"}
+	assert.ErrorIs(t, CreateHubProvider(duplicateSlug), ErrHubProviderSlugAlreadyExists)
+
+	duplicateName := &HubProvider{OwnerUserId: 1103, TenantId: &tenantB, Name: " provider a ", Slug: "provider-c"}
+	assert.ErrorIs(t, CreateHubProvider(duplicateName), ErrHubProviderNameAlreadyExists)
+
+	providerB := &HubProvider{OwnerUserId: 1102, TenantId: &tenantB, Name: "Provider B", Slug: "provider-b"}
+	require.NoError(t, CreateHubProvider(providerB))
+	_, err := UpdateHubProviderProfile(
+		providerB.Id, providerB.OwnerUserId, " PROVIDER A ", "", "", "", "", "", "", "",
+	)
+	assert.ErrorIs(t, err, ErrHubProviderNameAlreadyExists)
 }
 
-func TestHubProviderPublicProfileScopesDuplicateSlugByTenant(t *testing.T) {
+func TestHubProviderPublicProfileScopesProviderByTenant(t *testing.T) {
 	truncateTables(t)
 	tenantA, tenantB := 303, 404
-	providerA := &HubProvider{OwnerUserId: 1201, TenantId: &tenantA, Name: "Provider A", Slug: "shared"}
-	providerB := &HubProvider{OwnerUserId: 1202, TenantId: &tenantB, Name: "Provider B", Slug: "shared"}
+	providerA := &HubProvider{OwnerUserId: 1201, TenantId: &tenantA, Name: "Provider A", Slug: "provider-a"}
+	providerB := &HubProvider{OwnerUserId: 1202, TenantId: &tenantB, Name: "Provider B", Slug: "provider-b"}
 	require.NoError(t, CreateHubProvider(providerA))
 	require.NoError(t, CreateHubProvider(providerB))
 
-	profileA, err := GetHubProviderPublicProfile("shared", &tenantA, common.GetTimestamp())
+	profileA, err := GetHubProviderPublicProfile("provider-a", &tenantA, common.GetTimestamp())
 	require.NoError(t, err)
 	require.NotNil(t, profileA)
 	assert.Equal(t, providerA.Id, profileA.Provider.Id)
-	profileB, err := GetHubProviderPublicProfile("shared", &tenantB, common.GetTimestamp())
+	profileB, err := GetHubProviderPublicProfile("provider-b", &tenantB, common.GetTimestamp())
 	require.NoError(t, err)
 	require.NotNil(t, profileB)
 	assert.Equal(t, providerB.Id, profileB.Provider.Id)
+	missing, err := GetHubProviderPublicProfile("provider-a", &tenantB, common.GetTimestamp())
+	require.NoError(t, err)
+	assert.Nil(t, missing)
 }
 
 func TestHubProviderPublicProfileAggregatesCurrentPublishedSupply(t *testing.T) {

@@ -66,7 +66,7 @@ func TestMigrateHubProviderSlugsBackfillsUniqueStableSlugs(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&legacyHubProviderWithoutSlug{}))
 	require.NoError(t, db.Create(&[]legacyHubProviderWithoutSlug{
 		{Id: 1, OwnerUserId: 11, Slot: 1, Name: "LLM Routers", Status: HubProviderStatusActive},
-		{Id: 2, OwnerUserId: 12, Slot: 1, Name: "LLM Routers", Status: HubProviderStatusActive},
+		{Id: 2, OwnerUserId: 12, Slot: 1, Name: "LLM Routers Backup", Status: HubProviderStatusActive},
 	}).Error)
 
 	require.NoError(t, db.AutoMigrate(&HubProvider{}))
@@ -77,16 +77,20 @@ func TestMigrateHubProviderSlugsBackfillsUniqueStableSlugs(t *testing.T) {
 	require.NoError(t, db.Order("id ASC").Find(&providers).Error)
 	require.Len(t, providers, 2)
 	assert.Equal(t, "llm-routers", providers[0].Slug)
-	assert.Equal(t, "llm-routers-2", providers[1].Slug)
+	assert.Equal(t, "llm-routers-backup", providers[1].Slug)
 	assert.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderSlugIndexName))
+	assert.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderNameIndexName))
 }
 
-func TestMigrateHubProviderSlugsScopesUniquenessByTenant(t *testing.T) {
+func TestMigrateHubProviderSlugsMakesIdentityGlobal(t *testing.T) {
 	db := useHubSupplyGroupMigrationDB(t)
 	require.NoError(t, db.AutoMigrate(&legacyHubProviderWithTenantSlug{}))
 	tenantA, tenantB := 11, 22
 	require.NoError(t, db.Create(&legacyHubProviderWithTenantSlug{
 		Id: 1, OwnerUserId: 101, TenantId: &tenantA, Slot: 1, Name: "Tenant A", Slug: "shared",
+	}).Error)
+	require.NoError(t, db.Create(&legacyHubProviderWithTenantSlug{
+		Id: 2, OwnerUserId: 102, TenantId: &tenantB, Slot: 1, Name: "Tenant B", Slug: "other",
 	}).Error)
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+hubProviderLegacySlugIndexName+" ON hub_providers (slug)").Error)
 
@@ -94,13 +98,10 @@ func TestMigrateHubProviderSlugsScopesUniquenessByTenant(t *testing.T) {
 	require.NoError(t, migrateHubProviderSlugs())
 
 	assert.False(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderLegacySlugIndexName))
+	assert.False(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderTenantSlugIndexName))
 	assert.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderSlugIndexName))
-	require.NoError(t, db.Create(&legacyHubProviderWithTenantSlug{
-		Id: 2, OwnerUserId: 102, TenantId: &tenantB, Slot: 1, Name: "Tenant B", Slug: "shared",
+	assert.True(t, db.Migrator().HasIndex(&HubProvider{}, hubProviderNameIndexName))
+	assert.Error(t, db.Create(&legacyHubProviderWithTenantSlug{
+		Id: 3, OwnerUserId: 103, TenantId: &tenantB, Slot: 1, Name: "Tenant C", Slug: "shared",
 	}).Error)
-	var providers []legacyHubProviderWithTenantSlug
-	require.NoError(t, db.Order("id ASC").Find(&providers).Error)
-	require.Len(t, providers, 2)
-	assert.Equal(t, "shared", providers[0].Slug)
-	assert.Equal(t, "shared", providers[1].Slug)
 }

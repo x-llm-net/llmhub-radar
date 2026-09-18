@@ -365,7 +365,7 @@ func TestHubProviderSelfAndProfileAreScopedByTenant(t *testing.T) {
 	assert.Equal(t, "Provider B updated", providerB.Name)
 }
 
-func TestHubProviderSlugCanRepeatAcrossTenants(t *testing.T) {
+func TestHubProviderSlugCannotRepeatAcrossTenants(t *testing.T) {
 	db := openTokenControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.HubProvider{}))
 	tenantA, tenantB := 11, 22
@@ -375,7 +375,7 @@ func TestHubProviderSlugCanRepeatAcrossTenants(t *testing.T) {
 	err := model.CreateHubProvider(&model.HubProvider{
 		OwnerUserId: 42, TenantId: &tenantB, Name: "Provider B", Slug: "shared-slug",
 	})
-	require.NoError(t, err)
+	require.ErrorIs(t, err, model.ErrHubProviderSlugAlreadyExists)
 }
 
 func TestUpdateHubProviderUpdatesOnlyPublicProfile(t *testing.T) {

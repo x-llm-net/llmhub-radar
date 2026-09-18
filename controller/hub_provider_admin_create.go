@@ -169,6 +169,8 @@ func AdminCreateHubProvider(c *gin.Context) {
 		switch {
 		case errors.Is(err, model.ErrHubProviderAlreadyExists):
 			common.ApiErrorI18n(c, i18n.MsgHubProviderAlreadyExists)
+		case errors.Is(err, model.ErrHubProviderNameAlreadyExists):
+			common.ApiErrorI18n(c, i18n.MsgHubProviderNameAlreadyExists)
 		case errors.Is(err, model.ErrHubProviderSlugAlreadyExists):
 			common.ApiErrorI18n(c, i18n.MsgHubProviderSlugAlreadyExists)
 		default:

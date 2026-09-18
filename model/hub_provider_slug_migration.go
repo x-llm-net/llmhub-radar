@@ -19,55 +19,82 @@ For commercial licensing, please contact support@quantumnous.com
 package model
 
 import (
+	"fmt"
 	"strconv"
 )
 
 const (
 	hubProviderLegacySlugIndexName = "idx_hub_providers_slug"
-	hubProviderSlugIndexName       = "idx_hub_provider_tenant_slug"
+	hubProviderTenantSlugIndexName = "idx_hub_provider_tenant_slug"
+	hubProviderSlugIndexName       = "idx_hub_provider_slug"
+	hubProviderNameIndexName       = "idx_hub_provider_name_key"
 )
 
 func migrateHubProviderSlugs() error {
 	providers := make([]HubProvider, 0)
-	if err := DB.Select("id", "tenant_id", "name", "slug").Order("id ASC").Find(&providers).Error; err != nil {
+	if err := DB.Select("id", "name", "name_key", "slug", "slug_base").Order("id ASC").Find(&providers).Error; err != nil {
 		return err
 	}
 
-	used := make(map[string]struct{}, len(providers))
+	usedNames := make(map[string]int, len(providers))
+	usedSlugs := make(map[string]int, len(providers))
 	for i := range providers {
 		provider := &providers[i]
+		nameKey := normalizeHubProviderNameKey(provider.Name)
+		if existingID, duplicate := usedNames[nameKey]; duplicate {
+			return fmt.Errorf("hub provider name %q is used by providers %d and %d", provider.Name, existingID, provider.Id)
+		}
+		usedNames[nameKey] = provider.Id
+
 		slug, err := NormalizeHubProviderSlug(provider.Slug)
 		if err != nil {
 			slug = hubProviderSlugFromName(provider.Name)
-		}
-		baseSlug := slug
-		tenantScope := "legacy"
-		if provider.TenantId != nil {
-			tenantScope = strconv.Itoa(*provider.TenantId)
-		}
-		for attempt := 0; ; attempt++ {
-			key := tenantScope + "\x00" + slug
-			if _, duplicate := used[key]; !duplicate {
-				break
+			baseSlug := slug
+			for attempt := 0; ; attempt++ {
+				if _, duplicate := usedSlugs[slug]; !duplicate {
+					break
+				}
+				slug = hubProviderSlugWithSuffix(baseSlug, strconv.Itoa(provider.Id+attempt))
 			}
-			slug = hubProviderSlugWithSuffix(baseSlug, strconv.Itoa(provider.Id+attempt))
+		} else if existingID, duplicate := usedSlugs[slug]; duplicate {
+			return fmt.Errorf("hub provider slug %q is used by providers %d and %d", slug, existingID, provider.Id)
 		}
-		used[tenantScope+"\x00"+slug] = struct{}{}
-		if provider.Slug == slug {
+		usedSlugs[slug] = provider.Id
+
+		updates := make(map[string]any, 3)
+		if provider.NameKey != nameKey {
+			updates["name_key"] = nameKey
+		}
+		if provider.Slug != slug {
+			updates["slug"] = slug
+		}
+		if provider.SlugBase == "" {
+			updates["slug_base"] = slug
+		}
+		if len(updates) == 0 {
 			continue
 		}
-		if err := DB.Model(&HubProvider{}).Where("id = ?", provider.Id).Update("slug", slug).Error; err != nil {
+		if err := DB.Model(&HubProvider{}).Where("id = ?", provider.Id).Updates(updates).Error; err != nil {
 			return err
 		}
 	}
 
-	if DB.Migrator().HasIndex(&HubProvider{}, hubProviderLegacySlugIndexName) {
-		if err := DB.Migrator().DropIndex(&HubProvider{}, hubProviderLegacySlugIndexName); err != nil {
+	for _, indexName := range []string{hubProviderLegacySlugIndexName, hubProviderTenantSlugIndexName} {
+		if DB.Migrator().HasIndex(&HubProvider{}, indexName) {
+			if err := DB.Migrator().DropIndex(&HubProvider{}, indexName); err != nil {
+				return err
+			}
+		}
+	}
+	if !DB.Migrator().HasIndex(&HubProvider{}, hubProviderSlugIndexName) {
+		if err := DB.Exec("CREATE UNIQUE INDEX " + hubProviderSlugIndexName + " ON hub_providers (slug)").Error; err != nil {
 			return err
 		}
 	}
-	if DB.Migrator().HasIndex(&HubProvider{}, hubProviderSlugIndexName) {
-		return nil
+	if !DB.Migrator().HasIndex(&HubProvider{}, hubProviderNameIndexName) {
+		if err := DB.Exec("CREATE UNIQUE INDEX " + hubProviderNameIndexName + " ON hub_providers (name_key)").Error; err != nil {
+			return err
+		}
 	}
-	return DB.Exec("CREATE UNIQUE INDEX " + hubProviderSlugIndexName + " ON hub_providers (tenant_id, slug)").Error
+	return nil
 }
