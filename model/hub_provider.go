@@ -907,7 +907,7 @@ func updateHubProviderStatus(providerID int, status string, reviewerUserID int, 
 			if err != nil || origin != provider.WebsiteVerifiedOrigin {
 				return ErrHubProviderWebsiteVerificationInvalid
 			}
-			if provider.Status != HubProviderStatusActive {
+			if provider.SlugCode != "" {
 				cleanSlug := provider.SlugBase
 				if cleanSlug == "" {
 					cleanSlug = provider.Slug
@@ -922,10 +922,13 @@ func updateHubProviderStatus(providerID int, status string, reviewerUserID int, 
 					Count(&count).Error; err != nil {
 					return err
 				}
-				if count > 0 {
+				if count > 0 && provider.Status != HubProviderStatusActive {
 					return ErrHubProviderSlugAlreadyExists
 				}
-				updates["slug"] = cleanSlug
+				if count == 0 {
+					updates["slug"] = cleanSlug
+					updates["slug_code"] = ""
+				}
 			}
 			updates["website_verification_status"] = HubProviderWebsiteVerificationStatusVerified
 			updates["website_verification_remark"] = reviewRemark

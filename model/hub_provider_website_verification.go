@@ -370,35 +370,61 @@ func UpdateHubProviderWebsiteVerificationResult(providerID, ownerUserID int, ver
 	if providerID <= 0 || ownerUserID <= 0 {
 		return nil, ErrHubProviderWebsiteVerificationInvalid
 	}
-	var provider HubProvider
-	if err := DB.Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
+	var updated HubProvider
+	slugPromoted := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var provider HubProvider
+		if err := lockForUpdate(tx).Where("id = ? AND owner_user_id = ?", providerID, ownerUserID).First(&provider).Error; err != nil {
+			return err
+		}
+		if provider.WebsiteVerificationStatus != HubProviderWebsiteVerificationStatusPending ||
+			(provider.WebsiteVerificationMethod != HubProviderWebsiteVerificationMethodDNS &&
+				provider.WebsiteVerificationMethod != HubProviderWebsiteVerificationMethodHTTP) {
+			return ErrHubProviderWebsiteVerificationInvalid
+		}
+		status := HubProviderWebsiteVerificationStatusPending
+		verifiedAt := int64(0)
+		if verified {
+			status = HubProviderWebsiteVerificationStatusVerified
+			verifiedAt = common.GetTimestamp()
+			lastError = ""
+		}
+		updates := map[string]any{
+			"website_verification_status":     status,
+			"website_verification_last_error": strings.TrimSpace(lastError),
+			"website_verified_at":             verifiedAt,
+			"updated_at":                      common.GetTimestamp(),
+		}
+		if verified && provider.Status == HubProviderStatusActive && provider.SlugCode != "" {
+			cleanSlug, err := NormalizeHubProviderSlug(provider.SlugBase)
+			if err != nil {
+				return err
+			}
+			var count int64
+			if err := tx.Model(&HubProvider{}).
+				Where("slug = ? AND id <> ?", cleanSlug, provider.Id).
+				Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				updates["slug"] = cleanSlug
+				updates["slug_code"] = ""
+				slugPromoted = true
+			}
+		}
+		if err := tx.Model(&HubProvider{}).Where("id = ?", provider.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.First(&updated, provider.Id).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-	if provider.WebsiteVerificationStatus != HubProviderWebsiteVerificationStatusPending ||
-		(provider.WebsiteVerificationMethod != HubProviderWebsiteVerificationMethodDNS &&
-			provider.WebsiteVerificationMethod != HubProviderWebsiteVerificationMethodHTTP) {
-		return nil, ErrHubProviderWebsiteVerificationInvalid
+	if slugPromoted {
+		refreshHubProviderRoutingCache()
 	}
-	status := HubProviderWebsiteVerificationStatusPending
-	verifiedAt := int64(0)
-	if verified {
-		status = HubProviderWebsiteVerificationStatusVerified
-		verifiedAt = common.GetTimestamp()
-		lastError = ""
-	}
-	if err := DB.Model(&HubProvider{}).Where("id = ?", provider.Id).Updates(map[string]any{
-		"website_verification_status":     status,
-		"website_verification_last_error": strings.TrimSpace(lastError),
-		"website_verified_at":             verifiedAt,
-		"updated_at":                      common.GetTimestamp(),
-	}).Error; err != nil {
-		return nil, err
-	}
-	if err := DB.First(&provider, provider.Id).Error; err != nil {
-		return nil, err
-	}
-	HydrateHubProviderVerificationFields(&provider)
-	return &provider, nil
+	HydrateHubProviderVerificationFields(&updated)
+	return &updated, nil
 }
 
 func PublicHubProviderWebsite(provider HubProvider) string {

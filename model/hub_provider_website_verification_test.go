@@ -81,8 +81,143 @@ func TestHubProviderManualWebsiteVerificationPromotesPendingProviderSlug(t *test
 	require.NotNil(t, stored)
 	assert.Equal(t, HubProviderStatusActive, stored.Status)
 	assert.Equal(t, "skyhope", stored.Slug)
+	assert.Empty(t, stored.SlugCode)
 	assert.Equal(t, HubProviderWebsiteVerificationStatusVerified, stored.WebsiteVerificationStatus)
 	assert.Equal(t, "https://skyhope.example/admin", PublicHubProviderWebsite(*stored))
+}
+
+func TestHubProviderWebsiteVerificationPromotesAlreadyApprovedSlug(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{
+		OwnerUserId: 7003, Name: "Late Website Verification", Slug: "late-verified",
+		Website: "https://late.example/admin", Status: HubProviderStatusPending, UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+	provisionalSlug := provider.Slug
+	require.NotEmpty(t, provider.SlugCode)
+	_, err := UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Approved", false,
+	)
+	require.NoError(t, err)
+	_, err = SubmitHubProviderWebsiteVerification(
+		provider.Id, provider.OwnerUserId, HubProviderWebsiteVerificationMethodDNS, 0,
+	)
+	require.NoError(t, err)
+
+	failed, err := UpdateHubProviderWebsiteVerificationResult(provider.Id, provider.OwnerUserId, false, "record missing")
+	require.NoError(t, err)
+	assert.Equal(t, provisionalSlug, failed.Slug)
+	assert.Equal(t, HubProviderWebsiteVerificationStatusPending, failed.WebsiteVerificationStatus)
+
+	verified, err := UpdateHubProviderWebsiteVerificationResult(provider.Id, provider.OwnerUserId, true, "")
+	require.NoError(t, err)
+	assert.Equal(t, "late-verified", verified.Slug)
+	assert.Empty(t, verified.SlugCode)
+	assert.Equal(t, HubProviderWebsiteVerificationStatusVerified, verified.WebsiteVerificationStatus)
+	assert.Equal(t, "https://late.example/admin", PublicHubProviderWebsite(*verified))
+	routed, found := GetHubProviderRoutingBySlug("late-verified")
+	require.True(t, found)
+	assert.Equal(t, provider.Id, routed.Id)
+	_, found = GetHubProviderRoutingBySlug(provisionalSlug)
+	assert.False(t, found)
+}
+
+func TestHubProviderWebsiteVerificationKeepsProvisionalSlugOnCollision(t *testing.T) {
+	truncateTables(t)
+	tenantA, tenantB := 31, 32
+	claimed := &HubProvider{OwnerUserId: 7004, TenantId: &tenantA, Name: "Existing GG", Slug: "gg", Status: HubProviderStatusActive}
+	require.NoError(t, CreateHubProvider(claimed))
+	provider := &HubProvider{
+		OwnerUserId: 7005, TenantId: &tenantB, Name: "New GG", Slug: "gg", Website: "https://gg.example",
+		Status: HubProviderStatusPending, UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+	provisionalSlug := provider.Slug
+	_, err := UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Approved", false,
+	)
+	require.NoError(t, err)
+	_, err = SubmitHubProviderWebsiteVerification(
+		provider.Id, provider.OwnerUserId, HubProviderWebsiteVerificationMethodHTTP, 0,
+	)
+	require.NoError(t, err)
+
+	verified, err := UpdateHubProviderWebsiteVerificationResult(provider.Id, provider.OwnerUserId, true, "")
+	require.NoError(t, err)
+	assert.Equal(t, provisionalSlug, verified.Slug)
+	assert.NotEmpty(t, verified.SlugCode)
+	assert.Equal(t, HubProviderWebsiteVerificationStatusVerified, verified.WebsiteVerificationStatus)
+	routed, found := GetHubProviderRoutingBySlug("gg")
+	require.True(t, found)
+	assert.Equal(t, claimed.Id, routed.Id)
+}
+
+func TestHubProviderManualWebsiteApprovalPromotesAlreadyApprovedSlug(t *testing.T) {
+	truncateTables(t)
+	provider := &HubProvider{
+		OwnerUserId: 7006, Name: "Late Manual Verification", Slug: "manual-late",
+		Website: "https://manual.example", Status: HubProviderStatusPending, UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+	provisionalSlug := provider.Slug
+	_, err := UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Approved", false,
+	)
+	require.NoError(t, err)
+	asset, err := CreateHubProviderWebsiteEvidenceAsset(provider.Id, provider.OwnerUserId, "image/png", []byte("screenshot"))
+	require.NoError(t, err)
+	_, err = SubmitHubProviderWebsiteVerification(
+		provider.Id, provider.OwnerUserId, HubProviderWebsiteVerificationMethodManual, asset.Id,
+	)
+	require.NoError(t, err)
+
+	_, err = UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Website approved", true,
+	)
+	require.NoError(t, err)
+	stored, err := GetHubProviderByID(provider.Id)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, "manual-late", stored.Slug)
+	assert.Empty(t, stored.SlugCode)
+	assert.Equal(t, HubProviderWebsiteVerificationStatusVerified, stored.WebsiteVerificationStatus)
+	routed, found := GetHubProviderRoutingBySlug("manual-late")
+	require.True(t, found)
+	assert.Equal(t, provider.Id, routed.Id)
+	_, found = GetHubProviderRoutingBySlug(provisionalSlug)
+	assert.False(t, found)
+}
+
+func TestHubProviderManualWebsiteApprovalKeepsProvisionalSlugOnCollision(t *testing.T) {
+	truncateTables(t)
+	claimed := &HubProvider{OwnerUserId: 7007, Name: "Claimed Short Name", Slug: "shared", Status: HubProviderStatusActive}
+	require.NoError(t, CreateHubProvider(claimed))
+	provider := &HubProvider{
+		OwnerUserId: 7008, Name: "Later Verified", Slug: "shared",
+		Website: "https://later.example", Status: HubProviderStatusPending, UseProvisionalSlug: true,
+	}
+	require.NoError(t, CreateHubProvider(provider))
+	provisionalSlug := provider.Slug
+	_, err := UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Approved", false,
+	)
+	require.NoError(t, err)
+	asset, err := CreateHubProviderWebsiteEvidenceAsset(provider.Id, provider.OwnerUserId, "image/png", []byte("screenshot"))
+	require.NoError(t, err)
+	_, err = SubmitHubProviderWebsiteVerification(
+		provider.Id, provider.OwnerUserId, HubProviderWebsiteVerificationMethodManual, asset.Id,
+	)
+	require.NoError(t, err)
+
+	_, err = UpdateHubProviderStatusWithReviewAndWebsite(
+		provider.Id, HubProviderStatusActive, 1, "Website approved", true,
+	)
+	require.NoError(t, err)
+	stored, err := GetHubProviderByID(provider.Id)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, provisionalSlug, stored.Slug)
+	assert.Equal(t, HubProviderWebsiteVerificationStatusVerified, stored.WebsiteVerificationStatus)
 }
 
 func TestHubProviderWebsiteApprovalRejectsGloballyClaimedCleanSlug(t *testing.T) {
